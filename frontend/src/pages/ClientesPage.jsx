@@ -1,11 +1,12 @@
+// Ruta: frontend/src/pages/ClientesPage.jsx
 import React, { useEffect, useState } from 'react';
-import DashboardLayout from '../components/DashboardLayout';
+import DashboardLayout from '../components/DashboardLayout.jsx';
 import { Plus, Search, Pencil, Trash2, Building2 } from 'lucide-react';
-import Button from '../components/Button';
-import ClienteModal from '../components/ClienteModal';
-import { getClientes, deleteCliente } from '../utils/apiUtils';
-import { useToast } from '../context/ToastContext';
-import LoadingSpinner from '../components/LoadingSpinner';
+import Button from '../components/Button.jsx';
+import ClienteModal from '../components/ClienteModal.jsx';
+import { getClientes, deleteCliente } from '../utils/apiUtils.js';
+import { useToast } from '../context/ToastContext.jsx';
+import LoadingSpinner from '../components/LoadingSpinner.jsx';
 
 const ClientesPage = () => {
   const [clientes, setClientes] = useState([]);
@@ -13,135 +14,83 @@ const ClientesPage = () => {
   const [filter, setFilter] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCliente, setEditingCliente] = useState(null);
-  
   const { showToast } = useToast();
 
   const fetchData = async () => {
-    try {
-      const data = await getClientes();
-      setClientes(data);
-    } catch (error) {
-      showToast('Error al cargar clientes', 'error');
-    } finally {
-      setLoading(false);
-    }
+    try { setClientes(await getClientes()); } 
+    catch (e) { showToast('Error al cargar', 'error'); } 
+    finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   const handleDelete = async (id) => {
-    if (window.confirm('¿Estás seguro de eliminar este cliente?')) {
-      try {
-        await deleteCliente(id);
-        showToast('Cliente eliminado', 'success');
-        fetchData();
-      } catch (error) {
-        showToast('Error al eliminar', 'error');
-      }
+    if (window.confirm('¿Eliminar cliente?')) {
+      try { await deleteCliente(id); showToast('Eliminado', 'success'); fetchData(); } 
+      catch (e) { showToast('Error al eliminar', 'error'); }
     }
   };
 
-  const openEdit = (cliente) => {
-    setEditingCliente(cliente);
-    setIsModalOpen(true);
-  };
-
-  const openNew = () => {
-    setEditingCliente(null);
-    setIsModalOpen(true);
-  };
-
-  const filtered = clientes.filter(c => 
-    c.razon_social.toLowerCase().includes(filter.toLowerCase()) ||
-    c.numero_documento.includes(filter)
-  );
+  const filtered = clientes.filter(c => c.razon_social.toLowerCase().includes(filter.toLowerCase()) || c.numero_documento.includes(filter));
 
   return (
-    <DashboardLayout title="Cartera de Clientes">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-          <div className="relative w-full sm:w-96">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
-            <input
-              type="text"
-              placeholder="Buscar por nombre o RUC..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            />
+    <DashboardLayout title="Directorio de Clientes">
+      <div className="card p-6 md:p-8">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
+          <div className="relative w-full sm:w-[400px]">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 h-5 w-5" />
+            <input type="text" placeholder="Buscar empresa o RUC..." className="input-field pl-12" value={filter} onChange={(e) => setFilter(e.target.value)} />
           </div>
-          <Button onClick={openNew} icon={Plus}>
-            Nuevo Cliente
-          </Button>
+          <Button onClick={() => {setEditingCliente(null); setIsModalOpen(true);}} icon={Plus} className="w-full sm:w-auto">Nuevo Cliente</Button>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-12"><LoadingSpinner /></div>
-        ) : (
-          <div className="overflow-x-auto">
+        {loading ? <div className="flex justify-center py-20"><LoadingSpinner /></div> : (
+          <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-surface-800">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-gray-100 text-gray-500 text-sm">
-                  <th className="py-4 px-4 font-medium">Razón Social / Nombre</th>
-                  <th className="py-4 px-4 font-medium">Documento</th>
-                  <th className="py-4 px-4 font-medium">Contacto</th>
-                  <th className="py-4 px-4 font-medium text-right">Acciones</th>
+                <tr className="bg-slate-50 dark:bg-surface-900 border-b border-slate-100 dark:border-surface-800 text-slate-400 dark:text-surface-400 text-xs font-bold uppercase tracking-wider">
+                  <th className="py-4 px-6">Razón Social</th>
+                  <th className="py-4 px-6">Identificación</th>
+                  <th className="py-4 px-6">Contacto</th>
+                  <th className="py-4 px-6 text-right">Acciones</th>
                 </tr>
               </thead>
-              <tbody>
-                {filtered.map((cliente) => (
-                  <tr key={cliente.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                    <td className="py-4 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
-                          <Building2 size={20} />
+              <tbody className="divide-y divide-slate-50 dark:divide-surface-800">
+                {filtered.map((c) => (
+                  <tr key={c.id} className="hover:bg-slate-50/50 dark:hover:bg-surface-900/50 transition-colors group">
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                          <Building2 size={20} strokeWidth={2.5} />
                         </div>
-                        <span className="font-medium text-gray-900">{cliente.razon_social}</span>
+                        <span className="font-bold text-slate-900 dark:text-white">{c.razon_social}</span>
                       </div>
                     </td>
-                    <td className="py-4 px-4">
-                      <span className="px-2 py-1 bg-gray-100 rounded text-xs font-medium text-gray-600">
-                        {cliente.tipo_documento === '6' ? 'RUC' : 'DNI'}
-                      </span>
-                      <span className="ml-2 text-gray-600">{cliente.numero_documento}</span>
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-1 bg-slate-100 dark:bg-surface-800 rounded-md text-[10px] font-bold text-slate-500 dark:text-surface-400 uppercase tracking-wider">{c.tipo_documento === '6' ? 'RUC' : 'DNI'}</span>
+                        <span className="font-mono text-sm text-slate-600 dark:text-surface-300">{c.numero_documento}</span>
+                      </div>
                     </td>
-                    <td className="py-4 px-4 text-sm text-gray-600">
-                      <div>{cliente.email || '-'}</div>
-                      <div className="text-xs">{cliente.telefono}</div>
+                    <td className="py-4 px-6 text-sm text-slate-600 dark:text-surface-300">
+                      <div className="font-medium">{c.email || 'Sin correo'}</div>
+                      <div className="text-xs text-slate-400">{c.telefono || 'Sin teléfono'}</div>
                     </td>
-                    <td className="py-4 px-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => openEdit(cliente)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
-                          <Pencil size={16} />
-                        </button>
-                        <button onClick={() => handleDelete(cliente.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                          <Trash2 size={16} />
-                        </button>
+                    <td className="py-4 px-6 text-right">
+                      <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => {setEditingCliente(c); setIsModalOpen(true);}} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/20 rounded-xl transition-all"><Pencil size={18} /></button>
+                        <button onClick={() => handleDelete(c.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/20 rounded-xl transition-all"><Trash2 size={18} /></button>
                       </div>
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan="4" className="py-12 text-center text-gray-400">
-                      No se encontraron clientes
-                    </td>
-                  </tr>
-                )}
+                {filtered.length === 0 && <tr><td colSpan="4" className="py-16 text-center text-slate-400 font-medium">Ningún cliente encontrado</td></tr>}
               </tbody>
             </table>
           </div>
         )}
       </div>
-
-      <ClienteModal 
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        clienteToEdit={editingCliente}
-        onSuccess={fetchData}
-      />
+      <ClienteModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} clienteToEdit={editingCliente} onSuccess={fetchData} />
     </DashboardLayout>
   );
 };

@@ -38,10 +38,14 @@ def get_clientes(db: Session, skip: int = 0, limit: int = 100):
 
 def create_cliente(db: Session, cliente: schemas.ClienteCreate):
     db_cliente = models.Cliente(**cliente.model_dump())
-    db.add(db_cliente)
-    db.commit()
-    db.refresh(db_cliente)
-    return db_cliente
+    try:
+        db.add(db_cliente)
+        db.commit()
+        db.refresh(db_cliente)
+        return db_cliente
+    except Exception as e:
+        db.rollback()
+        raise e
 
 def update_cliente(db: Session, cliente_id: int, cliente_data: schemas.ClienteCreate):
     db_cliente = db.query(models.Cliente).filter(models.Cliente.id == cliente_id).first()
@@ -75,10 +79,14 @@ def create_producto(db: Session, producto: schemas.ProductoCreate):
         **producto.model_dump(),
         valor_unitario=valor_unitario_redondeado
     )
-    db.add(db_producto)
-    db.commit()
-    db.refresh(db_producto)
-    return db_producto
+    try:
+        db.add(db_producto)
+        db.commit()
+        db.refresh(db_producto)
+        return db_producto
+    except Exception as e:
+        db.rollback()
+        raise e
 
 def update_producto(db: Session, producto_id: int, producto_data: schemas.ProductoCreate):
     db_producto = db.query(models.Producto).filter(models.Producto.id == producto_id).first()
@@ -107,16 +115,21 @@ def delete_producto(db: Session, producto_id: int):
 # COTIZACIONES
 # ==========================================
 
-def get_cotizaciones(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Cotizacion)\
+def get_cotizaciones(db: Session, usuario: Optional[models.User] = None, skip: int = 0, limit: int = 100):
+    query = db.query(models.Cotizacion)\
         .options(joinedload(models.Cotizacion.cliente), joinedload(models.Cotizacion.usuario))\
-        .order_by(desc(models.Cotizacion.id))\
-        .offset(skip).limit(limit).all()
+        .order_by(desc(models.Cotizacion.id))
+    if usuario and getattr(usuario, "rol", "vendedor") not in ["admin", "superadmin"]:
+        query = query.filter(models.Cotizacion.usuario_id == usuario.id)
+    return query.offset(skip).limit(limit).all()
 
-def get_cotizacion(db: Session, cotizacion_id: int):
-    return db.query(models.Cotizacion)\
+def get_cotizacion(db: Session, cotizacion_id: int, usuario: Optional[models.User] = None):
+    query = db.query(models.Cotizacion)\
         .options(joinedload(models.Cotizacion.cliente), joinedload(models.Cotizacion.items))\
-        .filter(models.Cotizacion.id == cotizacion_id).first()
+        .filter(models.Cotizacion.id == cotizacion_id)
+    if usuario and getattr(usuario, "rol", "vendedor") not in ["admin", "superadmin"]:
+        query = query.filter(models.Cotizacion.usuario_id == usuario.id)
+    return query.first()
 
 def create_cotizacion(db: Session, cotizacion: schemas.CotizacionCreate, usuario_id: int):
     items_db = []
@@ -164,11 +177,14 @@ def create_cotizacion(db: Session, cotizacion: schemas.CotizacionCreate, usuario
         items=items_db
     )
 
-    db.add(db_cotizacion)
-    db.commit()
-    db.refresh(db_cotizacion)
-    
-    return get_cotizacion(db, db_cotizacion.id)
+    try:
+        db.add(db_cotizacion)
+        db.commit()
+        db.refresh(db_cotizacion)
+        return get_cotizacion(db, db_cotizacion.id)
+    except Exception as e:
+        db.rollback()
+        raise e
 
 def guardar_respuesta_sunat(db: Session, cotizacion_id: int, data_sunat: dict):
     """Guarda los links devueltos por la API de Facturación en la cotización"""

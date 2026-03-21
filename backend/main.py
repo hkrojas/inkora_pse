@@ -20,7 +20,7 @@ import pdf_generator
 from database import SessionLocal, engine
 from config import settings
 
-MASTER_APISPERU_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Imtlbm5lZHlyb2phczAxMDY0QGdtYWlsLmNvbSJ9.3sopEO4OjTDovbXV46k8g48sxbP55W3MEbke16Im-uw"
+MASTER_APISPERU_TOKEN = os.getenv("MASTER_APISPERU_TOKEN", "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Imtlbm5lZHlyb2phczAxMDY0QGdtYWlsLmNvbSJ9.3sopEO4OjTDovbXV46k8g48sxbP55W3MEbke16Im-uw")
 BASE_URL_APISPERU = "https://dniruc.apisperu.com/api/v1"
 
 os.makedirs("logos", exist_ok=True)
@@ -161,7 +161,7 @@ def delete_producto(producto_id: int, db: Session = Depends(get_db), current_use
 
 @app.get("/cotizaciones/", response_model=List[schemas.CotizacionResponse])
 def read_cotizaciones(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    return crud.get_cotizaciones(db, skip, limit)
+    return crud.get_cotizaciones(db, current_user, skip, limit)
 
 @app.post("/cotizaciones/", response_model=schemas.CotizacionResponse)
 def create_cotizacion(cotizacion: schemas.CotizacionCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
@@ -169,13 +169,13 @@ def create_cotizacion(cotizacion: schemas.CotizacionCreate, db: Session = Depend
 
 @app.get("/cotizaciones/{cotizacion_id}", response_model=schemas.CotizacionResponse)
 def read_cotizacion(cotizacion_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    res = crud.get_cotizacion(db, cotizacion_id)
+    res = crud.get_cotizacion(db, cotizacion_id, current_user)
     if not res: raise HTTPException(404)
     return res
 
 @app.get("/cotizaciones/{cotizacion_id}/pdf")
 def descargar_pdf_interno(cotizacion_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    cotizacion = crud.get_cotizacion(db, cotizacion_id)
+    cotizacion = crud.get_cotizacion(db, cotizacion_id, current_user)
     if not cotizacion: raise HTTPException(404)
     try:
         pdf = pdf_generator.generar_pdf_cotizacion(cotizacion, current_user)
@@ -192,7 +192,7 @@ def descargar_pdf_interno(cotizacion_id: int, db: Session = Depends(get_db), cur
 @app.post("/cotizaciones/{cotizacion_id}/facturar")
 def emitir_comprobante(cotizacion_id: int, payload: schemas.FacturarPayload, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Emitir Factura (01) o Boleta (03) a partir de una cotización."""
-    cotizacion = crud.get_cotizacion(db, cotizacion_id)
+    cotizacion = crud.get_cotizacion(db, cotizacion_id, current_user)
     if not cotizacion: raise HTTPException(404, "Documento no encontrado")
     if not cotizacion.cliente: raise HTTPException(400, "Cliente no asignado")
 
@@ -209,7 +209,7 @@ def emitir_comprobante(cotizacion_id: int, payload: schemas.FacturarPayload, db:
 @app.post("/notas/emitir")
 def emitir_nota(nota_data: schemas.NotaCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Emitir Nota de Crédito/Débito."""
-    doc_afectado = crud.get_cotizacion(db, nota_data.comprobante_afectado_id)
+    doc_afectado = crud.get_cotizacion(db, nota_data.comprobante_afectado_id, current_user)
     if not doc_afectado: raise HTTPException(404, "Comprobante afectado no encontrado")
     
     # Se recomienda crear primero una 'cotización' que represente la nota para tener los items en BD
@@ -234,7 +234,7 @@ def emitir_nota(nota_data: schemas.NotaCreate, db: Session = Depends(get_db), cu
 @app.post("/bajas/anular")
 def anular_documento(data: schemas.AnulacionCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Dar de baja (Facturas) o Resumen Diario (Boletas) para anulación."""
-    comprobante = crud.get_cotizacion(db, data.comprobante_id)
+    comprobante = crud.get_cotizacion(db, data.comprobante_id, current_user)
     if not comprobante: raise HTTPException(404)
     
     try:
@@ -248,7 +248,7 @@ def recuperar_archivo_api(tipo_archivo: str, payload: schemas.DescargaArchivoPay
     """Recuperar XML, PDF o CDR directamente desde la API."""
     if tipo_archivo not in ["xml", "pdf", "cdr"]: raise HTTPException(400, "Tipo inválido")
     
-    comprobante = crud.get_cotizacion(db, payload.comprobante_id)
+    comprobante = crud.get_cotizacion(db, payload.comprobante_id, current_user)
     if not comprobante: raise HTTPException(404)
     
     try:

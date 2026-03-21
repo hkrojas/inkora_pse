@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 import models
 import schemas
 from config import settings
+import calculations
 
 # ==========================================
 # UTILITARIOS Y CONFIGURACIÓN
@@ -54,38 +55,31 @@ def obtener_tipo_documento_codigo(tipo: str) -> str:
 
 def _construir_items_payload(items):
     items_payload = []
-    totales = {"gravada": 0.0, "igv": 0.0, "venta": 0.0}
+    totales = {"gravada": calculations.Decimal("0.00"), "igv": calculations.Decimal("0.00"), "venta": calculations.Decimal("0.00")}
 
     for item in items:
-        cantidad = float(item.cantidad)
-        precio_final = float(item.precio_unitario)
-        producto_nombre = item.descripcion
-        
-        valor_unitario = round(precio_final / 1.18, 5)
-        valor_venta = round(valor_unitario * cantidad, 2)
-        igv_item = round((precio_final * cantidad) - valor_venta, 2)
-        precio_venta = round(precio_final * cantidad, 2)
+        calc = calculations.calcular_item(item.cantidad, item.precio_unitario)
 
-        totales["gravada"] += valor_venta
-        totales["igv"] += igv_item
-        totales["venta"] += precio_venta
+        totales["gravada"] += calc["total_base_igv"]
+        totales["igv"] += calc["total_igv"]
+        totales["venta"] += calc["total_item"]
 
         items_payload.append({
             "codProducto": "P001",
-            "unidad": "NIU",
-            "descripcion": producto_nombre,
-            "cantidad": cantidad,
-            "mtoValorUnitario": valor_unitario,
-            "mtoValorVenta": valor_venta,
-            "mtoBaseIgv": valor_venta,
+            "unidad": calc["unidad_medida"],
+            "descripcion": item.descripcion,
+            "cantidad": float(calc["cantidad"]),
+            "mtoValorUnitario": float(calc["valor_unitario"]),
+            "mtoValorVenta": float(calc["total_base_igv"]),
+            "mtoBaseIgv": float(calc["total_base_igv"]),
             "porcentajeIgv": 18,
-            "igv": igv_item,
-            "tipAfeIgv": "10",
-            "totalImpuestos": igv_item,
-            "mtoPrecioUnitario": precio_final
+            "igv": float(calc["total_igv"]),
+            "tipAfeIgv": calc["tipo_afectacion_igv"],
+            "totalImpuestos": float(calc["total_igv"]),
+            "mtoPrecioUnitario": float(calc["precio_unitario"])
         })
     
-    totales = {k: round(v, 2) for k, v in totales.items()}
+    totales = {k: float(v) for k, v in totales.items()}
     return items_payload, totales
 
 def _base_payload(cotizacion, user, tipo_doc_comprobante):

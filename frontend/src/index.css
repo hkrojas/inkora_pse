@@ -6,7 +6,7 @@
 
 @layer base {
   body {
-    @apply font-sans bg-surface-50 text-surface-900 antialiased;
+    @apply font-sans bg-surface-50 text-surface-900 antialiased transition-colors duration-300;
     /* Modo oscuro */
     @apply dark:bg-surface-950 dark:text-surface-100;
   }
@@ -20,22 +20,20 @@
     @apply bg-transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-surface-300 dark:bg-surface-700 rounded-full hover:bg-surface-400;
+    @apply bg-surface-300 dark:bg-surface-700 rounded-full hover:bg-surface-400 dark:hover:bg-surface-600 transition-colors;
   }
 }
 
 @layer components {
-  /* Clase para tarjetas (Glassmorphism sutil) */
   .card {
-    @apply bg-white dark:bg-surface-800 rounded-xl shadow-soft border border-surface-100 dark:border-surface-700;
+    @apply bg-white dark:bg-surface-900 rounded-2xl shadow-soft border border-surface-100 dark:border-surface-800 transition-colors duration-300;
   }
   
-  /* Inputs y Controles de Formulario */
   .input-field {
-    @apply w-full px-4 py-2.5 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-900 text-surface-900 dark:text-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all outline-none placeholder:text-surface-400;
+    @apply w-full px-4 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 text-surface-900 dark:text-white focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all outline-none placeholder:text-surface-400 dark:placeholder:text-surface-500;
   }
 
   .btn {
-    @apply px-4 py-2.5 rounded-lg font-medium transition-all duration-200 active:scale-95 flex items-center justify-center gap-2;
+    @apply px-5 py-2.5 rounded-xl font-bold transition-all duration-300 active:scale-95 flex items-center justify-center gap-2;
   }
 }

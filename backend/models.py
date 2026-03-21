@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text, Boolean, JSON, Numeric
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -56,8 +56,8 @@ class Producto(Base):
     codigo_interno = Column(String, nullable=True)
     nombre = Column(String, index=True)
     descripcion = Column(Text, nullable=True)
-    precio_unitario = Column(Float) # Precio FINAL (con IGV)
-    valor_unitario = Column(Float)  # Valor BASE (sin IGV) - Calculado
+    precio_unitario = Column(Numeric(12, 2)) # Precio FINAL (con IGV)
+    valor_unitario = Column(Numeric(12, 2))  # Valor BASE (sin IGV) - Calculado
     unidad_medida = Column(String, default="NIU") # NIU = Unidad
     tipo_afectacion_igv = Column(String, default="10") # 10 = Gravado
 
@@ -82,11 +82,11 @@ class Cotizacion(Base):
     items = relationship("CotizacionItem", back_populates="cotizacion", cascade="all, delete-orphan")
 
     # Totales Globales
-    total_gravada = Column(Float, default=0.0)
-    total_exonerada = Column(Float, default=0.0)
-    total_inafecta = Column(Float, default=0.0)
-    total_igv = Column(Float, default=0.0)
-    total_venta = Column(Float, default=0.0)
+    total_gravada = Column(Numeric(12, 2), default=0.0)
+    total_exonerada = Column(Numeric(12, 2), default=0.0)
+    total_inafecta = Column(Numeric(12, 2), default=0.0)
+    total_igv = Column(Numeric(12, 2), default=0.0)
+    total_venta = Column(Numeric(12, 2), default=0.0)
 
     # --- CAMPOS NUEVOS PARA FACTURACIÓN ELECTRÓNICA ---
     tipo_comprobante = Column(String, default="00") # 00: Cotización, 01: Factura, 03: Boleta
@@ -107,15 +107,15 @@ class CotizacionItem(Base):
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=True)
     
     descripcion = Column(String)
-    cantidad = Column(Float)
+    cantidad = Column(Numeric(12, 2))
     
     # Montos por Ítem
-    precio_unitario = Column(Float) # Precio Unitario con IGV (del momento)
-    valor_unitario = Column(Float)  # Valor Unitario sin IGV
+    precio_unitario = Column(Numeric(12, 2)) # Precio Unitario con IGV (del momento)
+    valor_unitario = Column(Numeric(12, 2))  # Valor Unitario sin IGV
     
-    total_base_igv = Column(Float) # Base imponible total item
-    total_igv = Column(Float)      # IGV total item
-    total_item = Column(Float)     # Precio total item (venta)
+    total_base_igv = Column(Numeric(12, 2)) # Base imponible total item
+    total_igv = Column(Numeric(12, 2))      # IGV total item
+    total_item = Column(Numeric(12, 2))     # Precio total item (venta)
 
     unidad_medida = Column(String, default="NIU")
     tipo_afectacion_igv = Column(String, default="10")
