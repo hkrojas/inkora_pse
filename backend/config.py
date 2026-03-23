@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     API_URL: str = os.getenv("API_URL", "https://facturacion.apisperu.com/api/v1") 
     # Token global por defecto (opcional, se prefiere el del usuario)
     API_TOKEN: str = os.getenv("API_TOKEN", "") 
+    
+    # Consulta DNI/RUC (APIsPERU)
+    DNIRUC_API_URL: str = os.getenv("DNIRUC_API_URL", "https://dniruc.apisperu.com/api/v1")
+    DNIRUC_TOKEN: str = os.getenv("DNIRUC_TOKEN", "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Imtlbm5lZHlyb2phczAxMDY0QGdtYWlsLmNvbSJ9.3sopEO4OjTDovbXV46k8g48sxbP55W3MEbke16Im-uw")
 
     class Config:
         env_file = ".env"

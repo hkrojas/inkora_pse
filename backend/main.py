@@ -20,8 +20,7 @@ import pdf_generator
 from database import SessionLocal, engine
 from config import settings
 
-MASTER_APISPERU_TOKEN = os.getenv("MASTER_APISPERU_TOKEN", "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Imtlbm5lZHlyb2phczAxMDY0QGdtYWlsLmNvbSJ9.3sopEO4OjTDovbXV46k8g48sxbP55W3MEbke16Im-uw")
-BASE_URL_APISPERU = "https://dniruc.apisperu.com/api/v1"
+
 
 os.makedirs("logos", exist_ok=True)
 models.Base.metadata.create_all(bind=engine)
@@ -94,29 +93,86 @@ async def upload_logo(file: UploadFile = File(...), current_user: models.User = 
         return {"filename": filename}
     except Exception as e: raise HTTPException(500, str(e))
 
-@app.get("/consultar-ruc/{numero}")
-def consultar_documento_sunat(numero: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+@app.get("/consultar-documento/{numero}")
+def consultar_documento(numero: str, current_user: models.User = Depends(get_current_user)):
+    """
+    Consulta DNI (8 dígitos) o RUC (11 dígitos) en APIsPeru.
+    API Docs: https://dniruc.apisperu.com/api/v1
+    """
     numero = numero.strip()
-    tipo = "dni" if len(numero) == 8 else "ruc" if len(numero) == 11 else None
-    if not tipo: raise HTTPException(400, "Longitud inválida")
+    if len(numero) == 8:
+        tipo = "dni"
+    elif len(numero) == 11:
+        tipo = "ruc"
+    else:
+        raise HTTPException(400, "Número inválido. Ingrese 8 dígitos (DNI) u 11 dígitos (RUC).")
     
-    token = current_user.apisperu_token if current_user.apisperu_token else MASTER_APISPERU_TOKEN
-    url = f"{BASE_URL_APISPERU}/{tipo}/{numero}?token={token}"
+    # Token: preferir el del usuario, fallback al global en config
+    token = current_user.apisperu_token or settings.DNIRUC_TOKEN
+    if not token:
+        raise HTTPException(500, "No hay token de consulta configurado. Configure DNIRUC_TOKEN o su token personal.")
+    
+    url = f"{settings.DNIRUC_API_URL}/{tipo}/{numero}"
+    
     try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("success") is False: raise HTTPException(404, "No encontrado")
-            res = {"documento": numero, "direccion": "", "estado": "ACTIVO", "condicion": "HABIDO"}
-            if tipo == "ruc":
-                res.update({"razon_social": data.get("razonSocial"), "direccion": data.get("direccion"), "estado": data.get("estado"), "condicion": data.get("condicion")})
-            else:
-                n = f"{data.get('nombres','')} {data.get('apellidoPaterno','')} {data.get('apellidoMaterno','')}".strip()
-                res["razon_social"] = n
-                res["direccion"] = "-"
-            return res
-        raise HTTPException(response.status_code, "Error API externa")
-    except Exception as e: raise HTTPException(500, str(e))
+        response = requests.get(url, params={"token": token}, timeout=10)
+        
+        if response.status_code != 200:
+            raise HTTPException(response.status_code, f"Error en API externa: {response.text}")
+        
+        data = response.json()
+        
+        # La API retorna {"success": false, "message": "..."} si falla
+        if data.get("success") is False:
+            raise HTTPException(404, data.get("message", "Documento no encontrado en RENIEC/SUNAT."))
+        
+        if tipo == "ruc":
+            return {
+                "tipo": "RUC",
+                "documento": data.get("ruc", numero),
+                "razon_social": data.get("razonSocial", ""),
+                "nombre_comercial": data.get("nombreComercial", ""),
+                "direccion": data.get("direccion", "-"),
+                "departamento": data.get("departamento", ""),
+                "provincia": data.get("provincia", ""),
+                "distrito": data.get("distrito", ""),
+                "ubigeo": data.get("ubigeo", ""),
+                "estado": data.get("estado", ""),
+                "condicion": data.get("condicion", ""),
+                "telefonos": data.get("telefonos", []),
+                "capital": data.get("capital", "")
+            }
+        else:  # DNI
+            nombres = data.get("nombres", "")
+            ap_paterno = data.get("apellidoPaterno", "")
+            ap_materno = data.get("apellidoMaterno", "")
+            nombre_completo = f"{nombres} {ap_paterno} {ap_materno}".strip()
+            return {
+                "tipo": "DNI",
+                "documento": data.get("dni", numero),
+                "razon_social": nombre_completo,
+                "nombres": nombres,
+                "apellido_paterno": ap_paterno,
+                "apellido_materno": ap_materno,
+                "cod_verifica": data.get("codVerifica", ""),
+                "direccion": "-",
+                "estado": "ACTIVO",
+                "condicion": "HABIDO"
+            }
+    except HTTPException:
+        raise
+    except requests.exceptions.Timeout:
+        raise HTTPException(504, "Tiempo de espera agotado al consultar RENIEC/SUNAT.")
+    except requests.exceptions.ConnectionError:
+        raise HTTPException(503, "No se pudo conectar con el servicio de consulta.")
+    except Exception as e:
+        raise HTTPException(500, f"Error inesperado: {str(e)}")
+
+# Mantener ruta legacy para compatibilidad
+@app.get("/consultar-ruc/{numero}")
+def consultar_ruc_legacy(numero: str, current_user: models.User = Depends(get_current_user)):
+    """Ruta legacy — redirige a /consultar-documento/{numero}."""
+    return consultar_documento(numero, current_user)
 
 # --- CRUD Básico ---
 @app.get("/clientes/", response_model=List[schemas.ClienteResponse])
