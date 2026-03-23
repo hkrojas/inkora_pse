@@ -1,0 +1,101 @@
+﻿Total tools: 32
+Tool names: ['refresh_auth', 'notebook_list', 'notebook_create', 'notebook_get', 'notebook_describe', 'source_describe', 'source_get_content', 'notebook_add_url', 'notebook_add_text', 'notebook_add_drive', 'notebook_query', 'notebook_delete', 'notebook_rename', 'chat_configure', 'source_list_drive', 'source_sync_drive', 'source_delete', 'research_start', 'research_status', 'research_import', 'audio_overview_create', 'video_overview_create', 'studio_status', 'studio_delete', 'infographic_create', 'slide_deck_create', 'report_create', 'flashcards_create', 'quiz_create', 'data_table_create', 'mind_map_create', 'save_auth_tokens']
+Test call (notebook_list) output:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"status\":\"success\",\"count\":8,\"owned_count\":8,\"shared_count\":0,\"shared_by_me_count\":0,\"notebooks\":[{\"id\":\"c8f59e8f-13b8-41bf-be05-72d5ad7fe875\",\"title\":\"APIsPERU Electronic Billing API Documentation\",\"source_count\":71,\"url\":\"https://notebooklm.google.com/notebook/c8f59e8f-13b8-41bf-be05-72d5ad7fe875\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2026-03-20T15:13:59Z\",\"modified_at\":\"2026-03-21T21:33:47Z\"},{\"id\":\"3c8e0704-c5cb-4971-8156-94c586ed0f2d\",\"title\":\"Convex Optimization: Methods and Applications\",\"source_count\":1,\"url\":\"https://notebooklm.google.com/notebook/3c8e0704-c5cb-4971-8156-94c586ed0f2d\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2025-04-16T02:07:25Z\",\"modified_at\":\"2025-04-16T02:07:26Z\"},{\"id\":\"1df59615-ca3e-43b8-bc9f-4a4b79ed9c05\",\"title\":\"AI-Powered Graphic Design Course: Session 1\",\"source_count\":1,\"url\":\"https://notebooklm.google.com/notebook/1df59615-ca3e-43b8-bc9f-4a4b79ed9c05\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2025-01-16T20:57:33Z\",\"modified_at\":\"2025-01-16T20:57:33Z\"},{\"id\":\"3a524370-0890-4ce1-a4c6-8a37753bc665\",\"title\":\"Estatuto: Las Torres de Copacabana Housing Association\",\"source_count\":1,\"url\":\"https://notebooklm.google.com/notebook/3a524370-0890-4ce1-a4c6-8a37753bc665\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2025-01-05T01:18:15Z\",\"modified_at\":\"2025-01-05T01:18:17Z\"},{\"id\":\"55462cba-b8fe-4c59-88f3-08d502589918\",\"title\":\"Bootstrapping Confidence Intervals\",\"source_count\":5,\"url\":\"https://notebooklm.google.com/notebook/55462cba-b8fe-4c59-88f3-08d502589918\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2024-12-13T16:53:45Z\",\"modified_at\":\"2024-12-15T01:44:48Z\"},{\"id\":\"58c7560d-6537-4e00-b907-caa67060d058\",\"title\":\"Bootstrapping Confidence Intervals\",\"source_count\":4,\"url\":\"https://notebooklm.google.com/notebook/58c7560d-6537-4e00-b907-caa67060d058\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2024-11-29T17:29:59Z\",\"modified_at\":\"2024-11-30T01:18:35Z\"},{\"id\":\"72c37682-747d-4f11-a0c4-ac86475ba7c0\",\"title\":\"Confidence Intervals\",\"source_count\":3,\"url\":\"https://notebooklm.google.com/notebook/72c37682-747d-4f11-a0c4-ac86475ba7c0\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2024-11-29T17:18:03Z\",\"modified_at\":\"2024-11-29T17:18:03Z\"},{\"id\":\"2e0ecb04-5184-4b7a-80df-7de0d77f22d8\",\"title\":\"Untitled notebook\",\"source_count\":2,\"url\":\"https://notebooklm.google.com/notebook/2e0ecb04-5184-4b7a-80df-7de0d77f22d8\",\"ownership\":\"owned\",\"is_shared\":false,\"created_at\":\"2024-10-10T14:36:50Z\",\"modified_at\":\"2024-10-10T16:11:28Z\"}]}"
+    }
+  ],
+  "structuredContent": {
+    "status": "success",
+    "count": 8,
+    "owned_count": 8,
+    "shared_count": 0,
+    "shared_by_me_count": 0,
+    "notebooks": [
+      {
+        "id": "c8f59e8f-13b8-41bf-be05-72d5ad7fe875",
+        "title": "APIsPERU Electronic Billing API Documentation",
+        "source_count": 71,
+        "url": "https://notebooklm.google.com/notebook/c8f59e8f-13b8-41bf-be05-72d5ad7fe875",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2026-03-20T15:13:59Z",
+        "modified_at": "2026-03-21T21:33:47Z"
+      },
+      {
+        "id": "3c8e0704-c5cb-4971-8156-94c586ed0f2d",
+        "title": "Convex Optimization: Methods and Applications",
+        "source_count": 1,
+        "url": "https://notebooklm.google.com/notebook/3c8e0704-c5cb-4971-8156-94c586ed0f2d",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2025-04-16T02:07:25Z",
+        "modified_at": "2025-04-16T02:07:26Z"
+      },
+      {
+        "id": "1df59615-ca3e-43b8-bc9f-4a4b79ed9c05",
+        "title": "AI-Powered Graphic Design Course: Session 1",
+        "source_count": 1,
+        "url": "https://notebooklm.google.com/notebook/1df59615-ca3e-43b8-bc9f-4a4b79ed9c05",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2025-01-16T20:57:33Z",
+        "modified_at": "2025-01-16T20:57:33Z"
+      },
+      {
+        "id": "3a524370-0890-4ce1-a4c6-8a37753bc665",
+        "title": "Estatuto: Las Torres de Copacabana Housing Association",
+        "source_count": 1,
+        "url": "https://notebooklm.google.com/notebook/3a524370-0890-4ce1-a4c6-8a37753bc665",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2025-01-05T01:18:15Z",
+        "modified_at": "2025-01-05T01:18:17Z"
+      },
+      {
+        "id": "55462cba-b8fe-4c59-88f3-08d502589918",
+        "title": "Bootstrapping Confidence Intervals",
+        "source_count": 5,
+        "url": "https://notebooklm.google.com/notebook/55462cba-b8fe-4c59-88f3-08d502589918",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2024-12-13T16:53:45Z",
+        "modified_at": "2024-12-15T01:44:48Z"
+      },
+      {
+        "id": "58c7560d-6537-4e00-b907-caa67060d058",
+        "title": "Bootstrapping Confidence Intervals",
+        "source_count": 4,
+        "url": "https://notebooklm.google.com/notebook/58c7560d-6537-4e00-b907-caa67060d058",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2024-11-29T17:29:59Z",
+        "modified_at": "2024-11-30T01:18:35Z"
+      },
+      {
+        "id": "72c37682-747d-4f11-a0c4-ac86475ba7c0",
+        "title": "Confidence Intervals",
+        "source_count": 3,
+        "url": "https://notebooklm.google.com/notebook/72c37682-747d-4f11-a0c4-ac86475ba7c0",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2024-11-29T17:18:03Z",
+        "modified_at": "2024-11-29T17:18:03Z"
+      },
+      {
+        "id": "2e0ecb04-5184-4b7a-80df-7de0d77f22d8",
+        "title": "Untitled notebook",
+        "source_count": 2,
+        "url": "https://notebooklm.google.com/notebook/2e0ecb04-5184-4b7a-80df-7de0d77f22d8",
+        "ownership": "owned",
+        "is_shared": false,
+        "created_at": "2024-10-10T14:36:50Z",
+        "modified_at": "2024-10-10T16:11:28Z"
+      }
+    ]
+  },
+  "isError": false
+}

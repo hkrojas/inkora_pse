@@ -1,6 +1,7 @@
 import requests
 import json
 from datetime import datetime
+import decimal
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 import models
@@ -15,6 +16,13 @@ import calculations
 class FacturacionException(Exception):
     """Excepción para errores de negocio en facturación."""
     pass
+
+class SUNATDecimalEncoder(json.JSONEncoder):
+    """Codificador JSON custom para serializar tipos Decimal asegurados sin recaer en hardware fp"""
+    def default(self, obj):
+        if isinstance(obj, decimal.Decimal):
+            return float(obj)
+        return super(SUNATDecimalEncoder, self).default(obj)
 
 UNIDADES = {0: "", 1: "UN", 2: "DOS", 3: "TRES", 4: "CUATRO", 5: "CINCO", 6: "SEIS", 7: "SIETE", 8: "OCHO", 9: "NUEVE"}
 DECENAS = {10: "DIEZ", 11: "ONCE", 12: "DOCE", 13: "TRECE", 14: "CATORCE", 15: "QUINCE", 20: "VEINTE", 30: "TREINTA", 40: "CUARENTA", 50: "CINCUENTA", 60: "SESENTA", 70: "SETENTA", 80: "OCHENTA", 90: "NOVENTA"}
@@ -68,18 +76,17 @@ def _construir_items_payload(items):
             "codProducto": "P001",
             "unidad": calc["unidad_medida"],
             "descripcion": item.descripcion,
-            "cantidad": float(calc["cantidad"]),
-            "mtoValorUnitario": float(calc["valor_unitario"]),
-            "mtoValorVenta": float(calc["total_base_igv"]),
-            "mtoBaseIgv": float(calc["total_base_igv"]),
+            "cantidad": calc["cantidad"],
+            "mtoValorUnitario": calc["valor_unitario"],
+            "mtoValorVenta": calc["total_base_igv"],
+            "mtoBaseIgv": calc["total_base_igv"],
             "porcentajeIgv": 18,
-            "igv": float(calc["total_igv"]),
+            "igv": calc["total_igv"],
             "tipAfeIgv": calc["tipo_afectacion_igv"],
-            "totalImpuestos": float(calc["total_igv"]),
-            "mtoPrecioUnitario": float(calc["precio_unitario"])
+            "totalImpuestos": calc["total_igv"],
+            "mtoPrecioUnitario": calc["precio_unitario"]
         })
     
-    totales = {k: float(v) for k, v in totales.items()}
     return items_payload, totales
 
 def _base_payload(cotizacion, user, tipo_doc_comprobante):
@@ -115,7 +122,138 @@ def _base_payload(cotizacion, user, tipo_doc_comprobante):
         },
         "details": items_payload,
         "legends": [{"code": "1000", "value": leyenda_monto}]
+    }, totales
+
+# ==========================================
+# REGLAS FISCALES AUTOMATIZADAS
+# ==========================================
+
+# Umbral mínimo SUNAT para detracción (S/ 700.00)
+UMBRAL_DETRACCION = calculations.Decimal("700.00")
+# Porcentaje estándar para servicios de imprenta (Catálogo 54 - Código 012)
+PORCENTAJE_DETRACCION_IMPRENTA = calculations.Decimal("12.00")
+CODIGO_DETRACCION_IMPRENTA = "012"  # Servicios de fabricación de bienes por encargo
+
+def _aplicar_detraccion(payload, cotizacion, user, db: Session):
+    """
+    Inyecta el nodo 'detraccion' en el payload si corresponde:
+    - Moneda PEN y monto total > S/ 700.00
+    - Solo para Facturas (01), no Boletas.
+    Persiste los datos en el modelo Cotizacion.
+    """
+    from decimal import Decimal
+    
+    monto_total = calculations.to_decimal(payload.get("mtoImporteTotal", 0))
+    moneda = cotizacion.moneda or "PEN"
+    tipo_doc = payload.get("tipoDoc", "00")
+    
+    # Solo aplica a Facturas en Soles que superen el umbral
+    if moneda != "PEN" or tipo_doc != "01" or monto_total <= UMBRAL_DETRACCION:
+        return payload
+    
+    porcentaje = calculations.to_decimal(
+        cotizacion.porcentaje_detraccion or PORCENTAJE_DETRACCION_IMPRENTA
+    )
+    monto_detraccion = calculations.redondear(monto_total * porcentaje / Decimal("100"))
+    
+    # Obtener cuenta Banco de la Nación del modelo o de las cuentas bancarias del usuario
+    cuenta_bn = cotizacion.cuenta_banco_nacion
+    if not cuenta_bn and user.bank_accounts:
+        # Buscar cuenta de Banco de la Nación en las cuentas bancarias del usuario
+        for cuenta in (user.bank_accounts or []):
+            if isinstance(cuenta, dict) and "nacion" in (cuenta.get("banco", "")).lower():
+                cuenta_bn = cuenta.get("cuenta", "")
+                break
+    if not cuenta_bn:
+        cuenta_bn = ""  # Se debe configurar en el perfil del emisor
+    
+    # Inyectar nodo detraccion en el payload SUNAT/ApisPeru
+    payload["detraccion"] = {
+        "codBienDetraccion": CODIGO_DETRACCION_IMPRENTA,
+        "codMedioPago": "001",  # Depósito en cuenta
+        "ctaBanco": cuenta_bn,
+        "percent": porcentaje,
+        "mount": monto_detraccion
     }
+    
+    # Agregar leyenda obligatoria de detracción
+    payload["legends"].append({
+        "code": "2006",
+        "value": "Operación sujeta al Sistema de Pago de Obligaciones Tributarias"
+    })
+    
+    # Persistir en el modelo para la BD
+    cotizacion.sujeta_detraccion = True
+    cotizacion.porcentaje_detraccion = porcentaje
+    cotizacion.monto_detraccion = monto_detraccion
+    cotizacion.cuenta_banco_nacion = cuenta_bn
+    
+    if db:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+    
+    return payload
+
+def _aplicar_anticipos(payload, cotizacion, user):
+    """
+    Si la cotización tiene anticipos_deducidos (JSON), inyecta los nodos 
+    'anticipos' y 'totalAnticipos' en el payload y ajusta los totales.
+    Estructura esperada de anticipos_deducidos:
+    [
+        {"serie": "F001", "correlativo": "000001", "monto": 500.00, "tipo_doc": "02"},
+        ...
+    ]
+    """
+    from decimal import Decimal
+    
+    anticipos_json = cotizacion.anticipos_deducidos
+    if not anticipos_json or not isinstance(anticipos_json, list) or len(anticipos_json) == 0:
+        return payload
+    
+    anticipos_payload = []
+    total_anticipos = Decimal("0.00")
+    
+    for anticipo in anticipos_json:
+        monto = calculations.to_decimal(anticipo.get("monto", 0))
+        total_anticipos += monto
+        
+        serie = anticipo.get("serie", "F001")
+        correlativo = str(anticipo.get("correlativo", "1")).zfill(6)
+        tipo_doc_anticipo = anticipo.get("tipo_doc", "02")  # Catálogo 12: 02=Factura antic.
+        
+        anticipos_payload.append({
+            "nroDocRel": f"{serie}-{correlativo}",
+            "tipoDocRel": tipo_doc_anticipo,
+            "total": monto
+        })
+    
+    total_anticipos = calculations.redondear(total_anticipos)
+    
+    # Inyectar en payload
+    payload["anticipos"] = anticipos_payload
+    payload["totalAnticipos"] = total_anticipos
+    
+    # Ajustar totales: descontar anticipos para no duplicar ingresos ni IGV
+    # El anticipo ya tributó IGV cuando se emitió su factura de anticipo
+    anticipo_gravada = calculations.redondear(total_anticipos / calculations.FACTOR_IGV)
+    anticipo_igv = calculations.redondear(total_anticipos - anticipo_gravada)
+    
+    mto_gravadas = calculations.to_decimal(payload.get("mtoOperGravadas", 0))
+    mto_igv = calculations.to_decimal(payload.get("mtoIGV", 0))
+    mto_total = calculations.to_decimal(payload.get("mtoImporteTotal", 0))
+    
+    payload["mtoOperGravadas"] = calculations.redondear(mto_gravadas - anticipo_gravada)
+    payload["mtoIGV"] = calculations.redondear(mto_igv - anticipo_igv)
+    payload["totalImpuestos"] = payload["mtoIGV"]
+    payload["valorVenta"] = payload["mtoOperGravadas"]
+    payload["mtoImporteTotal"] = calculations.redondear(mto_total - total_anticipos)
+    
+    # Persistir total de anticipos en el modelo
+    cotizacion.total_anticipos = total_anticipos
+    
+    return payload
 
 # ==========================================
 # FUNCIONES PRINCIPALES DE EMISIÓN
@@ -132,9 +270,16 @@ def emitir_factura(cotizacion: models.Cotizacion, db: Session, user: models.User
     
     serie = "F001" if tipo_comprobante == "01" else "B001"
     
-    payload = _base_payload(cotizacion, user, tipo_comprobante)
+    payload, totales = _base_payload(cotizacion, user, tipo_comprobante)
     payload["serie"] = serie
-    payload["correlativo"] = str(cotizacion.id).zfill(6) # Idealmente usar un correlativo real de la BD
+    payload["correlativo"] = str(cotizacion.id).zfill(6)
+    
+    # --- REGLAS FISCALES AUTOMÁTICAS ---
+    # 1. Detracciones SPOT (PEN > S/700 en Facturas)
+    payload = _aplicar_detraccion(payload, cotizacion, user, db)
+    
+    # 2. Anticipos / Señas de producción
+    payload = _aplicar_anticipos(payload, cotizacion, user)
     
     return _enviar_a_api(payload, user, "/invoice/send")
 
@@ -148,7 +293,7 @@ def emitir_nota(nota: models.Cotizacion, doc_afectado: models.Cotizacion, user: 
     serie_origen = doc_afectado.serie # Ej: F001
     serie_nota = "FC01" if serie_origen.startswith("F") else "BC01" # Serie fija para notas
     
-    payload = _base_payload(nota, user, tipo_comprobante)
+    payload, totales = _base_payload(nota, user, tipo_comprobante)
     payload["serie"] = serie_nota
     payload["correlativo"] = str(nota.id).zfill(6)
     
@@ -237,7 +382,8 @@ def _enviar_a_api(payload, user, endpoint):
     
     try:
         print(f"--- ENVIANDO A: {url} ---")
-        response = requests.post(url, json=payload, headers={
+        payload_str = json.dumps(payload, cls=SUNATDecimalEncoder)
+        response = requests.post(url, data=payload_str, headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}"
         }, timeout=30)

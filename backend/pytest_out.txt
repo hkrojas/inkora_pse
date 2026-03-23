@@ -1,0 +1,41 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.3, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\HP\AppData\Local\Programs\Python\Python313\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\HP\Desktop\mi_proyecto_cotizaciones\backend
+plugins: anyio-4.9.0
+collecting ... collected 16 items
+
+test_facturacion_fiscal.py::TestRedondeoExtremoBimonetario::test_cuadre_exacto_item_usd PASSED [  6%]
+test_facturacion_fiscal.py::TestRedondeoExtremoBimonetario::test_valor_unitario_precision_extendida PASSED [ 12%]
+test_facturacion_fiscal.py::TestRedondeoExtremoBimonetario::test_conversion_tipo_cambio_fraccionario PASSED [ 18%]
+test_facturacion_fiscal.py::TestRedondeoExtremoBimonetario::test_sumatoria_multiples_items_cuadra PASSED [ 25%]
+test_facturacion_fiscal.py::TestDetraccionAutomaticaSPOT::test_detraccion_se_activa_sobre_umbral PASSED [ 31%]
+test_facturacion_fiscal.py::TestDetraccionAutomaticaSPOT::test_detraccion_porcentaje_correcto PASSED [ 37%]
+test_facturacion_fiscal.py::TestDetraccionAutomaticaSPOT::test_detraccion_monto_exacto PASSED [ 43%]
+test_facturacion_fiscal.py::TestDetraccionAutomaticaSPOT::test_detraccion_cuenta_banco_nacion PASSED [ 50%]
+test_facturacion_fiscal.py::TestDetraccionAutomaticaSPOT::test_detraccion_NO_se_activa_bajo_umbral PASSED [ 56%]
+test_facturacion_fiscal.py::TestDetraccionAutomaticaSPOT::test_detraccion_NO_se_activa_en_boletas PASSED [ 62%]
+test_facturacion_fiscal.py::TestDetraccionAutomaticaSPOT::test_detraccion_persiste_en_modelo PASSED [ 68%]
+test_facturacion_fiscal.py::TestAmortizacionAnticipos::test_anticipos_deduce_del_total PASSED [ 75%]
+test_facturacion_fiscal.py::TestAmortizacionAnticipos::test_anticipos_bloque_presente PASSED [ 81%]
+test_facturacion_fiscal.py::TestAmortizacionAnticipos::test_anticipos_igv_no_duplicado PASSED [ 87%]
+test_facturacion_fiscal.py::TestAmortizacionAnticipos::test_sin_anticipos_no_modifica_payload PASSED [ 93%]
+test_facturacion_fiscal.py::TestAmortizacionAnticipos::test_anticipos_persiste_total_en_modelo PASSED [100%]
+
+============================== warnings summary ===============================
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\applications.py:18
+  C:\Users\HP\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\applications.py:18: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    from fastapi.exception_handlers import (
+
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\applications.py:30
+  C:\Users\HP\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\applications.py:30: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    from fastapi.openapi.utils import get_openapi
+
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\site-packages\pydantic\_internal\_config.py:323
+  C:\Users\HP\AppData\Local\Programs\Python\Python313\Lib\site-packages\pydantic\_internal\_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 16 passed, 3 warnings in 2.59s ========================
+
+---STDERR---

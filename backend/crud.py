@@ -209,3 +209,87 @@ def guardar_respuesta_sunat(db: Session, cotizacion_id: int, data_sunat: dict):
         db.commit()
         db.refresh(db_cot)
     return db_cot
+
+# ==========================================
+# ANULACIÓN Y NOTAS DE CRÉDITO/DÉBITO
+# ==========================================
+
+def anular_cotizacion(db: Session, cotizacion_id: int):
+    """Marca un comprobante como 'anulada' tras confirmación exitosa de SUNAT."""
+    db_cot = db.query(models.Cotizacion).filter(models.Cotizacion.id == cotizacion_id).first()
+    if not db_cot:
+        return None
+    try:
+        db_cot.estado = "anulada"
+        db.commit()
+        db.refresh(db_cot)
+        return db_cot
+    except Exception as e:
+        db.rollback()
+        raise e
+
+def crear_nota_credito_debito(
+    db: Session,
+    doc_afectado: models.Cotizacion,
+    usuario_id: int,
+    tipo_nota: str,  # "credito" o "debito"
+    cod_motivo: str,
+    descripcion_motivo: str
+):
+    """
+    Crea un nuevo registro de Cotizacion que representa la Nota de Crédito (07) o Débito (08),
+    clonando los items del documento afectado y vinculándolo via nota_referencia_id.
+    """
+    # Determinar tipo de comprobante y serie
+    tipo_comprobante = "07" if tipo_nota == "credito" else "08"
+    serie_origen = doc_afectado.serie  # Ej: F001, B001
+    serie_nota = "FC01" if serie_origen.startswith("F") else "BC01"
+
+    # Obtener correlativo propio para esta serie de notas
+    ultimo_correlativo = db.query(func.max(models.Cotizacion.correlativo)).filter(
+        models.Cotizacion.serie == serie_nota
+    ).scalar() or 0
+    nuevo_correlativo = ultimo_correlativo + 1
+
+    # Clonar items del documento afectado
+    items_nota = []
+    for item_orig in doc_afectado.items:
+        items_nota.append(models.CotizacionItem(
+            producto_id=item_orig.producto_id,
+            descripcion=item_orig.descripcion,
+            cantidad=item_orig.cantidad,
+            precio_unitario=item_orig.precio_unitario,
+            valor_unitario=item_orig.valor_unitario,
+            total_base_igv=item_orig.total_base_igv,
+            total_igv=item_orig.total_igv,
+            total_item=item_orig.total_item,
+            unidad_medida=item_orig.unidad_medida,
+            tipo_afectacion_igv=item_orig.tipo_afectacion_igv
+        ))
+
+    # Crear registro de la nota
+    db_nota = models.Cotizacion(
+        serie=serie_nota,
+        correlativo=nuevo_correlativo,
+        cliente_id=doc_afectado.cliente_id,
+        usuario_id=usuario_id,
+        moneda=doc_afectado.moneda,
+        tipo_comprobante=tipo_comprobante,
+        estado="pendiente",
+        total_gravada=doc_afectado.total_gravada,
+        total_exonerada=doc_afectado.total_exonerada,
+        total_inafecta=doc_afectado.total_inafecta,
+        total_igv=doc_afectado.total_igv,
+        total_venta=doc_afectado.total_venta,
+        nota_referencia_id=doc_afectado.id,
+        items=items_nota
+    )
+
+    try:
+        db.add(db_nota)
+        db.commit()
+        db.refresh(db_nota)
+        return db_nota
+    except Exception as e:
+        db.rollback()
+        raise e

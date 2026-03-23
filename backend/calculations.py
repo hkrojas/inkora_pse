@@ -8,6 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 IGV_RATE = Decimal("0.18")
 FACTOR_IGV = Decimal("1.00") + IGV_RATE # 1.18
 TOTAL_PRECISION = Decimal("0.01") # Precisión a 2 decimales
+EXTENDED_PRECISION = Decimal("0.0000000001") # Precisión UBL 2.1 (10 decimales)
 
 def to_decimal(val):
     """Convierte un valor a Decimal de forma segura."""
@@ -26,20 +27,25 @@ def redondear(valor: Decimal) -> Decimal:
         valor = to_decimal(valor)
     return valor.quantize(TOTAL_PRECISION, rounding=ROUND_HALF_UP)
 
+def redondear_extendido(valor: Decimal) -> Decimal:
+    """Redondeo extendido a 10 decimales para el Valor Unitario UBL 2.1 (PriceAmount)."""
+    if not isinstance(valor, Decimal):
+        valor = to_decimal(valor)
+    return valor.quantize(EXTENDED_PRECISION, rounding=ROUND_HALF_UP)
+
 def calcular_item(cantidad: Decimal, precio_con_igv: Decimal):
     """Calcula el desglose de un item a partir de su precio final."""
     qty = to_decimal(cantidad)
     precio_final = to_decimal(precio_con_igv)
 
     # 1. Valor Unitario (Base Imponible Unitaria)
-    valor_unitario = precio_final / FACTOR_IGV
-    # Para precisión interna usamos más decimales antes del redondeo final
-    valor_unitario_preciso = valor_unitario 
-    valor_unitario = redondear(valor_unitario)
+    valor_unitario_preciso = precio_final / FACTOR_IGV
+    # Aplicar la regla n(12,10) de UBL 2.1
+    valor_unitario = redondear_extendido(valor_unitario_preciso)
 
     # 2. Total Base (Valor Venta)
-    total_base = valor_unitario_preciso * qty
-    total_base = redondear(total_base)
+    # Se usa la fracción nativa precisa para el total exacto de la línea antes de redondear a 2
+    total_base = redondear(valor_unitario_preciso * qty)
 
     # 3. Total Venta (Precio Venta)
     total_item = precio_final * qty

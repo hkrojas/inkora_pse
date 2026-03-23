@@ -99,6 +99,26 @@ class Cotizacion(Base):
     # Control de errores
     sunat_error = Column(Text, nullable=True) # Si SUNAT rechaza
 
+    # --- CAMPOS NUEVOS PARA UBL 2.1 ---
+    # Control Bimonetario
+    tipo_de_cambio = Column(Numeric(10, 4), nullable=True)
+    
+    # Detracciones (SPOT)
+    sujeta_detraccion = Column(Boolean, default=False)
+    porcentaje_detraccion = Column(Numeric(5, 2), nullable=True)
+    monto_detraccion = Column(Numeric(12, 2), nullable=True)
+    cuenta_banco_nacion = Column(String, nullable=True)
+    
+    # Manejo de Anticipos (Señas)
+    anticipos_deducidos = Column(JSON, nullable=True)
+    total_anticipos = Column(Numeric(12, 2), default=0.0)
+
+    # --- REFERENCIA PARA NOTAS DE CRÉDITO/DÉBITO ---
+    # FK auto-referencial: apunta al comprobante original que esta nota afecta.
+    # NULL si el registro es una cotización/factura/boleta normal.
+    nota_referencia_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
+    notas = relationship("Cotizacion", backref="documento_afectado", remote_side="Cotizacion.id")
+
 class CotizacionItem(Base):
     __tablename__ = "cotizacion_items"
 

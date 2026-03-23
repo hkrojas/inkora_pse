@@ -196,6 +196,15 @@ def emitir_comprobante(cotizacion_id: int, payload: schemas.FacturarPayload, db:
     if not cotizacion: raise HTTPException(404, "Documento no encontrado")
     if not cotizacion.cliente: raise HTTPException(400, "Cliente no asignado")
 
+    # --- GUARDIA DE MÁQUINA DE ESTADOS ---
+    if cotizacion.estado in ("facturada", "anulada"):
+        raise HTTPException(
+            400,
+            f"Operación bloqueada: El documento {cotizacion.serie}-{cotizacion.correlativo} "
+            f"ya fue procesado (estado actual: '{cotizacion.estado}'). "
+            f"No se puede emitir un comprobante duplicado ante SUNAT."
+        )
+
     try:
         resultado = facturacion_service.emitir_factura(cotizacion, db, current_user, tipo_doc_override=payload.tipo_comprobante)
         crud.guardar_respuesta_sunat(db, cotizacion_id, resultado)
@@ -211,22 +220,42 @@ def emitir_nota(nota_data: schemas.NotaCreate, db: Session = Depends(get_db), cu
     """Emitir Nota de Crédito/Débito."""
     doc_afectado = crud.get_cotizacion(db, nota_data.comprobante_afectado_id, current_user)
     if not doc_afectado: raise HTTPException(404, "Comprobante afectado no encontrado")
-    
-    # Se recomienda crear primero una 'cotización' que represente la nota para tener los items en BD
-    # Aquí asumimos que se pasa esa 'cotizacion' clonada o nueva como referencia si existiera, 
-    # pero para simplificar usamos el mismo documento afectado como base de datos, 
-    # en un caso real deberías crear un nuevo registro 'Nota' en BD antes de enviarlo.
-    # Por ahora, usamos el documento afectado como 'origen de datos' para la prueba.
+
+    # --- GUARDIA DE MÁQUINA DE ESTADOS ---
+    # Solo se puede emitir una nota contra un comprobante que haya sido facturado exitosamente.
+    # Un documento pendiente nunca fue enviado a SUNAT, y uno anulado ya no tiene vigencia tributaria.
+    if doc_afectado.estado not in ("facturada",):
+        raise HTTPException(
+            400,
+            f"Operación bloqueada: Solo se pueden emitir Notas de Crédito/Débito contra "
+            f"comprobantes en estado 'facturada'. Estado actual del documento "
+            f"{doc_afectado.serie}-{doc_afectado.correlativo}: '{doc_afectado.estado}'."
+        )
     
     try:
+        # 1. Crear registro persistente de la Nota en BD (clona items del doc afectado)
+        db_nota = crud.crear_nota_credito_debito(
+            db=db,
+            doc_afectado=doc_afectado,
+            usuario_id=current_user.id,
+            tipo_nota=nota_data.tipo_nota,
+            cod_motivo=nota_data.cod_motivo,
+            descripcion_motivo=nota_data.descripcion_motivo
+        )
+
+        # 2. Enviar a APIsPeru usando el registro recién creado
         resultado = facturacion_service.emitir_nota(
-            nota=doc_afectado, # En prod: Debería ser la nueva entidad Nota
+            nota=db_nota,
             doc_afectado=doc_afectado,
             user=current_user,
             cod_motivo=nota_data.cod_motivo,
             descripcion=nota_data.descripcion_motivo,
             tipo_nota=nota_data.tipo_nota
         )
+
+        # 3. Guardar respuesta SUNAT en el registro de la nota
+        crud.guardar_respuesta_sunat(db, db_nota.id, resultado)
+
         return resultado
     except Exception as e:
         raise HTTPException(400, str(e))
@@ -236,9 +265,24 @@ def anular_documento(data: schemas.AnulacionCreate, db: Session = Depends(get_db
     """Dar de baja (Facturas) o Resumen Diario (Boletas) para anulación."""
     comprobante = crud.get_cotizacion(db, data.comprobante_id, current_user)
     if not comprobante: raise HTTPException(404)
+
+    # --- GUARDIA DE MÁQUINA DE ESTADOS ---
+    # Solo se puede anular un comprobante que haya sido emitido exitosamente ante SUNAT.
+    # Un documento pendiente no existe en SUNAT, y uno ya anulado no puede anularse dos veces.
+    if comprobante.estado != "facturada":
+        estado_msg = {
+            "pendiente": "El documento aún no ha sido emitido ante SUNAT. No requiere anulación.",
+            "anulada": "El documento ya fue anulado previamente. No se puede procesar dos veces."
+        }
+        raise HTTPException(
+            400,
+            f"Operación bloqueada: {estado_msg.get(comprobante.estado, f'Estado inválido: {comprobante.estado}')}"
+        )
     
     try:
         res = facturacion_service.anular_comprobante(comprobante, data.motivo, current_user)
+        # Persistir el cambio de estado en BD tras éxito de API
+        crud.anular_cotizacion(db, comprobante.id)
         return res
     except Exception as e:
         raise HTTPException(400, str(e))
