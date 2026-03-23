@@ -1,0 +1,30 @@
+============================================================
+MIGRACIÓN - Sistema de Facturación Electrónica
+============================================================
+
+📋 FASE 1: Campos UBL 2.1 en 'cotizaciones'...
+  ⏩ Ya existe: cotizaciones.tipo_de_cambio
+  ⏩ Ya existe: cotizaciones.sujeta_detraccion
+  ⏩ Ya existe: cotizaciones.porcentaje_detraccion
+  ⏩ Ya existe: cotizaciones.monto_detraccion
+  ⏩ Ya existe: cotizaciones.cuenta_banco_nacion
+  ⏩ Ya existe: cotizaciones.anticipos_deducidos
+  ⏩ Ya existe: cotizaciones.total_anticipos
+  ⏩ Ya existe: cotizaciones.nota_referencia_id
+
+📋 FASE 4: Campo 'ubigeo' en 'clientes'...
+  ⏩ Ya existe: clientes.ubigeo
+
+📋 FASE 7: Tablas de Guías de Remisión...
+  ⏩ Tabla 'guias_remision' ya existe
+  ⏩ Tabla 'guia_remision_items' ya existe
+
+📋 Creando índices...
+  ⏩ Índice 'idx_guias_remision_usuario' ya existe
+  ⏩ Índice 'idx_guias_remision_estado' ya existe
+  ⏩ Índice 'idx_guia_items_guia_id' ya existe
+  ⏩ Índice 'idx_cotizaciones_nota_ref' ya existe
+
+============================================================
+✅ MIGRACIÓN COMPLETADA EXITOSAMENTE
+============================================================
