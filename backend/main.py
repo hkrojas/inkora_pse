@@ -363,3 +363,52 @@ def recuperar_archivo_api(tipo_archivo: str, payload: schemas.DescargaArchivoPay
         return Response(content=contenido, media_type=media_type, headers={"Content-Disposition": f"attachment; filename={filename}"})
     except Exception as e:
         raise HTTPException(400, str(e))
+
+# ==========================================
+# GUÍAS DE REMISIÓN ELECTRÓNICAS (GRE)
+# ==========================================
+
+@app.post("/guias-remision/", response_model=schemas.GuiaRemisionResponse)
+def crear_guia_remision(guia_data: schemas.GuiaRemisionCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Crear y guardar una Guía de Remisión en BD (sin enviar a SUNAT)."""
+    data = guia_data.model_dump()
+    
+    # Serializar items
+    items_raw = data.pop("items", [])
+    data["items"] = [item for item in items_raw]
+    
+    try:
+        return crud.create_guia_remision(db, data, current_user.id)
+    except Exception as e:
+        raise HTTPException(400, f"Error al crear guía: {str(e)}")
+
+@app.get("/guias-remision/", response_model=List[schemas.GuiaRemisionResponse])
+def listar_guias_remision(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Listar Guías de Remisión del usuario."""
+    return crud.get_guias_remision(db, current_user, skip, limit)
+
+@app.post("/guias-remision/{guia_id}/emitir")
+def emitir_guia_remision_endpoint(guia_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Emitir Guía de Remisión a SUNAT (endpoint /despatch/send)."""
+    guia = crud.get_guia_remision(db, guia_id, current_user)
+    if not guia:
+        raise HTTPException(404, "Guía de Remisión no encontrada.")
+    
+    # --- GUARDIA DE MÁQUINA DE ESTADOS ---
+    if guia.estado in ("emitida", "anulada"):
+        raise HTTPException(
+            400,
+            f"Operación bloqueada: La guía {guia.serie}-{str(guia.correlativo).zfill(6)} "
+            f"ya fue procesada (estado actual: '{guia.estado}'). "
+            f"No se puede emitir una guía duplicada ante SUNAT."
+        )
+    
+    try:
+        resultado = facturacion_service.emitir_guia_remision(guia, current_user)
+        crud.guardar_respuesta_sunat_gre(db, guia.id, resultado)
+        return resultado
+    except facturacion_service.FacturacionException as fe:
+        raise HTTPException(400, str(fe))
+    except Exception as e:
+        print(f"Error critico GRE: {e}")
+        raise HTTPException(500, "Error en el servicio de guías de remisión.")

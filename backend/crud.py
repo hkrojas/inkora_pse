@@ -293,3 +293,66 @@ def crear_nota_credito_debito(
     except Exception as e:
         db.rollback()
         raise e
+
+# ==========================================
+# GUÍAS DE REMISIÓN
+# ==========================================
+
+def get_guias_remision(db: Session, usuario: models.User = None, skip: int = 0, limit: int = 100):
+    query = db.query(models.GuiaRemision)\
+        .options(joinedload(models.GuiaRemision.items))\
+        .order_by(desc(models.GuiaRemision.id))
+    if usuario and getattr(usuario, "rol", "vendedor") not in ["admin", "superadmin"]:
+        query = query.filter(models.GuiaRemision.usuario_id == usuario.id)
+    return query.offset(skip).limit(limit).all()
+
+def get_guia_remision(db: Session, guia_id: int, usuario: models.User = None):
+    query = db.query(models.GuiaRemision)\
+        .options(joinedload(models.GuiaRemision.items))\
+        .filter(models.GuiaRemision.id == guia_id)
+    if usuario and getattr(usuario, "rol", "vendedor") not in ["admin", "superadmin"]:
+        query = query.filter(models.GuiaRemision.usuario_id == usuario.id)
+    return query.first()
+
+def create_guia_remision(db: Session, data: dict, usuario_id: int):
+    """Crea una Guía de Remisión con sus items."""
+    items_data = data.pop("items", [])
+    
+    # Correlativo auto-incremental por serie
+    serie = data.get("serie", "T001")
+    ultimo = db.query(func.max(models.GuiaRemision.correlativo)).filter(
+        models.GuiaRemision.serie == serie
+    ).scalar() or 0
+    
+    items_db = [models.GuiaRemisionItem(**item) for item in items_data]
+    
+    db_guia = models.GuiaRemision(
+        **data,
+        usuario_id=usuario_id,
+        correlativo=ultimo + 1,
+        items=items_db
+    )
+    
+    try:
+        db.add(db_guia)
+        db.commit()
+        db.refresh(db_guia)
+        return get_guia_remision(db, db_guia.id)
+    except Exception as e:
+        db.rollback()
+        raise e
+
+def guardar_respuesta_sunat_gre(db: Session, guia_id: int, data_sunat: dict):
+    """Guarda la respuesta SUNAT en una Guía de Remisión."""
+    db_guia = db.query(models.GuiaRemision).filter(models.GuiaRemision.id == guia_id).first()
+    if db_guia:
+        links = data_sunat.get('links', {}) or data_sunat.get('sunat_response', {}).get('links', {})
+        if links:
+            db_guia.sunat_xml_url = links.get('xml')
+            db_guia.sunat_pdf_url = links.get('pdf')
+            db_guia.sunat_cdr_url = links.get('cdr')
+        db_guia.estado = "emitida"
+        db_guia.sunat_error = None
+        db.commit()
+        db.refresh(db_guia)
+    return db_guia

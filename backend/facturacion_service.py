@@ -372,6 +372,93 @@ def anular_comprobante(comprobante: models.Cotizacion, motivo: str, user: models
     return _enviar_a_api(payload, user, endpoint)
 
 # ==========================================
+# GUÍAS DE REMISIÓN ELECTRÓNICAS (GRE - 09)
+# ==========================================
+
+def _base_payload_gre(guia, user):
+    """Construye el payload JSON para Guía de Remisión según ApisPeru UBL 2.1."""
+    if not user.business_ruc:
+        raise FacturacionException("Emisor sin RUC configurado.")
+    
+    fecha_emision = datetime.now().astimezone().replace(microsecond=0).isoformat()
+    fecha_traslado = guia.fecha_traslado.strftime("%Y-%m-%d") if guia.fecha_traslado else fecha_emision[:10]
+    
+    # Items de la guía
+    details = []
+    for item in guia.items:
+        details.append({
+            "descripcion": item.descripcion,
+            "cantidad": item.cantidad,
+            "unidad": item.unidad_medida or "NIU",
+            "codigo": item.codigo_producto or "P001",
+        })
+    
+    payload = {
+        "ublVersion": "2.1",
+        "tipoDoc": "09",
+        "serie": guia.serie,
+        "correlativo": str(guia.correlativo).zfill(6),
+        "fechaEmision": fecha_emision,
+        "company": {
+            "ruc": user.business_ruc,
+            "razonSocial": user.business_name,
+            "address": {"direccion": user.business_address or "-"}
+        },
+        # Datos del envío
+        "envio": {
+            "modTraslado": guia.modalidad_traslado,  # 01=Público, 02=Privado
+            "codTraslado": guia.motivo_traslado,     # Catálogo 20
+            "desTraslado": guia.descripcion_motivo or "Venta",
+            "fecTraslado": fecha_traslado,
+            "pesoTotal": guia.peso_bruto_total,
+            "undPesoTotal": guia.unidad_medida_peso or "KGM",
+            "llegada": {
+                "ubigueo": guia.llegada_ubigeo,
+                "direccion": guia.llegada_direccion
+            },
+            "partida": {
+                "ubigueo": guia.partida_ubigeo,
+                "direccion": guia.partida_direccion
+            }
+        },
+        "details": details
+    }
+    
+    # Número de bultos (opcional)
+    if guia.numero_bultos:
+        payload["envio"]["numBultos"] = guia.numero_bultos
+    
+    # Transportista (Modo Público - 01)
+    if guia.modalidad_traslado == "01" and guia.transportista_ruc:
+        payload["envio"]["transportista"] = {
+            "tipoDoc": "6",  # RUC
+            "numDoc": guia.transportista_ruc,
+            "rznSocial": guia.transportista_razon_social or ""
+        }
+    
+    # Conductor y Vehículo (Modo Privado - 02)
+    if guia.modalidad_traslado == "02":
+        if guia.conductor_nro_doc:
+            payload["envio"]["choferes"] = [{
+                "tipo": guia.conductor_tipo_doc or "1",
+                "nroDoc": guia.conductor_nro_doc,
+                "nombres": guia.conductor_nombres or "",
+                "apellidos": guia.conductor_apellidos or "",
+                "nroLic": guia.conductor_licencia or ""
+            }]
+        if guia.vehiculo_placa:
+            payload["envio"]["vehiculos"] = [{
+                "placa": guia.vehiculo_placa
+            }]
+    
+    return payload
+
+def emitir_guia_remision(guia, user):
+    """Emite una Guía de Remisión Electrónica a SUNAT vía ApisPeru."""
+    payload = _base_payload_gre(guia, user)
+    return _enviar_a_api(payload, user, "/despatch/send")
+
+# ==========================================
 # ENVÍO Y DESCARGA
 # ==========================================
 
