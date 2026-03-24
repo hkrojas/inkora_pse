@@ -17,6 +17,7 @@ import crud
 import security
 import facturacion_service
 import pdf_generator
+import comunicacion_service
 from database import SessionLocal, engine
 from config import settings
 
@@ -271,6 +272,32 @@ def descargar_pdf_interno(cotizacion_id: int, db: Session = Depends(get_db), cur
     except Exception as e:
         print(f"Error PDF: {e}")
         raise HTTPException(500)
+
+@app.get("/cotizaciones/{cotizacion_id}/compartir")
+def compartir_cotizacion(cotizacion_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Genera links pre-llenados para compartir la cotización por WhatsApp y Correo."""
+    cotizacion = crud.get_cotizacion(db, cotizacion_id, current_user)
+    if not cotizacion: 
+        raise HTTPException(404, "Documento no encontrado o sin acceso")
+    
+    cliente = cotizacion.cliente
+    telefono_cliente = getattr(cliente, "telefono", "") if cliente else ""
+    email_cliente = getattr(cliente, "email", "") if cliente else ""
+    
+    # Privilegiar el PDF oficial del facturador si ya se emitió, caso contrario usar nuestro motor interno
+    url_pdf = cotizacion.sunat_pdf_url
+    if not url_pdf:
+        # Aquí asumes la IP o dominio de tu SaaS (Se ajusta a variables de entorno en Prod)
+        base_url = getattr(settings, "BACKEND_URL", "https://api.printflow.com")
+        url_pdf = f"{base_url}/cotizaciones/{cotizacion.id}/pdf"
+    
+    wp_link = comunicacion_service.generar_link_whatsapp(cotizacion, telefono_cliente, url_pdf)
+    mailto_link = comunicacion_service.generar_link_mailto(cotizacion, email_cliente, url_pdf, current_user.tenant)
+    
+    return {
+        "whatsapp_link": wp_link,
+        "mailto_link": mailto_link
+    }
 
 # ==========================================
 # MOTOR FINANCIERO (PAGOS Y ADELANTOS)
