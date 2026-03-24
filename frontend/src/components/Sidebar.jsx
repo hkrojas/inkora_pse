@@ -2,7 +2,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
-import { LayoutDashboard, FileText, Users, Package, Settings, LogOut, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, Package, Settings, LogOut, ChevronRight, Factory } from 'lucide-react';
 import ThemeToggle from './ThemeToggle.jsx';
 
 const Sidebar = ({ onCloseMobile }) => {
@@ -14,6 +14,7 @@ const Sidebar = ({ onCloseMobile }) => {
     { path: '/cotizaciones', icon: FileText, label: 'Ventas y Doc.' },
     { path: '/clientes', icon: Users, label: 'Clientes' },
     { path: '/productos', icon: Package, label: 'Productos' },
+    { path: '/produccion', icon: Factory, label: 'Taller/Prod.' },
     { path: '/configuracion', icon: Settings, label: 'Configuración' },
   ];
 

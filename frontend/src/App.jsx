@@ -14,6 +14,7 @@ import CotizacionFormPage from './pages/CotizacionFormPage';
 import ClientesPage from './pages/ClientesPage';
 import ProductosPage from './pages/ProductosPage';
 import ConfiguracionPage from './pages/ConfiguracionPage';
+import TallerProduccionPage from './pages/TallerProduccionPage';
 
 import './App.css';
 
@@ -35,6 +36,7 @@ function AppRoutes() {
       <Route path="/cotizaciones/editar/:id" element={<ProtectedRoute><CotizacionFormPage /></ProtectedRoute>} />
       <Route path="/clientes" element={<ProtectedRoute><ClientesPage /></ProtectedRoute>} />
       <Route path="/productos" element={<ProtectedRoute><ProductosPage /></ProtectedRoute>} />
+      <Route path="/produccion" element={<ProtectedRoute><TallerProduccionPage /></ProtectedRoute>} />
       <Route path="/configuracion" element={<ProtectedRoute><ConfiguracionPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
