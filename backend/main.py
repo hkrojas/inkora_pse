@@ -480,8 +480,46 @@ def emitir_guia_remision_endpoint(guia_id: int, db: Session = Depends(get_db), c
         resultado = facturacion_service.emitir_guia_remision(guia, current_user)
         crud.guardar_respuesta_sunat_gre(db, guia.id, resultado)
         return resultado
-    except facturacion_service.FacturacionException as fe:
         raise HTTPException(400, str(fe))
     except Exception as e:
         print(f"Error critico GRE: {e}")
         raise HTTPException(500, "Error en el servicio de guías de remisión.")
+
+# ==========================================
+# MOTOR DE PRODUCCIÓN (MRP / BOM)
+# ==========================================
+
+@app.get("/insumos/", response_model=List[schemas.InsumoResponse])
+def read_insumos(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Catálogo General de Materias Primas / Insumos"""
+    return crud.get_insumos(db, current_user.tenant_id, skip, limit)
+
+@app.post("/insumos/", response_model=schemas.InsumoResponse)
+def create_insumo(insumo: schemas.InsumoCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Registra nueva Materia Prima / Insumo"""
+    return crud.create_insumo(db, insumo, current_user.tenant_id)
+
+@app.get("/productos/{producto_id}/bom", response_model=List[schemas.RecetaBOMResponse])
+def read_bom_producto(producto_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Obtiene la Lista de Materiales (BOM) para un producto específico"""
+    return crud.get_recetas_producto(db, producto_id)
+
+@app.post("/productos/{producto_id}/bom", response_model=schemas.RecetaBOMResponse)
+def create_bom_item(producto_id: int, receta: schemas.RecetaBOMBase, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Asigna un insumo y su cantidad necesaria para fabricar este producto"""
+    receta_create = schemas.RecetaBOMCreate(**receta.model_dump(), producto_id=producto_id)
+    return crud.create_receta_bom(db, receta_create, current_user.tenant_id)
+
+@app.post("/cotizaciones/{cotizacion_id}/orden-produccion", response_model=schemas.OrdenProduccionResponse)
+def generar_orden_produccion_endpoint(cotizacion_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """
+    Ruta Crítica MRP: Carga la cotización y explota automáticamente las Listas 
+    de Materiales (BOM) para calcular qué insumos y qué cantidades se imprimirán, 
+    incluyendo sus respectivas mermas calculadas.
+    """
+    try:
+        return crud.generar_orden_produccion(db, cotizacion_id, current_user.tenant_id)
+    except ValueError as ve:
+        raise HTTPException(400, str(ve))
+    except Exception as e:
+        raise HTTPException(500, f"Error al generar la orden de producción: {str(e)}")

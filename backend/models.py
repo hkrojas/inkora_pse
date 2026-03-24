@@ -45,6 +45,9 @@ class Tenant(Base):
     cotizaciones = relationship("Cotizacion", back_populates="tenant")
     guias_remision = relationship("GuiaRemision", back_populates="tenant")
     pagos = relationship("Pago", back_populates="tenant")
+    insumos = relationship("Insumo", back_populates="tenant")
+    recetas = relationship("RecetaBOM", back_populates="tenant")
+    ordenes_produccion = relationship("OrdenProduccion", back_populates="tenant")
 
 
 # ==========================================
@@ -130,6 +133,8 @@ class Producto(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
     tenant = relationship("Tenant", back_populates="productos")
 
+    # MRP: Receta (BOM - Lista de Materiales)
+    receta = relationship("RecetaBOM", back_populates="producto", cascade="all, delete-orphan")
 
 # ==========================================
 # COTIZACIÓN / COMPROBANTE
@@ -319,3 +324,74 @@ class Pago(Base):
     fecha_pago = Column(DateTime, default=datetime.now)
     referencia_operacion = Column(String, nullable=True)  # Nro de operación bancaria
     tipo = Column(String, default="adelanto")  # adelanto, pago_parcial, liquidacion
+
+# ==========================================
+# MOTOR DE PRODUCCIÓN (MRP LIGERO / BOM)
+# ==========================================
+
+class Insumo(Base):
+    """Materia prima o insumo (ej. Papel, Tinta, Plancha)"""
+    __tablename__ = "insumos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant = relationship("Tenant", back_populates="insumos")
+
+    nombre = Column(String, index=True)
+    unidad_compra = Column(String)  # ej: Milla, Resma, Litro
+    unidad_consumo = Column(String) # ej: Hoja, Pliego, Mililitro
+    factor_conversion = Column(Numeric(12, 4)) # 1 unidad_compra = X unidad_consumo
+    costo_promedio = Column(Numeric(12, 2), default=0)
+    stock_actual = Column(Numeric(12, 2), default=0)
+
+    # Relacion MRP
+    recetas = relationship("RecetaBOM", back_populates="insumo")
+
+class RecetaBOM(Base):
+    """Bill of Materials: Cuánto insumo requiere un producto"""
+    __tablename__ = "recetas_bom"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant = relationship("Tenant", back_populates="recetas")
+
+    producto_id = Column(Integer, ForeignKey("productos.id"))
+    producto = relationship("Producto", back_populates="receta")
+
+    insumo_id = Column(Integer, ForeignKey("insumos.id"))
+    insumo = relationship("Insumo", back_populates="recetas")
+
+    cantidad_base_necesaria = Column(Numeric(12, 4)) # ej: 0.1 hojas por cada 1 unidad de producto
+    porcentaje_merma_estandar = Column(Numeric(5, 2), default=0.0) # ej: 5.0 (5% merma)
+
+class OrdenProduccion(Base):
+    """Cabecera de la Orden de Trabajo / Producción"""
+    __tablename__ = "ordenes_produccion"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant = relationship("Tenant", back_populates="ordenes_produccion")
+
+    cotizacion_id = Column(Integer, ForeignKey("cotizaciones.id"))
+    cotizacion = relationship("Cotizacion")
+
+    estado = Column(String, default="en_cola") # en_cola, en_proceso, finalizada, cancelada
+    fecha_inicio = Column(DateTime, default=datetime.now)
+    fecha_fin = Column(DateTime, nullable=True)
+
+    detalles = relationship("OrdenProduccionDetalle", back_populates="orden", cascade="all, delete-orphan")
+
+class OrdenProduccionDetalle(Base):
+    """Necesidades de material por Orden de Producción (Calculadas)"""
+    __tablename__ = "ordenes_produccion_detalle"
+
+    id = Column(Integer, primary_key=True, index=True)
+    orden_id = Column(Integer, ForeignKey("ordenes_produccion.id"))
+    orden = relationship("OrdenProduccion", back_populates="detalles")
+
+    insumo_id = Column(Integer, ForeignKey("insumos.id"))
+    insumo = relationship("Insumo")
+
+    cantidad_requerida_neta = Column(Numeric(12, 4))
+    cantidad_merma = Column(Numeric(12, 4))
+    cantidad_total_descontar = Column(Numeric(12, 4)) # neta + merma

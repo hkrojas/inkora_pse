@@ -456,3 +456,121 @@ def get_pagos_cotizacion(db: Session, cotizacion_id: int):
     return db.query(models.Pago).filter(
         models.Pago.cotizacion_id == cotizacion_id
     ).order_by(models.Pago.fecha_pago.desc()).all()
+
+# ==========================================
+# MOTOR DE PRODUCCIÓN (MRP / BOM)
+# ==========================================
+
+def get_insumos(db: Session, tenant_id: int, skip: int = 0, limit: int = 100):
+    """Obtiene el catálogo de Insumos/Materia Prima"""
+    return db.query(models.Insumo).filter(
+        models.Insumo.tenant_id == tenant_id
+    ).offset(skip).limit(limit).all()
+
+def create_insumo(db: Session, insumo: schemas.InsumoCreate, tenant_id: int):
+    """Registra una nueva Materia Prima/Insumo en el Tenant M"""
+    db_insumo = models.Insumo(
+        tenant_id=tenant_id,
+        nombre=insumo.nombre,
+        unidad_compra=insumo.unidad_compra,
+        unidad_consumo=insumo.unidad_consumo,
+        factor_conversion=insumo.factor_conversion,
+        costo_promedio=insumo.costo_promedio,
+        stock_actual=insumo.stock_actual
+    )
+    db.add(db_insumo)
+    db.commit()
+    db.refresh(db_insumo)
+    return db_insumo
+
+def get_recetas_producto(db: Session, producto_id: int):
+    """Obtiene la BOM de un Producto"""
+    return db.query(models.RecetaBOM).filter(
+        models.RecetaBOM.producto_id == producto_id
+    ).all()
+
+def create_receta_bom(db: Session, receta: schemas.RecetaBOMCreate, tenant_id: int):
+    """Añade un Insumo a la BOM de un Producto"""
+    db_receta = models.RecetaBOM(
+        tenant_id=tenant_id,
+        producto_id=receta.producto_id,
+        insumo_id=receta.insumo_id,
+        cantidad_base_necesaria=receta.cantidad_base_necesaria,
+        porcentaje_merma_estandar=receta.porcentaje_merma_estandar
+    )
+    db.add(db_receta)
+    db.commit()
+    db.refresh(db_receta)
+    return db_receta
+
+def generar_orden_produccion(db: Session, cotizacion_id: int, tenant_id: int):
+    """
+    Ruta Crítica MRP: Genera la orden de trabajo calculando requerimientos de material
+    basados en lo vendido (Cotización) multiplicando la RecetaBOM + Mermas.
+    """
+    from decimal import Decimal
+    
+    # 1. Obtener la Cotización y sus lineas
+    db_cotizacion = db.query(models.Cotizacion).filter(
+        models.Cotizacion.id == cotizacion_id,
+        models.Cotizacion.tenant_id == tenant_id
+    ).first()
+    
+    if not db_cotizacion:
+        raise ValueError("Cotización no encontrada o no pertenece al Tenant")
+        
+    # Evitar duplicidad de órdenes activas (opcional)
+    orden_previa = db.query(models.OrdenProduccion).filter(
+        models.OrdenProduccion.cotizacion_id == cotizacion_id
+    ).first()
+    if orden_previa:
+        raise ValueError(f"Ya existe una Orden de Producción (ID: {orden_previa.id}) para este documento.")
+
+    # 2. Iniciar Cabecera de Orden Producción
+    db_orden = models.OrdenProduccion(
+        tenant_id=tenant_id,
+        cotizacion_id=cotizacion_id,
+        estado="en_cola"
+    )
+    db.add(db_orden)
+    db.flush() # Flush para obtener el orden_id sin auto-commit total
+
+    # 3. Explotar la Lista de Materiales (BOM)
+    for item in db_cotizacion.items:
+        if not item.producto_id:
+            continue # Si hay item sin ID producto base, ignora
+            
+        # Buscar recetas vinculadas al producto
+        recetas = db.query(models.RecetaBOM).filter(
+            models.RecetaBOM.producto_id == item.producto_id
+        ).all()
+        
+        # Calcular los consumos a partir de la BOM
+        cantidad_vendida = Decimal(str(item.cantidad))
+        for receta in recetas:
+            cant_base = Decimal(str(receta.cantidad_base_necesaria))
+            merma_pct = Decimal(str(receta.porcentaje_merma_estandar)) / Decimal("100")
+            
+            # MATEMÁTICA DEL MOTOR MRP:
+            neta = cantidad_vendida * cant_base
+            merma = neta * merma_pct
+            total = neta + merma
+            
+            # Insertar necesidad teórica a descontar
+            db_detalle = models.OrdenProduccionDetalle(
+                orden_id=db_orden.id,
+                insumo_id=receta.insumo_id,
+                cantidad_requerida_neta=neta,
+                cantidad_merma=merma,
+                cantidad_total_descontar=total
+            )
+            db.add(db_detalle)
+            
+    # Commit Atómico (Cabecera + Todos los detalles MRP generados)
+    try:
+        db.commit()
+        db.refresh(db_orden)
+        return db_orden
+    except Exception as e:
+        db.rollback()
+        raise e

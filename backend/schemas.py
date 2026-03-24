@@ -132,6 +132,57 @@ class ProductoResponse(ProductoBase):
     model_config = ConfigDict(from_attributes=True)
 
 # ==========================================
+# MOTOR DE PRODUCCIÓN (MRP / BOM)
+# ==========================================
+
+class InsumoBase(BaseModel):
+    nombre: str
+    unidad_compra: str
+    unidad_consumo: str
+    factor_conversion: Decimal = Field(..., gt=0)
+    costo_promedio: Decimal = Decimal("0.00")
+    stock_actual: Decimal = Decimal("0.00")
+
+class InsumoCreate(InsumoBase):
+    pass
+
+class InsumoResponse(InsumoBase):
+    id: int
+    model_config = ConfigDict(from_attributes=True)
+
+class RecetaBOMBase(BaseModel):
+    insumo_id: int
+    cantidad_base_necesaria: Decimal = Field(..., gt=0)
+    porcentaje_merma_estandar: Decimal = Decimal("0.00")
+
+class RecetaBOMCreate(RecetaBOMBase):
+    producto_id: int
+
+class RecetaBOMResponse(RecetaBOMBase):
+    id: int
+    producto_id: int
+    insumo: Optional[InsumoResponse] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class OrdenProduccionDetalleResponse(BaseModel):
+    id: int
+    insumo_id: int
+    insumo: Optional[InsumoResponse] = None
+    cantidad_requerida_neta: Decimal
+    cantidad_merma: Decimal
+    cantidad_total_descontar: Decimal
+    model_config = ConfigDict(from_attributes=True)
+
+class OrdenProduccionResponse(BaseModel):
+    id: int
+    cotizacion_id: int
+    estado: str
+    fecha_inicio: datetime
+    fecha_fin: Optional[datetime] = None
+    detalles: List[OrdenProduccionDetalleResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+# ==========================================
 # COTIZACIONES Y COMPROBANTES
 # ==========================================
 
