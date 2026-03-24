@@ -58,7 +58,7 @@ def obtener_etiqueta_tipo_doc(codigo):
     }
     return mapeo.get(str(codigo), "DOC")
 
-def create_pdf_buffer(document_data, user: models.User, document_type: str):
+def create_pdf_buffer(document_data, tenant: models.Tenant, document_type: str):
     buffer = io.BytesIO()
 
     # Configuración de márgenes para que coincida con tu diseño original
@@ -99,27 +99,20 @@ def create_pdf_buffer(document_data, user: models.User, document_type: str):
 
     legal_text_style = ParagraphStyle(name='LegalText', parent=body, alignment=TA_CENTER, fontSize=7)
 
-    color_principal = colors.HexColor(user.primary_color or '#004aad')
-    is_comprobante = (document_type == 'comprobante')
+    # 5. Cliente
+    cliente = getattr(document_data, "cliente", None)
+    if cliente:
+        nombre_cliente = getattr(cliente, "razon_social", "")
+        tipo_doc_cliente_str = obtener_etiqueta_tipo_doc(getattr(cliente, "tipo_documento", "1"))
+        nro_doc_cliente = str(getattr(cliente, "numero_documento", ""))
+        direccion_cliente = str(getattr(cliente, "direccion", "") or "").replace('\n', '<br/>')
+    else:
+        nombre_cliente = "Cliente General"
+        tipo_doc_cliente_str = "DOC"
+        nro_doc_cliente = "00000000"
+        direccion_cliente = "-"
 
-    # --- Inicialización de Variables ---
-    simbolo = "$"
-    moneda_texto = ""
-    doc_title_str = ""
-    doc_number_str = ""
-    fecha_emision = ""
-    fecha_vencimiento = ""
-    nombre_cliente = ""
-    tipo_doc_cliente_str = ""
-    nro_doc_cliente = ""
-    direccion_cliente = ""
-    ruc_para_cuadro = user.business_ruc or ''
-    productos_fuente_dict = []
-
-    # --- Extracción de Datos (Unificada para Cotización y Comprobante) ---
-    # Usamos los datos del modelo Cotizacion/Comprobante directamente para mantener el diseño
-    
-    # 1. Items
+    # --- Cálculo de Totales ---
     items = getattr(document_data, "items", [])
     for item in items:
         # Soporte para objeto SQLAlchemy o diccionario
@@ -212,16 +205,19 @@ def create_pdf_buffer(document_data, user: models.User, document_type: str):
         })
 
     # --- Construcción del PDF (DISEÑO ORIGINAL) ---
+    color_principal = colors.HexColor(tenant.primary_color or '#004aad')
+    ruc_para_cuadro = tenant.business_ruc or ''
+    
     logo = ""
-    if user.logo_filename and os.path.exists(f"logos/{user.logo_filename}"):
+    if tenant.logo_filename and os.path.exists(f"logos/{tenant.logo_filename}"):
         try:
-            logo = Image(f"logos/{user.logo_filename}", width=151, height=76)
+            logo = Image(f"logos/{tenant.logo_filename}", width=151, height=76)
         except Exception:
             logo = ""
 
-    business_name_p = Paragraph(user.business_name or "Nombre del Negocio", header_bold_style)
-    business_address_p = Paragraph(str(user.business_address or "Dirección no especificada").replace('\n', '<br/>'), header_text_style)
-    contact_info_p = Paragraph(f"{(user.email or '').strip()}<br/>{(user.business_phone or '').strip()}", header_text_style)
+    business_name_p = Paragraph(tenant.business_name or "Nombre del Negocio", header_bold_style)
+    business_address_p = Paragraph(str(tenant.business_address or "Dirección no especificada").replace('\n', '<br/>'), header_text_style)
+    contact_info_p = Paragraph(f"{(tenant.business_phone or '').strip()}", header_text_style)
     
     # Textos para el cuadro RUC (renderizado luego con dibujar_rectangulo)
     ruc_p = Paragraph(f"RUC {ruc_para_cuadro}", header_text_style)
@@ -376,11 +372,11 @@ def create_pdf_buffer(document_data, user: models.User, document_type: str):
 
     # Datos bancarios
     bank_info_text = "<b>Datos para la Transferencia</b><br/>"
-    if getattr(user, "business_name", None):
-        bank_info_text += f"Beneficiario: {str(user.business_name).upper()}<br/><br/>"
+    if getattr(tenant, "business_name", None):
+        bank_info_text += f"Beneficiario: {str(tenant.business_name).upper()}<br/><br/>"
 
-    if getattr(user, "bank_accounts", None) and isinstance(user.bank_accounts, list):
-        for account in user.bank_accounts:
+    if getattr(tenant, "bank_accounts", None) and isinstance(tenant.bank_accounts, list):
+        for account in tenant.bank_accounts:
             banco = account.get('banco', '')
             tipo_cuenta = account.get('tipo_cuenta', 'Cta Ahorro')
             moneda_acc = account.get('moneda', 'Soles')
@@ -400,11 +396,11 @@ def create_pdf_buffer(document_data, user: models.User, document_type: str):
     # --- Footer condicional (Notas) ---
     footer_notes = []
     if not is_comprobante:
-        note_1_color = colors.HexColor(getattr(user, "pdf_note_1_color", None) or "#FF0000")
+        note_1_color = colors.HexColor(getattr(tenant, "pdf_note_1_color", None) or "#FF0000")
         style_red_bold = ParagraphStyle(name='RedBold', parent=body, textColor=note_1_color, fontName='Helvetica-Bold')
         
-        note_1_text = str(getattr(user, "pdf_note_1", "") or "").replace('\n', '<br/>')
-        note_2_text = str(getattr(user, "pdf_note_2", "") or "").replace('\n', '<br/>')
+        note_1_text = str(getattr(tenant, "pdf_note_1", "") or "").replace('\n', '<br/>')
+        note_2_text = str(getattr(tenant, "pdf_note_2", "") or "").replace('\n', '<br/>')
         
         footer_notes.append(Paragraph(note_1_text, style_red_bold))
         footer_notes.append(Spacer(1, 5))
@@ -459,8 +455,8 @@ def create_pdf_buffer(document_data, user: models.User, document_type: str):
     buffer.seek(0)
     return buffer
 
-def generar_pdf_cotizacion(cotizacion: models.Cotizacion, user: models.User):
-    return create_pdf_buffer(cotizacion, user, 'cotizacion')
+def generar_pdf_cotizacion(cotizacion: models.Cotizacion, tenant: models.Tenant):
+    return create_pdf_buffer(cotizacion, tenant, 'cotizacion')
 
-def create_comprobante_pdf(comprobante, user: models.User):
-    return create_pdf_buffer(comprobante, user, 'comprobante')
+def create_comprobante_pdf(comprobante, tenant: models.Tenant):
+    return create_pdf_buffer(comprobante, tenant, 'comprobante')

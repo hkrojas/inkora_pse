@@ -187,8 +187,23 @@ def create_cotizacion(db: Session, cotizacion: schemas.CotizacionCreate, usuario
 
     totales = calculations.sumarizar_cotizacion(items_procesados_para_suma)
 
-    ultimo_correlativo = db.query(func.max(models.Cotizacion.correlativo)).scalar() or 0
+    totales = calculations.sumarizar_cotizacion(items_procesados_para_suma)
+
+    # ---------------------------------------------------------
+    # BLOQUEO TRANSACCIONAL: Prevención de Race Conditions (Fase 5)
+    # ---------------------------------------------------------
+    # Bloqueamos la última fila de la serie para este tenant específico
+    # Asegura que 2 hilos concurrentes no lean el mismo MAX(correlativo)
+    last_doc = db.query(models.Cotizacion).filter(
+        models.Cotizacion.tenant_id == tenant_id,
+        models.Cotizacion.serie == "COT"
+    ).order_by(
+        models.Cotizacion.correlativo.desc()
+    ).with_for_update().first()
+    
+    ultimo_correlativo = last_doc.correlativo if last_doc else 0
     nuevo_correlativo = ultimo_correlativo + 1
+    # ---------------------------------------------------------
 
     db_cotizacion = models.Cotizacion(
         cliente_id=cotizacion.cliente_id,

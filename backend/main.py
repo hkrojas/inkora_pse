@@ -265,7 +265,7 @@ def descargar_pdf_interno(cotizacion_id: int, db: Session = Depends(get_db), cur
     cotizacion = crud.get_cotizacion(db, cotizacion_id, current_user)
     if not cotizacion: raise HTTPException(404)
     try:
-        pdf = pdf_generator.generar_pdf_cotizacion(cotizacion, current_user)
+        pdf = pdf_generator.generar_pdf_cotizacion(cotizacion, current_user.tenant)
         fname = f"Cotizacion_{cotizacion.serie}-{cotizacion.correlativo}.pdf"
         return StreamingResponse(pdf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={fname}"})
     except Exception as e:
