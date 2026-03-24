@@ -177,7 +177,35 @@ class CotizacionResponse(BaseModel):
     sunat_cdr_url: Optional[str] = None
     sunat_error: Optional[str] = None
 
+    # Motor Financiero
+    monto_pagado: Decimal = Decimal("0.00")
+    saldo_pendiente: Decimal = Decimal("0.00")
+    pagos: List["PagoResponse"] = []
+
     model_config = ConfigDict(from_attributes=True)
+
+# ==========================================
+# PAGOS / ADELANTOS
+# ==========================================
+
+class PagoCreate(BaseModel):
+    monto_pagado: Decimal = Field(..., gt=0)
+    metodo_pago: str  # Yape, Transferencia, Efectivo
+    referencia_operacion: Optional[str] = None
+    tipo: str = "adelanto"
+
+class PagoResponse(BaseModel):
+    id: int
+    cotizacion_id: int
+    monto_pagado: Decimal
+    metodo_pago: str
+    fecha_pago: datetime
+    referencia_operacion: Optional[str] = None
+    tipo: str
+    model_config = ConfigDict(from_attributes=True)
+
+# Resolver referencia forward
+CotizacionResponse.model_rebuild()
 
 # --- NUEVOS ESQUEMAS PARA FACTURACIÓN ---
 

@@ -44,6 +44,7 @@ class Tenant(Base):
     productos = relationship("Producto", back_populates="tenant")
     cotizaciones = relationship("Cotizacion", back_populates="tenant")
     guias_remision = relationship("GuiaRemision", back_populates="tenant")
+    pagos = relationship("Pago", back_populates="tenant")
 
 
 # ==========================================
@@ -185,6 +186,11 @@ class Cotizacion(Base):
     nota_referencia_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
     notas = relationship("Cotizacion", backref="documento_afectado", remote_side="Cotizacion.id")
 
+    # --- MOTOR FINANCIERO (Pagos / Adelantos) ---
+    monto_pagado = Column(Numeric(12, 2), default=0.0)
+    saldo_pendiente = Column(Numeric(12, 2), default=0.0)
+    pagos = relationship("Pago", back_populates="cotizacion", cascade="all, delete-orphan")
+
 
 # ==========================================
 # ITEM DE COTIZACIÓN
@@ -288,3 +294,28 @@ class GuiaRemisionItem(Base):
     peso_item = Column(Numeric(12, 3), nullable=True)
 
     guia = relationship("GuiaRemision", back_populates="items")
+
+
+# ==========================================
+# PAGOS / ADELANTOS
+# ==========================================
+
+class Pago(Base):
+    __tablename__ = "pagos"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # --- MULTITENANCIA ---
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant = relationship("Tenant", back_populates="pagos")
+
+    # Relación con cotización/comprobante
+    cotizacion_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=False)
+    cotizacion = relationship("Cotizacion", back_populates="pagos")
+
+    # Datos del pago
+    monto_pagado = Column(Numeric(12, 2), nullable=False)
+    metodo_pago = Column(String, nullable=False)  # Yape, Transferencia, Efectivo, etc.
+    fecha_pago = Column(DateTime, default=datetime.now)
+    referencia_operacion = Column(String, nullable=True)  # Nro de operación bancaria
+    tipo = Column(String, default="adelanto")  # adelanto, pago_parcial, liquidacion

@@ -388,3 +388,71 @@ def guardar_respuesta_sunat_gre(db: Session, guia_id: int, data_sunat: dict):
         db.commit()
         db.refresh(db_guia)
     return db_guia
+
+# ==========================================
+# PAGOS / ADELANTOS
+# ==========================================
+
+def registrar_pago(db: Session, cotizacion_id: int, pago_data: schemas.PagoCreate, tenant_id: int):
+    """
+    Registra un pago/adelanto para una cotización.
+    
+    REGLAS DE NEGOCIO:
+    a) Crea el registro en tabla pagos.
+    b) Suma monto_pagado al campo monto_pagado de la Cotización padre.
+    c) Recalcula saldo_pendiente = total_venta - monto_pagado.
+    d) Todo en una sola transacción atómica.
+    """
+    from decimal import Decimal
+    
+    # Obtener cotización
+    db_cot = db.query(models.Cotizacion).filter(
+        models.Cotizacion.id == cotizacion_id
+    ).first()
+    
+    if not db_cot:
+        raise ValueError("Cotización no encontrada")
+    
+    # Validar que el pago no exceda el saldo pendiente
+    saldo_actual = (db_cot.total_venta or Decimal("0")) - (db_cot.monto_pagado or Decimal("0"))
+    monto = Decimal(str(pago_data.monto_pagado))
+    
+    if monto > saldo_actual:
+        raise ValueError(
+            f"El monto ({monto}) excede el saldo pendiente ({saldo_actual}). "
+            f"Total venta: {db_cot.total_venta}, Ya pagado: {db_cot.monto_pagado}"
+        )
+    
+    # a) Crear registro de pago
+    db_pago = models.Pago(
+        tenant_id=tenant_id,
+        cotizacion_id=cotizacion_id,
+        monto_pagado=monto,
+        metodo_pago=pago_data.metodo_pago,
+        referencia_operacion=pago_data.referencia_operacion,
+        tipo=pago_data.tipo
+    )
+    
+    # b) Actualizar monto_pagado de la cotización
+    nuevo_pagado = (db_cot.monto_pagado or Decimal("0")) + monto
+    db_cot.monto_pagado = nuevo_pagado
+    
+    # c) Recalcular saldo_pendiente
+    db_cot.saldo_pendiente = (db_cot.total_venta or Decimal("0")) - nuevo_pagado
+    
+    # d) Transacción atómica
+    try:
+        db.add(db_pago)
+        db.commit()
+        db.refresh(db_pago)
+        db.refresh(db_cot)
+        return db_pago
+    except Exception as e:
+        db.rollback()
+        raise e
+
+def get_pagos_cotizacion(db: Session, cotizacion_id: int):
+    """Obtiene todos los pagos de una cotización."""
+    return db.query(models.Pago).filter(
+        models.Pago.cotizacion_id == cotizacion_id
+    ).order_by(models.Pago.fecha_pago.desc()).all()

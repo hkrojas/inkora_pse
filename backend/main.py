@@ -273,6 +273,48 @@ def descargar_pdf_interno(cotizacion_id: int, db: Session = Depends(get_db), cur
         raise HTTPException(500)
 
 # ==========================================
+# MOTOR FINANCIERO (PAGOS Y ADELANTOS)
+# ==========================================
+
+@app.post("/cotizaciones/{cotizacion_id}/pagos", response_model=schemas.PagoResponse)
+def registrar_adelanto_pago(
+    cotizacion_id: int, 
+    pago_data: schemas.PagoCreate, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user)
+):
+    """Registra un pago para una cotización/comprobante."""
+    # Verificar acceso a la cotización
+    cotizacion = crud.get_cotizacion(db, cotizacion_id, current_user)
+    if not cotizacion: 
+        raise HTTPException(404, "Documento no encontrado o sin acceso")
+    
+    try:
+        # Registrar usando la lógica centralizada de caja (transaccional)
+        return crud.registrar_pago(
+            db=db, 
+            cotizacion_id=cotizacion_id, 
+            pago_data=pago_data, 
+            tenant_id=current_user.tenant_id
+        )
+    except ValueError as ve:
+        raise HTTPException(400, str(ve))
+    except Exception as e:
+        raise HTTPException(500, f"Error al registrar el pago: {str(e)}")
+
+@app.get("/cotizaciones/{cotizacion_id}/pagos", response_model=List[schemas.PagoResponse])
+def listar_pagos(
+    cotizacion_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_user)
+):
+    """Obtiene el historial de pagos de un documento."""
+    cotizacion = crud.get_cotizacion(db, cotizacion_id, current_user)
+    if not cotizacion: 
+        raise HTTPException(404, "Documento no encontrado o sin acceso")
+    return crud.get_pagos_cotizacion(db, cotizacion_id)
+
+# ==========================================
 # ENDPOINTS DE FACTURACIÓN (NUEVOS)
 # ==========================================
 
