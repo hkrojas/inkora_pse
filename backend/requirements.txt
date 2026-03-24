@@ -16,3 +16,4 @@ python-dateutil
 cryptography
 num2words
 qrcode[pil]
+google-generativeai

@@ -618,3 +618,33 @@ def read_alertas_inventario(db: Session = Depends(get_db), current_user: models.
         models.AlertaInventario.tenant_id == current_user.tenant_id,
         models.AlertaInventario.resuelta == False
     ).order_by(models.AlertaInventario.fecha_creacion.desc()).all()
+
+# ==========================================
+# FASE 9: INTELIGENCIA ARTIFICIAL (GEMINI)
+# ==========================================
+
+import ai_service
+
+class CotizarTextoParams(BaseModel):
+    texto: str
+
+@app.post("/ai/cotizar-texto", response_model=schemas.AIParsedCotizacionResponse)
+def ai_cotizar_texto(params: CotizarTextoParams, current_user: models.User = Depends(get_current_user)):
+    """Extrae estructura de items de una cotización cruda dictada por el cliente"""
+    try:
+        resultado = ai_service.analizar_texto_cotizacion(params.texto)
+        return resultado
+    except Exception as e:
+        print(f"Error AI Texto: {e}")
+        raise HTTPException(500, "Error procesando el texto con Inteligencia Artificial. Verifique su GEMINI_API_KEY o la cuota de su servicio.")
+
+@app.post("/ai/leer-factura-proveedor", response_model=schemas.AIParsedFacturaResponse)
+def ai_leer_factura(file: UploadFile = File(...), current_user: models.User = Depends(get_current_user)):
+    """Sube una imagen/PDF de una factura de proveedor y extrae automáticamente los insumos comprados."""
+    try:
+        bytes_data = file.file.read()
+        resultado = ai_service.extraer_datos_factura(bytes_data, mime_type=file.content_type)
+        return resultado
+    except Exception as e:
+        print(f"Error AI Visión: {e}")
+        raise HTTPException(500, "Error procesando el documento con IA Multimodal. Verifica imagen legible y config GEMINI_API_KEY.")

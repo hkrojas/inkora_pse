@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     DNIRUC_API_URL: str = os.getenv("DNIRUC_API_URL", "https://dniruc.apisperu.com/api/v1")
     DNIRUC_TOKEN: str = os.getenv("DNIRUC_TOKEN", "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Imtlbm5lZHlyb2phczAxMDY0QGdtYWlsLmNvbSJ9.3sopEO4OjTDovbXV46k8g48sxbP55W3MEbke16Im-uw")
 
+    # Inteligencia Artificial (Google Gemini)
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+
     class Config:
         env_file = ".env"
         extra = "ignore" 
