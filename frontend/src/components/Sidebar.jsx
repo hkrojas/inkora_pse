@@ -21,13 +21,13 @@ const Sidebar = ({ onCloseMobile }) => {
   const isActive = (path) => pathname === path || (path !== '/' && pathname.startsWith(path));
 
   return (
-    <aside className="h-full flex flex-col bg-white dark:bg-surface-900 border-r border-slate-100 dark:border-surface-800 transition-colors duration-300">
-      <div className="h-20 flex items-center px-6 border-b border-slate-100 dark:border-surface-800">
-        <div className="flex items-center gap-3 font-black text-xl text-slate-900 dark:text-white tracking-tight">
-          <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-600/30 transform -rotate-3">
-            F
+    <aside className="h-full flex flex-col bg-white dark:bg-surface-900 border-r border-[#eff4ff] dark:border-surface-800 transition-colors duration-300">
+      <div className="h-20 flex items-center px-6 border-b border-[#eff4ff] dark:border-surface-800">
+        <div className="flex items-center gap-3 font-bold font-['Manrope'] text-xl text-[#0b1c30] dark:text-white tracking-tight">
+          <div className="w-9 h-9 bg-gradient-to-br from-[#0058be] to-[#2170e4] rounded-xl flex items-center justify-center text-white shadow-lg shadow-[#0058be]/30 transform -rotate-3 text-lg">
+            P
           </div>
-          <span>FacturaPro</span>
+          <span>PrintFlow</span>
         </div>
       </div>
 
@@ -44,33 +44,33 @@ const Sidebar = ({ onCloseMobile }) => {
               to={item.path}
               onClick={onCloseMobile}
               className={`
-                flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-300 group
+                flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold font-['Inter'] transition-all duration-300 group
                 ${active 
-                  ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm' 
-                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-surface-800 hover:text-slate-900 dark:hover:text-white'}
+                  ? 'bg-[#eaf1ff] dark:bg-[#0058be]/10 text-[#0058be] dark:text-[#adc6ff] shadow-sm' 
+                  : 'text-[#424754] dark:text-slate-400 hover:bg-[#f8f9ff] dark:hover:bg-surface-800 hover:text-[#0b1c30] dark:hover:text-white'}
               `}
             >
               <div className="flex items-center gap-3">
-                <item.icon size={18} strokeWidth={active ? 2.5 : 2} className={active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 group-hover:text-indigo-500'} />
+                <item.icon size={18} strokeWidth={active ? 2.5 : 2} className={active ? 'text-[#0058be] dark:text-[#adc6ff]' : 'text-[#8591a5] group-hover:text-[#0058be]'} />
                 <span>{item.label}</span>
               </div>
-              {active && <ChevronRight size={16} className="text-indigo-600 dark:text-indigo-400" />}
+              {active && <ChevronRight size={16} className="text-[#0058be] dark:text-[#adc6ff]" />}
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-5 border-t border-slate-100 dark:border-surface-800 bg-slate-50/50 dark:bg-surface-900/50">
+      <div className="p-5 border-t border-[#eff4ff] dark:border-surface-800 bg-white dark:bg-surface-900">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#0058be] to-[#2170e4] flex items-center justify-center text-white font-bold shadow-sm">
               {user?.nombre_completo?.charAt(0) || 'U'}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
+            <div className="flex-1 min-w-0 font-['Inter']">
+              <p className="text-sm font-bold text-[#0b1c30] dark:text-white truncate">
                 {user?.nombre_completo || 'Usuario'}
               </p>
-              <p className="text-[10px] text-slate-500 dark:text-surface-400 truncate uppercase tracking-wider font-medium">
+              <p className="text-[10px] text-[#424754] dark:text-surface-400 truncate uppercase tracking-wider font-semibold">
                 {user?.rol || 'Administrador'}
               </p>
             </div>
