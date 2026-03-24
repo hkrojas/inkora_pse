@@ -1,32 +1,57 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import FacturacionModal from './FacturacionModal';
-
-const ordenesMock = [
-  {
-    id: 'ORD-001',
-    cliente: 'Corporación Alpha',
-    producto: 'Revista Corporativa Q4',
-    tipo: 'interna',
-    estado: 'En Producción',
-    bom: [
-      { insumo: 'Papel Couché 150g', cantidad: '12 Resmas', merma: '5%' },
-      { insumo: 'Tintas CMYK Premium', cantidad: '4.5 Litros', merma: '2%' }
-    ]
-  },
-  {
-    id: 'ORD-002',
-    cliente: 'Boutique Elegance',
-    producto: 'Packaging Rígido Lujo',
-    tipo: 'tercerizada',
-    estado: 'Derivada',
-    proveedor: 'Cartonajes del Sur S.A.',
-    costo_tercerizado: 'S/ 1,450.00'
-  }
-];
 
 export default function TallerProduccion() {
   const [modalOpen, setModalOpen] = useState(false);
   const [ordenActiva, setOrdenActiva] = useState(null);
+  const [ordenes, setOrdenes] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchOrdenes = async () => {
+      try {
+        const baseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || "http://localhost:8000";
+        const res = await fetch(`${baseUrl}/ordenes-produccion`);
+        
+        if (!res.ok && res.status !== 404) throw new Error("Error cargando órdenes centralizadas");
+        
+        // Simulador de Delay de Red para demostrar UI Asíncrona:
+        await new Promise(r => setTimeout(r, 1200));
+
+        // Injectando Datos Mocks temporales si falla hasta que conecte totalmente UI y Python:
+        // const data = await res.json();
+        setOrdenes([
+          {
+            id: 'ORD-001',
+            cliente: 'Corporación Alpha',
+            producto: 'Revista Corporativa Q4',
+            tipo: 'interna',
+            estado: 'En Producción',
+            bom: [
+              { insumo: 'Papel Couché 150g', cantidad: '12 Resmas', merma: '5%' },
+              { insumo: 'Tintas CMYK Premium', cantidad: '4.5 Litros', merma: '2%' }
+            ]
+          },
+          {
+            id: 'ORD-002',
+            cliente: 'Boutique Elegance',
+            producto: 'Packaging Rígido Lujo',
+            tipo: 'tercerizada',
+            estado: 'Derivada',
+            proveedor: 'Cartonajes del Sur S.A.',
+            costo_tercerizado: 'S/ 1,450.00'
+          }
+        ]);
+        
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchOrdenes();
+  }, []);
 
   const handleOpenFacturacion = (orden) => {
     setOrdenActiva(orden);
@@ -41,10 +66,20 @@ export default function TallerProduccion() {
         <p className="text-[#424754] text-sm">Gestión de tableros de producción interna y tercerización (Broker).</p>
       </header>
 
-      {/* Grid de Órdenes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {ordenesMock.map((orden) => (
-          <div 
+      {/* Grid de Órdenes o Skeleton */}
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center p-20 animate-pulse">
+          <div className="h-12 w-12 border-4 border-[#0058be] border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-[#0058be] font-bold">Cargando Tablero de Producción...</p>
+        </div>
+      ) : error ? (
+        <div className="bg-[#ffdad6] p-4 rounded-xl text-[#93000a] font-medium border border-[#ffb4ab]">
+          Ocurrió un error: {error}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {ordenes.map((orden) => (
+            <div 
             key={orden.id} 
             className="bg-white rounded-xl p-5 border border-transparent hover:shadow-[0_10px_15px_-3px_rgba(11,28,48,0.05)] transition-shadow duration-300 flex flex-col"
             style={{ backgroundColor: '#ffffff', boxShadow: '0 4px 6px -1px rgba(11, 28, 48, 0.03)' }}
@@ -114,6 +149,7 @@ export default function TallerProduccion() {
           </div>
         ))}
       </div>
+      )}
 
       <FacturacionModal 
         isOpen={modalOpen} 
