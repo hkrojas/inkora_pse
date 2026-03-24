@@ -164,6 +164,29 @@ class RecetaBOMResponse(RecetaBOMBase):
     insumo: Optional[InsumoResponse] = None
     model_config = ConfigDict(from_attributes=True)
 
+class ProveedorBase(BaseModel):
+    razon_social: str
+    ruc: str
+    direccion: Optional[str] = None
+    telefono: Optional[str] = None
+    email: Optional[str] = None
+    tipo_servicio: str
+
+class ProveedorCreate(ProveedorBase):
+    pass
+
+class ProveedorUpdate(BaseModel):
+    razon_social: Optional[str] = None
+    ruc: Optional[str] = None
+    direccion: Optional[str] = None
+    telefono: Optional[str] = None
+    email: Optional[str] = None
+    tipo_servicio: Optional[str] = None
+
+class ProveedorResponse(ProveedorBase):
+    id: int
+    model_config = ConfigDict(from_attributes=True)
+
 class OrdenProduccionDetalleResponse(BaseModel):
     id: int
     insumo_id: int
@@ -179,6 +202,10 @@ class OrdenProduccionResponse(BaseModel):
     estado: str
     fecha_inicio: datetime
     fecha_fin: Optional[datetime] = None
+    tipo_produccion: str
+    proveedor_id: Optional[int] = None
+    proveedor: Optional[ProveedorResponse] = None
+    costo_tercerizado: Optional[Decimal] = None
     detalles: List[OrdenProduccionDetalleResponse] = []
     model_config = ConfigDict(from_attributes=True)
 

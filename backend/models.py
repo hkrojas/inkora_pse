@@ -48,6 +48,7 @@ class Tenant(Base):
     insumos = relationship("Insumo", back_populates="tenant")
     recetas = relationship("RecetaBOM", back_populates="tenant")
     ordenes_produccion = relationship("OrdenProduccion", back_populates="tenant")
+    proveedores = relationship("Proveedor", back_populates="tenant")
 
 
 # ==========================================
@@ -364,6 +365,21 @@ class RecetaBOM(Base):
     cantidad_base_necesaria = Column(Numeric(12, 4)) # ej: 0.1 hojas por cada 1 unidad de producto
     porcentaje_merma_estandar = Column(Numeric(5, 2), default=0.0) # ej: 5.0 (5% merma)
 
+class Proveedor(Base):
+    """Proveedores / Talleres tercerizados (Broker)"""
+    __tablename__ = "proveedores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant = relationship("Tenant", back_populates="proveedores")
+
+    razon_social = Column(String, index=True)
+    ruc = Column(String, index=True)
+    direccion = Column(String, nullable=True)
+    telefono = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    tipo_servicio = Column(String, index=True) # Impresión, Acabado, Troquelado, etc.
+
 class OrdenProduccion(Base):
     """Cabecera de la Orden de Trabajo / Producción"""
     __tablename__ = "ordenes_produccion"
@@ -378,6 +394,12 @@ class OrdenProduccion(Base):
     estado = Column(String, default="en_cola") # en_cola, en_proceso, finalizada, cancelada
     fecha_inicio = Column(DateTime, default=datetime.now)
     fecha_fin = Column(DateTime, nullable=True)
+    
+    # --- FASE 7: TERCERIZACIÓN (BROKER) ---
+    tipo_produccion = Column(String, default="interna") # interna, tercerizada
+    proveedor_id = Column(Integer, ForeignKey("proveedores.id"), nullable=True)
+    proveedor = relationship("Proveedor")
+    costo_tercerizado = Column(Numeric(12, 2), nullable=True)
 
     detalles = relationship("OrdenProduccionDetalle", back_populates="orden", cascade="all, delete-orphan")
 

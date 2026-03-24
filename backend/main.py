@@ -513,6 +513,34 @@ def emitir_guia_remision_endpoint(guia_id: int, db: Session = Depends(get_db), c
         raise HTTPException(500, "Error en el servicio de guías de remisión.")
 
 # ==========================================
+# GESTIÓN DE PROVEEDORES (BROKER)
+# ==========================================
+
+@app.get("/proveedores/", response_model=List[schemas.ProveedorResponse])
+def listar_proveedores(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Listar Proveedores/Talleres Externos del Tenant"""
+    return crud.get_proveedores(db, current_user.tenant_id, skip, limit)
+
+@app.post("/proveedores/", response_model=schemas.ProveedorResponse)
+def crear_proveedor(proveedor: schemas.ProveedorCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Crear nuevo Proveedor"""
+    return crud.create_proveedor(db, proveedor, current_user.tenant_id)
+
+@app.put("/proveedores/{proveedor_id}", response_model=schemas.ProveedorResponse)
+def actualizar_proveedor(proveedor_id: int, proveedor: schemas.ProveedorUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Actualizar Proveedor Existente"""
+    res = crud.update_proveedor(db, proveedor_id, proveedor, current_user.tenant_id)
+    if not res: raise HTTPException(404, "Proveedor no encontrado")
+    return res
+
+@app.delete("/proveedores/{proveedor_id}")
+def eliminar_proveedor(proveedor_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Eliminar Proveedor"""
+    res = crud.delete_proveedor(db, proveedor_id, current_user.tenant_id)
+    if not res: raise HTTPException(404, "Proveedor no encontrado")
+    return {"status": "success"}
+
+# ==========================================
 # MOTOR DE PRODUCCIÓN (MRP / BOM)
 # ==========================================
 
@@ -537,15 +565,28 @@ def create_bom_item(producto_id: int, receta: schemas.RecetaBOMBase, db: Session
     receta_create = schemas.RecetaBOMCreate(**receta.model_dump(), producto_id=producto_id)
     return crud.create_receta_bom(db, receta_create, current_user.tenant_id)
 
+from pydantic import BaseModel
+from decimal import Decimal
+
+class OrdenProduccionParams(BaseModel):
+    tipo_produccion: str = "interna"
+    proveedor_id: Optional[int] = None
+    costo_tercerizado: Optional[Decimal] = None
+
 @app.post("/cotizaciones/{cotizacion_id}/orden-produccion", response_model=schemas.OrdenProduccionResponse)
-def generar_orden_produccion_endpoint(cotizacion_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def generar_orden_produccion_endpoint(cotizacion_id: int, params: Optional[OrdenProduccionParams] = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """
     Ruta Crítica MRP: Carga la cotización y explota automáticamente las Listas 
     de Materiales (BOM) para calcular qué insumos y qué cantidades se imprimirán, 
     incluyendo sus respectivas mermas calculadas.
+    Soporta asignación y delegación de órdenes a talleres tercerizados.
     """
+    p_tipo = params.tipo_produccion if params else "interna"
+    p_prov = params.proveedor_id if params else None
+    p_costo = params.costo_tercerizado if params else None
+
     try:
-        return crud.generar_orden_produccion(db, cotizacion_id, current_user.tenant_id)
+        return crud.generar_orden_produccion(db, cotizacion_id, current_user.tenant_id, p_tipo, p_prov, p_costo)
     except ValueError as ve:
         raise HTTPException(400, str(ve))
     except Exception as e:

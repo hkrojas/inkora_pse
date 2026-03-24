@@ -473,6 +473,36 @@ def get_pagos_cotizacion(db: Session, cotizacion_id: int):
     ).order_by(models.Pago.fecha_pago.desc()).all()
 
 # ==========================================
+# GESTIÓN DE PROVEEDORES (BROKER)
+# ==========================================
+
+def get_proveedores(db: Session, tenant_id: int, skip: int = 0, limit: int = 100):
+    return db.query(models.Proveedor).filter(models.Proveedor.tenant_id == tenant_id).offset(skip).limit(limit).all()
+
+def create_proveedor(db: Session, proveedor: schemas.ProveedorCreate, tenant_id: int):
+    db_proveedor = models.Proveedor(**proveedor.model_dump(), tenant_id=tenant_id)
+    db.add(db_proveedor)
+    db.commit()
+    db.refresh(db_proveedor)
+    return db_proveedor
+
+def update_proveedor(db: Session, proveedor_id: int, proveedor: schemas.ProveedorUpdate, tenant_id: int):
+    db_proveedor = db.query(models.Proveedor).filter(models.Proveedor.id == proveedor_id, models.Proveedor.tenant_id == tenant_id).first()
+    if not db_proveedor: return None
+    for var, value in proveedor.model_dump(exclude_unset=True).items():
+        setattr(db_proveedor, var, value)
+    db.commit()
+    db.refresh(db_proveedor)
+    return db_proveedor
+
+def delete_proveedor(db: Session, proveedor_id: int, tenant_id: int):
+    db_proveedor = db.query(models.Proveedor).filter(models.Proveedor.id == proveedor_id, models.Proveedor.tenant_id == tenant_id).first()
+    if not db_proveedor: return False
+    db.delete(db_proveedor)
+    db.commit()
+    return True
+
+# ==========================================
 # MOTOR DE PRODUCCIÓN (MRP / BOM)
 # ==========================================
 
@@ -518,10 +548,11 @@ def create_receta_bom(db: Session, receta: schemas.RecetaBOMCreate, tenant_id: i
     db.refresh(db_receta)
     return db_receta
 
-def generar_orden_produccion(db: Session, cotizacion_id: int, tenant_id: int):
+def generar_orden_produccion(db: Session, cotizacion_id: int, tenant_id: int, tipo_produccion: str = "interna", proveedor_id: int = None, costo_tercerizado = None):
     """
     Ruta Crítica MRP: Genera la orden de trabajo calculando requerimientos de material
     basados en lo vendido (Cotización) multiplicando la RecetaBOM + Mermas.
+    Soporta asignación a talleres externos (Modelo Broker).
     """
     from decimal import Decimal
     
@@ -545,7 +576,10 @@ def generar_orden_produccion(db: Session, cotizacion_id: int, tenant_id: int):
     db_orden = models.OrdenProduccion(
         tenant_id=tenant_id,
         cotizacion_id=cotizacion_id,
-        estado="en_cola"
+        estado="en_cola",
+        tipo_produccion=tipo_produccion,
+        proveedor_id=proveedor_id,
+        costo_tercerizado=costo_tercerizado
     )
     db.add(db_orden)
     db.flush() # Flush para obtener el orden_id sin auto-commit total
