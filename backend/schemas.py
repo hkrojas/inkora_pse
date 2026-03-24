@@ -142,6 +142,7 @@ class InsumoBase(BaseModel):
     factor_conversion: Decimal = Field(..., gt=0)
     costo_promedio: Decimal = Decimal("0.00")
     stock_actual: Decimal = Decimal("0.00")
+    umbral_minimo: Decimal = Decimal("50.00")
 
 class InsumoCreate(InsumoBase):
     pass
@@ -163,6 +164,20 @@ class RecetaBOMResponse(RecetaBOMBase):
     producto_id: int
     insumo: Optional[InsumoResponse] = None
     model_config = ConfigDict(from_attributes=True)
+
+class AlertaInventarioResponse(BaseModel):
+    id: int
+    insumo: Optional[InsumoResponse] = None
+    mensaje: str
+    fecha_creacion: datetime
+    resuelta: bool
+    model_config = ConfigDict(from_attributes=True)
+
+class DashboardStatsResponse(BaseModel):
+    ingresos_totales: Decimal
+    saldos_por_cobrar: Decimal
+    costos_tercerizacion: Decimal
+    top_productos: List[str]
 
 class ProveedorBase(BaseModel):
     razon_social: str

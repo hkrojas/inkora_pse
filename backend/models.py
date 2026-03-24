@@ -344,6 +344,7 @@ class Insumo(Base):
     factor_conversion = Column(Numeric(12, 4)) # 1 unidad_compra = X unidad_consumo
     costo_promedio = Column(Numeric(12, 2), default=0)
     stock_actual = Column(Numeric(12, 2), default=0)
+    umbral_minimo = Column(Numeric(12, 2), default=50.0) # FASE 8: Alertas de stock
 
     # Relacion MRP
     recetas = relationship("RecetaBOM", back_populates="insumo")
@@ -417,3 +418,18 @@ class OrdenProduccionDetalle(Base):
     cantidad_requerida_neta = Column(Numeric(12, 4))
     cantidad_merma = Column(Numeric(12, 4))
     cantidad_total_descontar = Column(Numeric(12, 4)) # neta + merma
+
+class AlertaInventario(Base):
+    """Alertas del sistema para quiebres de stock (Fase 8)"""
+    __tablename__ = "alertas_inventario"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant = relationship("Tenant")
+
+    insumo_id = Column(Integer, ForeignKey("insumos.id"))
+    insumo = relationship("Insumo")
+
+    mensaje = Column(String)
+    fecha_creacion = Column(DateTime, default=datetime.now)
+    resuelta = Column(Boolean, default=False)

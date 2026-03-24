@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Response
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -573,8 +573,16 @@ class OrdenProduccionParams(BaseModel):
     proveedor_id: Optional[int] = None
     costo_tercerizado: Optional[Decimal] = None
 
+def check_stock_bg(tenant_id: int):
+    """Abre una sesión transaccional paralela independiente para la BackgroundTask"""
+    db_bg = SessionLocal()
+    try:
+        crud.verificar_stock_y_generar_alertas(db_bg, tenant_id)
+    finally:
+        db_bg.close()
+
 @app.post("/cotizaciones/{cotizacion_id}/orden-produccion", response_model=schemas.OrdenProduccionResponse)
-def generar_orden_produccion_endpoint(cotizacion_id: int, params: Optional[OrdenProduccionParams] = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def generar_orden_produccion_endpoint(cotizacion_id: int, background_tasks: BackgroundTasks, params: Optional[OrdenProduccionParams] = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """
     Ruta Crítica MRP: Carga la cotización y explota automáticamente las Listas 
     de Materiales (BOM) para calcular qué insumos y qué cantidades se imprimirán, 
@@ -586,8 +594,27 @@ def generar_orden_produccion_endpoint(cotizacion_id: int, params: Optional[Orden
     p_costo = params.costo_tercerizado if params else None
 
     try:
-        return crud.generar_orden_produccion(db, cotizacion_id, current_user.tenant_id, p_tipo, p_prov, p_costo)
+        orden = crud.generar_orden_produccion(db, cotizacion_id, current_user.tenant_id, p_tipo, p_prov, p_costo)
+        background_tasks.add_task(check_stock_bg, current_user.tenant_id)
+        return orden
     except ValueError as ve:
         raise HTTPException(400, str(ve))
     except Exception as e:
         raise HTTPException(500, f"Error al generar la orden de producción: {str(e)}")
+
+# ==========================================
+# FASE 8: BUSINESS INTELLIGENCE Y ALERTAS
+# ==========================================
+
+@app.get("/analytics/dashboard", response_model=schemas.DashboardStatsResponse)
+def read_dashboard_stats(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Obtiene analítica clave (Ingresos, Saldos, Outsourcing, Top Productos) en vivo."""
+    return crud.get_dashboard_stats(db, current_user.tenant_id)
+
+@app.get("/alertas/inventario", response_model=List[schemas.AlertaInventarioResponse])
+def read_alertas_inventario(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Retorna las alertas de inventario activo/agotado no resueltas"""
+    return db.query(models.AlertaInventario).filter(
+        models.AlertaInventario.tenant_id == current_user.tenant_id,
+        models.AlertaInventario.resuelta == False
+    ).order_by(models.AlertaInventario.fecha_creacion.desc()).all()

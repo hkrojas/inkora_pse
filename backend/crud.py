@@ -623,3 +623,67 @@ def generar_orden_produccion(db: Session, cotizacion_id: int, tenant_id: int, ti
     except Exception as e:
         db.rollback()
         raise e
+
+# ==========================================
+# FASE 8: BUSINESS INTELLIGENCE Y ALERTAS
+# ==========================================
+
+def get_dashboard_stats(db: Session, tenant_id: int):
+    from sqlalchemy import func
+    
+    ingresos = db.query(func.sum(models.Pago.monto_pagado)).filter(models.Pago.tenant_id == tenant_id).scalar() or 0
+    saldos = db.query(func.sum(models.Cotizacion.saldo_pendiente)).filter(models.Cotizacion.tenant_id == tenant_id).scalar() or 0
+    costos = db.query(func.sum(models.OrdenProduccion.costo_tercerizado)).filter(models.OrdenProduccion.tenant_id == tenant_id).scalar() or 0
+    
+    top_productos_query = db.query(
+        models.Producto.nombre
+    ).join(
+        models.CotizacionItem, models.Producto.id == models.CotizacionItem.producto_id
+    ).join(
+        models.Cotizacion, models.CotizacionItem.cotizacion_id == models.Cotizacion.id
+    ).filter(
+        models.Cotizacion.tenant_id == tenant_id
+    ).group_by(
+        models.Producto.id
+    ).order_by(
+        func.sum(models.CotizacionItem.cantidad).desc()
+    ).limit(5).all()
+    
+    top_productos = [p.nombre for p in top_productos_query]
+    
+    return {
+        "ingresos_totales": ingresos,
+        "saldos_por_cobrar": saldos,
+        "costos_tercerizacion": costos,
+        "top_productos": top_productos
+    }
+
+def verificar_stock_y_generar_alertas(db: Session, tenant_id: int):
+    """
+    Background Task: Mapea insumos debajo de su umbral y genera alertas 
+    únicas no resueltas.
+    """
+    insumos_criticos = db.query(models.Insumo).filter(
+        models.Insumo.tenant_id == tenant_id,
+        models.Insumo.stock_actual <= models.Insumo.umbral_minimo
+    ).all()
+
+    for insumo in insumos_criticos:
+        alerta_existente = db.query(models.AlertaInventario).filter(
+            models.AlertaInventario.insumo_id == insumo.id,
+            models.AlertaInventario.resuelta == False
+        ).first()
+
+        if not alerta_existente:
+            nueva_alerta = models.AlertaInventario(
+                tenant_id=tenant_id,
+                insumo_id=insumo.id,
+                mensaje=f"STOCK CRÍTICO: {insumo.nombre} (Stock: {insumo.stock_actual} | Umbral: {insumo.umbral_minimo})",
+                resuelta=False
+            )
+            db.add(nueva_alerta)
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Error generando alertas de inventario: {e}")
