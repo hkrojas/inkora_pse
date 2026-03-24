@@ -1,72 +1,59 @@
-// Ruta: frontend/src/components/DashboardLayout.jsx
 import React, { useState } from 'react';
 import Sidebar from './Sidebar.jsx';
-import { Menu, X } from 'lucide-react';
-import ThemeToggle from './ThemeToggle.jsx';
+import { Menu, X, Search } from 'lucide-react';
 
-const DashboardLayout = ({ children, title }) => {
+const DashboardLayout = ({ children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="flex h-screen bg-[#f8f9ff] dark:bg-surface-950 font-['Inter'] text-[#0b1c30] transition-colors duration-300 overflow-hidden">
+    <div className="flex h-screen bg-[#f8f9ff] text-[#0b1c30] font-['Inter'] overflow-hidden">
       
       {/* Overlay Móvil */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 z-30 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm lg:hidden transition-opacity duration-300"
+          className="fixed inset-0 z-30 bg-[#0b1c30]/40 backdrop-blur-sm lg:hidden transition-opacity duration-300"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
-      {/* Barra Lateral (Sidebar) */}
+      {/* Sidebar Desktop/Mobile */}
       <div className={`
-        fixed inset-y-0 left-0 z-40 w-72 shrink-0 transform transition-transform duration-500 ease-out shadow-2xl lg:shadow-none lg:static lg:translate-x-0
+        fixed inset-y-0 left-0 z-40 w-72 shrink-0 transform transition-transform duration-500 ease-out lg:static lg:translate-x-0
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <Sidebar onCloseMobile={() => setIsSidebarOpen(false)} />
       </div>
 
-      {/* Área Principal de Contenido */}
+      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         
-        {/* Header Móvil */}
-        <header className="lg:hidden shrink-0 bg-white dark:bg-surface-900 border-b border-[#eff4ff] dark:border-surface-800 px-4 h-20 flex items-center justify-between transition-colors z-20">
-          <div className="font-['Manrope'] font-bold text-xl text-[#0b1c30] dark:text-white flex items-center gap-2 tracking-tight">
-            <div className="w-8 h-8 bg-gradient-to-br from-[#0058be] to-[#2170e4] rounded-lg flex items-center justify-center text-white transform -rotate-3 text-sm">P</div>
-            PrintFlow
-          </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-surface-800 rounded-xl transition-colors"
-            >
-              {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
+        {/* TopAppBar exact as Stitch provided */}
+        <header className="sticky top-0 w-full z-20 bg-white/80 lg:bg-[#f8f9ff]/80 backdrop-blur-md shadow-sm lg:shadow-none">
+          <div className="flex justify-between items-center px-6 py-4 w-full">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="lg:hidden text-[#0058be]"
+              >
+                {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+              </button>
+              <Search className="text-[#0058be] hidden lg:block" size={24} />
+            </div>
+            
+            <h1 className="lg:hidden text-[#0058be] font-extrabold tracking-tighter text-lg font-['Manrope']">PrintFlow</h1>
+            
+            <div className="w-8 h-8 rounded-full bg-[#dce9ff] flex items-center justify-center overflow-hidden font-bold text-[#0058be]">
+              AD
+            </div>
           </div>
         </header>
 
-        {/* Header Desktop (Títulos) */}
-        {title && (
-          <header className="hidden lg:flex px-8 pt-10 pb-4 items-center justify-between shrink-0 bg-[#f8f9ff] dark:bg-surface-950 transition-colors">
-            <h1 className="text-3xl lg:text-4xl font-bold font-['Manrope'] text-[#0b1c30] dark:text-white tracking-tight">{title}</h1>
-          </header>
-        )}
-
-        {/* Título Móvil */}
-        {title && (
-          <div className="lg:hidden px-6 pt-8 pb-4 shrink-0 bg-[#f8f9ff] dark:bg-surface-950 transition-colors">
-            <h1 className="text-2xl font-bold font-['Manrope'] text-[#0b1c30] dark:text-white tracking-tight">{title}</h1>
-          </div>
-        )}
-
-        {/* Área de Scroll (Contenido fluido sin bordes agudos) */}
-        <main className="flex-1 overflow-y-auto px-6 pb-12 lg:px-8 lg:pb-12 custom-scrollbar bg-[#f8f9ff] dark:bg-surface-950">
-          <div className="w-full h-full">
+        {/* Scroll Area applying Stitch constraints dynamically */}
+        <main className="flex-1 overflow-y-auto px-5 lg:px-12 pt-6 pb-32 custom-scrollbar">
+          <div className="w-full max-w-5xl mx-auto">
             {children}
           </div>
         </main>
-        
       </div>
     </div>
   );

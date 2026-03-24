@@ -1,161 +1,182 @@
 import React, { useState, useEffect } from 'react';
-import FacturacionModal from './FacturacionModal';
+import FacturacionModal from './FacturacionModal.jsx';
 
-export default function TallerProduccion() {
-  const [modalOpen, setModalOpen] = useState(false);
-  const [ordenActiva, setOrdenActiva] = useState(null);
+const TallerProduccion = () => {
   const [ordenes, setOrdenes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedOrdenId, setSelectedOrdenId] = useState(null);
 
   useEffect(() => {
     const fetchOrdenes = async () => {
       try {
-        const baseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || "http://localhost:8000";
-        const res = await fetch(`${baseUrl}/ordenes-produccion`);
-        
-        if (!res.ok && res.status !== 404) throw new Error("Error cargando órdenes centralizadas");
-        
-        // Simulador de Delay de Red para demostrar UI Asíncrona:
-        await new Promise(r => setTimeout(r, 1200));
-
-        // Injectando Datos Mocks temporales si falla hasta que conecte totalmente UI y Python:
-        // const data = await res.json();
-        setOrdenes([
-          {
-            id: 'ORD-001',
-            cliente: 'Corporación Alpha',
-            producto: 'Revista Corporativa Q4',
-            tipo: 'interna',
-            estado: 'En Producción',
-            bom: [
-              { insumo: 'Papel Couché 150g', cantidad: '12 Resmas', merma: '5%' },
-              { insumo: 'Tintas CMYK Premium', cantidad: '4.5 Litros', merma: '2%' }
-            ]
-          },
-          {
-            id: 'ORD-002',
-            cliente: 'Boutique Elegance',
-            producto: 'Packaging Rígido Lujo',
-            tipo: 'tercerizada',
-            estado: 'Derivada',
-            proveedor: 'Cartonajes del Sur S.A.',
-            costo_tercerizado: 'S/ 1,450.00'
+        const url = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const response = await fetch(`${url}/api/ordenes-produccion`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
           }
-        ]);
+        });
         
+        if (!response.ok) {
+          throw new Error('No se pudieron cargar las órdenes');
+        }
+        
+        const data = await response.json();
+        setOrdenes(Array.isArray(data) ? data : []);
       } catch (err) {
-        setError(err.message);
+        console.error("Error cargando órdenes:", err);
+        setError("Error de conexión al cargar el taller.");
       } finally {
         setIsLoading(false);
       }
     };
+
     fetchOrdenes();
   }, []);
 
-  const handleOpenFacturacion = (orden) => {
-    setOrdenActiva(orden);
-    setModalOpen(true);
+  const openFacturacion = (ordenId) => {
+    setSelectedOrdenId(ordenId);
+    setIsModalOpen(true);
   };
 
-  return (
-    <div className="min-h-screen bg-[#f8f9ff] font-['Inter'] text-[#0b1c30] p-4 md:p-8">
-      {/* Header */}
-      <header className="mb-10">
-        <h1 className="text-3xl md:text-4xl font-bold font-['Manrope'] tracking-tight mb-2">Taller y Producción</h1>
-        <p className="text-[#424754] text-sm">Gestión de tableros de producción interna y tercerización (Broker).</p>
-      </header>
+  const ordenesInternas = ordenes.filter(o => o.tipo_produccion === 'interna');
+  const ordenesTercerizadas = ordenes.filter(o => o.tipo_produccion === 'tercerizada');
 
-      {/* Grid de Órdenes o Skeleton */}
-      {isLoading ? (
-        <div className="flex flex-col items-center justify-center p-20 animate-pulse">
-          <div className="h-12 w-12 border-4 border-[#0058be] border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="text-[#0058be] font-bold">Cargando Tablero de Producción...</p>
-        </div>
-      ) : error ? (
-        <div className="bg-[#ffdad6] p-4 rounded-xl text-[#93000a] font-medium border border-[#ffb4ab]">
-          Ocurrió un error: {error}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {ordenes.map((orden) => (
-            <div 
-            key={orden.id} 
-            className="bg-white rounded-xl p-5 border border-transparent hover:shadow-[0_10px_15px_-3px_rgba(11,28,48,0.05)] transition-shadow duration-300 flex flex-col"
-            style={{ backgroundColor: '#ffffff', boxShadow: '0 4px 6px -1px rgba(11, 28, 48, 0.03)' }}
-          >
-            {/* Header del Card */}
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <span className="text-xs font-semibold text-[#6b38d4] bg-[#e9ddff] px-2 py-1 rounded-md mb-2 inline-block">
-                  {orden.id}
-                </span>
-                <h3 className="text-lg font-bold font-['Manrope']">{orden.producto}</h3>
-                <p className="text-xs text-[#424754]">{orden.cliente}</p>
-              </div>
-              
-              {orden.tipo === 'tercerizada' && (
-                <span className="text-xs font-medium text-[#924700] bg-[#ffdcc6] px-2 py-1 rounded-full whitespace-nowrap">
-                  Tercerizada
-                </span>
-              )}
-              {orden.tipo === 'interna' && (
-                <span className="text-xs font-medium text-[#004395] bg-[#d8e2ff] px-2 py-1 rounded-full whitespace-nowrap">
-                  Interna
-                </span>
-              )}
-            </div>
-
-            {/* Cuerpo del Card / Variante */}
-            <div className="bg-[#eff4ff] rounded-lg p-4 mb-6 flex-grow">
-              {orden.tipo === 'interna' ? (
-                <div>
-                  <h4 className="text-[11px] font-bold text-[#0058be] mb-3 uppercase tracking-wider">Receta (BOM) & Mermas</h4>
-                  <ul className="space-y-3">
-                    {orden.bom.map((item, idx) => (
-                      <li key={idx} className="flex justify-between items-center text-sm border-b border-[#dce9ff] pb-2 last:border-0 last:pb-0">
-                        <span className="font-medium">{item.insumo}</span>
-                        <div className="text-right">
-                          <span className="block">{item.cantidad}</span>
-                          <span className="text-[10px] bg-white px-1.5 py-0.5 rounded text-[#424754] mt-1 shadow-sm inline-block">Merma: {item.merma}</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <div className="flex flex-col justify-center h-full">
-                  <h4 className="text-[11px] font-bold text-[#b75b00] mb-3 uppercase tracking-wider">Detalles de Proveedor (Broker)</h4>
-                  <div className="bg-white p-3 rounded shadow-sm">
-                    <p className="text-sm font-medium mb-1 flex justify-between"><span className="text-[#424754]">Proveedor:</span> <span>{orden.proveedor}</span></p>
-                    <p className="text-sm font-bold flex justify-between"><span className="text-[#424754]">Costo Acordado:</span> <span className="text-[#924700]">{orden.costo_tercerizado}</span></p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Acciones */}
-            <div className="flex items-center gap-3 mt-auto">
-              <button 
-                onClick={() => handleOpenFacturacion(orden)}
-                className="flex-1 bg-gradient-to-br from-[#0058be] to-[#2170e4] text-white py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm"
-              >
-                Facturar Orden
-              </button>
-              <button className="px-4 py-2.5 bg-[#e5eeff] text-[#0058be] rounded-xl text-sm font-semibold hover:bg-[#dce9ff] transition-colors">
-                Ver Ficha
-              </button>
-            </div>
-          </div>
-        ))}
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64 text-[#424754] font-['Inter']">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0058be] mr-3"></div>
+        Cargando órdenes desde el taller...
       </div>
-      )}
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 bg-[#ffdad6] text-[#93000a] rounded-xl font-['Inter']">
+        <p className="font-bold">{error}</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="mb-8 font-['Inter']">
+        <h2 className="font-['Manrope'] text-2xl lg:text-3xl font-bold text-[#0b1c30]">Taller</h2>
+        <p className="text-sm text-[#424754]">Gestión de Producción y Tercerización</p>
+      </div>
+
+      {/* Section: Producción Interna */}
+      <div className="mb-6 space-y-4 font-['Inter']">
+        <div className="flex items-center justify-between px-1">
+          <span className="font-['Manrope'] font-semibold text-sm uppercase tracking-wider text-[#0058be]">Producción Interna</span>
+          <span className="text-[10px] font-bold bg-[#2170e4] text-[#fefcff] px-2 py-0.5 rounded-full">
+            {ordenesInternas.length} ACTIVAS
+          </span>
+        </div>
+
+        {ordenesInternas.length === 0 ? (
+          <p className="text-sm text-[#727785] italic px-1">No hay órdenes internas en proceso.</p>
+        ) : (
+          ordenesInternas.map(orden => (
+            <div key={orden.id} className="bg-[#ffffff] rounded-xl p-5 shadow-[0_4px_6px_-1px_rgba(11,28,48,0.05)] relative overflow-hidden group">
+              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#0058be]"></div>
+              
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <span className="text-[10px] font-bold text-[#727785] uppercase tracking-tighter">COT-{orden.cotizacion_id}</span>
+                  <h3 className="font-['Manrope'] font-bold text-lg leading-tight text-[#0b1c30]">
+                    Orden #{orden.id}
+                  </h3>
+                </div>
+                <div className="text-right">
+                  <span className="block text-xs font-semibold text-[#0058be] uppercase">{orden.estado}</span>
+                </div>
+              </div>
+
+              <div className="mb-5">
+                <div className="w-full bg-[#e5eeff] h-2 rounded-full overflow-hidden">
+                  <div className="bg-[#0058be] h-full w-[85%] rounded-full"></div>
+                </div>
+                <div className="flex justify-between mt-2">
+                  <span className="text-[10px] font-medium text-[#424754] italic">Avance estimado</span>
+                  <span className="text-[10px] font-bold text-[#424754]">Plazo: Variable</span>
+                </div>
+              </div>
+
+              <div className="bg-[#eff4ff] rounded-lg p-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-[#c2c6d6] uppercase tracking-widest">Acciones</span>
+                  <button 
+                    onClick={() => openFacturacion(orden.cotizacion_id)}
+                    className="text-xs font-bold text-[#0058be] hover:text-[#2170e4] transition-colors"
+                  >
+                    Facturar Orden →
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Section: Tercerización (Broker) */}
+      <div className="mb-6 space-y-4 font-['Inter']">
+        <div className="flex items-center justify-between px-1">
+          <span className="font-['Manrope'] font-semibold text-sm uppercase tracking-wider text-[#6b38d4]">Tercerización</span>
+          <span className="text-[10px] font-bold bg-[#8455ef]/20 text-[#6b38d4] px-2 py-0.5 rounded-full">
+            {ordenesTercerizadas.length} EN CURSO
+          </span>
+        </div>
+
+        {ordenesTercerizadas.length === 0 ? (
+          <p className="text-sm text-[#727785] italic px-1">No hay órdenes tercerizadas en proceso.</p>
+        ) : (
+          ordenesTercerizadas.map(orden => (
+            <div key={orden.id} className="bg-[#ffffff] rounded-xl p-5 shadow-[0_4px_6px_-1px_rgba(11,28,48,0.05)] relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#6b38d4]"></div>
+              
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <span className="text-[10px] font-bold text-[#727785] uppercase tracking-tighter">COT-{orden.cotizacion_id}</span>
+                  <h3 className="font-['Manrope'] font-bold text-lg leading-tight text-[#0b1c30]">
+                    Orden #{orden.id}
+                  </h3>
+                </div>
+                <div className="bg-[#e9ddff] text-[#5516be] px-2 py-1 rounded text-[9px] font-extrabold uppercase tracking-tighter">
+                  Externo
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center mt-4 pt-3 border-t border-dashed border-[#c2c6d6]">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-medium text-[#424754]">Costo Tercerización</span>
+                  <span className="text-lg font-['Manrope'] font-extrabold text-[#0b1c30]">
+                    S/ {orden.costo_tercerizado || '0.00'}
+                  </span>
+                </div>
+                <button 
+                  onClick={() => openFacturacion(orden.cotizacion_id)}
+                  className="bg-[#6b38d4] hover:bg-[#5516be] text-white text-xs font-bold py-2 px-4 rounded-lg transition-colors shadow-sm shadow-[#6b38d4]/30"
+                >
+                  Facturar
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
 
       <FacturacionModal 
-        isOpen={modalOpen} 
-        onClose={() => setModalOpen(false)} 
-        orden={ordenActiva} 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        cotizacionId={selectedOrdenId}
       />
-    </div>
+    </>
   );
-}
+};
+
+export default TallerProduccion;
