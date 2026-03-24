@@ -22,12 +22,40 @@ def create_user(db: Session, user: schemas.UserCreate):
         email=user.email,
         hashed_password=hashed_password,
         nombre_completo=user.nombre_completo,
-        rol=user.rol
+        rol=user.rol,
+        tenant_id=user.tenant_id  # MULTITENANCIA
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return db_user
+
+# ==========================================
+# TENANTS
+# ==========================================
+
+def get_tenant(db: Session, tenant_id: int):
+    return db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+
+def create_tenant(db: Session, tenant: schemas.TenantCreate):
+    db_tenant = models.Tenant(**tenant.model_dump())
+    try:
+        db.add(db_tenant)
+        db.commit()
+        db.refresh(db_tenant)
+        return db_tenant
+    except Exception as e:
+        db.rollback()
+        raise e
+
+def update_tenant(db: Session, tenant_id: int, data: schemas.TenantUpdate):
+    db_tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if db_tenant:
+        for key, value in data.model_dump(exclude_unset=True).items():
+            setattr(db_tenant, key, value)
+        db.commit()
+        db.refresh(db_tenant)
+    return db_tenant
 
 # ==========================================
 # CLIENTES
@@ -36,8 +64,8 @@ def create_user(db: Session, user: schemas.UserCreate):
 def get_clientes(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Cliente).order_by(models.Cliente.razon_social).offset(skip).limit(limit).all()
 
-def create_cliente(db: Session, cliente: schemas.ClienteCreate):
-    db_cliente = models.Cliente(**cliente.model_dump())
+def create_cliente(db: Session, cliente: schemas.ClienteCreate, tenant_id: int):
+    db_cliente = models.Cliente(**cliente.model_dump(), tenant_id=tenant_id)
     try:
         db.add(db_cliente)
         db.commit()
@@ -70,14 +98,15 @@ def delete_cliente(db: Session, cliente_id: int):
 def get_productos(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Producto).order_by(models.Producto.nombre).offset(skip).limit(limit).all()
 
-def create_producto(db: Session, producto: schemas.ProductoCreate):
+def create_producto(db: Session, producto: schemas.ProductoCreate, tenant_id: int):
     precio_final = producto.precio_unitario
     valor_unitario = precio_final / calculations.FACTOR_IGV
     valor_unitario_redondeado = calculations.redondear(valor_unitario)
 
     db_producto = models.Producto(
         **producto.model_dump(),
-        valor_unitario=valor_unitario_redondeado
+        valor_unitario=valor_unitario_redondeado,
+        tenant_id=tenant_id  # MULTITENANCIA
     )
     try:
         db.add(db_producto)
@@ -131,7 +160,7 @@ def get_cotizacion(db: Session, cotizacion_id: int, usuario: Optional[models.Use
         query = query.filter(models.Cotizacion.usuario_id == usuario.id)
     return query.first()
 
-def create_cotizacion(db: Session, cotizacion: schemas.CotizacionCreate, usuario_id: int):
+def create_cotizacion(db: Session, cotizacion: schemas.CotizacionCreate, usuario_id: int, tenant_id: int):
     items_db = []
     items_procesados_para_suma = []
 
@@ -164,6 +193,7 @@ def create_cotizacion(db: Session, cotizacion: schemas.CotizacionCreate, usuario
     db_cotizacion = models.Cotizacion(
         cliente_id=cotizacion.cliente_id,
         usuario_id=usuario_id,
+        tenant_id=tenant_id,  # MULTITENANCIA
         fecha_vencimiento=cotizacion.fecha_vencimiento,
         moneda=cotizacion.moneda,
         tipo_comprobante=cotizacion.tipo_comprobante,
@@ -273,6 +303,7 @@ def crear_nota_credito_debito(
         correlativo=nuevo_correlativo,
         cliente_id=doc_afectado.cliente_id,
         usuario_id=usuario_id,
+        tenant_id=doc_afectado.tenant_id,  # MULTITENANCIA: hereda del doc afectado
         moneda=doc_afectado.moneda,
         tipo_comprobante=tipo_comprobante,
         estado="pendiente",
@@ -314,7 +345,7 @@ def get_guia_remision(db: Session, guia_id: int, usuario: models.User = None):
         query = query.filter(models.GuiaRemision.usuario_id == usuario.id)
     return query.first()
 
-def create_guia_remision(db: Session, data: dict, usuario_id: int):
+def create_guia_remision(db: Session, data: dict, usuario_id: int, tenant_id: int):
     """Crea una Guía de Remisión con sus items."""
     items_data = data.pop("items", [])
     
@@ -329,6 +360,7 @@ def create_guia_remision(db: Session, data: dict, usuario_id: int):
     db_guia = models.GuiaRemision(
         **data,
         usuario_id=usuario_id,
+        tenant_id=tenant_id,  # MULTITENANCIA
         correlativo=ultimo + 1,
         items=items_db
     )

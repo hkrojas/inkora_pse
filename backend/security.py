@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 # Importaciones locales
 import models
 from config import settings
-from database import SessionLocal
+from database import SessionLocal, current_tenant_id
 
 # Configuración de hashing de contraseñas
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -93,5 +93,9 @@ def get_current_user(db: Session, token: str):
     user = get_user_by_email(db, email=email)
     if user is None:
         raise credentials_exception
-        
+    
+    # --- MULTITENANCIA: Inyectar tenant del usuario en el contexto ---
+    if user.tenant_id:
+        current_tenant_id.set(user.tenant_id)
+    
     return user

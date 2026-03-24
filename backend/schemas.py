@@ -2,7 +2,49 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from typing import List, Optional, Any
 from datetime import datetime
 from decimal import Decimal
-import models
+
+# ==========================================
+# TENANT (Empresa / Organización)
+# ==========================================
+
+class TenantBase(BaseModel):
+    business_name: str
+    business_ruc: str
+
+class TenantCreate(TenantBase):
+    business_address: Optional[str] = None
+    business_phone: Optional[str] = None
+    apisperu_token: Optional[str] = None
+
+class TenantUpdate(BaseModel):
+    business_name: Optional[str] = None
+    business_ruc: Optional[str] = None
+    business_address: Optional[str] = None
+    business_phone: Optional[str] = None
+    primary_color: Optional[str] = None
+    pdf_note_1: Optional[str] = None
+    pdf_note_1_color: Optional[str] = None
+    pdf_note_2: Optional[str] = None
+    bank_accounts: Optional[List[dict]] = None
+    apisperu_token: Optional[str] = None
+    apisperu_url: Optional[str] = None
+
+class TenantResponse(BaseModel):
+    id: int
+    is_active: bool = True
+    business_name: str
+    business_ruc: str
+    business_address: Optional[str] = None
+    business_phone: Optional[str] = None
+    logo_filename: Optional[str] = None
+    primary_color: Optional[str] = None
+    pdf_note_1: Optional[str] = None
+    pdf_note_1_color: Optional[str] = None
+    pdf_note_2: Optional[str] = None
+    bank_accounts: Optional[Any] = None
+    apisperu_token: Optional[str] = None
+    apisperu_url: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
 
 # ==========================================
 # USUARIOS (Autenticación y Perfil)
@@ -15,22 +57,18 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    tenant_id: int  # Obligatorio: a qué empresa pertenece
 
 class UserUpdateProfile(BaseModel):
+    """Solo campos del usuario. Los datos de empresa se actualizan vía TenantUpdate."""
     nombre_completo: Optional[str] = None
-    business_name: Optional[str] = None
-    business_ruc: Optional[str] = None
-    business_address: Optional[str] = None
-    business_phone: Optional[str] = None
-    primary_color: Optional[str] = None
-    pdf_note_1: Optional[str] = None
-    pdf_note_1_color: Optional[str] = None
-    bank_accounts: Optional[List[dict]] = None 
-    apisperu_token: Optional[str] = None
-    apisperu_url: Optional[str] = None
 
 class UserResponse(UserBase):
     id: int
+    tenant_id: int
+    tenant: Optional[TenantResponse] = None  # Anidado para acceso directo
+    
+    # --- CAMPOS LEGACY (temporales para compatibilidad frontend) ---
     business_name: Optional[str] = None
     business_ruc: Optional[str] = None
     business_address: Optional[str] = None

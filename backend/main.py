@@ -62,6 +62,9 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 @app.post("/register", response_model=schemas.UserResponse)
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     if crud.get_user_by_email(db, user.email): raise HTTPException(400, "Email registrado")
+    # Verificar que el tenant existe
+    tenant = crud.get_tenant(db, user.tenant_id)
+    if not tenant: raise HTTPException(400, "Empresa (tenant) no encontrada")
     return crud.create_user(db=db, user=user)
 
 @app.get("/users/me/", response_model=schemas.UserResponse)
@@ -80,6 +83,34 @@ async def update_user_profile(data: schemas.UserUpdateProfile, db: Session = Dep
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al guardar: {str(e)}")
+
+# ==========================================
+# TENANT (Empresa) Management
+# ==========================================
+
+@app.get("/tenant/", response_model=schemas.TenantResponse)
+def get_my_tenant(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Obtener datos de la empresa del usuario autenticado."""
+    tenant = crud.get_tenant(db, current_user.tenant_id)
+    if not tenant: raise HTTPException(404, "Empresa no encontrada")
+    return tenant
+
+@app.put("/tenant/", response_model=schemas.TenantResponse)
+def update_my_tenant(data: schemas.TenantUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Actualizar datos de la empresa (solo admins)."""
+    if current_user.rol not in ["admin", "superadmin"]:
+        raise HTTPException(403, "Solo administradores pueden modificar datos de la empresa")
+    tenant = crud.update_tenant(db, current_user.tenant_id, data)
+    if not tenant: raise HTTPException(404)
+    return tenant
+
+@app.post("/tenants/", response_model=schemas.TenantResponse)
+def create_tenant(tenant: schemas.TenantCreate, db: Session = Depends(get_db)):
+    """Registrar una nueva empresa (onboarding)."""
+    try:
+        return crud.create_tenant(db, tenant)
+    except Exception as e:
+        raise HTTPException(400, f"Error al crear empresa: {str(e)}")
 
 @app.post("/users/upload-logo")
 async def upload_logo(file: UploadFile = File(...), current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -181,7 +212,7 @@ def read_clientes(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
 
 @app.post("/clientes/", response_model=schemas.ClienteResponse)
 def create_cliente(cliente: schemas.ClienteCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    return crud.create_cliente(db, cliente)
+    return crud.create_cliente(db, cliente, current_user.tenant_id)
 
 @app.put("/clientes/{cliente_id}", response_model=schemas.ClienteResponse)
 def update_cliente(cliente_id: int, cliente: schemas.ClienteCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
@@ -201,7 +232,7 @@ def read_productos(skip: int = 0, limit: int = 100, db: Session = Depends(get_db
 
 @app.post("/productos/", response_model=schemas.ProductoResponse)
 def create_producto(producto: schemas.ProductoCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    return crud.create_producto(db, producto)
+    return crud.create_producto(db, producto, current_user.tenant_id)
 
 @app.put("/productos/{producto_id}", response_model=schemas.ProductoResponse)
 def update_producto(producto_id: int, producto: schemas.ProductoCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
@@ -221,7 +252,7 @@ def read_cotizaciones(skip: int = 0, limit: int = 100, db: Session = Depends(get
 
 @app.post("/cotizaciones/", response_model=schemas.CotizacionResponse)
 def create_cotizacion(cotizacion: schemas.CotizacionCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    return crud.create_cotizacion(db, cotizacion, current_user.id)
+    return crud.create_cotizacion(db, cotizacion, current_user.id, current_user.tenant_id)
 
 @app.get("/cotizaciones/{cotizacion_id}", response_model=schemas.CotizacionResponse)
 def read_cotizacion(cotizacion_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
@@ -378,7 +409,7 @@ def crear_guia_remision(guia_data: schemas.GuiaRemisionCreate, db: Session = Dep
     data["items"] = [item for item in items_raw]
     
     try:
-        return crud.create_guia_remision(db, data, current_user.id)
+        return crud.create_guia_remision(db, data, current_user.id, current_user.tenant_id)
     except Exception as e:
         raise HTTPException(400, f"Error al crear guía: {str(e)}")
 
