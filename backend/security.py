@@ -47,6 +47,24 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
+def create_access_token_with_claims(user, expires_delta: Optional[timedelta] = None):
+    """Crea un token JWT con claims adicionales para evitar queries a la BD."""
+    to_encode = {
+        "sub": user.email,
+        "tenant_id": user.tenant_id,
+        "is_superadmin": user.is_superadmin,
+        "rol": user.rol
+    }
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    to_encode.update({"exp": expire})
+    
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded_jwt
+
 # ==========================================
 # FUNCIONES DE AUTENTICACIÓN (LOGIN)
 # ==========================================
@@ -62,9 +80,15 @@ def authenticate_user(db: Session, email: str, password: str):
     """
     user = get_user_by_email(db, email)
     if not user:
+        print(f"DEBUG AUTH: Usuario no encontrado: {email}")
         return False
-    if not verify_password(password, user.hashed_password):
+    
+    is_valid = verify_password(password, user.hashed_password)
+    if not is_valid:
+        print(f"DEBUG AUTH: Contraseña incorrecta para {email}. Hash en DB: {user.hashed_password}")
         return False
+    
+    print(f"DEBUG AUTH: Autenticación exitosa para {email}")
     return user
 
 # ==========================================

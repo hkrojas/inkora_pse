@@ -9,8 +9,9 @@ except ImportError as e:
     sys.exit(1)
 
 # --- CONFIGURACIÓN LISTA ---
-# URL de conexión a tu base de datos Neon
-DATABASE_URL = "postgresql://neondb_owner:npg_7IFj5eHxlnLC@ep-bold-term-ad5m4ir1-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require"
+# Neon (Backup): # DATABASE_URL = "postgresql://neondb_owner:npg_7IFj5eHxlnLC@ep-bold-term-ad5m4ir1-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require"
+# Supabase Printflow-db (IPv4 Pooler):
+DATABASE_URL = "postgresql://postgres.qbobhyjycmvhkocxnfhc:BcHyLIvvwCU7N0iZ@aws-0-us-west-2.pooler.supabase.com:6543/postgres?sslmode=require"
 
 # Datos del usuario a recuperar
 EMAIL_USUARIO = "corporacionaquinobp@gmail.com"

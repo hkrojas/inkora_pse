@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     # Inteligencia Artificial (Google Gemini)
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
+    # Supabase (Cloud Storage y Auth)
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
+
+    # URL del Backend para enlaces públicos (Fase 3)
+    BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
+
     class Config:
         env_file = ".env"
         extra = "ignore" 

@@ -1,5 +1,6 @@
 import io
 import os
+import requests
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import Table, TableStyle, SimpleDocTemplate, Image, Spacer, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -209,10 +210,18 @@ def create_pdf_buffer(document_data, tenant: models.Tenant, document_type: str):
     ruc_para_cuadro = tenant.business_ruc or ''
     
     logo = ""
-    if tenant.logo_filename and os.path.exists(f"logos/{tenant.logo_filename}"):
+    if tenant.logo_filename:
         try:
-            logo = Image(f"logos/{tenant.logo_filename}", width=151, height=76)
-        except Exception:
+            if tenant.logo_filename.startswith("http"):
+                # Cargar logo desde URL (Supabase Cloud Storage)
+                resp = requests.get(tenant.logo_filename, timeout=5)
+                if resp.status_code == 200:
+                    logo = Image(io.BytesIO(resp.content), width=151, height=76)
+            elif os.path.exists(f"logos/{tenant.logo_filename}"):
+                # Cargar logo local (Legacy)
+                logo = Image(f"logos/{tenant.logo_filename}", width=151, height=76)
+        except Exception as e:
+            print(f"Error cargando logo en PDF: {e}")
             logo = ""
 
     business_name_p = Paragraph(tenant.business_name or "Nombre del Negocio", header_bold_style)

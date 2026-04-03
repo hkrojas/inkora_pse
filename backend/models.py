@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text, Boolean, JSON, Numeric
+import uuid
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, Numeric, Text, JSON
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
@@ -38,6 +39,19 @@ class Tenant(Base):
     apisperu_token = Column(String, nullable=True)
     apisperu_url = Column(String, nullable=True)
 
+    # --- SaaS CONTROL & SUNAT (Fase 13) ---
+    plan_type = Column(String, default="Free") # Free, Pro, Premium
+    plan_start_date = Column(DateTime, default=datetime.now)
+    plan_end_date = Column(DateTime, nullable=True)
+    invoice_limit = Column(Integer, default=50)
+    invoices_used = Column(Integer, default=0)
+
+    # Credenciales SUNAT Reales
+    sunat_usuario_sol = Column(String, nullable=True)
+    sunat_clave_sol = Column(String, nullable=True)
+    sunat_cert_password = Column(String, nullable=True)
+    sunat_cert_url = Column(String, nullable=True)
+
     # --- Relaciones inversas (navegación ORM) ---
     users = relationship("User", back_populates="tenant")
     clientes = relationship("Cliente", back_populates="tenant")
@@ -65,6 +79,7 @@ class User(Base):
     hashed_password = Column(String)
     nombre_completo = Column(String)
     rol = Column(String, default="vendedor")  # vendedor, admin, superadmin
+    is_superadmin = Column(Boolean, default=False)
 
     # --- MULTITENANCIA ---
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
@@ -151,6 +166,7 @@ class Cotizacion(Base):
     fecha_vencimiento = Column(DateTime, nullable=True)
     moneda = Column(String, default="PEN")
     estado = Column(String, default="pendiente")  # pendiente, facturada, anulada
+    uuid_publico = Column(String, unique=True, index=True, default=lambda: str(uuid.uuid4()))
 
     # --- MULTITENANCIA ---
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
@@ -433,3 +449,30 @@ class AlertaInventario(Base):
     mensaje = Column(String)
     fecha_creacion = Column(DateTime, default=datetime.now)
     resuelta = Column(Boolean, default=False)
+
+# ==========================================
+# AUDITORÍA (FASE 13)
+# ==========================================
+
+class AuditLog(Base):
+    """Log de auditoría paraSuperadmin - registra acciones administrativas."""
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.now)
+    
+    # Usuario que realizó la acción
+    user_id = Column(Integer, ForeignKey("users.id"))
+    user = relationship("User")
+    
+    # Tipo de acción
+    action = Column(String)  # create, update, delete, login, logout, config_change
+    
+    # Entidad afectada
+    entity_type = Column(String)  # tenant, user, config
+    entity_id = Column(Integer, nullable=True)
+    
+    # Detalles
+    details = Column(Text, nullable=True)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)

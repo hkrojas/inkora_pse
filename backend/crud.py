@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session, joinedload
+﻿from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, func
 from passlib.context import CryptContext
 from typing import List, Optional
@@ -15,6 +15,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def get_user_by_email(db: Session, email: str):
     return db.query(models.User).filter(models.User.email == email).first()
+
+def get_user_by_id(db: Session, user_id: int):
+    return db.query(models.User).filter(models.User.id == user_id).first()
 
 def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = pwd_context.hash(user.password)
@@ -160,6 +163,13 @@ def get_cotizacion(db: Session, cotizacion_id: int, usuario: Optional[models.Use
         query = query.filter(models.Cotizacion.usuario_id == usuario.id)
     return query.first()
 
+def get_cotizacion_by_uuid(db: Session, uuid_publico: str):
+    """BÃºsqueda pÃºblica por UUID (Fase 3)."""
+    return db.query(models.Cotizacion)\
+        .options(joinedload(models.Cotizacion.cliente), joinedload(models.Cotizacion.tenant))\
+        .filter(models.Cotizacion.uuid_publico == uuid_publico)\
+        .first()
+
 def create_cotizacion(db: Session, cotizacion: schemas.CotizacionCreate, usuario_id: int, tenant_id: int):
     items_db = []
     items_procesados_para_suma = []
@@ -190,9 +200,9 @@ def create_cotizacion(db: Session, cotizacion: schemas.CotizacionCreate, usuario
     totales = calculations.sumarizar_cotizacion(items_procesados_para_suma)
 
     # ---------------------------------------------------------
-    # BLOQUEO TRANSACCIONAL: Prevención de Race Conditions (Fase 5)
+    # BLOQUEO TRANSACCIONAL: PrevenciÃ³n de Race Conditions (Fase 5)
     # ---------------------------------------------------------
-    # Bloqueamos la última fila de la serie para este tenant específico
+    # Bloqueamos la Ãºltima fila de la serie para este tenant especÃ­fico
     # Asegura que 2 hilos concurrentes no lean el mismo MAX(correlativo)
     last_doc = db.query(models.Cotizacion).filter(
         models.Cotizacion.tenant_id == tenant_id,
@@ -232,7 +242,7 @@ def create_cotizacion(db: Session, cotizacion: schemas.CotizacionCreate, usuario
         raise e
 
 def guardar_respuesta_sunat(db: Session, cotizacion_id: int, data_sunat: dict):
-    """Guarda los links devueltos por la API de Facturación en la cotización"""
+    """Guarda los links devueltos por la API de FacturaciÃ³n en la cotizaciÃ³n"""
     db_cot = db.query(models.Cotizacion).filter(models.Cotizacion.id == cotizacion_id).first()
     if db_cot:
         links = data_sunat.get('links', {}) if data_sunat.get('links') else data_sunat.get('sunat_response', {}).get('links', {})
@@ -244,7 +254,7 @@ def guardar_respuesta_sunat(db: Session, cotizacion_id: int, data_sunat: dict):
         db_cot.estado = "facturada"
         db_cot.sunat_error = None
         
-        # Guardar Serie y Correlativo si la API los asignó o modificó
+        # Guardar Serie y Correlativo si la API los asignÃ³ o modificÃ³
         if data_sunat.get('serie'): db_cot.serie = data_sunat.get('serie')
         if data_sunat.get('correlativo'): 
             try:
@@ -256,11 +266,11 @@ def guardar_respuesta_sunat(db: Session, cotizacion_id: int, data_sunat: dict):
     return db_cot
 
 # ==========================================
-# ANULACIÓN Y NOTAS DE CRÉDITO/DÉBITO
+# ANULACIÃ“N Y NOTAS DE CRÃ‰DITO/DÃ‰BITO
 # ==========================================
 
 def anular_cotizacion(db: Session, cotizacion_id: int):
-    """Marca un comprobante como 'anulada' tras confirmación exitosa de SUNAT."""
+    """Marca un comprobante como 'anulada' tras confirmaciÃ³n exitosa de SUNAT."""
     db_cot = db.query(models.Cotizacion).filter(models.Cotizacion.id == cotizacion_id).first()
     if not db_cot:
         return None
@@ -282,19 +292,26 @@ def crear_nota_credito_debito(
     descripcion_motivo: str
 ):
     """
-    Crea un nuevo registro de Cotizacion que representa la Nota de Crédito (07) o Débito (08),
-    clonando los items del documento afectado y vinculándolo via nota_referencia_id.
+    Crea un nuevo registro de Cotizacion que representa la Nota de CrÃ©dito (07) o DÃ©bito (08),
+    clonando los items del documento afectado y vinculÃ¡ndolo via nota_referencia_id.
     """
     # Determinar tipo de comprobante y serie
     tipo_comprobante = "07" if tipo_nota == "credito" else "08"
     serie_origen = doc_afectado.serie  # Ej: F001, B001
     serie_nota = "FC01" if serie_origen.startswith("F") else "BC01"
 
-    # Obtener correlativo propio para esta serie de notas
-    ultimo_correlativo = db.query(func.max(models.Cotizacion.correlativo)).filter(
+    # ---------------------------------------------------------
+    # BLOQUEO TRANSACCIONAL: PrevenciÃ³n de Race Conditions (Fase 5)
+    # ---------------------------------------------------------
+    last_doc = db.query(models.Cotizacion).filter(
+        models.Cotizacion.tenant_id == doc_afectado.tenant_id,
         models.Cotizacion.serie == serie_nota
-    ).scalar() or 0
+    ).order_by(models.Cotizacion.correlativo.desc())\
+    .with_for_update().first()
+    
+    ultimo_correlativo = last_doc.correlativo if last_doc else 0
     nuevo_correlativo = ultimo_correlativo + 1
+    # ---------------------------------------------------------
 
     # Clonar items del documento afectado
     items_nota = []
@@ -341,7 +358,7 @@ def crear_nota_credito_debito(
         raise e
 
 # ==========================================
-# GUÍAS DE REMISIÓN
+# GUÃAS DE REMISIÃ“N
 # ==========================================
 
 def get_guias_remision(db: Session, usuario: models.User = None, skip: int = 0, limit: int = 100):
@@ -361,14 +378,21 @@ def get_guia_remision(db: Session, guia_id: int, usuario: models.User = None):
     return query.first()
 
 def create_guia_remision(db: Session, data: dict, usuario_id: int, tenant_id: int):
-    """Crea una Guía de Remisión con sus items."""
+    """Crea una GuÃ­a de RemisiÃ³n con sus items."""
     items_data = data.pop("items", [])
     
-    # Correlativo auto-incremental por serie
-    serie = data.get("serie", "T001")
-    ultimo = db.query(func.max(models.GuiaRemision.correlativo)).filter(
+    # ---------------------------------------------------------
+    # BLOQUEO TRANSACCIONAL: PrevenciÃ³n de Race Conditions (Fase 5)
+    # ---------------------------------------------------------
+    last_guia = db.query(models.GuiaRemision).filter(
+        models.GuiaRemision.tenant_id == tenant_id,
         models.GuiaRemision.serie == serie
-    ).scalar() or 0
+    ).order_by(models.GuiaRemision.correlativo.desc())\
+    .with_for_update().first()
+    
+    ultimo_correlativo_guia = last_guia.correlativo if last_guia else 0
+    nuevo_correlativo = ultimo_correlativo_guia + 1
+    # ---------------------------------------------------------
     
     items_db = [models.GuiaRemisionItem(**item) for item in items_data]
     
@@ -376,7 +400,7 @@ def create_guia_remision(db: Session, data: dict, usuario_id: int, tenant_id: in
         **data,
         usuario_id=usuario_id,
         tenant_id=tenant_id,  # MULTITENANCIA
-        correlativo=ultimo + 1,
+        correlativo=nuevo_correlativo,
         items=items_db
     )
     
@@ -390,7 +414,7 @@ def create_guia_remision(db: Session, data: dict, usuario_id: int, tenant_id: in
         raise e
 
 def guardar_respuesta_sunat_gre(db: Session, guia_id: int, data_sunat: dict):
-    """Guarda la respuesta SUNAT en una Guía de Remisión."""
+    """Guarda la respuesta SUNAT en una GuÃ­a de RemisiÃ³n."""
     db_guia = db.query(models.GuiaRemision).filter(models.GuiaRemision.id == guia_id).first()
     if db_guia:
         links = data_sunat.get('links', {}) or data_sunat.get('sunat_response', {}).get('links', {})
@@ -410,23 +434,23 @@ def guardar_respuesta_sunat_gre(db: Session, guia_id: int, data_sunat: dict):
 
 def registrar_pago(db: Session, cotizacion_id: int, pago_data: schemas.PagoCreate, tenant_id: int):
     """
-    Registra un pago/adelanto para una cotización.
+    Registra un pago/adelanto para una cotizaciÃ³n.
     
     REGLAS DE NEGOCIO:
     a) Crea el registro en tabla pagos.
-    b) Suma monto_pagado al campo monto_pagado de la Cotización padre.
+    b) Suma monto_pagado al campo monto_pagado de la CotizaciÃ³n padre.
     c) Recalcula saldo_pendiente = total_venta - monto_pagado.
-    d) Todo en una sola transacción atómica.
+    d) Todo en una sola transacciÃ³n atÃ³mica.
     """
     from decimal import Decimal
     
-    # Obtener cotización
+    # Obtener cotizaciÃ³n
     db_cot = db.query(models.Cotizacion).filter(
         models.Cotizacion.id == cotizacion_id
     ).first()
     
     if not db_cot:
-        raise ValueError("Cotización no encontrada")
+        raise ValueError("CotizaciÃ³n no encontrada")
     
     # Validar que el pago no exceda el saldo pendiente
     saldo_actual = (db_cot.total_venta or Decimal("0")) - (db_cot.monto_pagado or Decimal("0"))
@@ -448,14 +472,14 @@ def registrar_pago(db: Session, cotizacion_id: int, pago_data: schemas.PagoCreat
         tipo=pago_data.tipo
     )
     
-    # b) Actualizar monto_pagado de la cotización
+    # b) Actualizar monto_pagado de la cotizaciÃ³n
     nuevo_pagado = (db_cot.monto_pagado or Decimal("0")) + monto
     db_cot.monto_pagado = nuevo_pagado
     
     # c) Recalcular saldo_pendiente
     db_cot.saldo_pendiente = (db_cot.total_venta or Decimal("0")) - nuevo_pagado
     
-    # d) Transacción atómica
+    # d) TransacciÃ³n atÃ³mica
     try:
         db.add(db_pago)
         db.commit()
@@ -467,13 +491,13 @@ def registrar_pago(db: Session, cotizacion_id: int, pago_data: schemas.PagoCreat
         raise e
 
 def get_pagos_cotizacion(db: Session, cotizacion_id: int):
-    """Obtiene todos los pagos de una cotización."""
+    """Obtiene todos los pagos de una cotizaciÃ³n."""
     return db.query(models.Pago).filter(
         models.Pago.cotizacion_id == cotizacion_id
     ).order_by(models.Pago.fecha_pago.desc()).all()
 
 # ==========================================
-# GESTIÓN DE PROVEEDORES (BROKER)
+# GESTIÃ“N DE PROVEEDORES (BROKER)
 # ==========================================
 
 def get_proveedores(db: Session, tenant_id: int, skip: int = 0, limit: int = 100):
@@ -503,11 +527,11 @@ def delete_proveedor(db: Session, proveedor_id: int, tenant_id: int):
     return True
 
 # ==========================================
-# MOTOR DE PRODUCCIÓN (MRP / BOM)
+# MOTOR DE PRODUCCIÃ“N (MRP / BOM)
 # ==========================================
 
 def get_insumos(db: Session, tenant_id: int, skip: int = 0, limit: int = 100):
-    """Obtiene el catálogo de Insumos/Materia Prima"""
+    """Obtiene el catÃ¡logo de Insumos/Materia Prima"""
     return db.query(models.Insumo).filter(
         models.Insumo.tenant_id == tenant_id
     ).offset(skip).limit(limit).all()
@@ -535,7 +559,7 @@ def get_recetas_producto(db: Session, producto_id: int):
     ).all()
 
 def create_receta_bom(db: Session, receta: schemas.RecetaBOMCreate, tenant_id: int):
-    """Añade un Insumo a la BOM de un Producto"""
+    """AÃ±ade un Insumo a la BOM de un Producto"""
     db_receta = models.RecetaBOM(
         tenant_id=tenant_id,
         producto_id=receta.producto_id,
@@ -548,31 +572,40 @@ def create_receta_bom(db: Session, receta: schemas.RecetaBOMCreate, tenant_id: i
     db.refresh(db_receta)
     return db_receta
 
+def get_ordenes_produccion(db: Session, tenant_id: int, skip: int = 0, limit: int = 100):
+    """Lectura de Todas las Ã“rdenes Taller/TercerizaciÃ³n activos."""
+    return db.query(models.OrdenProduccion).filter(
+        models.OrdenProduccion.tenant_id == tenant_id
+    ).options(
+        joinedload(models.OrdenProduccion.detalles),
+        joinedload(models.OrdenProduccion.proveedor)
+    ).order_by(models.OrdenProduccion.id.desc()).offset(skip).limit(limit).all()
+
 def generar_orden_produccion(db: Session, cotizacion_id: int, tenant_id: int, tipo_produccion: str = "interna", proveedor_id: int = None, costo_tercerizado = None):
     """
-    Ruta Crítica MRP: Genera la orden de trabajo calculando requerimientos de material
-    basados en lo vendido (Cotización) multiplicando la RecetaBOM + Mermas.
-    Soporta asignación a talleres externos (Modelo Broker).
+    Ruta CrÃ­tica MRP: Genera la orden de trabajo calculando requerimientos de material
+    basados en lo vendido (CotizaciÃ³n) multiplicando la RecetaBOM + Mermas.
+    Soporta asignaciÃ³n a talleres externos (Modelo Broker).
     """
     from decimal import Decimal
     
-    # 1. Obtener la Cotización y sus lineas
+    # 1. Obtener la CotizaciÃ³n y sus lineas
     db_cotizacion = db.query(models.Cotizacion).filter(
         models.Cotizacion.id == cotizacion_id,
         models.Cotizacion.tenant_id == tenant_id
     ).first()
     
     if not db_cotizacion:
-        raise ValueError("Cotización no encontrada o no pertenece al Tenant")
+        raise ValueError("CotizaciÃ³n no encontrada o no pertenece al Tenant")
         
-    # Evitar duplicidad de órdenes activas (opcional)
+    # Evitar duplicidad de Ã³rdenes activas (opcional)
     orden_previa = db.query(models.OrdenProduccion).filter(
         models.OrdenProduccion.cotizacion_id == cotizacion_id
     ).first()
     if orden_previa:
-        raise ValueError(f"Ya existe una Orden de Producción (ID: {orden_previa.id}) para este documento.")
+        raise ValueError(f"Ya existe una Orden de ProducciÃ³n (ID: {orden_previa.id}) para este documento.")
 
-    # 2. Iniciar Cabecera de Orden Producción
+    # 2. Iniciar Cabecera de Orden ProducciÃ³n
     db_orden = models.OrdenProduccion(
         tenant_id=tenant_id,
         cotizacion_id=cotizacion_id,
@@ -600,12 +633,12 @@ def generar_orden_produccion(db: Session, cotizacion_id: int, tenant_id: int, ti
             cant_base = Decimal(str(receta.cantidad_base_necesaria))
             merma_pct = Decimal(str(receta.porcentaje_merma_estandar)) / Decimal("100")
             
-            # MATEMÁTICA DEL MOTOR MRP:
+            # MATEMÃTICA DEL MOTOR MRP:
             neta = cantidad_vendida * cant_base
             merma = neta * merma_pct
             total = neta + merma
             
-            # Insertar necesidad teórica a descontar
+            # Insertar necesidad teÃ³rica a descontar
             db_detalle = models.OrdenProduccionDetalle(
                 orden_id=db_orden.id,
                 insumo_id=receta.insumo_id,
@@ -615,7 +648,7 @@ def generar_orden_produccion(db: Session, cotizacion_id: int, tenant_id: int, ti
             )
             db.add(db_detalle)
             
-    # Commit Atómico (Cabecera + Todos los detalles MRP generados)
+    # Commit AtÃ³mico (Cabecera + Todos los detalles MRP generados)
     try:
         db.commit()
         db.refresh(db_orden)
@@ -623,6 +656,25 @@ def generar_orden_produccion(db: Session, cotizacion_id: int, tenant_id: int, ti
     except Exception as e:
         db.rollback()
         raise e
+
+def update_orden_produccion_status(db: Session, orden_id: int, nuevo_estado: str, tenant_id: int):
+    """Actualiza el estado de la OP y registra fecha de fin si aplica."""
+    from datetime import datetime
+    db_orden = db.query(models.OrdenProduccion).filter(
+        models.OrdenProduccion.id == orden_id,
+        models.OrdenProduccion.tenant_id == tenant_id
+    ).first()
+    
+    if not db_orden:
+        return None
+        
+    db_orden.estado = nuevo_estado
+    if nuevo_estado == "finalizada":
+        db_orden.fecha_fin = datetime.now()
+        
+    db.commit()
+    db.refresh(db_orden)
+    return db_orden
 
 # ==========================================
 # FASE 8: BUSINESS INTELLIGENCE Y ALERTAS
@@ -661,7 +713,7 @@ def get_dashboard_stats(db: Session, tenant_id: int):
 def verificar_stock_y_generar_alertas(db: Session, tenant_id: int):
     """
     Background Task: Mapea insumos debajo de su umbral y genera alertas 
-    únicas no resueltas.
+    Ãºnicas no resueltas.
     """
     insumos_criticos = db.query(models.Insumo).filter(
         models.Insumo.tenant_id == tenant_id,
@@ -678,12 +730,65 @@ def verificar_stock_y_generar_alertas(db: Session, tenant_id: int):
             nueva_alerta = models.AlertaInventario(
                 tenant_id=tenant_id,
                 insumo_id=insumo.id,
-                mensaje=f"STOCK CRÍTICO: {insumo.nombre} (Stock: {insumo.stock_actual} | Umbral: {insumo.umbral_minimo})",
+                mensaje=f"STOCK CRÃTICO: {insumo.nombre} (Stock: {insumo.stock_actual} | Umbral: {insumo.umbral_minimo})",
                 resuelta=False
             )
             db.add(nueva_alerta)
+
+# ==========================================
+# FASE 13: SUPERADMIN CONTROL TOWER
+# ==========================================
+
+def get_all_tenants(db: Session, skip: int = 0, limit: int = 100):
+    """(GLOBAL) Lista todas las imprentas registradas."""
+    return db.query(models.Tenant).order_by(models.Tenant.id.desc()).offset(skip).limit(limit).all()
+
+def update_tenant_saas(db: Session, tenant_id: int, updates: dict):
+    """(GLOBAL) Actualiza límites, planes o credenciales SUNAT."""
+    db_tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if not db_tenant:
+        return None
+    
+    for key, value in updates.items():
+        if value is not None:
+            setattr(db_tenant, key, value)
+    
+    db.commit()
+    db.refresh(db_tenant)
+    return db_tenant
+
+def delete_tenant(db: Session, tenant_id: int):
+    """(GLOBAL) Elimina un tenant y todos sus datos."""
+    db_tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if not db_tenant:
+        return None
+    
     try:
+        db.delete(db_tenant)
         db.commit()
+        return True
     except Exception as e:
         db.rollback()
-        print(f"Error generando alertas de inventario: {e}")
+        raise e
+
+def get_all_users(db: Session, skip: int = 0, limit: int = 100):
+    """(GLOBAL) Lista todos los usuarios del sistema."""
+    return db.query(models.User).order_by(models.User.id.desc()).offset(skip).limit(limit).all()
+
+def create_audit_log(db: Session, user_id: int, action: str, entity_type: str = None, entity_id: int = None, details: str = None, ip_address: str = None):
+    """Crea un registro de auditoría."""
+    log = models.AuditLog(
+        user_id=user_id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        details=details,
+        ip_address=ip_address
+    )
+    db.add(log)
+    db.commit()
+    return log
+
+def get_audit_logs(db: Session, skip: int = 0, limit: int = 100):
+    """Obtiene todos los logs de auditoría."""
+    return db.query(models.AuditLog).order_by(models.AuditLog.timestamp.desc()).offset(skip).limit(limit).all()

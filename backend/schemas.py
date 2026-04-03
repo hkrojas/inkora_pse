@@ -44,7 +44,28 @@ class TenantResponse(BaseModel):
     bank_accounts: Optional[Any] = None
     apisperu_token: Optional[str] = None
     apisperu_url: Optional[str] = None
+    
+    # SaaS & SUNAT (Sutil en respuesta estándar)
+    plan_type: Optional[str] = "Free"
+    invoice_limit: Optional[int] = 50
+    invoices_used: Optional[int] = 0
     model_config = ConfigDict(from_attributes=True)
+
+class TenantSaaSUpdate(BaseModel):
+    plan_type: Optional[str] = None
+    plan_start_date: Optional[datetime] = None
+    plan_end_date: Optional[datetime] = None
+    invoice_limit: Optional[int] = None
+    sunat_usuario_sol: Optional[str] = None
+    sunat_clave_sol: Optional[str] = None
+    sunat_cert_password: Optional[str] = None
+    sunat_cert_url: Optional[str] = None
+
+class SuperadminTenantResponse(TenantResponse):
+    plan_start_date: Optional[datetime] = None
+    plan_end_date: Optional[datetime] = None
+    sunat_usuario_sol: Optional[str] = None
+    sunat_cert_url: Optional[str] = None
 
 # ==========================================
 # USUARIOS (Autenticación y Perfil)
@@ -54,6 +75,7 @@ class UserBase(BaseModel):
     email: EmailStr
     nombre_completo: Optional[str] = None
     rol: str = "vendedor"
+    is_superadmin: bool = False
 
 class UserCreate(UserBase):
     password: str
@@ -62,6 +84,13 @@ class UserCreate(UserBase):
 class UserUpdateProfile(BaseModel):
     """Solo campos del usuario. Los datos de empresa se actualizan vía TenantUpdate."""
     nombre_completo: Optional[str] = None
+
+class UserAdminUpdate(BaseModel):
+    """Schema para que el superadmin actualice usuarios."""
+    nombre_completo: Optional[str] = None
+    rol: Optional[str] = None
+    tenant_id: Optional[int] = None
+    is_superadmin: Optional[bool] = None
 
 class UserResponse(UserBase):
     id: int
