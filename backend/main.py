@@ -749,6 +749,22 @@ def create_insumo(insumo: schemas.InsumoCreate, db: Session = Depends(get_db_ten
     """Registra nueva Materia Prima / Insumo"""
     return crud.create_insumo(db, insumo, current_user.tenant_id)
 
+@app.put("/insumos/{insumo_id}", response_model=schemas.InsumoResponse)
+def update_insumo(insumo_id: int, insumo: schemas.InsumoCreate, db: Session = Depends(get_db_tenant), current_user: models.User = Depends(get_current_user)):
+    """Actualiza una Materia Prima / Insumo"""
+    res = crud.update_insumo(db, insumo_id, insumo, current_user.tenant_id)
+    if not res:
+        raise HTTPException(404)
+    return res
+
+@app.delete("/insumos/{insumo_id}")
+def delete_insumo(insumo_id: int, db: Session = Depends(get_db_tenant), current_user: models.User = Depends(get_current_user)):
+    """Elimina una Materia Prima / Insumo"""
+    res = crud.delete_insumo(db, insumo_id, current_user.tenant_id)
+    if not res:
+        raise HTTPException(404)
+    return {"msg": "Eliminado"}
+
 @app.get("/productos/{producto_id}/bom", response_model=List[schemas.RecetaBOMResponse])
 def read_bom_producto(producto_id: int, db: Session = Depends(get_db_tenant), current_user: models.User = Depends(get_current_user)):
     """Obtiene la Lista de Materiales (BOM) para un producto especÃ­fico"""

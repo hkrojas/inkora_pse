@@ -5,8 +5,10 @@
   import Header from '$lib/components/Header.svelte';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import { auth, checkAuth } from '$lib/stores/auth';
+  import { appShellBackgroundClass, glassPanelClass } from '$lib/utils/uiClasses';
   import Toast from '$lib/components/Toast.svelte';
   import { onMount } from 'svelte';
+  import { fade, fly } from 'svelte/transition';
 
   let mobileOpen = false;
 
@@ -51,15 +53,27 @@
 {:else if isShelllessPage}
   <slot />
 {:else if $auth.isAuthenticated}
-  <div class="min-h-screen bg-slate-950 md:grid md:grid-cols-[17.5rem_minmax(0,1fr)]">
-    <Sidebar bind:mobileOpen />
+  <div class={`relative min-h-screen overflow-hidden ${appShellBackgroundClass} selection:bg-blue-100 selection:text-blue-900 md:grid md:grid-cols-[18rem_minmax(0,1fr)]`}>
+    <div class="pointer-events-none absolute inset-0 overflow-hidden">
+      <div class="absolute left-[-8rem] top-[-6rem] h-72 w-72 rounded-full bg-white/80 blur-3xl"></div>
+      <div class="absolute right-[-7rem] top-16 h-80 w-80 rounded-full bg-blue-200/25 blur-3xl"></div>
+      <div class="absolute bottom-[-9rem] left-[28%] h-96 w-96 rounded-full bg-slate-300/20 blur-3xl"></div>
+    </div>
 
-    <div class="flex h-screen min-w-0 flex-col bg-slate-50 selection:bg-emerald-100 selection:text-emerald-900">
+    <div class="relative z-10">
+      <Sidebar bind:mobileOpen />
+    </div>
+
+    <div class="relative z-10 flex h-screen min-w-0 flex-col">
       <Header on:toggleMobile={toggleMobileSidebar} />
 
-      <main class="min-h-0 flex-1 overflow-y-auto">
-        <div class="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
-          <slot />
+      <main class="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-2 sm:px-3 lg:px-4">
+        <div class={`mx-auto w-full max-w-[96rem] rounded-[32px] ${glassPanelClass} min-h-full px-4 py-5 sm:px-6 lg:px-8 lg:py-8`}>
+          {#key $page.url.pathname}
+            <div in:fly={{ y: 20, duration: 300 }} out:fade>
+              <slot />
+            </div>
+          {/key}
         </div>
       </main>
     </div>

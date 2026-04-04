@@ -545,11 +545,36 @@ def create_insumo(db: Session, insumo: schemas.InsumoCreate, tenant_id: int):
         unidad_consumo=insumo.unidad_consumo,
         factor_conversion=insumo.factor_conversion,
         costo_promedio=insumo.costo_promedio,
-        stock_actual=insumo.stock_actual
+        stock_actual=insumo.stock_actual,
+        umbral_minimo=insumo.umbral_minimo
     )
     db.add(db_insumo)
     db.commit()
     db.refresh(db_insumo)
+    return db_insumo
+
+def update_insumo(db: Session, insumo_id: int, insumo_data: schemas.InsumoCreate, tenant_id: int):
+    """Actualiza una Materia Prima/Insumo del tenant actual"""
+    db_insumo = db.query(models.Insumo).filter(
+        models.Insumo.id == insumo_id,
+        models.Insumo.tenant_id == tenant_id
+    ).first()
+    if db_insumo:
+        for key, value in insumo_data.model_dump().items():
+            setattr(db_insumo, key, value)
+        db.commit()
+        db.refresh(db_insumo)
+    return db_insumo
+
+def delete_insumo(db: Session, insumo_id: int, tenant_id: int):
+    """Elimina una Materia Prima/Insumo del tenant actual"""
+    db_insumo = db.query(models.Insumo).filter(
+        models.Insumo.id == insumo_id,
+        models.Insumo.tenant_id == tenant_id
+    ).first()
+    if db_insumo:
+        db.delete(db_insumo)
+        db.commit()
     return db_insumo
 
 def get_recetas_producto(db: Session, producto_id: int):

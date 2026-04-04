@@ -1,13 +1,27 @@
 <script>
+  import CotizacionDetailModal from '$lib/components/CotizacionDetailModal.svelte';
   import CotizacionSlideOver from '$lib/components/CotizacionSlideOver.svelte';
   import { api } from '$lib/utils/api';
+  import {
+    glassPanelClass,
+    glassPanelStrongClass,
+    mutedGlassPanelClass,
+    pageEyebrowClass,
+    pageSubtitleClass,
+    pageTitleClass,
+    premiumPrimaryButtonClass,
+    premiumRowHoverClass
+  } from '$lib/utils/uiClasses';
   import { CalendarDays, ChevronRight, CircleAlert, CircleCheckBig, FileText, Plus } from 'lucide-svelte';
   import { onMount } from 'svelte';
 
-  let loading = true;
+  let isLoading = true;
   let cotizaciones = [];
   let showModal = false;
+  let showDetailModal = false;
+  let selectedCotizacionId = null;
   let activeFilter = 'todas';
+  const skeletonRows = Array.from({ length: 6 }, (_, index) => index);
 
   const quickFilters = [
     { id: 'todas', label: 'Todas' },
@@ -16,14 +30,14 @@
   ];
 
   const fetchCotizaciones = async () => {
-    loading = true;
+    isLoading = true;
 
     try {
       cotizaciones = await api.get('/cotizaciones/');
     } catch (error) {
       console.error('Error cargando cotizaciones:', error);
     } finally {
-      loading = false;
+      isLoading = false;
     }
   };
 
@@ -86,16 +100,21 @@
     });
   }
 
+  function openDetail(cotizacion) {
+    selectedCotizacionId = cotizacion.id;
+    showDetailModal = true;
+  }
+
   $: filteredCotizaciones = cotizaciones.filter((cotizacion) => matchesFilter(cotizacion, activeFilter));
 </script>
 
 <div class="space-y-6">
   <section class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
     <div class="space-y-2">
-      <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Centro comercial</p>
+      <p class={pageEyebrowClass}>Centro comercial</p>
       <div class="space-y-1">
-        <h1 class="text-2xl font-bold tracking-tight text-slate-900">Cotizaciones</h1>
-        <p class="max-w-2xl text-sm leading-6 text-slate-500">
+        <h1 class={pageTitleClass}>Cotizaciones</h1>
+        <p class={`max-w-2xl ${pageSubtitleClass}`}>
           Supervisa el pipeline de documentos y revisa rápidamente el estado de cada propuesta comercial.
         </p>
       </div>
@@ -103,7 +122,7 @@
 
     <button
       on:click={() => showModal = true}
-      class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-sm shadow-emerald-900/10 ring-1 ring-inset ring-emerald-500/70 transition-all duration-200 hover:bg-emerald-500"
+      class={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold ${premiumPrimaryButtonClass}`}
     >
       <Plus class="h-4 w-4" strokeWidth={2.2} />
       <span>Nueva Cotización</span>
@@ -114,15 +133,15 @@
     {#each quickFilters as filter}
       <button
         on:click={() => activeFilter = filter.id}
-        class="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all duration-200
+        class="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all duration-300
           {activeFilter === filter.id
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm'
-            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900'}"
+            ? 'border-slate-900/10 bg-gradient-to-b from-zinc-800 to-zinc-950 text-white shadow-[inset_0px_1px_0px_rgba(255,255,255,0.1),0px_1px_2px_rgba(0,0,0,0.4)]'
+            : 'border-white/70 bg-white/70 text-slate-600 shadow-[0_8px_24px_rgba(15,23,42,0.04)] hover:bg-white/90 hover:text-slate-900'}"
       >
         <span>{filter.label}</span>
         <span
           class="rounded-full px-2 py-0.5 text-[11px] font-semibold
-            {activeFilter === filter.id ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}"
+            {activeFilter === filter.id ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-500'}"
         >
           {getFilterCount(filter.id)}
         </span>
@@ -130,20 +149,61 @@
     {/each}
   </section>
 
-  <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-    {#if loading}
-      <div class="flex min-h-[320px] flex-col items-center justify-center gap-5 px-6 py-12 text-center">
-        <div class="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50">
-          <div class="h-8 w-8 animate-spin rounded-full border-[3px] border-slate-200 border-t-emerald-500"></div>
-        </div>
-        <div class="space-y-2">
-          <p class="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">Cargando datos</p>
-          <p class="text-sm text-slate-500">Preparando la vista de cotizaciones...</p>
-        </div>
+  <section class={`overflow-hidden rounded-[30px] ${glassPanelStrongClass}`}>
+    {#if isLoading}
+      <div class="overflow-x-auto" aria-hidden="true">
+        <table class="min-w-full border-separate border-spacing-0">
+          <thead>
+            <tr class="bg-slate-50/50">
+              <th class="px-6 pb-3 pt-5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Documento</th>
+              <th class="px-6 pb-3 pt-5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Cliente</th>
+              <th class="px-6 pb-3 pt-5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Fecha</th>
+              <th class="px-6 pb-3 pt-5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Total</th>
+              <th class="px-6 pb-3 pt-5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Estado</th>
+              <th class="px-6 pb-3 pt-5 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Detalle</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {#each skeletonRows as _, index}
+              <tr class="animate-pulse">
+                <td class="px-6 py-4 {index === skeletonRows.length - 1 ? 'border-b-0' : 'border-b border-slate-200/70'}">
+                  <div class="space-y-2">
+                    <div class="h-4 w-28 rounded-full bg-slate-200"></div>
+                    <div class="h-3 w-20 rounded-full bg-slate-100"></div>
+                  </div>
+                </td>
+
+                <td class="px-6 py-4 {index === skeletonRows.length - 1 ? 'border-b-0' : 'border-b border-slate-200/70'}">
+                  <div class="space-y-2">
+                    <div class="h-4 w-40 rounded-full bg-slate-200"></div>
+                    <div class="h-3 w-24 rounded-full bg-slate-100"></div>
+                  </div>
+                </td>
+
+                <td class="px-6 py-4 {index === skeletonRows.length - 1 ? 'border-b-0' : 'border-b border-slate-200/70'}">
+                  <div class="h-4 w-24 rounded-full bg-slate-200"></div>
+                </td>
+
+                <td class="px-6 py-4 {index === skeletonRows.length - 1 ? 'border-b-0' : 'border-b border-slate-200/70'}">
+                  <div class="h-4 w-20 rounded-full bg-slate-200"></div>
+                </td>
+
+                <td class="px-6 py-4 {index === skeletonRows.length - 1 ? 'border-b-0' : 'border-b border-slate-200/70'}">
+                  <div class="h-7 w-24 rounded-full bg-slate-100"></div>
+                </td>
+
+                <td class="px-6 py-4 text-right {index === skeletonRows.length - 1 ? 'border-b-0' : 'border-b border-slate-200/70'}">
+                  <div class="ml-auto h-4 w-14 rounded-full bg-slate-200"></div>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       </div>
     {:else if filteredCotizaciones.length === 0}
       <div class="flex min-h-[320px] flex-col items-center justify-center gap-5 px-6 py-12 text-center">
-        <div class="flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50">
+        <div class={`flex h-16 w-16 items-center justify-center rounded-2xl ${mutedGlassPanelClass}`}>
           {#if activeFilter === 'aprobadas'}
             <CircleCheckBig class="h-8 w-8 text-emerald-600" strokeWidth={1.9} />
           {:else if activeFilter === 'pendientes'}
@@ -166,7 +226,7 @@
 
         <button
           on:click={() => showModal = true}
-          class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-sm shadow-emerald-900/10 ring-1 ring-inset ring-emerald-500/70 transition-all duration-200 hover:bg-emerald-500"
+          class={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold ${premiumPrimaryButtonClass}`}
         >
           <Plus class="h-4 w-4" strokeWidth={2.2} />
           <span>Crear Cotización</span>
@@ -188,9 +248,7 @@
 
           <tbody>
             {#each filteredCotizaciones as cotizacion, index (cotizacion.id)}
-              <tr
-                class="cursor-pointer transition-colors hover:bg-slate-50"
-              >
+              <tr class={premiumRowHoverClass}>
                 <td class="border-b border-slate-200/70 px-6 py-4 {index === filteredCotizaciones.length - 1 ? 'border-b-0' : ''}">
                   <div class="space-y-1">
                     <p class="text-sm font-semibold tracking-tight text-slate-900">
@@ -228,6 +286,8 @@
                   <button
                     class="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900"
                     aria-label="Ver detalle de cotización"
+                    type="button"
+                    on:click={() => openDetail(cotizacion)}
                   >
                     <span>Ver</span>
                     <ChevronRight class="h-4 w-4" strokeWidth={2} />
@@ -243,3 +303,8 @@
 </div>
 
 <CotizacionSlideOver bind:show={showModal} on:success={fetchCotizaciones} />
+<CotizacionDetailModal
+  bind:show={showDetailModal}
+  cotizacionId={selectedCotizacionId}
+  on:updated={fetchCotizaciones}
+/>

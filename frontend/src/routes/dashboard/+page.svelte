@@ -1,6 +1,16 @@
 <script>
   import { api } from '$lib/utils/api';
   import {
+    glassPanelClass,
+    glassPanelStrongClass,
+    mutedGlassPanelClass,
+    pageEyebrowClass,
+    pageSubtitleClass,
+    pageTitleClass,
+    premiumRowHoverClass,
+    premiumSecondaryButtonClass
+  } from '$lib/utils/uiClasses';
+  import {
     Calculator,
     CalendarDays,
     ChevronRight,
@@ -239,17 +249,17 @@
 <div class="space-y-6">
   <section class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
     <div class="space-y-2">
-      <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Centro analitico</p>
+      <p class={pageEyebrowClass}>Centro analitico</p>
       <div class="space-y-1">
-        <h1 class="text-2xl font-bold tracking-tight text-slate-900">Dashboard</h1>
-        <p class="max-w-2xl text-sm leading-6 text-slate-500">
+        <h1 class={pageTitleClass}>Dashboard</h1>
+        <p class={`max-w-2xl ${pageSubtitleClass}`}>
           Una lectura ejecutiva del negocio con ingresos, documentos y movimiento operativo reciente.
         </p>
       </div>
     </div>
 
     <button
-      class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+      class={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium ${premiumSecondaryButtonClass}`}
     >
       <CalendarDays class="h-4 w-4 text-slate-500" strokeWidth={2} />
       <span>Ultimos 30 dias</span>
@@ -265,14 +275,15 @@
   <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
     {#if loading}
       {#each Array(4) as _}
-        <div class="h-40 animate-pulse rounded-xl border border-slate-200 bg-white shadow-sm"></div>
+        <div class={`h-40 animate-pulse rounded-[28px] ${glassPanelClass}`}></div>
       {/each}
     {:else}
       {#each kpiCards as card}
         {@const Icon = card.icon}
-        <article class="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class={`relative overflow-hidden rounded-[28px] p-5 ${glassPanelClass}`}>
+          <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.9),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(59,130,246,0.08),transparent_28%)]"></div>
           <div class="mb-6 flex items-start justify-between gap-3">
-            <div class="rounded-2xl bg-slate-50 p-3 text-slate-500">
+            <div class="rounded-2xl border border-white/70 bg-white/80 p-3 text-slate-600 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
               <Icon class="h-5 w-5" strokeWidth={1.9} />
             </div>
 
@@ -281,9 +292,9 @@
             </span>
           </div>
 
-          <div class="space-y-2">
+          <div class="relative space-y-2">
             <p class="text-sm font-medium text-slate-500">{card.title}</p>
-            <p class="text-3xl font-bold tracking-tight text-slate-900">{card.value}</p>
+            <p class="text-3xl font-semibold tracking-tight text-slate-900">{card.value}</p>
             <p class="text-xs uppercase tracking-[0.18em] text-slate-400">{card.caption}</p>
           </div>
 
@@ -294,7 +305,7 @@
   </section>
 
   <section class="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
-    <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <article class={`rounded-[30px] p-5 ${glassPanelStrongClass}`}>
       <div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div class="space-y-1">
           <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Panorama principal</p>
@@ -316,7 +327,7 @@
         </div>
       </div>
 
-      <div class="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-50/80 p-5">
+      <div class={`relative overflow-hidden rounded-[28px] p-5 ${mutedGlassPanelClass}`}>
         <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(16,185,129,0.10),_transparent_38%)]"></div>
 
         {#if quoteCount === 0}
@@ -383,7 +394,7 @@
       </div>
     </article>
 
-    <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <article class={`rounded-[30px] p-5 ${glassPanelStrongClass}`}>
       <div class="mb-5 space-y-1">
         <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Pulso comercial</p>
         <h2 class="text-lg font-semibold tracking-tight text-slate-900">Actividad reciente</h2>
@@ -395,7 +406,7 @@
       <div class="space-y-3">
         {#if loading}
           {#each Array(5) as _}
-            <div class="h-20 animate-pulse rounded-2xl border border-slate-200 bg-slate-50"></div>
+            <div class={`h-20 animate-pulse rounded-2xl ${mutedGlassPanelClass}`}></div>
           {/each}
         {:else if activityItems.length === 0}
           <div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
@@ -407,7 +418,7 @@
         {:else}
           {#each activityItems as item}
             {@const Icon = item.icon}
-            <div class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+            <div class={`flex items-start gap-3 rounded-2xl px-4 py-3 ${mutedGlassPanelClass} ${premiumRowHoverClass}`}>
               <div class={`mt-0.5 rounded-2xl p-2.5 ${item.tone}`}>
                 <Icon class="h-4 w-4" strokeWidth={2} />
               </div>
@@ -430,7 +441,7 @@
       </div>
 
       {#if !loading && activeProducts > 0}
-        <div class="mt-6 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class={`mt-6 space-y-3 rounded-[24px] p-4 ${mutedGlassPanelClass}`}>
           <div class="flex items-center justify-between gap-3">
             <p class="text-sm font-semibold text-slate-900">Productos con mayor movimiento</p>
             <a href="/cotizaciones" class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
