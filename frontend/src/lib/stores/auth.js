@@ -68,3 +68,7 @@ function createAuthStore() {
 }
 
 export const auth = createAuthStore();
+
+export const login = (email, password) => auth.login(email, password);
+export const logout = () => auth.logout();
+export const checkAuth = () => auth.checkAuth();

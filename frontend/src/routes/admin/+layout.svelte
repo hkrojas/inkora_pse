@@ -1,6 +1,6 @@
 <script>
   import '../../app.css';
-  import { auth } from '$lib/stores/auth';
+  import { auth, checkAuth, logout } from '$lib/stores/auth';
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
@@ -25,7 +25,11 @@
   ];
 
   onMount(async () => {
-    await auth.checkAuth();
+    try {
+      await checkAuth();
+    } finally {
+      loading = false;
+    }
   });
 
   $: isLoginPage = $page.url.pathname === '/admin/login';
@@ -42,8 +46,8 @@
     goto('/admin');
   }
 
-  async function logout() {
-    await auth.logout();
+  async function handleLogout() {
+    await logout();
     goto('/admin/login');
   }
 
@@ -107,7 +111,7 @@
           </div>
         </div>
         <button 
-          on:click={logout}
+          on:click={handleLogout}
           class="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 text-slate-400 hover:bg-red-500/10 hover:text-red-400 text-sm font-medium transition-all"
         >
           <LogOut size={16} />

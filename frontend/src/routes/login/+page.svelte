@@ -1,5 +1,5 @@
 <script>
-  import { auth } from '$lib/stores/auth';
+  import { login } from '$lib/stores/auth';
   import { fade, fly } from 'svelte/transition';
   
   let email = '';
@@ -12,7 +12,7 @@
     loading = true;
     error = '';
     try {
-      await auth.login(email, password);
+      await login(email, password);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Credenciales inválidas';
     } finally {

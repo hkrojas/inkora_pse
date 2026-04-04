@@ -114,6 +114,7 @@ def create_pdf_buffer(document_data, tenant: models.Tenant, document_type: str):
         direccion_cliente = "-"
 
     # --- Cálculo de Totales ---
+    productos_fuente_dict = []
     items = getattr(document_data, "items", [])
     for item in items:
         # Soporte para objeto SQLAlchemy o diccionario

@@ -1,292 +1,453 @@
 <script>
-  import { onMount } from 'svelte';
   import { api } from '$lib/utils/api';
-  import { auth } from '$lib/stores/auth';
-  import { fly } from 'svelte/transition';
+  import {
+    Calculator,
+    CalendarDays,
+    ChevronRight,
+    CircleAlert,
+    CircleCheckBig,
+    FileText,
+    Package,
+    Truck
+  } from 'lucide-svelte';
+  import { onMount } from 'svelte';
 
   let loading = true;
+  let error = '';
   let statsData = {
     ingresos_totales: 0,
     saldos_por_cobrar: 0,
     costos_tercerizacion: 0,
     top_productos: []
   };
-  let recentJobs = [];
+  let cotizaciones = [];
 
-  onMount(async () => {
+  onMount(loadDashboard);
+
+  async function loadDashboard() {
+    loading = true;
+    error = '';
+
     try {
-      const [stats, cotizaciones] = await Promise.all([
+      const [stats, docs] = await Promise.all([
         api.get('/analytics/dashboard'),
-        api.get('/cotizaciones/?limit=5')
+        api.get('/cotizaciones/?limit=100')
       ]);
+
       statsData = stats;
-      recentJobs = cotizaciones.map(c => ({
-        id: `${c.serie}-${c.correlativo}`,
-        client: c.cliente.razon_social,
-        ruc: c.cliente.ruc || '',
-        status: c.estado,
-        total: c.total_venta
-      }));
-    } catch (error) {
-      console.error('Error cargando dashboard:', error);
+      cotizaciones = Array.isArray(docs) ? docs : [];
+    } catch (loadError) {
+      console.error('Error cargando dashboard:', loadError);
+      error = 'No se pudo cargar el resumen del negocio.';
     } finally {
       loading = false;
     }
-  });
+  }
+
+  function normalizeStatus(status) {
+    const normalized = `${status || ''}`.trim().toLowerCase();
+
+    if (['aprobada', 'aprobado', 'facturada', 'emitida', 'cerrada'].includes(normalized)) {
+      return 'approved';
+    }
+
+    if (['cancelada', 'cancelado', 'rechazada', 'rechazado', 'anulada', 'anulado'].includes(normalized)) {
+      return 'cancelled';
+    }
+
+    return 'pending';
+  }
 
   function formatCurrency(amount) {
-    return new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' }).format(amount);
+    return new Intl.NumberFormat('es-PE', {
+      style: 'currency',
+      currency: 'PEN',
+      maximumFractionDigits: 0
+    }).format(Number(amount || 0));
   }
 
-  function formatUSD(amount) {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount / 3.742);
+  function formatCompact(value) {
+    return new Intl.NumberFormat('es-PE', {
+      notation: 'compact',
+      maximumFractionDigits: 1
+    }).format(Number(value || 0));
   }
 
-  const getStatusBadge = (status) => {
-    switch (status.toLowerCase()) {
-      case 'facturada': return { bg: 'bg-secondary-container/20 text-on-secondary-container', dot: 'bg-secondary', label: 'Aceptado' };
-      case 'pendiente': return { bg: 'bg-tertiary-container/10 text-on-tertiary-container', dot: 'bg-tertiary', label: 'Pendiente' };
-      case 'anulada': return { bg: 'bg-error-container/20 text-error', dot: 'bg-error', label: 'Anulado' };
-      default: return { bg: 'bg-surface-container text-on-surface-variant', dot: 'bg-outline', label: status };
-    }
-  };
+  function formatRelativeTime(dateStr) {
+    if (!dateStr) return 'Sin fecha';
 
-  const getStatusBorder = (status) => {
-    switch (status.toLowerCase()) {
-      case 'facturada': return 'border-secondary';
-      case 'pendiente': return 'border-tertiary';
-      case 'anulada': return 'border-error';
-      default: return 'border-outline';
+    const target = new Date(dateStr);
+    if (Number.isNaN(target.getTime())) return 'Sin fecha';
+
+    const diffMs = Date.now() - target.getTime();
+    const diffMinutes = Math.max(Math.round(diffMs / 60000), 0);
+
+    if (diffMinutes < 1) return 'Hace unos segundos';
+    if (diffMinutes < 60) return `Hace ${diffMinutes} min`;
+
+    const diffHours = Math.round(diffMinutes / 60);
+    if (diffHours < 24) return `Hace ${diffHours} h`;
+
+    const diffDays = Math.round(diffHours / 24);
+    if (diffDays < 30) return `Hace ${diffDays} d`;
+
+    return target.toLocaleDateString('es-PE', {
+      day: '2-digit',
+      month: 'short'
+    });
+  }
+
+  function createMonthlySeries(items) {
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+      const label = date
+        .toLocaleDateString('es-PE', { month: 'short' })
+        .replace('.', '')
+        .toUpperCase();
+
+      return {
+        key: `${date.getFullYear()}-${date.getMonth()}`,
+        label,
+        revenue: 0,
+        quotes: 0
+      };
+    });
+
+    const monthMap = new Map(months.map((month) => [month.key, month]));
+
+    for (const item of items) {
+      const issuedAt = item?.fecha_emision ? new Date(item.fecha_emision) : null;
+      if (!issuedAt || Number.isNaN(issuedAt.getTime())) continue;
+
+      const bucket = monthMap.get(`${issuedAt.getFullYear()}-${issuedAt.getMonth()}`);
+      if (!bucket) continue;
+
+      bucket.revenue += Number(item.total_venta || 0);
+      bucket.quotes += 1;
     }
-  };
+
+    return months;
+  }
+
+  function getActivityMeta(cotizacion) {
+    const variant = normalizeStatus(cotizacion?.estado);
+
+    if (variant === 'approved') {
+      return {
+        icon: CircleCheckBig,
+        title: 'Cotizacion aprobada',
+        tone: 'bg-emerald-50 text-emerald-700'
+      };
+    }
+
+    if (variant === 'cancelled') {
+      return {
+        icon: CircleAlert,
+        title: 'Cotizacion observada',
+        tone: 'bg-red-50 text-red-700'
+      };
+    }
+
+    return {
+      icon: FileText,
+      title: 'Nueva cotizacion creada',
+      tone: 'bg-amber-50 text-amber-700'
+    };
+  }
+
+  function formatDelta(value) {
+    return `+${Math.max(0, Math.round(value))}%`;
+  }
+
+  $: approvedCount = cotizaciones.filter((cotizacion) => normalizeStatus(cotizacion?.estado) === 'approved').length;
+  $: pendingCount = cotizaciones.filter((cotizacion) => normalizeStatus(cotizacion?.estado) === 'pending').length;
+  $: quoteCount = cotizaciones.length;
+  $: activeProducts = Array.isArray(statsData.top_productos) ? statsData.top_productos.length : 0;
+  $: approvalRatio = quoteCount > 0 ? (approvedCount / quoteCount) * 100 : 0;
+  $: pendingRatio = quoteCount > 0 ? (pendingCount / quoteCount) * 100 : 0;
+  $: outsourcingRatio =
+    Number(statsData.ingresos_totales || 0) > 0
+      ? (Number(statsData.costos_tercerizacion || 0) / Number(statsData.ingresos_totales || 1)) * 100
+      : 0;
+
+  $: kpiCards = [
+    {
+      title: 'Ingresos cobrados',
+      value: formatCurrency(statsData.ingresos_totales),
+      delta: formatDelta(approvalRatio),
+      caption: 'Cobro consolidado',
+      icon: Calculator
+    },
+    {
+      title: 'Saldos por cobrar',
+      value: formatCurrency(statsData.saldos_por_cobrar),
+      delta: formatDelta(pendingRatio),
+      caption: 'Pipeline pendiente',
+      icon: FileText
+    },
+    {
+      title: 'Costo tercerizado',
+      value: formatCurrency(statsData.costos_tercerizacion),
+      delta: formatDelta(outsourcingRatio),
+      caption: 'Carga operativa externa',
+      icon: Truck
+    },
+    {
+      title: 'Cotizaciones monitoreadas',
+      value: formatCompact(quoteCount),
+      delta: formatDelta(activeProducts * 4),
+      caption: 'Base reciente de analisis',
+      icon: Package
+    }
+  ];
+
+  $: chartSeries = createMonthlySeries(cotizaciones);
+  $: maxRevenue = Math.max(...chartSeries.map((point) => point.revenue), 1);
+  $: maxQuotes = Math.max(...chartSeries.map((point) => point.quotes), 1);
+  $: chartDots = chartSeries.map((point, index) => {
+    const chartWidth = 560;
+    const leftPadding = 28;
+    const usableWidth = chartWidth - leftPadding * 2;
+    const x = chartSeries.length > 1 ? leftPadding + (usableWidth / (chartSeries.length - 1)) * index : chartWidth / 2;
+    const y = 182 - (point.revenue / maxRevenue) * 126;
+
+    return {
+      ...point,
+      x,
+      y
+    };
+  });
+  $: chartLinePoints = chartDots.map((point) => `${point.x},${point.y}`).join(' ');
+  $: activityItems = cotizaciones
+    .slice()
+    .sort((a, b) => new Date(b.fecha_emision || 0).getTime() - new Date(a.fecha_emision || 0).getTime())
+    .slice(0, 5)
+    .map((cotizacion) => {
+      const meta = getActivityMeta(cotizacion);
+
+      return {
+        ...meta,
+        client: cotizacion?.cliente?.razon_social || 'Cliente sin nombre',
+        document: `${cotizacion?.serie || 'COT'}-${String(cotizacion?.correlativo || 0).padStart(6, '0')}`,
+        amount: formatCurrency(cotizacion?.total_venta),
+        timestamp: formatRelativeTime(cotizacion?.fecha_emision)
+      };
+    });
 </script>
 
-<div class="space-y-8">
-  <!-- Header Section -->
-  <div class="flex flex-col md:flex-row md:items-end justify-between gap-6" in:fly={{ y: 10, duration: 400 }}>
-    <div>
-      <h2 class="font-manrope text-3xl font-extrabold text-primary tracking-tight">Panel de Control</h2>
-      <p class="text-outline font-medium mt-1">Bienvenido de nuevo. Aquí está el resumen de tu producción hoy.</p>
-    </div>
-    <div class="flex gap-3">
-      <button class="px-5 py-2.5 bg-surface-container-lowest border border-outline-variant/30 text-primary font-bold text-sm rounded-xl flex items-center gap-2 hover:bg-surface-container-low transition-colors">
-        <span class="material-symbols-outlined text-lg">calendar_today</span>
-        Últimos 30 días
-      </button>
-      <button class="px-5 py-2.5 bg-primary text-white font-bold text-sm rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all">
-        <span class="material-symbols-outlined text-lg">download</span>
-        Reporte Mensual
-      </button>
-    </div>
-  </div>
-
-  <!-- Bento Grid: Top Stats -->
-  {#if loading}
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-      {#each [1, 2, 3, 4] as _}
-        <div class="bg-surface-container-low h-44 rounded-2xl border border-outline-variant/10 animate-pulse"></div>
-      {/each}
-    </div>
-  {:else}
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-      <!-- Currency Card: Soles -->
-      <div class="lg:col-span-2 p-6 bg-surface-container-lowest rounded-2xl border border-outline-variant/10 shadow-sm relative overflow-hidden group" in:fly={{ y: 20, duration: 500 }}>
-        <div class="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform duration-500">
-          <span class="material-symbols-outlined text-primary" style="font-size: 8rem;">payments</span>
-        </div>
-        <div class="flex items-start justify-between mb-8">
-          <div class="p-3 bg-primary/5 rounded-xl text-primary">
-            <span class="material-symbols-outlined filled">account_balance</span>
-          </div>
-          <span class="flex items-center gap-1 text-secondary font-bold text-xs bg-secondary-container/30 px-2 py-1 rounded-full">
-            <span class="material-symbols-outlined text-sm">trending_up</span>
-            +12.5%
-          </span>
-        </div>
-        <p class="text-outline text-xs font-bold uppercase tracking-widest mb-1">Ingresos Totales (PEN)</p>
-        <div class="flex items-baseline gap-2">
-          <h3 class="font-manrope text-4xl font-extrabold text-primary">{formatCurrency(statsData.ingresos_totales)}</h3>
-          <span class="text-outline text-sm font-medium">acumulado</span>
-        </div>
+<div class="space-y-6">
+  <section class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div class="space-y-2">
+      <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Centro analitico</p>
+      <div class="space-y-1">
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900">Dashboard</h1>
+        <p class="max-w-2xl text-sm leading-6 text-slate-500">
+          Una lectura ejecutiva del negocio con ingresos, documentos y movimiento operativo reciente.
+        </p>
       </div>
+    </div>
 
-      <!-- Currency Card: Saldos -->
-      <div class="p-6 bg-surface-container-lowest rounded-2xl border border-outline-variant/10 shadow-sm relative overflow-hidden group" in:fly={{ y: 20, duration: 500, delay: 100 }}>
-        <div class="flex items-start justify-between mb-8">
-          <div class="p-3 bg-tertiary-container/20 rounded-xl text-tertiary">
-            <span class="material-symbols-outlined filled">account_balance_wallet</span>
-          </div>
-        </div>
-        <p class="text-outline text-xs font-bold uppercase tracking-widest mb-1">Saldos por Cobrar</p>
-        <h3 class="font-manrope text-3xl font-extrabold text-on-surface">{formatCurrency(statsData.saldos_por_cobrar)}</h3>
-        <div class="mt-4 flex items-center gap-2">
-          <span class="material-symbols-outlined text-warning text-sm">schedule</span>
-          <span class="text-[10px] text-outline font-bold">Pendientes de cobro</span>
-        </div>
-      </div>
+    <button
+      class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+    >
+      <CalendarDays class="h-4 w-4 text-slate-500" strokeWidth={2} />
+      <span>Ultimos 30 dias</span>
+    </button>
+  </section>
 
-      <!-- SUNAT Status Summary -->
-      <div class="p-6 bg-primary-container rounded-2xl border border-primary text-white shadow-xl shadow-primary/10 flex flex-col justify-between" in:fly={{ y: 20, duration: 500, delay: 200 }}>
-        <div>
-          <div class="flex items-center justify-between mb-4">
-            <span class="text-xs font-bold uppercase tracking-widest opacity-80">Estado SUNAT</span>
-            <div class="w-2 h-2 rounded-full bg-secondary-fixed shadow-[0_0_8px_rgba(139,248,194,0.8)]"></div>
-          </div>
-          <h3 class="font-manrope text-2xl font-bold">100% Sincronizado</h3>
-        </div>
-        <div class="mt-4 pt-4 border-t border-white/10">
-          <p class="text-[11px] opacity-70 mb-2">Comprobantes enviados hoy</p>
-          <div class="flex items-end justify-between">
-            <span class="text-3xl font-bold">—</span>
-            <span class="text-xs font-medium text-secondary-fixed flex items-center gap-1">
-              <span class="material-symbols-outlined text-sm">done_all</span>
-              Sin errores
-            </span>
-          </div>
-        </div>
-      </div>
+  {#if error}
+    <div class="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+      {error}
     </div>
   {/if}
 
-  <!-- Middle Section: Chart & Stock -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-    <!-- Sales Chart Placeholder -->
-    <div class="lg:col-span-2 bg-surface-container-low rounded-3xl p-8" in:fly={{ y: 20, duration: 500, delay: 150 }}>
-      <div class="flex items-center justify-between mb-10">
-        <h3 class="font-manrope text-xl font-extrabold text-primary">Tendencia de Ventas</h3>
-        <div class="flex gap-4">
-          <span class="flex items-center gap-2 text-xs font-bold text-outline">
-            <span class="w-3 h-3 rounded-sm bg-primary"></span> Proyectado
-          </span>
-          <span class="flex items-center gap-2 text-xs font-bold text-outline">
-            <span class="w-3 h-3 rounded-sm bg-secondary"></span> Real
-          </span>
-        </div>
-      </div>
-      <div class="h-64 flex items-end justify-between gap-4 px-2">
-        {#each ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN'] as month, i}
-          {@const heights = [32, 40, 48, 36, 56, 44]}
-          {@const actuals = [24, 32, 44, 28, 52, 38]}
-          <div class="flex-1 group flex flex-col items-center gap-3">
-            <div 
-              class="w-full bg-primary/10 rounded-t-lg relative group-hover:scale-y-105 transition-all duration-500 origin-bottom"
-              style="height: {heights[i] * 4}px;"
-            >
-              <div class="absolute bottom-0 w-full bg-secondary rounded-t-lg" style="height: {actuals[i] * 4}px;"></div>
+  <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    {#if loading}
+      {#each Array(4) as _}
+        <div class="h-40 animate-pulse rounded-xl border border-slate-200 bg-white shadow-sm"></div>
+      {/each}
+    {:else}
+      {#each kpiCards as card}
+        {@const Icon = card.icon}
+        <article class="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="mb-6 flex items-start justify-between gap-3">
+            <div class="rounded-2xl bg-slate-50 p-3 text-slate-500">
+              <Icon class="h-5 w-5" strokeWidth={1.9} />
             </div>
-            <span class="text-[10px] font-bold text-outline">{month}</span>
-          </div>
-        {/each}
-      </div>
-    </div>
 
-    <!-- Tercerización Card -->
-    <div class="bg-surface-container-lowest rounded-3xl border border-outline-variant/10 p-8 shadow-sm" in:fly={{ y: 20, duration: 500, delay: 200 }}>
-      <div class="flex items-center justify-between mb-8">
-        <h3 class="font-manrope text-xl font-extrabold text-primary">Costos Externos</h3>
-        <span class="material-symbols-outlined text-tertiary">warehouse</span>
-      </div>
-      <div class="space-y-6">
-        <div>
-          <p class="text-outline text-xs font-bold uppercase tracking-widest mb-2">Tercerización Total</p>
-          <h3 class="font-manrope text-3xl font-extrabold text-on-surface">{formatCurrency(statsData.costos_tercerizacion)}</h3>
+            <span class="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+              {card.delta}
+            </span>
+          </div>
+
+          <div class="space-y-2">
+            <p class="text-sm font-medium text-slate-500">{card.title}</p>
+            <p class="text-3xl font-bold tracking-tight text-slate-900">{card.value}</p>
+            <p class="text-xs uppercase tracking-[0.18em] text-slate-400">{card.caption}</p>
+          </div>
+
+          <div class="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-emerald-500/0 via-emerald-500/40 to-emerald-500/0"></div>
+        </article>
+      {/each}
+    {/if}
+  </section>
+
+  <section class="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
+    <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div class="space-y-1">
+          <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Panorama principal</p>
+          <h2 class="text-lg font-semibold tracking-tight text-slate-900">Ingresos vs Cotizaciones</h2>
+          <p class="text-sm leading-6 text-slate-500">
+            Vista consolidada del volumen reciente de documentos frente al valor comercial generado.
+          </p>
         </div>
 
-        {#if statsData.top_productos && statsData.top_productos.length > 0}
-          <div class="space-y-4 pt-4 border-t border-outline-variant/10">
-            <p class="text-[10px] font-bold text-outline uppercase tracking-widest">Top Productos</p>
-            {#each statsData.top_productos.slice(0, 3) as producto}
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
-                  <span class="material-symbols-outlined text-primary text-lg">inventory_2</span>
+        <div class="flex flex-wrap gap-3 text-xs font-semibold text-slate-500">
+          <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5">
+            <span class="h-2.5 w-2.5 rounded-full bg-slate-300"></span>
+            Cotizaciones
+          </span>
+          <span class="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700">
+            <span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+            Ingresos
+          </span>
+        </div>
+      </div>
+
+      <div class="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-50/80 p-5">
+        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(16,185,129,0.10),_transparent_38%)]"></div>
+
+        {#if quoteCount === 0}
+          <div class="flex h-[320px] flex-col items-center justify-center gap-4 text-center">
+            <div class="rounded-2xl border border-slate-200 bg-white p-4 text-slate-400 shadow-sm">
+              <Calculator class="h-8 w-8" strokeWidth={1.8} />
+            </div>
+            <div class="space-y-2">
+              <p class="text-sm font-semibold text-slate-900">Sin movimiento suficiente para el grafico</p>
+              <p class="max-w-md text-sm leading-6 text-slate-500">
+                En cuanto entren nuevas cotizaciones, este panel mostrara la relacion entre ingresos y volumen comercial.
+              </p>
+            </div>
+          </div>
+        {:else}
+          <div class="relative h-[320px]">
+            <div class="absolute inset-0">
+              {#each [0, 1, 2, 3] as step}
+                <div
+                  class="absolute inset-x-0 border-t border-dashed border-slate-200"
+                  style={`top: ${step * 25}%`}
+                ></div>
+              {/each}
+            </div>
+
+            <div class="absolute inset-x-4 bottom-12 top-8 grid grid-cols-6 items-end gap-4">
+              {#each chartSeries as point}
+                <div class="flex h-full flex-col justify-end gap-3">
+                  <div class="mx-auto w-full max-w-[56px] rounded-t-2xl bg-slate-200/90 transition-all duration-300">
+                    <div
+                      class="w-full rounded-t-2xl bg-slate-300/80"
+                      style={`height: ${Math.max((point.quotes / maxQuotes) * 160, point.quotes ? 24 : 10)}px`}
+                    ></div>
+                  </div>
                 </div>
-                <div class="flex-1">
-                  <p class="text-sm font-bold text-on-surface truncate">{producto.nombre}</p>
-                  <p class="text-[10px] text-outline font-medium">{producto.cantidad} uds</p>
+              {/each}
+            </div>
+
+            <svg viewBox="0 0 560 220" class="absolute inset-x-4 top-4 h-[72%] w-auto overflow-visible">
+              <polyline
+                points={chartLinePoints}
+                fill="none"
+                stroke="rgb(5 150 105)"
+                stroke-width="4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+
+              {#each chartDots as point}
+                <circle cx={point.x} cy={point.y} r="6" fill="white" stroke="rgb(5 150 105)" stroke-width="3"></circle>
+              {/each}
+            </svg>
+
+            <div class="absolute inset-x-4 bottom-0 grid grid-cols-6 gap-4">
+              {#each chartSeries as point}
+                <div class="space-y-1 text-center">
+                  <p class="text-xs font-semibold text-slate-600">{point.label}</p>
+                  <p class="text-[11px] text-slate-400">{point.quotes} docs</p>
                 </div>
-              </div>
-            {/each}
+              {/each}
+            </div>
           </div>
         {/if}
       </div>
-      <a href="/cotizaciones" class="block w-full mt-8 py-3 border border-outline-variant/30 rounded-xl text-xs font-bold text-primary hover:bg-primary hover:text-white transition-all text-center">
-        Ver Cotizaciones
-      </a>
-    </div>
-  </div>
+    </article>
 
-  <!-- Compliance Ledger: Recent Documents -->
-  <section class="bg-surface-container-lowest rounded-3xl border border-outline-variant/10 shadow-sm overflow-hidden" in:fly={{ y: 20, duration: 500, delay: 250 }}>
-    <div class="px-8 py-6 border-b border-outline-variant/10 flex items-center justify-between">
-      <h3 class="font-manrope text-xl font-extrabold text-primary">Comprobantes Recientes</h3>
-      <a href="/cotizaciones" class="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
-        Ver todo
-        <span class="material-symbols-outlined text-sm">arrow_forward</span>
-      </a>
-    </div>
+    <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="mb-5 space-y-1">
+        <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Pulso comercial</p>
+        <h2 class="text-lg font-semibold tracking-tight text-slate-900">Actividad reciente</h2>
+        <p class="text-sm leading-6 text-slate-500">
+          Eventos recientes vinculados al flujo comercial y al estado de las cotizaciones.
+        </p>
+      </div>
 
-    {#if loading}
-      <div class="p-8 space-y-3">
-        {#each [1, 2, 3] as _}
-          <div class="h-16 bg-surface-container-low rounded-xl animate-pulse"></div>
-        {/each}
+      <div class="space-y-3">
+        {#if loading}
+          {#each Array(5) as _}
+            <div class="h-20 animate-pulse rounded-2xl border border-slate-200 bg-slate-50"></div>
+          {/each}
+        {:else if activityItems.length === 0}
+          <div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
+            <p class="text-sm font-semibold text-slate-900">Todavia no hay actividad reciente</p>
+            <p class="mt-2 text-sm leading-6 text-slate-500">
+              El panel se llenara automaticamente cuando entren nuevas cotizaciones al sistema.
+            </p>
+          </div>
+        {:else}
+          {#each activityItems as item}
+            {@const Icon = item.icon}
+            <div class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+              <div class={`mt-0.5 rounded-2xl p-2.5 ${item.tone}`}>
+                <Icon class="h-4 w-4" strokeWidth={2} />
+              </div>
+
+              <div class="min-w-0 flex-1 space-y-1">
+                <div class="flex items-start justify-between gap-3">
+                  <p class="text-sm font-semibold text-slate-900">{item.title}</p>
+                  <span class="shrink-0 text-xs text-slate-400">{item.timestamp}</span>
+                </div>
+
+                <p class="text-sm text-slate-600">{item.client}</p>
+                <div class="flex items-center justify-between gap-3 text-xs text-slate-400">
+                  <span>{item.document}</span>
+                  <span>{item.amount}</span>
+                </div>
+              </div>
+            </div>
+          {/each}
+        {/if}
       </div>
-    {:else if recentJobs.length === 0}
-      <div class="py-20 flex flex-col items-center justify-center gap-4">
-        <div class="p-4 rounded-full bg-surface-container text-on-surface-variant">
-          <span class="material-symbols-outlined text-4xl">description</span>
-        </div>
-        <p class="text-on-surface-variant font-medium text-sm">No hay comprobantes recientes.</p>
-        <a href="/cotizaciones" class="mt-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:shadow-lg hover:shadow-primary/20 transition-all flex items-center gap-2">
-          <span class="material-symbols-outlined text-sm">add_circle</span>
-          Crear Primera Cotización
-        </a>
-      </div>
-    {:else}
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-surface-container-low/50">
-              <th class="px-8 py-4 text-[10px] font-bold text-outline uppercase tracking-wider">Número</th>
-              <th class="px-8 py-4 text-[10px] font-bold text-outline uppercase tracking-wider">Cliente</th>
-              <th class="px-8 py-4 text-[10px] font-bold text-outline uppercase tracking-wider text-right">Monto</th>
-              <th class="px-8 py-4 text-[10px] font-bold text-outline uppercase tracking-wider text-center">Estado</th>
-              <th class="px-8 py-4 text-[10px] font-bold text-outline uppercase tracking-wider text-right">Acción</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-outline-variant/5">
-            {#each recentJobs as job}
-              {@const status = getStatusBadge(job.status)}
-              <tr class="hover:bg-surface-container-low/30 transition-colors">
-                <td class="px-8 py-5 border-l-4 {getStatusBorder(job.status)}">
-                  <span class="text-sm font-bold text-on-surface">{job.id}</span>
-                </td>
-                <td class="px-8 py-5">
-                  <p class="text-sm font-semibold text-on-surface">{job.client}</p>
-                  {#if job.ruc}
-                    <p class="text-[10px] text-outline">RUC: {job.ruc}</p>
-                  {/if}
-                </td>
-                <td class="px-8 py-5 text-right">
-                  <p class="text-sm font-bold text-on-surface">{formatCurrency(job.total)}</p>
-                  <p class="text-[10px] text-outline font-medium">{formatUSD(job.total)}</p>
-                </td>
-                <td class="px-8 py-5 text-center">
-                  <span class="inline-flex items-center gap-1.5 px-3 py-1 {status.bg} rounded-full text-[10px] font-bold">
-                    <span class="w-1.5 h-1.5 rounded-full {status.dot}"></span>
-                    {status.label}
-                  </span>
-                </td>
-                <td class="px-8 py-5 text-right">
-                  <button class="p-2 text-outline hover:text-primary transition-colors">
-                    <span class="material-symbols-outlined text-lg">more_vert</span>
-                  </button>
-                </td>
-              </tr>
+
+      {#if !loading && activeProducts > 0}
+        <div class="mt-6 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div class="flex items-center justify-between gap-3">
+            <p class="text-sm font-semibold text-slate-900">Productos con mayor movimiento</p>
+            <a href="/cotizaciones" class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+              Ver cotizaciones
+              <ChevronRight class="h-3.5 w-3.5" strokeWidth={2.2} />
+            </a>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            {#each statsData.top_productos as producto}
+              <span class="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
+                {producto}
+              </span>
             {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
+          </div>
+        </div>
+      {/if}
+    </article>
   </section>
 </div>

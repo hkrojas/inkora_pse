@@ -1,6 +1,6 @@
 <script>
   import { goto } from '$app/navigation';
-  import { auth } from '$lib/stores/auth';
+  import { auth, checkAuth } from '$lib/stores/auth';
   import { api } from '$lib/utils/api';
   import { Shield, Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-svelte';
 
@@ -34,7 +34,7 @@
       const data = await response.json();
       localStorage.setItem('token', data.access_token);
       
-      await auth.checkAuth();
+      await checkAuth();
       
       if ($auth.user?.is_superadmin) {
         goto('/admin');
