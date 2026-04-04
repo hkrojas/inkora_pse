@@ -1,5 +1,6 @@
 import uuid
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Response, BackgroundTasks
+from secrets import compare_digest
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Response, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -163,6 +164,27 @@ def get_db_tenant(current_user: models.User = Depends(get_current_user), db: Ses
     db.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(current_user.tenant_id)})
     yield db
 
+
+def require_internal_registration_token(
+    x_internal_registration_token: Optional[str] = Header(
+        default=None, alias="X-Internal-Registration-Token"
+    )
+):
+    configured_token = (settings.INTERNAL_REGISTRATION_TOKEN or "").strip()
+    if not configured_token:
+        raise HTTPException(
+            status_code=403,
+            detail="Registro público deshabilitado. Use el flujo interno de aprovisionamiento.",
+        )
+
+    if not x_internal_registration_token or not compare_digest(
+        x_internal_registration_token, configured_token
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Registro público deshabilitado. Use el flujo interno de aprovisionamiento.",
+        )
+
 @app.post("/token", response_model=schemas.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = security.authenticate_user(db, form_data.username, form_data.password)
@@ -171,12 +193,17 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/register", response_model=schemas.UserResponse)
-def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+def register_user(
+    user: schemas.UserRegisterRequest,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_internal_registration_token),
+):
     if crud.get_user_by_email(db, user.email): raise HTTPException(400, "Email registrado")
-    # Verificar que el tenant existe
     tenant = crud.get_tenant(db, user.tenant_id)
     if not tenant: raise HTTPException(400, "Empresa (tenant) no encontrada")
-    return crud.create_user(db=db, user=user)
+    if not tenant.is_active:
+        raise HTTPException(403, "No se puede registrar usuarios en una empresa inactiva.")
+    return crud.create_user(db=db, user=user, forced_role="vendedor", is_superadmin=False)
 
 @app.get("/users/me/", response_model=schemas.UserResponse)
 async def read_users_me(current_user: models.User = Depends(get_current_user)):
@@ -266,10 +293,11 @@ def consultar_documento(numero: str, current_user: models.User = Depends(get_cur
     else:
         raise HTTPException(400, "NÃºmero invÃ¡lido. Ingrese 8 dÃ­gitos (DNI) u 11 dÃ­gitos (RUC).")
     
-    # Token: preferir el del usuario, fallback al global en config
-    token = current_user.apisperu_token or settings.DNIRUC_TOKEN
+    tenant = getattr(current_user, "tenant", None)
+    # TODO LEGACY: eliminar fallback a current_user.apisperu_token cuando Tenant sea la única fuente.
+    token = getattr(tenant, "apisperu_token", None) or current_user.apisperu_token or settings.DNIRUC_TOKEN
     if not token:
-        raise HTTPException(500, "No hay token de consulta configurado. Configure DNIRUC_TOKEN o su token personal.")
+        raise HTTPException(500, "No hay token de consulta configurado. Configure DNIRUC_TOKEN o el token del tenant.")
     
     url = f"{settings.DNIRUC_API_URL}/{tipo}/{numero}"
     

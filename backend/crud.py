@@ -14,24 +14,31 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # ==========================================
 
 def get_user_by_email(db: Session, email: str):
-    return db.query(models.User).filter(models.User.email == email).first()
+    return db.query(models.User).options(joinedload(models.User.tenant)).filter(models.User.email == email).first()
 
 def get_user_by_id(db: Session, user_id: int):
-    return db.query(models.User).filter(models.User.id == user_id).first()
+    return db.query(models.User).options(joinedload(models.User.tenant)).filter(models.User.id == user_id).first()
 
-def create_user(db: Session, user: schemas.UserCreate):
+def create_user(
+    db: Session,
+    user: schemas.UserRegisterRequest,
+    *,
+    forced_role: str = "vendedor",
+    is_superadmin: bool = False,
+):
     hashed_password = pwd_context.hash(user.password)
     db_user = models.User(
         email=user.email,
         hashed_password=hashed_password,
         nombre_completo=user.nombre_completo,
-        rol=user.rol,
+        rol=forced_role,
+        is_superadmin=is_superadmin,
         tenant_id=user.tenant_id  # MULTITENANCIA
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    return db_user
+    return get_user_by_id(db, db_user.id)
 
 # ==========================================
 # TENANTS
@@ -149,7 +156,10 @@ def delete_producto(db: Session, producto_id: int):
 
 def get_cotizaciones(db: Session, usuario: Optional[models.User] = None, skip: int = 0, limit: int = 100):
     query = db.query(models.Cotizacion)\
-        .options(joinedload(models.Cotizacion.cliente), joinedload(models.Cotizacion.usuario))\
+        .options(
+            joinedload(models.Cotizacion.cliente),
+            joinedload(models.Cotizacion.usuario).joinedload(models.User.tenant),
+        )\
         .order_by(desc(models.Cotizacion.id))
     if usuario and getattr(usuario, "rol", "vendedor") not in ["admin", "superadmin"]:
         query = query.filter(models.Cotizacion.usuario_id == usuario.id)
@@ -157,7 +167,11 @@ def get_cotizaciones(db: Session, usuario: Optional[models.User] = None, skip: i
 
 def get_cotizacion(db: Session, cotizacion_id: int, usuario: Optional[models.User] = None):
     query = db.query(models.Cotizacion)\
-        .options(joinedload(models.Cotizacion.cliente), joinedload(models.Cotizacion.items))\
+        .options(
+            joinedload(models.Cotizacion.cliente),
+            joinedload(models.Cotizacion.items),
+            joinedload(models.Cotizacion.usuario).joinedload(models.User.tenant),
+        )\
         .filter(models.Cotizacion.id == cotizacion_id)
     if usuario and getattr(usuario, "rol", "vendedor") not in ["admin", "superadmin"]:
         query = query.filter(models.Cotizacion.usuario_id == usuario.id)
@@ -798,7 +812,7 @@ def delete_tenant(db: Session, tenant_id: int):
 
 def get_all_users(db: Session, skip: int = 0, limit: int = 100):
     """(GLOBAL) Lista todos los usuarios del sistema."""
-    return db.query(models.User).order_by(models.User.id.desc()).offset(skip).limit(limit).all()
+    return db.query(models.User).options(joinedload(models.User.tenant)).order_by(models.User.id.desc()).offset(skip).limit(limit).all()
 
 def create_audit_log(db: Session, user_id: int, action: str, entity_type: str = None, entity_id: int = None, details: str = None, ip_address: str = None):
     """Crea un registro de auditoría."""

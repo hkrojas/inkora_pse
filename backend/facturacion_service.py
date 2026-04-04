@@ -2,6 +2,7 @@ import requests
 import json
 from datetime import datetime
 import decimal
+from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 import models
@@ -57,6 +58,40 @@ def obtener_tipo_documento_codigo(tipo: str) -> str:
     mapping = {"RUC": "6", "DNI": "1", "CE": "4", "PASAPORTE": "7"}
     return mapping.get(tipo, "1")
 
+
+def _get_company_tenant(user):
+    return getattr(user, "tenant", None)
+
+
+def _get_company_ruc(user) -> Optional[str]:
+    tenant = _get_company_tenant(user)
+    return getattr(tenant, "business_ruc", None) or getattr(user, "business_ruc", None)
+
+
+def _get_company_name(user) -> Optional[str]:
+    tenant = _get_company_tenant(user)
+    return getattr(tenant, "business_name", None) or getattr(user, "business_name", None)
+
+
+def _get_company_address(user) -> Optional[str]:
+    tenant = _get_company_tenant(user)
+    return getattr(tenant, "business_address", None) or getattr(user, "business_address", None)
+
+
+def _get_company_bank_accounts(user):
+    tenant = _get_company_tenant(user)
+    return getattr(tenant, "bank_accounts", None) or getattr(user, "bank_accounts", None) or []
+
+
+def _get_apisperu_token(user) -> Optional[str]:
+    tenant = _get_company_tenant(user)
+    # TODO LEGACY: eliminar fallback a user.apisperu_token cuando Tenant sea la única fuente.
+    return (
+        getattr(tenant, "apisperu_token", None)
+        or getattr(user, "apisperu_token", None)
+        or settings.API_TOKEN
+    )
+
 # ==========================================
 # CONSTRUCTORES DE PAYLOAD
 # ==========================================
@@ -93,7 +128,10 @@ def _base_payload(cotizacion, user, tipo_doc_comprobante):
     """Construye el payload base común para Facturas, Boletas y Notas."""
     cliente = cotizacion.cliente
     if not cliente: raise FacturacionException("Cotización sin cliente.")
-    if not user.business_ruc: raise FacturacionException("Emisor sin RUC configurado.")
+    company_ruc = _get_company_ruc(user)
+    if not company_ruc: raise FacturacionException("Emisor sin RUC configurado.")
+    company_name = _get_company_name(user)
+    company_address = _get_company_address(user) or "-"
 
     items_payload, totales = _construir_items_payload(cotizacion.items)
     leyenda_monto = numero_a_letras(totales["venta"])
@@ -110,9 +148,9 @@ def _base_payload(cotizacion, user, tipo_doc_comprobante):
         "valorVenta": totales["gravada"],
         "mtoImporteTotal": totales["venta"],
         "company": {
-            "ruc": user.business_ruc,
-            "razonSocial": user.business_name,
-            "address": {"direccion": user.business_address or "-"}
+            "ruc": company_ruc,
+            "razonSocial": company_name,
+            "address": {"direccion": company_address}
         },
         "client": {
             "tipoDoc": obtener_tipo_documento_codigo(cliente.tipo_documento),
@@ -158,9 +196,10 @@ def _aplicar_detraccion(payload, cotizacion, user, db: Session):
     
     # Obtener cuenta Banco de la Nación del modelo o de las cuentas bancarias del usuario
     cuenta_bn = cotizacion.cuenta_banco_nacion
-    if not cuenta_bn and user.bank_accounts:
+    bank_accounts = _get_company_bank_accounts(user)
+    if not cuenta_bn and bank_accounts:
         # Buscar cuenta de Banco de la Nación en las cuentas bancarias del usuario
-        for cuenta in (user.bank_accounts or []):
+        for cuenta in bank_accounts:
             if isinstance(cuenta, dict) and "nacion" in (cuenta.get("banco", "")).lower():
                 cuenta_bn = cuenta.get("cuenta", "")
                 break
@@ -331,11 +370,13 @@ def anular_comprobante(comprobante: models.Cotizacion, motivo: str, user: models
     """
     Anula una Factura (Baja) o Boleta (Resumen).
     """
-    base_url = settings.API_URL.rstrip('/')
-    token = user.apisperu_token or settings.API_TOKEN
-    
+    token = _get_apisperu_token(user)
+    company_ruc = _get_company_ruc(user)
+    company_name = _get_company_name(user)
+    company_address = _get_company_address(user) or "-"
+
     if not token: raise FacturacionException("Falta Token API.")
-    if not user.business_ruc: raise FacturacionException("Falta RUC Emisor.")
+    if not company_ruc: raise FacturacionException("Falta RUC Emisor.")
 
     tipo_doc = comprobante.tipo_comprobante # 01 o 03
     correlativo = str(comprobante.correlativo).zfill(6)
@@ -346,9 +387,9 @@ def anular_comprobante(comprobante: models.Cotizacion, motivo: str, user: models
         "fecGeneracion": datetime.now().strftime("%Y-%m-%d"),
         "fecComunicacion": datetime.now().strftime("%Y-%m-%d"),
         "company": {
-            "ruc": user.business_ruc,
-            "razonSocial": user.business_name,
-            "address": {"direccion": user.business_address or "-"}
+            "ruc": company_ruc,
+            "razonSocial": company_name,
+            "address": {"direccion": company_address}
         },
         "details": [
             {
@@ -377,8 +418,11 @@ def anular_comprobante(comprobante: models.Cotizacion, motivo: str, user: models
 
 def _base_payload_gre(guia, user):
     """Construye el payload JSON para Guía de Remisión según ApisPeru UBL 2.1."""
-    if not user.business_ruc:
+    company_ruc = _get_company_ruc(user)
+    if not company_ruc:
         raise FacturacionException("Emisor sin RUC configurado.")
+    company_name = _get_company_name(user)
+    company_address = _get_company_address(user) or "-"
     
     fecha_emision = datetime.now().astimezone().replace(microsecond=0).isoformat()
     fecha_traslado = guia.fecha_traslado.strftime("%Y-%m-%d") if guia.fecha_traslado else fecha_emision[:10]
@@ -400,9 +444,9 @@ def _base_payload_gre(guia, user):
         "correlativo": str(guia.correlativo).zfill(6),
         "fechaEmision": fecha_emision,
         "company": {
-            "ruc": user.business_ruc,
-            "razonSocial": user.business_name,
-            "address": {"direccion": user.business_address or "-"}
+            "ruc": company_ruc,
+            "razonSocial": company_name,
+            "address": {"direccion": company_address}
         },
         # Datos del envío
         "envio": {
@@ -464,10 +508,12 @@ def emitir_guia_remision(guia, user):
 
 def _enviar_a_api(payload, user, endpoint):
     base_url = settings.API_URL.rstrip('/')
-    token = user.apisperu_token or settings.API_TOKEN
+    token = _get_apisperu_token(user)
     url = f"{base_url}{endpoint}"
     
     try:
+        if not token:
+            raise FacturacionException("Falta Token API.")
         print(f"--- ENVIANDO A: {url} ---")
         payload_str = json.dumps(payload, cls=SUNATDecimalEncoder)
         response = requests.post(url, data=payload_str, headers={
@@ -506,15 +552,20 @@ def descargar_archivo(tipo_archivo: str, comprobante: models.Cotizacion, user: m
     Endpoint: /invoice/pdf, /invoice/xml, /invoice/cdr
     """
     base_url = settings.API_URL.rstrip('/')
-    token = user.apisperu_token or settings.API_TOKEN
+    token = _get_apisperu_token(user)
+    company_ruc = _get_company_ruc(user)
     endpoint = f"/invoice/{tipo_archivo}"
+    if not token:
+        raise FacturacionException("Falta Token API.")
+    if not company_ruc:
+        raise FacturacionException("Falta RUC Emisor.")
     
     # Reconstruimos un payload mínimo para identificar el documento
     payload = {
         "tipoDoc": comprobante.tipo_comprobante,
         "serie": comprobante.serie,
         "correlativo": str(comprobante.correlativo).zfill(6), # Asegurar formato
-        "company": {"ruc": user.business_ruc}
+        "company": {"ruc": company_ruc}
     }
     
     url = f"{base_url}{endpoint}"

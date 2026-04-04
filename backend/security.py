@@ -4,7 +4,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer
 from fastapi import Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 # Importaciones locales
 import models
@@ -71,7 +71,7 @@ def create_access_token_with_claims(user, expires_delta: Optional[timedelta] = N
 
 def get_user_by_email(db: Session, email: str):
     """Busca un usuario por email en la BD (Helper interno)."""
-    return db.query(models.User).filter(models.User.email == email).first()
+    return db.query(models.User).options(joinedload(models.User.tenant)).filter(models.User.email == email).first()
 
 def authenticate_user(db: Session, email: str, password: str):
     """
