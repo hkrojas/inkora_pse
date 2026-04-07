@@ -22,7 +22,6 @@ class TenantBase(StrictInputModel):
 class TenantCreate(TenantBase):
     business_address: Optional[str] = None
     business_phone: Optional[str] = None
-    apisperu_token: Optional[str] = None
 
 
 class TenantUpdate(StrictInputModel):
@@ -182,19 +181,47 @@ class TokenData(BaseModel):
 # ==========================================
 
 
+CONDICION_PAGO_VALORES = {
+    "contado", "credito_7", "credito_15", "credito_30", "credito_60",
+}
+
+
 class ClienteBase(BaseModel):
     tipo_documento: str = "1"
     numero_documento: str = Field(..., min_length=8, max_length=15)
     razon_social: str = Field(...)
     nombre_comercial: Optional[str] = None
-    direccion: Optional[str] = None
+    direccion: Optional[str] = None          # Dirección fiscal
     ubigeo: Optional[str] = None
     email: Optional[str] = None
     telefono: Optional[str] = None
+    # --- Fase 6: campos enriquecidos ---
+    whatsapp: Optional[str] = None
+    contacto: Optional[str] = None
+    condicion_pago: Optional[str] = None     # contado | credito_7 | credito_15 | credito_30 | credito_60
+    direccion_entrega: Optional[str] = None
+    observaciones: Optional[str] = None
 
 
 class ClienteCreate(ClienteBase):
     pass
+
+
+class ClienteUpdate(BaseModel):
+    """Actualización parcial de cliente (PATCH)."""
+    tipo_documento: Optional[str] = None
+    numero_documento: Optional[str] = Field(default=None, min_length=8, max_length=15)
+    razon_social: Optional[str] = None
+    nombre_comercial: Optional[str] = None
+    direccion: Optional[str] = None
+    ubigeo: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    whatsapp: Optional[str] = None
+    contacto: Optional[str] = None
+    condicion_pago: Optional[str] = None
+    direccion_entrega: Optional[str] = None
+    observaciones: Optional[str] = None
 
 
 class ClienteResponse(ClienteBase):
@@ -279,8 +306,12 @@ class AlertaInventarioResponse(BaseModel):
 class DashboardStatsResponse(BaseModel):
     ingresos_totales: Decimal
     saldos_por_cobrar: Decimal
+    saldo_vencido: Decimal = Decimal("0.00")
     costos_tercerizacion: Decimal
+    documentos_emitidos_mes: int = 0
+    documentos_vencidos: int = 0
     top_productos: List[str]
+
 
 
 class ProveedorBase(BaseModel):
@@ -344,14 +375,22 @@ class CotizacionItemCreate(BaseModel):
     descripcion: str
     cantidad: Decimal = Field(..., gt=0)
     precio_unitario: Decimal = Field(..., gt=0)
+    unidad_medida: Optional[str] = None          # Si None, hereda del producto o usa "NIU"
+    tipo_afectacion_igv: Optional[str] = None    # Si None, hereda del producto o usa "10" (gravado)
 
 
-class CotizacionItemResponse(CotizacionItemCreate):
+class CotizacionItemResponse(BaseModel):
     id: int
+    producto_id: Optional[int] = None
+    descripcion: str
+    cantidad: Decimal
+    precio_unitario: Decimal
     valor_unitario: Decimal
     total_base_igv: Decimal
     total_igv: Decimal
     total_item: Decimal
+    unidad_medida: str
+    tipo_afectacion_igv: str
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -360,16 +399,30 @@ class CotizacionCreate(BaseModel):
     fecha_vencimiento: Optional[datetime] = None
     moneda: str = "PEN"
     tipo_comprobante: str = "00"
+    observaciones: Optional[str] = None
+    condicion_pago: Optional[str] = None         # override; si None hereda del cliente
     items: List[CotizacionItemCreate]
 
 
 class CotizacionResponse(BaseModel):
     id: int
+    uuid_publico: Optional[str] = None
     serie: str
     correlativo: Optional[int] = 0
     fecha_emision: datetime
     fecha_vencimiento: Optional[datetime]
+    moneda: str = "PEN"
     estado: str
+    document_kind: str = "quotation"
+    source_quote_id: Optional[int] = None
+    internal_order_number: Optional[str] = None
+    document_number: Optional[str] = None
+    linked_fiscal_document_id: Optional[int] = None
+    linked_fiscal_document_number: Optional[str] = None
+    linked_fiscal_document_status: Optional[str] = None
+    payment_status: str = "pendiente"
+    observaciones: Optional[str] = None
+    condicion_pago: Optional[str] = None
     cliente: ClienteResponse
     usuario: UserResponse
     items: List[CotizacionItemResponse]
@@ -397,21 +450,50 @@ class CotizacionResponse(BaseModel):
 # ==========================================
 
 
-class PagoCreate(BaseModel):
+class PagoCreate(StrictInputModel):
     monto_pagado: Decimal = Field(..., gt=0)
     metodo_pago: str
+    fecha_pago: Optional[datetime] = None       # Si None, se usa la fecha actual
     referencia_operacion: Optional[str] = None
-    tipo: str = "adelanto"
+    tipo: str = "adelanto"                      # adelanto | pago_parcial | liquidacion
 
 
 class PagoResponse(BaseModel):
     id: int
     cotizacion_id: int
+    source_quote_id: Optional[int] = None
+    fiscal_document_id: Optional[int] = None
+    internal_order_number: Optional[str] = None
     monto_pagado: Decimal
     metodo_pago: str
     fecha_pago: datetime
     referencia_operacion: Optional[str] = None
     tipo: str
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CobranzaResumenResponse(BaseModel):
+    """Resumen de cobranza del tenant para el dashboard."""
+    total_por_cobrar: Decimal
+    total_vencido: Decimal
+    total_pagado_mes: Decimal
+    documentos_pendientes: int
+    documentos_vencidos: int
+    documentos_pagados_mes: int
+
+
+class CobranzaVencidaItem(BaseModel):
+    """Item de documento vencido para vista de cobranza."""
+    cotizacion_id: int
+    document_number: Optional[str] = None
+    internal_order_number: Optional[str] = None
+    cliente_nombre: str
+    cliente_documento: str
+    fecha_vencimiento: Optional[datetime] = None
+    total_venta: Decimal
+    monto_pagado: Decimal
+    saldo_pendiente: Decimal
+    dias_vencido: int
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -421,23 +503,23 @@ CotizacionResponse.model_rebuild()
 # --- NUEVOS ESQUEMAS PARA FACTURACIÓN ---
 
 
-class FacturarPayload(BaseModel):
+class FacturarPayload(StrictInputModel):
     tipo_comprobante: str
 
 
-class NotaCreate(BaseModel):
+class NotaCreate(StrictInputModel):
     comprobante_afectado_id: int
     tipo_nota: str
     cod_motivo: str
     descripcion_motivo: str
 
 
-class AnulacionCreate(BaseModel):
+class AnulacionCreate(StrictInputModel):
     comprobante_id: int
     motivo: str
 
 
-class DescargaArchivoPayload(BaseModel):
+class DescargaArchivoPayload(StrictInputModel):
     comprobante_id: int
 
 
@@ -496,6 +578,26 @@ class GuiaRemisionItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class EtiquetaGuiaResponse(BaseModel):
+    """Datos estructurados para imprimir la etiqueta de despacho de una guía."""
+    guia_id: int
+    numero_guia: Optional[str] = None
+    fecha_traslado: Optional[datetime] = None
+    remitente_nombre: str
+    remitente_ruc: str
+    remitente_direccion: Optional[str] = None
+    destinatario_nombre: Optional[str] = None
+    destinatario_documento: Optional[str] = None
+    destinatario_direccion: Optional[str] = None
+    partida_direccion: Optional[str] = None
+    llegada_direccion: Optional[str] = None
+    peso_bruto_total: Optional[Decimal] = None
+    numero_bultos: Optional[int] = None
+    motivo_traslado: str
+    items: List[GuiaRemisionItemResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+
 class GuiaRemisionResponse(BaseModel):
     id: int
     serie: str
@@ -504,6 +606,9 @@ class GuiaRemisionResponse(BaseModel):
     fecha_traslado: datetime
     estado: str
     cotizacion_id: Optional[int] = None
+    source_quote_id: Optional[int] = None
+    fiscal_document_id: Optional[int] = None
+    internal_order_number: Optional[str] = None
     motivo_traslado: str
     descripcion_motivo: Optional[str] = None
     peso_bruto_total: Decimal
@@ -551,3 +656,215 @@ class AIInsumoFactura(BaseModel):
 
 class AIParsedFacturaResponse(BaseModel):
     insumos: List[AIInsumoFactura]
+
+
+# ==========================================
+# FASE 5: SUPERADMIN / SUSCRIPCION SaaS
+# ==========================================
+# SEPARACION DE DOMINIOS:
+# - SubscriptionPaymentCreate/Response → pago de tenant a PrintFlow (SaaS)
+# - PagoCreate/PagoResponse           → pago de cliente al tenant (negocio)
+# Nunca mezclar estos dos dominios.
+
+
+class SubscriptionResponse(BaseModel):
+    """Estado actual de la suscripcion SaaS de un tenant."""
+    id: int
+    tenant_id: int
+    status: str
+    plan_code: str
+    current_price: Optional[Decimal] = None
+    founder_price: Optional[Decimal] = None
+    billing_started_at: Optional[datetime] = None
+    billing_due_at: Optional[datetime] = None
+    grace_until: Optional[datetime] = None
+    max_users: Optional[int] = None
+    max_documents: Optional[int] = None
+    documents_used: int = 0
+    onboarding_status: str
+    notes_internal: Optional[str] = None
+    is_pilot: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SubscriptionPaymentCreate(StrictInputModel):
+    """Registrar un pago SaaS recibido de un tenant. Dominio: PrintFlow cobra al tenant."""
+    amount: Decimal = Field(..., gt=0)
+    currency: str = "PEN"
+    method: str
+    reference: Optional[str] = None
+    paid_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class SubscriptionPaymentResponse(BaseModel):
+    id: int
+    tenant_id: int
+    amount: Decimal
+    currency: str
+    method: str
+    reference: Optional[str] = None
+    paid_at: Optional[datetime] = None
+    validated_by_user_id: Optional[int] = None
+    notes: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ActivateTenantRequest(StrictInputModel):
+    """Activar un tenant. Opcionalmente fija la fecha de vencimiento."""
+    billing_due_at: Optional[datetime] = None
+    notes_internal: Optional[str] = None
+
+
+class SuspendTenantRequest(StrictInputModel):
+    """Suspender un tenant. El acceso queda bloqueado inmediatamente."""
+    notes_internal: Optional[str] = None
+
+
+class ExtendAccessRequest(StrictInputModel):
+    """Extender el acceso de un tenant (nueva fecha de vencimiento)."""
+    billing_due_at: datetime
+    grace_until: Optional[datetime] = None
+    notes_internal: Optional[str] = None
+
+
+class SetFounderPricingRequest(StrictInputModel):
+    """Fijar precio fundador y/o precio actual para un tenant."""
+    founder_price: Decimal = Field(..., gt=0)
+    current_price: Optional[Decimal] = Field(default=None, gt=0)
+    notes_internal: Optional[str] = None
+
+
+class UpdateSubscriptionRequest(StrictInputModel):
+    """Actualización general de campos de suscripcion (uso admin avanzado)."""
+    status: Optional[str] = None
+    plan_code: Optional[str] = None
+    billing_started_at: Optional[datetime] = None
+    billing_due_at: Optional[datetime] = None
+    grace_until: Optional[datetime] = None
+    current_price: Optional[Decimal] = None
+    founder_price: Optional[Decimal] = None
+    max_users: Optional[int] = None
+    max_documents: Optional[int] = None
+    onboarding_status: Optional[str] = None
+    notes_internal: Optional[str] = None
+    is_pilot: Optional[bool] = None
+
+
+class SuperadminTenantDetailResponse(BaseModel):
+    """Vista completa de un tenant para el superadmin: estado operativo + suscripcion."""
+    id: int
+    is_active: bool
+    business_name: str
+    business_ruc: str
+    business_address: Optional[str] = None
+    business_phone: Optional[str] = None
+    plan_type: Optional[str] = None
+    subscription: Optional[SubscriptionResponse] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==========================================
+# FASE 8: IMPORTACIÓN MASIVA (ONBOARDING)
+# ==========================================
+
+
+class ImportErrorDetail(BaseModel):
+    """Error de una fila durante la importación."""
+    fila: int
+    campo: str
+    mensaje: str
+
+
+class ImportResultResponse(BaseModel):
+    """Resultado de una importación masiva de clientes o productos."""
+    importados: int
+    omitidos: int
+    errores: List[ImportErrorDetail]
+
+
+# ==========================================
+# FASE 8: CHECKLIST DE ONBOARDING
+# ==========================================
+
+
+class OnboardingChecklistItem(BaseModel):
+    item: str
+    titulo: str
+    descripcion: str
+    completado: bool
+
+
+class OnboardingEstadoResponse(BaseModel):
+    onboarding_status: str
+    completados: int
+    total: int
+    porcentaje: int
+    checklist: List[OnboardingChecklistItem]
+
+
+# ==========================================
+# FASE 9: BETA CERRADA — CONTROL OPERATIVO
+# ==========================================
+
+
+class UpdateNotasRequest(StrictInputModel):
+    """Actualización rápida de notas internas de un tenant (uso superadmin en llamadas de soporte)."""
+    notes_internal: Optional[str] = None
+    is_pilot: Optional[bool] = None
+
+
+class TenantActividadResponse(BaseModel):
+    """Métricas de uso operativo de un tenant para seguimiento de beta."""
+    tenant_id: int
+    business_name: str
+    business_ruc: str
+    # Conteos de entidades
+    clientes_count: int
+    productos_count: int
+    usuarios_count: int
+    # Documentos
+    cotizaciones_count: int
+    documentos_fiscales_count: int
+    documentos_fiscales_ultimo_mes: int
+    guias_count: int
+    pagos_count: int
+    # Actividad
+    ultimo_documento_fiscal_fecha: Optional[datetime] = None
+    # Suscripción
+    subscription_status: Optional[str] = None
+    onboarding_status: Optional[str] = None
+    documents_used: int = 0
+    max_documents: Optional[int] = None
+
+
+class BetaTenantSummary(BaseModel):
+    """Vista resumida de un tenant piloto para el panel de operaciones beta."""
+    tenant_id: int
+    business_name: str
+    business_ruc: str
+    is_active: bool
+    is_pilot: bool = False
+    subscription_status: Optional[str] = None
+    onboarding_status: Optional[str] = None
+    plan_code: Optional[str] = None
+    current_price: Optional[Decimal] = None
+    founder_price: Optional[Decimal] = None
+    billing_due_at: Optional[datetime] = None
+    documents_used: int = 0
+    max_documents: Optional[int] = None
+    # Conteos rápidos
+    clientes_count: int = 0
+    productos_count: int = 0
+    usuarios_count: int = 0
+    # Último pago SaaS
+    ultimo_pago_saas_fecha: Optional[datetime] = None
+    ultimo_pago_saas_monto: Optional[Decimal] = None
+    # Notas internas
+    notes_internal: Optional[str] = None

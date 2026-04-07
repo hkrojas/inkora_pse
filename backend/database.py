@@ -1,65 +1,81 @@
 # backend/database.py
-# PrintFlow SaaS B2B - Multitenancia con filtro global automático
+# PrintFlow SaaS B2B - Multitenancia con filtro global automatico
 # ================================================================
 
-from contextvars import ContextVar
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from contextvars import ContextVar, Token
+
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
+
 from config import settings
+from logging_utils import get_logger
 
 # ==========================================
-# CONEXIÓN A BASE DE DATOS (Neon PostgreSQL)
+# CONEXION A BASE DE DATOS
 # ==========================================
 
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
-    echo=False
+    echo=False,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+logger = get_logger(__name__)
 
 # ==========================================
 # MULTITENANCIA: Variable de Contexto Global
 # ==========================================
-# Esta ContextVar es thread-safe y async-safe. Cada request de FastAPI
-# tiene su propio contexto, por lo que no hay riesgo de cross-tenant leaks.
 
-current_tenant_id: ContextVar[int | None] = ContextVar("current_tenant_id", default=None)
+current_tenant_id: ContextVar[int | None] = ContextVar(
+    "current_tenant_id",
+    default=None,
+)
+
+
+def activate_tenant_context(tenant_id: int | None) -> Token:
+    """Activa el tenant en el contexto async/thread local."""
+    return current_tenant_id.set(tenant_id)
+
+
+def reset_tenant_context(token: Token) -> None:
+    """Restaura el contexto tenant previo."""
+    current_tenant_id.reset(token)
+
+
+def apply_tenant_context(db: Session, tenant_id: int) -> Token:
+    """Sincroniza tenant_id en ContextVar y en la sesion SQL actual."""
+    token = activate_tenant_context(tenant_id)
+    db.execute(
+        text("SELECT set_config('app.current_tenant_id', :tid, true)"),
+        {"tid": str(tenant_id)},
+    )
+    return token
+
 
 # ==========================================
-# FILTRO AUTOMÁTICO DE TENANT (do_orm_execute)
+# FILTRO AUTOMATICO DE TENANT (do_orm_execute)
 # ==========================================
-# Intercepta TODAS las queries ORM (SELECT, UPDATE, DELETE) y, si el modelo
-# tiene la columna 'tenant_id', inyecta automáticamente:
-#   WHERE tenant_id = <current_tenant_id>
-# Esto GARANTIZA aislamiento de datos entre empresas sin modificar cada query.
 
 @event.listens_for(Session, "do_orm_execute")
 def _add_tenant_filter(orm_execute_state):
     """Inyecta filtro WHERE tenant_id = X en todas las queries ORM."""
-    # Solo aplicar a SELECTs (las escrituras se manejan en CRUD)
     if not orm_execute_state.is_select:
         return
 
     tenant_id = current_tenant_id.get(None)
     if tenant_id is None:
-        return  # Sin tenant activo (ej: login, registro) → no filtrar
+        return
 
-    # Iterar sobre las entidades mapeadas en la query
-    # y añadir filtro si tienen columna tenant_id
-    if orm_execute_state.is_select:
-        stmt = orm_execute_state.statement
-        # Obtener las entidades del FROM de la query
-        for mapper_entity in orm_execute_state.all_mappers:
-            mapped_class = mapper_entity.class_
-            # Verificar si el modelo tiene columna tenant_id
-            if hasattr(mapped_class, "tenant_id"):
-                stmt = stmt.filter(mapped_class.tenant_id == tenant_id)
-        
-        orm_execute_state.statement = stmt
+    stmt = orm_execute_state.statement
+    for mapper_entity in orm_execute_state.all_mappers:
+        mapped_class = mapper_entity.class_
+        if hasattr(mapped_class, "tenant_id"):
+            stmt = stmt.filter(mapped_class.tenant_id == tenant_id)
+
+    orm_execute_state.statement = stmt
 
 
 # ==========================================
@@ -68,15 +84,17 @@ def _add_tenant_filter(orm_execute_state):
 
 def get_db():
     """
-    Generador de dependencia para obtener una sesión de SQLAlchemy.
-    Se asegura de que la sesión se cierre correctamente después de cada solicitud.
+    Generador de dependencia para obtener una sesion de SQLAlchemy.
+    Se asegura de cerrar la sesion y limpiar el contexto tenant.
     """
     db = SessionLocal()
+    tenant_token = activate_tenant_context(None)
     try:
         yield db
-    except Exception as e:
-        print(f"ERROR: Excepción durante la sesión de BD, haciendo rollback: {e}")
+    except Exception:
+        logger.exception("database_session_error")
         db.rollback()
         raise
     finally:
+        reset_tenant_context(tenant_token)
         db.close()

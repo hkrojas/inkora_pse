@@ -1,7 +1,20 @@
-from supabase import create_client, Client
+from supabase import Client, create_client
+
 from config import settings
 
-# Cliente global de Supabase
-# Se utiliza el Service Role Key si se requiere bypass de RLS para administración,
-# pero para el Storage con las claves de Settings es suficiente.
-supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+_supabase_client: Client | None = None
+
+
+def get_supabase_client() -> Client:
+    global _supabase_client
+
+    if _supabase_client is not None:
+        return _supabase_client
+
+    if not settings.has_supabase_storage:
+        raise RuntimeError(
+            "Supabase Storage no esta configurado. Defina SUPABASE_URL y SUPABASE_KEY."
+        )
+
+    _supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+    return _supabase_client

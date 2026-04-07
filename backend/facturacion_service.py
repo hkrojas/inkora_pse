@@ -2,13 +2,19 @@ import requests
 import json
 from datetime import datetime
 import decimal
-from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 import models
 import schemas
 from config import settings
 import calculations
+from tenant_access import (
+    get_apisperu_token as _get_apisperu_token,
+    get_company_address as _get_company_address,
+    get_company_bank_accounts as _get_company_bank_accounts,
+    get_company_name as _get_company_name,
+    get_company_ruc as _get_company_ruc,
+)
 
 # ==========================================
 # UTILITARIOS Y CONFIGURACIÓN
@@ -58,39 +64,6 @@ def obtener_tipo_documento_codigo(tipo: str) -> str:
     mapping = {"RUC": "6", "DNI": "1", "CE": "4", "PASAPORTE": "7"}
     return mapping.get(tipo, "1")
 
-
-def _get_company_tenant(user):
-    return getattr(user, "tenant", None)
-
-
-def _get_company_ruc(user) -> Optional[str]:
-    tenant = _get_company_tenant(user)
-    return getattr(tenant, "business_ruc", None) or getattr(user, "business_ruc", None)
-
-
-def _get_company_name(user) -> Optional[str]:
-    tenant = _get_company_tenant(user)
-    return getattr(tenant, "business_name", None) or getattr(user, "business_name", None)
-
-
-def _get_company_address(user) -> Optional[str]:
-    tenant = _get_company_tenant(user)
-    return getattr(tenant, "business_address", None) or getattr(user, "business_address", None)
-
-
-def _get_company_bank_accounts(user):
-    tenant = _get_company_tenant(user)
-    return getattr(tenant, "bank_accounts", None) or getattr(user, "bank_accounts", None) or []
-
-
-def _get_apisperu_token(user) -> Optional[str]:
-    tenant = _get_company_tenant(user)
-    # TODO LEGACY: eliminar fallback a user.apisperu_token cuando Tenant sea la única fuente.
-    return (
-        getattr(tenant, "apisperu_token", None)
-        or getattr(user, "apisperu_token", None)
-        or settings.API_TOKEN
-    )
 
 # ==========================================
 # CONSTRUCTORES DE PAYLOAD
@@ -310,8 +283,8 @@ def emitir_factura(cotizacion: models.Cotizacion, db: Session, user: models.User
     serie = "F001" if tipo_comprobante == "01" else "B001"
     
     payload, totales = _base_payload(cotizacion, user, tipo_comprobante)
-    payload["serie"] = serie
-    payload["correlativo"] = str(cotizacion.id).zfill(6)
+    payload["serie"] = cotizacion.serie or serie
+    payload["correlativo"] = str(cotizacion.correlativo or cotizacion.id).zfill(6)
     
     # --- REGLAS FISCALES AUTOMÁTICAS ---
     # 1. Detracciones SPOT (PEN > S/700 en Facturas)
@@ -333,8 +306,8 @@ def emitir_nota(nota: models.Cotizacion, doc_afectado: models.Cotizacion, user: 
     serie_nota = "FC01" if serie_origen.startswith("F") else "BC01" # Serie fija para notas
     
     payload, totales = _base_payload(nota, user, tipo_comprobante)
-    payload["serie"] = serie_nota
-    payload["correlativo"] = str(nota.id).zfill(6)
+    payload["serie"] = nota.serie or serie_nota
+    payload["correlativo"] = str(nota.correlativo or nota.id).zfill(6)
     
     # Agregar sección específica de Notas
     payload["perception"] = {
@@ -542,9 +515,10 @@ def _enviar_a_api(payload, user, endpoint):
                 }
             }
         }
-    except Exception as e:
-        print(f"Error API: {e}")
-        raise FacturacionException(f"Error comunicación: {str(e)}")
+    except FacturacionException:
+        raise
+    except Exception:
+        raise FacturacionException("Error de comunicación con el servicio de facturación.")
 
 def descargar_archivo(tipo_archivo: str, comprobante: models.Cotizacion, user: models.User):
     """
@@ -577,6 +551,6 @@ def descargar_archivo(tipo_archivo: str, comprobante: models.Cotizacion, user: m
     }, stream=True)
     
     if response.status_code != 200:
-        raise FacturacionException(f"No se pudo descargar el archivo: {response.text}")
+        raise FacturacionException("No se pudo descargar el archivo solicitado desde el proveedor fiscal.")
     
     return response.content

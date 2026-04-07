@@ -1,0 +1,156 @@
+from datetime import datetime
+
+import crud
+import facturacion_service
+import models
+from database import SessionLocal, apply_tenant_context, reset_tenant_context
+from logging_utils import get_logger
+from services import sunat_service
+
+logger = get_logger(__name__)
+
+
+def process_direct_sunat_emission_bg(cotizacion_id: int, tenant_id: int) -> None:
+    """
+    Pipeline completo de emision directa a SUNAT en segundo plano.
+    Se mantiene fuera de los routers para que el HTTP layer quede fino.
+    """
+    db = SessionLocal()
+    tenant_token = None
+    try:
+        tenant_token = apply_tenant_context(db, tenant_id)
+
+        cotizacion = (
+            db.query(models.Cotizacion)
+            .filter(models.Cotizacion.id == cotizacion_id)
+            .first()
+        )
+        tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+
+        if (
+            not cotizacion
+            or not tenant
+            or not tenant.sunat_usuario_sol
+            or not tenant.sunat_cert_url
+        ):
+            logger.error(
+                "sunat_credentials_missing",
+                extra={
+                    "event": "sunat_credentials_missing",
+                    "tenant_id": tenant_id,
+                    "cotizacion_id": cotizacion_id,
+                },
+            )
+            return
+
+        emisor_data = {
+            "ruc": tenant.business_ruc or "12345678901",
+            "nombre": tenant.business_name or "Empresa Test",
+            "direccion": tenant.business_address or "Calle Real 123",
+            "ubigeo": getattr(tenant, "ubigeo", None) or "150101",
+        }
+        cliente = cotizacion.cliente
+        cliente_data = {
+            "numero_documento": cliente.numero_documento,
+            "tipo_documento": facturacion_service.obtener_tipo_documento_codigo(
+                cliente.tipo_documento
+            ),
+            "nombre": cliente.razon_social or "-",
+        }
+
+        items_data = []
+        for item in cotizacion.items:
+            calc = facturacion_service.calculations.calcular_item(
+                item.cantidad,
+                item.precio_unitario,
+            )
+            items_data.append(
+                {
+                    "descripcion": item.descripcion,
+                    "cantidad": item.cantidad,
+                    "valor_unitario": calc["valor_unitario"],
+                    "precio_unitario": item.precio_unitario,
+                    "valor_venta": calc["total_base_igv"],
+                    "igv": calc["total_igv"],
+                }
+            )
+
+        ubl_payload = {
+            "serie": cotizacion.serie
+            or ("F001" if cotizacion.tipo_comprobante == "01" else "B001"),
+            "correlativo": str(cotizacion.correlativo or cotizacion.id).zfill(6),
+            "fecha_emision": datetime.now().strftime("%Y-%m-%d"),
+            "tipo_comprobante": cotizacion.tipo_comprobante or "01",
+            "monto_letras": facturacion_service.numero_a_letras(cotizacion.total_venta),
+            "emisor": emisor_data,
+            "cliente": cliente_data,
+            "items": items_data,
+            "total_gravada": cotizacion.total_gravada,
+            "total_igv": cotizacion.total_igv,
+            "total_venta": cotizacion.total_venta,
+        }
+
+        cert_data = sunat_service.SUNATService.get_cert_from_storage(
+            tenant.sunat_cert_url
+        )
+        sunat = sunat_service.SUNATService(
+            ruc=tenant.business_ruc,
+            usuario_sol=tenant.sunat_usuario_sol,
+            clave_sol=tenant.sunat_clave_sol,
+            cert_data=cert_data,
+            cert_password=tenant.sunat_cert_password,
+        )
+
+        xml_raw = sunat.generate_invoice_ubl(ubl_payload)
+        xml_signed = sunat.sign_xml(xml_raw)
+        resultado = sunat.send_bill(
+            f"{ubl_payload['serie']}-{ubl_payload['correlativo']}",
+            xml_signed,
+        )
+
+        if resultado["success"]:
+            crud.guardar_respuesta_sunat(
+                db,
+                cotizacion_id,
+                {
+                    "success": True,
+                    "sunat_response": {
+                        "success": True,
+                        "cdrResponse": {
+                            "description": "Aceptado por SUNAT (Procesamiento Directo)"
+                        },
+                        "links": {"cdr": "stored_locally"},
+                    },
+                },
+                tenant_id=tenant_id,
+            )
+            logger.info(
+                "sunat_emission_completed",
+                extra={
+                    "event": "sunat_emission_completed",
+                    "tenant_id": tenant_id,
+                    "cotizacion_id": cotizacion_id,
+                },
+            )
+        else:
+            logger.error(
+                "sunat_emission_failed",
+                extra={
+                    "event": "sunat_emission_failed",
+                    "tenant_id": tenant_id,
+                    "cotizacion_id": cotizacion_id,
+                },
+            )
+    except Exception:
+        logger.exception(
+            "sunat_emission_background_failed",
+            extra={
+                "event": "sunat_emission_background_failed",
+                "tenant_id": tenant_id,
+                "cotizacion_id": cotizacion_id,
+            },
+        )
+    finally:
+        if tenant_token is not None:
+            reset_tenant_context(tenant_token)
+        db.close()

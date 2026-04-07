@@ -192,9 +192,12 @@ class SUNATService:
     @staticmethod
     def get_cert_from_storage(cert_url: str) -> bytes:
         """Descarga el certificado desde Supabase Storage (URL pública o firmada)."""
-        response = requests.get(cert_url)
-        response.raise_for_status()
-        return response.content
+        try:
+            response = requests.get(cert_url, timeout=15)
+            response.raise_for_status()
+            return response.content
+        except requests.RequestException as exc:
+            raise ValueError("No se pudo descargar el certificado digital configurado.") from exc
 
     def send_bill(self, filename: str, content_xml: str) -> dict:
         """
@@ -241,5 +244,5 @@ class SUNATService:
         except Exception as e:
             return {
                 "success": False,
-                "error": str(e)
+                "error": "No se pudo procesar la respuesta del servicio SUNAT."
             }

@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, Numeric, Text, JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import backref, relationship
 from database import Base
 from datetime import datetime
 
@@ -63,6 +63,8 @@ class Tenant(Base):
     recetas = relationship("RecetaBOM", back_populates="tenant")
     ordenes_produccion = relationship("OrdenProduccion", back_populates="tenant")
     proveedores = relationship("Proveedor", back_populates="tenant")
+    subscription = relationship("Subscription", back_populates="tenant", uselist=False)
+    subscription_payments = relationship("SubscriptionPayment", back_populates="tenant")
 
 
 # ==========================================
@@ -115,12 +117,19 @@ class Cliente(Base):
     id = Column(Integer, primary_key=True, index=True)
     tipo_documento = Column(String, default="1")  # 1: DNI, 6: RUC
     numero_documento = Column(String, index=True)
-    razon_social = Column(String)
+    razon_social = Column(String, index=True)
     nombre_comercial = Column(String, nullable=True)
-    direccion = Column(String, nullable=True)
+    direccion = Column(String, nullable=True)          # Dirección fiscal
     ubigeo = Column(String, nullable=True)
     email = Column(String, nullable=True)
     telefono = Column(String, nullable=True)
+
+    # --- FASE 6: Campos de enriquecimiento para launch scope ---
+    whatsapp = Column(String, nullable=True)           # Número WhatsApp (puede diferir del telefono)
+    contacto = Column(String, nullable=True)           # Nombre del contacto principal
+    condicion_pago = Column(String, nullable=True)     # contado | credito_7 | credito_15 | credito_30 | credito_60
+    direccion_entrega = Column(String, nullable=True)  # Dirección de entrega (puede diferir de fiscal)
+    observaciones = Column(Text, nullable=True)        # Notas internas sobre el cliente
 
     # --- MULTITENANCIA ---
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
@@ -167,6 +176,9 @@ class Cotizacion(Base):
     moneda = Column(String, default="PEN")
     estado = Column(String, default="pendiente")  # pendiente, facturada, anulada
     uuid_publico = Column(String, unique=True, index=True, default=lambda: str(uuid.uuid4()))
+    document_kind = Column(String, default="quotation", nullable=False, index=True)
+    internal_order_number = Column(String, nullable=True, index=True)
+    source_quote_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True, index=True)
 
     # --- MULTITENANCIA ---
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
@@ -178,6 +190,12 @@ class Cotizacion(Base):
 
     usuario_id = Column(Integer, ForeignKey("users.id"))
     usuario = relationship("User", back_populates="cotizaciones")
+    source_quote = relationship(
+        "Cotizacion",
+        foreign_keys=[source_quote_id],
+        remote_side="Cotizacion.id",
+        backref=backref("derived_documents", lazy="selectin"),
+    )
 
     items = relationship("CotizacionItem", back_populates="cotizacion", cascade="all, delete-orphan")
 
@@ -206,12 +224,90 @@ class Cotizacion(Base):
 
     # --- REFERENCIA PARA NOTAS DE CRÉDITO/DÉBITO ---
     nota_referencia_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
-    notas = relationship("Cotizacion", backref="documento_afectado", remote_side="Cotizacion.id")
+    nota_referencia = relationship(
+        "Cotizacion",
+        foreign_keys=[nota_referencia_id],
+        remote_side="Cotizacion.id",
+        backref=backref("notas_emitidas", lazy="selectin"),
+    )
+
+    # --- FASE 6: Campos operativos de cotización ---
+    observaciones = Column(Text, nullable=True)        # Notas visibles en PDF / internas
+    condicion_pago = Column(String, nullable=True)     # Override por cotización (hereda del cliente si no se especifica)
 
     # --- MOTOR FINANCIERO (Pagos / Adelantos) ---
     monto_pagado = Column(Numeric(12, 2), default=0.0)
     saldo_pendiente = Column(Numeric(12, 2), default=0.0)
-    pagos = relationship("Pago", back_populates="cotizacion", cascade="all, delete-orphan")
+    pagos = relationship(
+        "Pago",
+        back_populates="cotizacion",
+        foreign_keys="Pago.cotizacion_id",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def linked_fiscal_document(self):
+        if self.document_kind != "quotation":
+            return None
+
+        fiscal_documents = [
+            document
+            for document in getattr(self, "derived_documents", []) or []
+            if getattr(document, "document_kind", None) == "fiscal_document"
+            and getattr(document, "estado", None) != "anulada"
+        ]
+        if not fiscal_documents:
+            return None
+        return max(fiscal_documents, key=lambda document: document.id)
+
+    @property
+    def linked_fiscal_document_id(self):
+        document = self.linked_fiscal_document
+        return getattr(document, "id", None)
+
+    @property
+    def linked_fiscal_document_number(self):
+        document = self.linked_fiscal_document
+        if not document or not document.serie or document.correlativo is None:
+            return None
+        return f"{document.serie}-{str(document.correlativo).zfill(6)}"
+
+    @property
+    def linked_fiscal_document_status(self):
+        document = self.linked_fiscal_document
+        return getattr(document, "estado", None)
+
+    @property
+    def payment_status(self):
+        """
+        Estados de cobranza:
+          pagado   — monto_pagado >= total_venta
+          parcial  — hay pago pero aún queda saldo
+          vencido  — sin pago completo y fecha de vencimiento superada
+          pendiente — sin pago y sin vencimiento superado (o sin vencimiento)
+        """
+        from decimal import Decimal as _D
+        total_venta = self.total_venta or _D("0")
+        monto_pagado = self.monto_pagado or _D("0")
+
+        if monto_pagado >= total_venta and total_venta > 0:
+            return "pagado"
+
+        # Verificar vencimiento
+        if self.fecha_vencimiento is not None:
+            from datetime import datetime as _dt
+            if _dt.now() > self.fecha_vencimiento:
+                return "vencido"
+
+        if monto_pagado > 0:
+            return "parcial"
+        return "pendiente"
+
+    @property
+    def document_number(self):
+        if not self.serie or self.correlativo is None:
+            return None
+        return f"{self.serie}-{str(self.correlativo).zfill(6)}"
 
 
 # ==========================================
@@ -259,7 +355,10 @@ class GuiaRemision(Base):
 
     # Relación con cotización/factura de origen
     cotizacion_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
-    cotizacion = relationship("Cotizacion")
+    cotizacion = relationship("Cotizacion", foreign_keys=[cotizacion_id])
+    source_quote_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
+    fiscal_document_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
+    internal_order_number = Column(String, nullable=True, index=True)
 
     # Propietario
     usuario_id = Column(Integer, ForeignKey("users.id"))
@@ -333,7 +432,14 @@ class Pago(Base):
 
     # Relación con cotización/comprobante
     cotizacion_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=False)
-    cotizacion = relationship("Cotizacion", back_populates="pagos")
+    cotizacion = relationship(
+        "Cotizacion",
+        back_populates="pagos",
+        foreign_keys=[cotizacion_id],
+    )
+    source_quote_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
+    fiscal_document_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
+    internal_order_number = Column(String, nullable=True, index=True)
 
     # Datos del pago
     monto_pagado = Column(Numeric(12, 2), nullable=False)
@@ -476,3 +582,77 @@ class AuditLog(Base):
     details = Column(Text, nullable=True)
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
+
+
+# ==========================================
+# SUSCRIPCION SaaS (FASE 5)
+# ==========================================
+# Control interno de PrintFlow sobre el acceso de cada tenant.
+# Separado del dominio operativo del tenant (cobros a sus clientes).
+
+SUBSCRIPTION_STATUS_ACTIVE = "active"
+SUBSCRIPTION_STATUS_SUSPENDED = "suspended"
+SUBSCRIPTION_STATUS_TRIAL = "trial"
+SUBSCRIPTION_STATUS_EXPIRED = "expired"
+SUBSCRIPTION_STATUS_CANCELLED = "cancelled"
+
+ONBOARDING_STATUS_NOT_STARTED = "not_started"
+ONBOARDING_STATUS_IN_PROGRESS = "in_progress"
+ONBOARDING_STATUS_COMPLETED = "completed"
+
+class Subscription(Base):
+    """Suscripcion SaaS de un tenant a PrintFlow."""
+    __tablename__ = "subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, unique=True, index=True)
+    tenant = relationship("Tenant", back_populates="subscription")
+
+    # Estado y plan
+    status = Column(String, default=SUBSCRIPTION_STATUS_TRIAL, nullable=False, index=True)
+    plan_code = Column(String, default="launch", nullable=False)
+    current_price = Column(Numeric(10, 2), nullable=True)
+    founder_price = Column(Numeric(10, 2), nullable=True)
+
+    # Fechas de ciclo
+    billing_started_at = Column(DateTime, nullable=True)
+    billing_due_at = Column(DateTime, nullable=True)
+    grace_until = Column(DateTime, nullable=True)
+
+    # Limites operativos
+    max_users = Column(Integer, default=5, nullable=True)
+    max_documents = Column(Integer, default=500, nullable=True)
+    documents_used = Column(Integer, default=0, nullable=False)
+
+    # Onboarding
+    onboarding_status = Column(String, default=ONBOARDING_STATUS_NOT_STARTED, nullable=False)
+
+    # Control interno
+    notes_internal = Column(Text, nullable=True)
+    # Fase 9: marca explícita de cliente piloto de la beta cerrada
+    is_pilot = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class SubscriptionPayment(Base):
+    """Pago de suscripcion SaaS recibido por PrintFlow de un tenant.
+
+    SEPARACION DE DOMINIOS: Este modelo es exclusivo para pagos SaaS
+    (tenant -> PrintFlow). No confundir con Pago (cliente -> tenant).
+    """
+    __tablename__ = "subscription_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    tenant = relationship("Tenant", back_populates="subscription_payments")
+
+    amount = Column(Numeric(10, 2), nullable=False)
+    currency = Column(String, default="PEN", nullable=False)
+    method = Column(String, nullable=False)
+    reference = Column(String, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    validated_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    validated_by = relationship("User")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)

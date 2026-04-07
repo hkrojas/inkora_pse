@@ -69,6 +69,9 @@ def _mock_user(ruc="20100100100", nombre="Empresa Emisora SAC"):
     user.bank_accounts = [
         {"banco": "Banco de la Nacion", "moneda": "Soles", "cuenta": "00-123-456789"}
     ]
+    # tenant_access.get_company_bank_accounts prioriza tenant.bank_accounts.
+    # Poner tenant = None obliga al fallback a user.bank_accounts.
+    user.tenant = None
     return user
 
 

@@ -2,7 +2,7 @@ import pdf_generator
 from services import storage_service
 from sqlalchemy.orm import Session
 import models
-from database import SessionLocal
+from database import SessionLocal, apply_tenant_context, reset_tenant_context
 
 async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion):
     """
@@ -34,14 +34,21 @@ async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion):
     
     return public_url
 
-async def process_pdf_background(cotizacion_id: int):
+async def process_pdf_background(cotizacion_id: int, tenant_id: int):
     """
     Tarea para BackgroundTasks: Genera y sube el PDF sin bloquear la respuesta principal.
     """
     db = SessionLocal()
+    tenant_token = None
     try:
-        cotizacion = db.query(models.Cotizacion).filter(models.Cotizacion.id == cotizacion_id).first()
+        tenant_token = apply_tenant_context(db, tenant_id)
+        cotizacion = db.query(models.Cotizacion).filter(
+            models.Cotizacion.id == cotizacion_id,
+            models.Cotizacion.tenant_id == tenant_id,
+        ).first()
         if cotizacion:
             await generate_and_upload_pdf(db, cotizacion)
     finally:
+        if tenant_token is not None:
+            reset_tenant_context(tenant_token)
         db.close()
