@@ -73,21 +73,12 @@ def get_user_by_email(db: Session, email: str):
     return db.query(models.User).options(joinedload(models.User.tenant)).filter(models.User.email == email).first()
 
 def authenticate_user(db: Session, email: str, password: str):
-    """
-    ¡CRÍTICO! Esta es la función que main.py está buscando.
-    Verifica usuario y contraseña. Retorna el usuario si es válido, False si no.
-    """
+    """Verifica usuario y contraseña. Retorna el usuario si es válido, False si no."""
     user = get_user_by_email(db, email)
     if not user:
-        print(f"DEBUG AUTH: Usuario no encontrado: {email}")
         return False
-    
-    is_valid = verify_password(password, user.hashed_password)
-    if not is_valid:
-        print(f"DEBUG AUTH: Contraseña incorrecta para {email}. Hash en DB: {user.hashed_password}")
+    if not verify_password(password, user.hashed_password):
         return False
-    
-    print(f"DEBUG AUTH: Autenticación exitosa para {email}")
     return user
 
 # ==========================================
