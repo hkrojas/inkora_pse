@@ -20,8 +20,8 @@ from types import SimpleNamespace
 # Asegurar que el directorio backend esté en el path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import calculations
-import facturacion_service
+from services import calculations
+from services import facturacion_service
 
 
 # ==========================================

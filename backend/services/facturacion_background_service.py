@@ -1,7 +1,7 @@
 from datetime import datetime
 
 import crud
-import facturacion_service
+from services import facturacion_service
 import models
 from database import SessionLocal, apply_tenant_context, reset_tenant_context
 from logging_utils import get_logger

@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-import comunicacion_service
+from services import comunicacion_service
 import crud
 import models
 import schemas

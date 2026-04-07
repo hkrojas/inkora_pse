@@ -50,7 +50,7 @@ import models
 import schemas
 from access_control import ROLE_ADMIN
 from routers.facturacion import _validar_pre_emision
-import facturacion_service
+from services import facturacion_service
 
 
 # ============================================================================
@@ -401,7 +401,7 @@ class TestFalloApiExterna:
         fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
 
         # Parchear _get_apisperu_token para que retorne None sin importar el fallback global
-        with patch("facturacion_service._get_apisperu_token", return_value=None):
+        with patch("services.facturacion_service._get_apisperu_token", return_value=None):
             with pytest.raises(facturacion_service.FacturacionException, match="[Ff]alta|[Tt]oken|[Aa]PI"):
                 facturacion_service.emitir_factura(fiscal, db_session, user, tipo_doc_override="01")
 

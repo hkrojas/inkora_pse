@@ -408,7 +408,7 @@ def ai_cotizar_texto(
     Requiere GEMINI_API_KEY configurado. No forma parte del launch scope.
     """
     try:
-        import ai_service
+        from services import ai_service
         return ai_service.analizar_texto_cotizacion(params.texto)
     except Exception as exc:
         log_unexpected_error("ai_cotizar_texto", exc)
@@ -437,7 +437,7 @@ async def ai_leer_factura(
     No forma parte del launch scope.
     """
     try:
-        import ai_service
+        from services import ai_service
         _, bytes_data = await read_validated_upload(
             file,
             allowed_extensions={"pdf", "png", "jpg", "jpeg", "webp"},

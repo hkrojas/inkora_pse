@@ -2,7 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 import crud
-import facturacion_service
+from services import facturacion_service
 import models
 import schemas
 from api_dependencies import (

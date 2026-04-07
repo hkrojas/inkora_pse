@@ -1,4 +1,4 @@
-import pdf_generator
+from services import pdf_generator
 from services import storage_service
 from sqlalchemy.orm import Session
 import models

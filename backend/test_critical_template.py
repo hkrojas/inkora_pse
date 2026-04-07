@@ -5,12 +5,13 @@ import pytest
 from decimal import Decimal
 
 # Import your FastAPI app and models
-from main import app, get_db
+from main import app
+from database import get_db
 from database import Base
 import models
 import crud
 import schemas
-import calculations
+from services import calculations
 
 # Setup Test Database (SQLite in-memory)
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
