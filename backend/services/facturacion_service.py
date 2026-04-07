@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 import models
 import schemas
 from config import settings
-import calculations
+from services import calculations
 from tenant_access import (
     get_apisperu_token as _get_apisperu_token,
     get_company_address as _get_company_address,
