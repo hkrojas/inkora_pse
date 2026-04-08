@@ -33,10 +33,13 @@ def get_my_tenant(
 
 @router.put("/tenant/", response_model=schemas.TenantResponse)
 def update_my_tenant(
-    data: schemas.TenantUpdate,
+    data: schemas.TenantAdminUpdate,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_admin),
 ):
+    """Actualiza campos de contacto del tenant.
+    Credenciales fiscales y datos maestros de empresa solo son editables por superadmin.
+    """
     tenant = crud.update_tenant(db, current_user.tenant_id, data)
     if not tenant:
         raise HTTPException(404, "Empresa no encontrada")

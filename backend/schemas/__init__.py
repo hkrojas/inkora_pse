@@ -11,6 +11,7 @@ from schemas.tenants import (
     TenantBase,
     TenantCreate,
     TenantUpdate,
+    TenantAdminUpdate,
     TenantSummaryResponse,
     TenantResponse,
     TenantSaaSUpdate,
