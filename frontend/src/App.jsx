@@ -10,6 +10,7 @@ import CotizacionesPage from './pages/CotizacionesPage';
 import CotizacionDetalle from './pages/CotizacionDetalle';
 import CobranzaPage from './pages/CobranzaPage';
 import GuiasPage from './pages/GuiasPage';
+import GuiaDetalle from './pages/GuiaDetalle';
 import ConfiguracionPage from './pages/ConfiguracionPage';
 import SuperadminPage from './pages/SuperadminPage';
 
@@ -28,7 +29,7 @@ export default function App() {
               <Route path="/cotizaciones/:id" element={<CotizacionDetalle />} />
               <Route path="/cobranza"        element={<CobranzaPage />} />
               <Route path="/guias"           element={<GuiasPage />} />
-              <Route path="/guias/:id"       element={<GuiasPage />} />
+              <Route path="/guias/:id"       element={<GuiaDetalle />} />
               <Route path="/configuracion"   element={<ConfiguracionPage />} />
               <Route path="/superadmin"      element={<SuperadminPage />} />
             </Route>

@@ -85,6 +85,7 @@ def cobranza_vencidas(
             "monto_pagado": cot.monto_pagado or Decimal("0"),
             "saldo_pendiente": cot.saldo_pendiente or Decimal("0"),
             "dias_vencido": dias_vencido,
+            "payment_status": cot.payment_status,
         })
 
     return result
