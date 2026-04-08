@@ -19,7 +19,7 @@ Ejecutar:
 """
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -355,7 +355,7 @@ class TestPaymentStatus:
         user = make_user(db_session, tenant, email="ps02@test.com")
         cliente = make_cliente(db_session, tenant, "PS02")
         # fecha_vencimiento en el pasado, sin pagos
-        vencimiento_pasado = datetime.utcnow() - timedelta(days=10)
+        vencimiento_pasado = datetime.now(timezone.utc) - timedelta(days=10)
         cot = make_cotizacion(
             db_session, tenant, user, cliente,
             total="118.00",
@@ -369,7 +369,7 @@ class TestPaymentStatus:
         tenant = make_tenant(db_session, "PS03")
         user = make_user(db_session, tenant, email="ps03@test.com")
         cliente = make_cliente(db_session, tenant, "PS03")
-        vencimiento_pasado = datetime.utcnow() - timedelta(days=10)
+        vencimiento_pasado = datetime.now(timezone.utc) - timedelta(days=10)
         cot = make_cotizacion(
             db_session, tenant, user, cliente,
             total="118.00",
@@ -383,7 +383,7 @@ class TestPaymentStatus:
         tenant = make_tenant(db_session, "PS04")
         user = make_user(db_session, tenant, email="ps04@test.com")
         cliente = make_cliente(db_session, tenant, "PS04")
-        vencimiento_futuro = datetime.utcnow() + timedelta(days=30)
+        vencimiento_futuro = datetime.now(timezone.utc) + timedelta(days=30)
         cot = make_cotizacion(
             db_session, tenant, user, cliente,
             total="118.00",

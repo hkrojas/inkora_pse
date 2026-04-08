@@ -17,7 +17,7 @@ Ejecutar:
 """
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -117,7 +117,7 @@ class TestJWTCreationAndDecode:
 
         # Token firmado con clave incorrecta
         bad_token = jwt.encode(
-            {"sub": user.email, "exp": datetime.utcnow() + timedelta(hours=1)},
+            {"sub": user.email, "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
             key="clave_incorrecta",
             algorithm=settings.ALGORITHM,
         )

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -74,7 +74,7 @@ def _create_cliente(db_session, tenant, suffix: str):
 def _create_quote(db_session, tenant, user, cliente):
     payload = schemas.CotizacionCreate(
         cliente_id=cliente.id,
-        fecha_vencimiento=datetime.utcnow(),
+        fecha_vencimiento=datetime.now(timezone.utc),
         moneda="PEN",
         tipo_comprobante="00",
         items=[
@@ -203,7 +203,7 @@ def test_guide_from_fiscal_document_keeps_full_traceability(db_session):
         db_session,
         {
             "cotizacion_id": fiscal_document.id,
-            "fecha_traslado": datetime.utcnow(),
+            "fecha_traslado": datetime.now(timezone.utc),
             "motivo_traslado": "01",
             "descripcion_motivo": "Despacho",
             "peso_bruto_total": Decimal("10.500"),

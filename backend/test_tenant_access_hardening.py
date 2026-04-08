@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -103,7 +103,7 @@ def _create_cotizacion(db_session, tenant, user, cliente, *, total="118.00"):
         tenant_id=tenant.id,
         cliente_id=cliente.id,
         usuario_id=user.id,
-        fecha_emision=datetime.utcnow(),
+        fecha_emision=datetime.now(timezone.utc),
         serie="COT",
         correlativo=1,
         total_gravada=Decimal("100.00"),

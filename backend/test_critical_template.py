@@ -54,23 +54,41 @@ def test_calculo_redondeo_sunat():
 # ========================================================
 def test_idor_lectura_ajena():
     db = TestingSessionLocal()
-    
-    # Crear dos usuarios
-    user_A = models.User(email="a@test.com", rol="vendedor", hashed_password="X")
-    user_B = models.User(email="b@test.com", rol="vendedor", hashed_password="X")
+
+    # Limpiar datos previos de este test para evitar UNIQUE violations en reruns
+    for email in ["a@test.com", "b@test.com"]:
+        existing = db.query(models.User).filter_by(email=email).first()
+        if existing:
+            db.delete(existing)
+    db.flush()
+
+    # Tenant requerido (tenant_id NOT NULL en User y Cotizacion) — get-or-create
+    tenant = db.query(models.Tenant).filter_by(business_ruc="20000000001").first()
+    if not tenant:
+        tenant = models.Tenant(business_name="Test Co", business_ruc="20000000001")
+        db.add(tenant)
+        db.flush()
+
+    # Dos usuarios del mismo tenant, ambos rol vendedor
+    user_A = models.User(email="a@test.com", rol="vendedor", hashed_password="X", tenant_id=tenant.id)
+    user_B = models.User(email="b@test.com", rol="vendedor", hashed_password="X", tenant_id=tenant.id)
     db.add_all([user_A, user_B])
-    db.commit()
-    
-    # Crear cotización perteneciente solo a user_A
-    cotiz = models.Cotizacion(usuario_id=user_A.id, cliente_id=1, total_venta=100.00)
+    db.flush()
+
+    # Cotizacion pertenece a user_A (mismo tenant)
+    cotiz = models.Cotizacion(
+        usuario_id=user_A.id,
+        tenant_id=tenant.id,
+        total_venta=100.00,
+    )
     db.add(cotiz)
     db.commit()
-    
-    # Ahora crud.get_cotizacion debe fallar silenciosamente o retornar None si user_B intenta leerla
+
+    # user_B (vendedor) no debe poder leer cotizaciones de user_A
     resultado = crud.get_cotizacion(db, cotizacion_id=cotiz.id, usuario=user_B)
-    assert resultado is None, "Vulnerabilidad IDOR detectada: user_B puede leer cotizaciones de user_A"
-    
-    # User_A sí debe poder
+    assert resultado is None, "Vulnerabilidad IDOR: user_B puede leer cotizaciones de user_A"
+
+    # user_A sí debe poder leer la suya
     resultado_ok = crud.get_cotizacion(db, cotizacion_id=cotiz.id, usuario=user_A)
     assert resultado_ok is not None
 

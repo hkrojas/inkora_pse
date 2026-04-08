@@ -17,7 +17,7 @@ Ejecutar:
 """
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -43,7 +43,7 @@ def _guia_data(cotizacion_id=None, *, items=None):
     """Devuelve un dict mínimo válido para crear una guía."""
     return {
         "cotizacion_id": cotizacion_id,
-        "fecha_traslado": datetime.utcnow(),
+        "fecha_traslado": datetime.now(timezone.utc),
         "motivo_traslado": "01",
         "descripcion_motivo": "Venta",
         "peso_bruto_total": Decimal("5.00"),
@@ -193,7 +193,7 @@ class TestGuiaTenantSafety:
         guia_a = models.GuiaRemision(
             tenant_id=tenant_a.id,
             usuario_id=user_a.id,
-            fecha_traslado=datetime.utcnow(),
+            fecha_traslado=datetime.now(timezone.utc),
             motivo_traslado="01",
             partida_direccion="A",
             llegada_direccion="B",

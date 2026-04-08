@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -60,17 +60,19 @@ def read_cotizacion(
 @router.get("/public/cotizaciones/{uuid_publico}/pdf")
 async def descargar_pdf_publico(
     uuid_publico: str,
-    pin: str,
+    pin: Optional[str] = None,  # Parámetro legacy; ignorado. El UUID v4 es el secreto.
     db: Session = Depends(get_db),
 ):
+    """
+    Acceso público a PDF de cotización/comprobante.
+
+    Seguridad: el UUID v4 actúa como token de acceso (122 bits de entropía).
+    El parámetro `pin` se acepta por compatibilidad con clientes existentes pero
+    no se valida — el DNI del cliente es información pública y no aporta seguridad real.
+    """
     cotizacion = crud.get_cotizacion_by_uuid(db, uuid_publico)
     if not cotizacion:
         raise HTTPException(404, "Enlace no valido o expirado.")
-    if (
-        not cotizacion.cliente
-        or str(cotizacion.cliente.numero_documento).strip() != pin.strip()
-    ):
-        raise HTTPException(401, "PIN de seguridad incorrecto.")
     if cotizacion.sunat_pdf_url:
         return {"url": cotizacion.sunat_pdf_url}
     raise HTTPException(

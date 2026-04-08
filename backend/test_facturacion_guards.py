@@ -30,7 +30,7 @@ Ejecutar:
 """
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -271,7 +271,7 @@ class TestEmisionDuplicada:
         guia = models.GuiaRemision(
             tenant_id=tenant.id,
             usuario_id=user.id,
-            fecha_traslado=datetime.utcnow(),
+            fecha_traslado=datetime.now(timezone.utc),
             motivo_traslado="01",
             partida_direccion="A",
             llegada_direccion="B",

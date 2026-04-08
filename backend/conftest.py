@@ -8,7 +8,7 @@ No llama a `apply_tenant_context` (esa función es específica de Postgres).
 """
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -149,7 +149,7 @@ def make_cotizacion(
         tenant_id=tenant.id,
         cliente_id=cliente.id,
         usuario_id=user.id,
-        fecha_emision=datetime.utcnow(),
+        fecha_emision=datetime.now(timezone.utc),
         fecha_vencimiento=fecha_vencimiento,
         serie="COT",
         correlativo=1,
