@@ -156,6 +156,7 @@ def create_cotizacion(db: Session, cotizacion: schemas.CotizacionCreate, usuario
         total_inafecta=totales["total_inafecta"],
         total_igv=totales["total_igv"],
         total_venta=totales["total_venta"],
+        saldo_pendiente=totales["total_venta"],
         items=items_db,
     )
 
@@ -163,6 +164,16 @@ def create_cotizacion(db: Session, cotizacion: schemas.CotizacionCreate, usuario
         db.add(db_cotizacion)
         db.commit()
         db.refresh(db_cotizacion)
+        # Ensure saldo_pendiente = total_venta on new quotations.
+        # Server-side DEFAULT 0.0 can override the constructor value in pooled connections.
+        if not db_cotizacion.saldo_pendiente or db_cotizacion.saldo_pendiente == 0:
+            from sqlalchemy import text as _text
+            db.execute(
+                _text("UPDATE cotizaciones SET saldo_pendiente = :saldo WHERE id = :id"),
+                {"saldo": float(totales["total_venta"]), "id": db_cotizacion.id},
+            )
+            db.commit()
+            db.refresh(db_cotizacion)
         return get_cotizacion(db, db_cotizacion.id)
     except Exception as e:
         db.rollback()

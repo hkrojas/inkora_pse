@@ -69,7 +69,7 @@ export default function CotizacionDetalle() {
   const handleShare = async () => {
     try {
       const data = await svc.share(id);
-      setShareUrl(data.url || data.public_url || '');
+      setShareUrl(data.url_compartir || data.url || data.public_url || '');
     } catch (err) {
       toast(err.message, 'error');
     }

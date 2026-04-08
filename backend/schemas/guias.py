@@ -34,9 +34,9 @@ class GuiaRemisionCreate(BaseModel):
     conductor_licencia: Optional[str] = None
     vehiculo_placa: Optional[str] = None
 
-    partida_ubigeo: str
+    partida_ubigeo: Optional[str] = None
     partida_direccion: str
-    llegada_ubigeo: str
+    llegada_ubigeo: Optional[str] = None
     llegada_direccion: str
 
     items: List[GuiaRemisionItemCreate]

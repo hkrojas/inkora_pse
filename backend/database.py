@@ -91,9 +91,11 @@ def get_db():
     tenant_token = activate_tenant_context(None)
     try:
         yield db
-    except Exception:
-        logger.exception("database_session_error")
-        db.rollback()
+    except Exception as exc:
+        from fastapi import HTTPException as _HTTPException
+        if not isinstance(exc, _HTTPException):
+            logger.exception("database_session_error")
+            db.rollback()
         raise
     finally:
         try:

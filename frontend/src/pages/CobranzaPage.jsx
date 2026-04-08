@@ -35,9 +35,9 @@ export default function CobranzaPage() {
       {resumen && (
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: 'Total pendiente', value: `S/ ${fmt(resumen.total_pendiente)}`, color: 'text-orange-600' },
-            { label: 'Cotizaciones vencidas', value: resumen.total_vencidas ?? '—', color: 'text-red-600' },
-            { label: 'Cobrado este mes', value: `S/ ${fmt(resumen.total_cobrado_mes)}`, color: 'text-green-600' },
+            { label: 'Total pendiente', value: `S/ ${fmt(resumen.total_por_cobrar)}`, color: 'text-orange-600' },
+            { label: 'Docs vencidos', value: resumen.documentos_vencidos ?? '—', color: 'text-red-600' },
+            { label: 'Cobrado este mes', value: `S/ ${fmt(resumen.total_pagado_mes)}`, color: 'text-green-600' },
           ].map(({ label, value, color }) => (
             <div key={label} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
@@ -71,8 +71,8 @@ export default function CobranzaPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {vencidas.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-xs text-gray-500">{item.internal_order_number || `#${item.id}`}</td>
+                <tr key={item.cotizacion_id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-mono text-xs text-gray-500">{item.internal_order_number || item.document_number || `#${item.cotizacion_id}`}</td>
                   <td className="px-4 py-3 font-medium text-gray-900">{item.cliente_nombre || '—'}</td>
                   <td className="px-4 py-3 text-red-600 text-xs">
                     {item.fecha_vencimiento ? new Date(item.fecha_vencimiento).toLocaleDateString('es-PE') : '—'}
@@ -80,10 +80,10 @@ export default function CobranzaPage() {
                   <td className="px-4 py-3 text-right">S/ {fmt(item.total_venta)}</td>
                   <td className="px-4 py-3 text-right font-semibold text-red-600">S/ {fmt(item.saldo_pendiente)}</td>
                   <td className="px-4 py-3">
-                    <Badge variant={statusBadge(item.payment_status)}>{item.payment_status}</Badge>
+                    <span className="text-xs text-red-500">{item.dias_vencido}d</span>
                   </td>
                   <td className="px-4 py-3">
-                    <Link to={`/cotizaciones/${item.id}`} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 inline-flex">
+                    <Link to={`/cotizaciones/${item.cotizacion_id}`} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 inline-flex">
                       <Eye className="h-4 w-4" />
                     </Link>
                   </td>

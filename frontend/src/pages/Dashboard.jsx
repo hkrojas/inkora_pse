@@ -69,10 +69,10 @@ export default function Dashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Cotizaciones" value={stats?.total_cotizaciones} icon={FileText} color="blue" />
-        <StatCard label="Clientes" value={stats?.total_clientes} icon={Users} color="green" />
-        <StatCard label="Por cobrar" value={stats?.total_por_cobrar != null ? `S/ ${Number(stats.total_por_cobrar).toLocaleString('es-PE', {minimumFractionDigits:2})}` : null} icon={CreditCard} color="orange" />
-        <StatCard label="Vencidas" value={stats?.cotizaciones_vencidas} icon={AlertCircle} color="red" />
+        <StatCard label="Emitidos este mes" value={stats?.documentos_emitidos_mes ?? '—'} icon={FileText} color="blue" />
+        <StatCard label="Ingresos cobrados" value={stats?.ingresos_totales != null ? `S/ ${Number(stats.ingresos_totales).toLocaleString('es-PE', {minimumFractionDigits:2})}` : '—'} icon={Users} color="green" />
+        <StatCard label="Por cobrar" value={stats?.saldos_por_cobrar != null ? `S/ ${Number(stats.saldos_por_cobrar).toLocaleString('es-PE', {minimumFractionDigits:2})}` : '—'} icon={CreditCard} color="orange" />
+        <StatCard label="Docs vencidos" value={stats?.documentos_vencidos ?? '—'} icon={AlertCircle} color="red" />
       </div>
 
       {/* Cotizaciones vencidas */}
@@ -87,7 +87,7 @@ export default function Dashboard() {
           </div>
           <div className="divide-y divide-gray-50">
             {vencidas.map((item) => (
-              <div key={item.id} className="flex items-center justify-between px-5 py-3">
+              <div key={item.cotizacion_id} className="flex items-center justify-between px-5 py-3">
                 <div>
                   <p className="text-sm font-medium text-gray-900">{item.cliente_nombre || '—'}</p>
                   <p className="text-xs text-gray-500">

@@ -11,7 +11,7 @@ const EMPTY_FORM = {
   descripcion: '',
   precio_unitario: '',
   unidad_medida: 'NIU',
-  codigo: '',
+  codigo_interno: '',
 };
 
 function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving }) {
@@ -44,7 +44,7 @@ function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving }) {
         </div>
         <div>
           <label className="label">Código interno</label>
-          <input className="input" value={form.codigo} onChange={set('codigo')} />
+          <input className="input" value={form.codigo_interno} onChange={set('codigo_interno')} />
         </div>
       </div>
       <div className="flex justify-end gap-3 pt-2">
@@ -73,7 +73,7 @@ export default function ProductosPage() {
 
   const filtered = list.filter((p) =>
     p.nombre?.toLowerCase().includes(search.toLowerCase()) ||
-    p.codigo?.toLowerCase().includes(search.toLowerCase())
+    p.codigo_interno?.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleSave = async (form) => {
@@ -144,7 +144,7 @@ export default function ProductosPage() {
               {filtered.map((p) => (
                 <tr key={p.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">{p.nombre}</td>
-                  <td className="px-4 py-3 text-gray-500">{p.codigo || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500">{p.codigo_interno || '—'}</td>
                   <td className="px-4 py-3 text-gray-500">{p.unidad_medida}</td>
                   <td className="px-4 py-3 text-right font-medium">
                     S/ {Number(p.precio_unitario).toLocaleString('es-PE', { minimumFractionDigits: 2 })}

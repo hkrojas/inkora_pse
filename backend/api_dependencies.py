@@ -39,11 +39,15 @@ def get_db_tenant(
     if not current_user.tenant_id:
         raise HTTPException(403, "El usuario autenticado no tiene tenant asociado.")
 
-    tenant_token = apply_tenant_context(db, current_user.tenant_id)
+    apply_tenant_context(db, current_user.tenant_id)
     try:
         yield db
     finally:
-        reset_tenant_context(tenant_token)
+        # No llamamos reset_tenant_context(token) porque el token fue creado
+        # en un contexto async distinto (anyio threadpool) y reset() lanzaría
+        # ValueError. Simplemente limpiamos el ContextVar directamente.
+        from database import current_tenant_id
+        current_tenant_id.set(None)
 
 
 def require_admin(current_user: models.User = Depends(get_current_user)):
