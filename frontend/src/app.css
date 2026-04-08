@@ -1,7 +1,8 @@
-@import "tailwindcss";
-@config "../tailwind.config.js";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-/* Inter, Manrope y Material Symbols are loaded via app.html <link> tags */
+/* Inter, Manrope y Material Symbols se cargan via <link> en index.html */
 
 @layer base {
   body {

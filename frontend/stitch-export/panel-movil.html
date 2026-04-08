@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PrintFlow Mobile Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-secondary": "#ffffff",
+                        "surface-dim": "#d9dadd",
+                        "on-tertiary": "#ffffff",
+                        "on-background": "#191c1e",
+                        "on-tertiary-fixed": "#241a00",
+                        "on-error": "#ffffff",
+                        "surface": "#f9f9fd",
+                        "outline-variant": "#c3c6d1",
+                        "tertiary-fixed": "#ffe088",
+                        "surface-tint": "#255dad",
+                        "primary-fixed-dim": "#abc7ff",
+                        "on-surface-variant": "#43474f",
+                        "on-primary": "#ffffff",
+                        "inverse-on-surface": "#f0f0f4",
+                        "on-secondary-fixed-variant": "#005235",
+                        "surface-container": "#edeef1",
+                        "surface-container-low": "#f3f3f7",
+                        "surface-container-highest": "#e2e2e6",
+                        "error": "#ba1a1a",
+                        "on-tertiary-container": "#4f3e00",
+                        "surface-variant": "#e2e2e6",
+                        "inverse-primary": "#abc7ff",
+                        "surface-container-high": "#e7e8eb",
+                        "secondary-fixed-dim": "#6edba7",
+                        "secondary-fixed": "#8bf8c2",
+                        "background": "#f9f9fd",
+                        "on-primary-fixed": "#001b3f",
+                        "secondary": "#006c48",
+                        "on-primary-fixed-variant": "#00458f",
+                        "on-surface": "#191c1e",
+                        "on-error-container": "#93000a",
+                        "on-primary-container": "#6b9bef",
+                        "outline": "#737780",
+                        "primary-container": "#00326b",
+                        "tertiary": "#735c00",
+                        "on-secondary-fixed": "#002113",
+                        "on-secondary-container": "#00734d",
+                        "surface-bright": "#f9f9fd",
+                        "primary": "#001d44",
+                        "tertiary-fixed-dim": "#e9c349",
+                        "secondary-container": "#8bf8c2",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-container": "#cca830",
+                        "on-tertiary-fixed-variant": "#574500",
+                        "inverse-surface": "#2e3133",
+                        "primary-fixed": "#d7e2ff",
+                        "error-container": "#ffdad6"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body { font-family: 'Inter', sans-serif; }
+        h1, h2, h3 { font-family: 'Manrope', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-background min-h-screen pb-24">
+<!-- TopAppBar -->
+<header class="bg-[#f9f9fd] dark:bg-slate-950 flex justify-between items-center w-full px-4 h-16 sticky top-0 z-40">
+<div class="flex items-center gap-3">
+<button class="text-[#003366] dark:text-blue-400 hover:bg-[#e7e8eb] transition-colors p-2 rounded-lg active:scale-95 duration-150">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<span class="font-manrope font-extrabold text-[#003366] dark:text-blue-400 tracking-tight text-lg">PrintFlow</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center overflow-hidden">
+<img alt="User" data-alt="close-up profile avatar of a professional business person in a modern office environment with soft lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHD1jac7s1lIpk7uOxxolMPeroNOdOJfILlu0bDXX3Pj8JHIgpnC4cPaa7py-L20zgsSRZkVxgorCt2vGfBqu8_rvs-DoiTpeOA_-LZPhQjs8fblD17MeVnjPefzzRAiS1rAerGuorHHDW1xvIYpNgD6NjVMMW2boZ8fGjHTAsWVm3I0SeENU7rqKxtS1ujFSY9dquMBNro4ATb0ZhFUw8wCvXk-8-E3dOs6E12ABHn-JvAzS8_l4azdCxl4ySk0Y2WZ7GgV3TjDA"/>
+</div>
+</div>
+</header>
+<main class="px-4 pt-4 space-y-6">
+<!-- SUNAT Status Card (Glassmorphism) -->
+<section class="relative overflow-hidden rounded-xl bg-secondary-container/20 backdrop-blur-xl border border-secondary/10 p-5 flex items-center justify-between">
+<div class="space-y-1">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary" data-icon="verified" style="font-variation-settings: 'FILL' 1;">verified</span>
+<span class="font-body font-bold text-on-secondary-container text-sm">Estado SUNAT</span>
+</div>
+<h2 class="font-headline font-extrabold text-on-secondary-container text-xl">100% Sincronizado</h2>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-[10px] uppercase tracking-widest font-bold text-secondary/60">Última conexión</span>
+<span class="font-body font-semibold text-xs text-on-secondary-container">Hoy, 10:42 AM</span>
+</div>
+</section>
+<!-- Bento Sales Grid -->
+<section class="grid grid-cols-2 gap-4">
+<!-- Soles Card -->
+<div class="bg-surface-container-lowest rounded-xl p-4 shadow-[0_12px_32px_rgba(25,28,30,0.04)] space-y-3">
+<div class="flex items-center justify-between">
+<span class="material-symbols-outlined text-outline" data-icon="payments">payments</span>
+<span class="bg-secondary/10 text-secondary text-[10px] font-bold px-2 py-0.5 rounded-full">+12.5%</span>
+</div>
+<div>
+<p class="text-[10px] uppercase tracking-wider font-bold text-outline">Ventas (S/)</p>
+<p class="font-headline font-extrabold text-2xl text-on-surface">S/ 42,850</p>
+</div>
+</div>
+<!-- Dollars Card -->
+<div class="bg-surface-container-lowest rounded-xl p-4 shadow-[0_12px_32px_rgba(25,28,30,0.04)] space-y-3">
+<div class="flex items-center justify-between">
+<span class="material-symbols-outlined text-outline" data-icon="currency_exchange">currency_exchange</span>
+<span class="bg-tertiary/10 text-tertiary text-[10px] font-bold px-2 py-0.5 rounded-full">Estable</span>
+</div>
+<div>
+<p class="text-[10px] uppercase tracking-wider font-bold text-outline">Ventas ($)</p>
+<p class="font-headline font-extrabold text-2xl text-on-surface">$ 11,230</p>
+</div>
+</div>
+</section>
+<!-- Recent Invoices (Compliance Ledger Pattern) -->
+<section class="space-y-4">
+<div class="flex items-center justify-between px-1">
+<h3 class="font-headline font-bold text-on-surface text-lg">Facturas Recientes</h3>
+<button class="text-primary font-body font-bold text-sm">Ver todas</button>
+</div>
+<div class="space-y-3">
+<!-- Invoice Item 1 -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden shadow-[0_4px_12px_rgba(25,28,30,0.02)] flex items-center border-l-4 border-secondary">
+<div class="p-4 flex-grow grid grid-cols-2 items-center gap-2">
+<div class="space-y-0.5">
+<p class="font-headline font-bold text-sm text-on-surface">F001-000452</p>
+<p class="font-body text-[11px] text-outline-variant truncate">Corporación Gráfica del Sur S.A.C.</p>
+</div>
+<div class="text-right">
+<p class="font-headline font-extrabold text-sm text-on-surface">S/ 1,250.00</p>
+<div class="flex items-center justify-end gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span class="text-[10px] font-bold text-secondary uppercase">Aceptado</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Invoice Item 2 -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden shadow-[0_4px_12px_rgba(25,28,30,0.02)] flex items-center border-l-4 border-tertiary">
+<div class="p-4 flex-grow grid grid-cols-2 items-center gap-2">
+<div class="space-y-0.5">
+<p class="font-headline font-bold text-sm text-on-surface">F001-000451</p>
+<p class="font-body text-[11px] text-outline-variant truncate">Papelera Amazonas E.I.R.L.</p>
+</div>
+<div class="text-right">
+<p class="font-headline font-extrabold text-sm text-on-surface">$ 450.00</p>
+<div class="flex items-center justify-end gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+<span class="text-[10px] font-bold text-tertiary uppercase">Pendiente</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Invoice Item 3 -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden shadow-[0_4px_12px_rgba(25,28,30,0.02)] flex items-center border-l-4 border-secondary">
+<div class="p-4 flex-grow grid grid-cols-2 items-center gap-2">
+<div class="space-y-0.5">
+<p class="font-headline font-bold text-sm text-on-surface">F001-000450</p>
+<p class="font-body text-[11px] text-outline-variant truncate">Editorial El Inca S.A.</p>
+</div>
+<div class="text-right">
+<p class="font-headline font-extrabold text-sm text-on-surface">S/ 3,890.00</p>
+<div class="flex items-center justify-end gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span class="text-[10px] font-bold text-secondary uppercase">Aceptado</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Invoice Item 4 -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden shadow-[0_4px_12px_rgba(25,28,30,0.02)] flex items-center border-l-4 border-error">
+<div class="p-4 flex-grow grid grid-cols-2 items-center gap-2">
+<div class="space-y-0.5">
+<p class="font-headline font-bold text-sm text-on-surface">F001-000449</p>
+<p class="font-body text-[11px] text-outline-variant truncate">Inversiones San Pablo</p>
+</div>
+<div class="text-right">
+<p class="font-headline font-extrabold text-sm text-on-surface">S/ 120.00</p>
+<div class="flex items-center justify-end gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+<span class="text-[10px] font-bold text-error uppercase">Rechazado</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Quick Actions Floating Section (The "Financial Architect" UI) -->
+<section class="bg-surface-container-low rounded-2xl p-6 flex items-center justify-around">
+<button class="flex flex-col items-center gap-2 group">
+<div class="w-12 h-12 rounded-full bg-primary-container text-white flex items-center justify-center group-active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</div>
+<span class="text-[10px] font-bold uppercase tracking-wider text-primary">Nueva Factura</span>
+</button>
+<button class="flex flex-col items-center gap-2 group">
+<div class="w-12 h-12 rounded-full bg-surface-container-highest text-primary flex items-center justify-center group-active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined" data-icon="upload_file">upload_file</span>
+</div>
+<span class="text-[10px] font-bold uppercase tracking-wider text-outline">Importar</span>
+</button>
+<button class="flex flex-col items-center gap-2 group">
+<div class="w-12 h-12 rounded-full bg-surface-container-highest text-primary flex items-center justify-center group-active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined" data-icon="equalizer">equalizer</span>
+</div>
+<span class="text-[10px] font-bold uppercase tracking-wider text-outline">Reportes</span>
+</button>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-3 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-[0_-4px_20px_rgba(25,28,30,0.04)] border-t border-slate-200/50 dark:border-slate-800/50">
+<button class="flex flex-col items-center justify-center text-[#003366] dark:text-blue-300 bg-[#f3f3f7] dark:bg-blue-900/20 rounded-xl px-3 py-1 tap-highlight-none transition-transform duration-200 active:scale-95">
+<span class="material-symbols-outlined" data-icon="dashboard" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+<span class="font-inter text-[10px] font-semibold uppercase tracking-wider mt-1">Dashboard</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 hover:text-[#003366] dark:hover:text-blue-300 transition-colors">
+<span class="material-symbols-outlined" data-icon="receipt_long">receipt_long</span>
+<span class="font-inter text-[10px] font-semibold uppercase tracking-wider mt-1">Billing</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 hover:text-[#003366] dark:hover:text-blue-300 transition-colors">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-inter text-[10px] font-semibold uppercase tracking-wider mt-1">Inventory</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 hover:text-[#003366] dark:hover:text-blue-300 transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="font-inter text-[10px] font-semibold uppercase tracking-wider mt-1">Alerts</span>
+</button>
+</nav>
+</body></html>

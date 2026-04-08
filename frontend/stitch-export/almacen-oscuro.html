@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=Manrope:wght@500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-primary": "#00315d",
+              "primary-container": "#60a5fa",
+              "surface-container-lowest": "#070d1f",
+              "on-surface": "#dce1fb",
+              "inverse-primary": "#0060ac",
+              "surface-dim": "#0c1324",
+              "inverse-on-surface": "#2a3043",
+              "surface-container-high": "#23293c",
+              "on-tertiary": "#003824",
+              "on-primary-fixed": "#001c39",
+              "error-container": "#93000a",
+              "on-tertiary-fixed-variant": "#005236",
+              "surface-bright": "#33394c",
+              "surface-tint": "#a4c9ff",
+              "tertiary-fixed-dim": "#4edea3",
+              "surface-container": "#191f31",
+              "surface": "#0c1324",
+              "on-secondary": "#003061",
+              "on-background": "#dce1fb",
+              "on-tertiary-container": "#00422b",
+              "inverse-surface": "#dce1fb",
+              "secondary-container": "#1f477b",
+              "on-primary-container": "#003a6b",
+              "background": "#0c1324",
+              "on-secondary-container": "#93b6f1",
+              "tertiary-container": "#10b981",
+              "on-error": "#690005",
+              "outline-variant": "#414751",
+              "on-error-container": "#ffdad6",
+              "on-tertiary-fixed": "#002113",
+              "on-surface-variant": "#c1c7d3",
+              "primary-fixed": "#d4e3ff",
+              "primary-fixed-dim": "#a4c9ff",
+              "secondary-fixed-dim": "#a7c8ff",
+              "surface-container-low": "#151b2d",
+              "outline": "#8b919d",
+              "secondary": "#a7c8ff",
+              "tertiary": "#4edea3",
+              "on-secondary-fixed-variant": "#1f477b",
+              "surface-container-highest": "#2e3447",
+              "primary": "#a4c9ff",
+              "secondary-fixed": "#d5e3ff",
+              "on-secondary-fixed": "#001b3c",
+              "tertiary-fixed": "#6ffbbe",
+              "surface-variant": "#2e3447",
+              "error": "#ffb4ab",
+              "on-primary-fixed-variant": "#004883"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .tonal-shift { background-color: rgba(21, 27, 45, 0.3); }
+        .glass-card {
+            background: rgba(35, 41, 60, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary/30">
+<!-- SideNavBar (Authority: JSON) -->
+<aside class="fixed left-0 top-0 h-full w-64 border-r border-slate-900 bg-slate-950 flex flex-col py-8 gap-y-2 z-50">
+<div class="px-6 mb-8">
+<h1 class="text-lg font-black text-blue-400 font-headline">PrintFlow</h1>
+<p class="text-xs text-slate-500 font-medium">Enterprise Billing</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-6 py-3 text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-all duration-150 active:translate-x-1" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-sm font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-all duration-150 active:translate-x-1" href="#">
+<span class="material-symbols-outlined">payments</span>
+<span class="text-sm font-medium">Billing</span>
+</a>
+<!-- Active Tab: Inventory -->
+<a class="flex items-center gap-3 px-6 py-3 bg-blue-500/10 text-blue-400 border-r-2 border-blue-500 transition-all duration-150 active:translate-x-1" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">inventory_2</span>
+<span class="text-sm font-medium">Inventory</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-all duration-150 active:translate-x-1" href="#">
+<span class="material-symbols-outlined">shopping_cart</span>
+<span class="text-sm font-medium">Orders</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-all duration-150 active:translate-x-1" href="#">
+<span class="material-symbols-outlined">verified_user</span>
+<span class="text-sm font-medium">Compliance</span>
+</a>
+</nav>
+<div class="mt-auto space-y-1">
+<a class="flex items-center gap-3 px-6 py-3 text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-all duration-150 active:translate-x-1" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-sm font-medium">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-all duration-150 active:translate-x-1" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="text-sm font-medium">Support</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-64 p-10 min-h-screen">
+<!-- Top Action Bar -->
+<header class="flex justify-between items-end mb-12">
+<div class="space-y-1">
+<h2 class="text-4xl font-extrabold font-headline tracking-tight text-on-surface">Inventory Matrix</h2>
+<p class="text-on-surface-variant font-medium">Warehouse Management &amp; Logistics</p>
+</div>
+<div class="flex gap-4">
+<button class="px-6 py-3 rounded-lg border border-outline-variant/30 text-primary font-semibold text-sm hover:bg-surface-container-high transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">download</span>
+                    Exportar Reporte
+                </button>
+<button class="px-6 py-3 rounded-lg bg-gradient-to-br from-primary to-primary-container text-on-primary font-bold text-sm shadow-xl shadow-primary/10 hover:brightness-110 active:scale-95 transition-all flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">add</span>
+                    Agregar Producto
+                </button>
+</div>
+</header>
+<!-- Bento Grid Overview -->
+<div class="grid grid-cols-12 gap-6 mb-12">
+<!-- Large Focus Card -->
+<div class="col-span-12 lg:col-span-4 glass-card p-8 rounded-xl flex flex-col justify-between overflow-hidden relative group">
+<div class="absolute -right-8 -top-8 w-48 h-48 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors"></div>
+<div>
+<span class="text-xs font-bold tracking-widest text-primary uppercase mb-2 block">Global Assets</span>
+<h3 class="text-6xl font-black font-headline text-on-surface">1,284</h3>
+<p class="text-on-surface-variant mt-2">Total Items in Stock</p>
+</div>
+<div class="mt-8 flex items-center gap-2 text-tertiary font-semibold text-sm">
+<span class="material-symbols-outlined">trending_up</span>
+                    +12% from last month
+                </div>
+</div>
+<!-- Critical Alert Card -->
+<div class="col-span-12 md:col-span-6 lg:col-span-4 bg-surface-container-high p-8 rounded-xl border border-error/20 shadow-[0_0_40px_-15px_rgba(255,180,171,0.2)] flex flex-col justify-between">
+<div>
+<div class="flex justify-between items-start">
+<span class="text-xs font-bold tracking-widest text-error uppercase mb-2 block">Action Required</span>
+<span class="material-symbols-outlined text-error animate-pulse">warning</span>
+</div>
+<h3 class="text-6xl font-black font-headline text-error">12</h3>
+<p class="text-on-surface-variant mt-2">Critical Stock Levels</p>
+</div>
+<div class="mt-8 text-on-surface-variant text-xs font-medium bg-surface-container-lowest py-2 px-3 rounded inline-block">
+                    Requires immediate replenishment
+                </div>
+</div>
+<!-- Sub-stat Cards -->
+<div class="col-span-12 md:col-span-6 lg:col-span-4 grid grid-rows-2 gap-6">
+<div class="bg-surface-container-low p-6 rounded-xl flex items-center justify-between">
+<div>
+<p class="text-xs font-bold text-on-surface-variant uppercase mb-1">Optimized Items</p>
+<p class="text-2xl font-bold font-headline">942</p>
+</div>
+<div class="w-12 h-12 rounded-full bg-tertiary-container/10 flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl flex items-center justify-between">
+<div>
+<p class="text-xs font-bold text-on-surface-variant uppercase mb-1">Pending Orders</p>
+<p class="text-2xl font-bold font-headline">28</p>
+</div>
+<div class="w-12 h-12 rounded-full bg-primary-container/10 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">local_shipping</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Ledger Table Section -->
+<section class="bg-surface-container-lowest rounded-xl overflow-hidden border border-outline-variant/10">
+<div class="px-8 py-6 border-b border-outline-variant/5 flex justify-between items-center bg-surface-container-low/50">
+<h4 class="font-headline font-bold text-lg">Product Ledger</h4>
+<div class="flex items-center gap-4">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="bg-surface-container-lowest border-none rounded-lg pl-10 pr-4 py-2 text-sm focus:ring-1 focus:ring-primary w-64 transition-all" placeholder="Search inventory..." type="text"/>
+</div>
+<button class="p-2 hover:bg-surface-container-highest rounded-lg transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant">filter_list</span>
+</button>
+</div>
+</div>
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="text-xs font-bold text-on-surface-variant uppercase tracking-wider bg-surface-container-low/30">
+<th class="px-8 py-4">Product Name</th>
+<th class="px-8 py-4 text-center">SKU</th>
+<th class="px-8 py-4 text-right">Stock</th>
+<th class="px-8 py-4 text-center">Status</th>
+<th class="px-8 py-4 text-right">Unit Price</th>
+<th class="px-8 py-4"></th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/5">
+<!-- Row 1 -->
+<tr class="group hover:bg-surface-container-high/50 transition-colors">
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant">description</span>
+</div>
+<div>
+<p class="font-semibold text-on-surface">Papel Bond 80g A4</p>
+<p class="text-xs text-on-surface-variant">Standard Premium Office</p>
+</div>
+</div>
+</td>
+<td class="px-8 py-5 text-center font-mono text-xs text-on-surface-variant">PB-80-A4-001</td>
+<td class="px-8 py-5 text-right font-bold text-on-surface">450</td>
+<td class="px-8 py-5 text-center">
+<span class="px-3 py-1 rounded-full text-[10px] font-black tracking-widest bg-tertiary-container/10 text-tertiary uppercase">OPTIMO</span>
+</td>
+<td class="px-8 py-5 text-right font-medium text-on-surface">$5.40</td>
+<td class="px-8 py-5 text-right">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-surface-container-highest rounded-lg">
+<span class="material-symbols-outlined text-on-surface-variant">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 2 (Critical) -->
+<tr class="group hover:bg-surface-container-high/50 transition-colors bg-error/5">
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-error-container/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-error">ink_pen</span>
+</div>
+<div>
+<p class="font-semibold text-on-surface">Tinta Magenta Industrial</p>
+<p class="text-xs text-error/70">Refill Pack 500ml</p>
+</div>
+</div>
+</td>
+<td class="px-8 py-5 text-center font-mono text-xs text-on-surface-variant">TM-IND-500-M</td>
+<td class="px-8 py-5 text-right font-bold text-error">4</td>
+<td class="px-8 py-5 text-center">
+<span class="px-3 py-1 rounded-full text-[10px] font-black tracking-widest bg-error-container/20 text-error uppercase border border-error/20">CRITICO</span>
+</td>
+<td class="px-8 py-5 text-right font-medium text-on-surface">$128.00</td>
+<td class="px-8 py-5 text-right">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-surface-container-highest rounded-lg">
+<span class="material-symbols-outlined text-on-surface-variant">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="group hover:bg-surface-container-high/50 transition-colors">
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant">style</span>
+</div>
+<div>
+<p class="font-semibold text-on-surface">Cartulina Opalina 220g</p>
+<p class="text-xs text-on-surface-variant">Textured Art Stock</p>
+</div>
+</div>
+</td>
+<td class="px-8 py-5 text-center font-mono text-xs text-on-surface-variant">CO-220-ART</td>
+<td class="px-8 py-5 text-right font-bold text-on-surface">85</td>
+<td class="px-8 py-5 text-center">
+<span class="px-3 py-1 rounded-full text-[10px] font-black tracking-widest bg-primary-container/10 text-primary uppercase">REPOSICIÓN</span>
+</td>
+<td class="px-8 py-5 text-right font-medium text-on-surface">$12.50</td>
+<td class="px-8 py-5 text-right">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-surface-container-highest rounded-lg">
+<span class="material-symbols-outlined text-on-surface-variant">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="group hover:bg-surface-container-high/50 transition-colors">
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant">layers</span>
+</div>
+<div>
+<p class="font-semibold text-on-surface">Film Laminado Mate</p>
+<p class="text-xs text-on-surface-variant">Anti-Glare Roll 50m</p>
+</div>
+</div>
+</td>
+<td class="px-8 py-5 text-center font-mono text-xs text-on-surface-variant">FLM-MAT-50</td>
+<td class="px-8 py-5 text-right font-bold text-on-surface">210</td>
+<td class="px-8 py-5 text-center">
+<span class="px-3 py-1 rounded-full text-[10px] font-black tracking-widest bg-tertiary-container/10 text-tertiary uppercase">OPTIMO</span>
+</td>
+<td class="px-8 py-5 text-right font-medium text-on-surface">$42.00</td>
+<td class="px-8 py-5 text-right">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-surface-container-highest rounded-lg">
+<span class="material-symbols-outlined text-on-surface-variant">more_vert</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="px-8 py-4 bg-surface-container-low/50 flex items-center justify-between text-xs text-on-surface-variant font-medium">
+<div>Showing 4 of 1,284 products</div>
+<div class="flex gap-2">
+<button class="p-2 hover:bg-surface-container-highest rounded transition-colors disabled:opacity-30" disabled="">
+<span class="material-symbols-outlined text-sm">chevron_left</span>
+</button>
+<button class="p-2 hover:bg-surface-container-highest rounded transition-colors">
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Warehouse Visual Glance -->
+<section class="mt-12">
+<h4 class="font-headline font-bold text-lg mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">view_quilt</span>
+                Spatial Distribution
+            </h4>
+<div class="grid grid-cols-4 gap-4 h-48">
+<div class="col-span-2 bg-surface-container-high rounded-xl relative overflow-hidden group">
+<img class="absolute inset-0 w-full h-full object-cover opacity-30 group-hover:opacity-40 transition-opacity" data-alt="clean organized warehouse shelves with blue ambient lighting and industrial machinery in high contrast dark mode aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDCLpeNbuxzYZHBDcP56-2N_UDTs7qO8YKWsnic7vZ4tzBPN13L870bm6tK1S2tFxtTgYMzne0BIX-oacl-uaQ6GK-vxhGtga0qXIM5UqZuhkfqFlQ7QVTqUI1aJpr7CeDQZWqt0eMTf_GE55bDy9KJDXrxIJJYMYAV8wAy3Z5OMNC7kMlw6lNfCCLfZYLjL6_WP5OdQ4TeFEKCt6NiDO89mgXWPGJa_24wWi2QnQ8EozbPI9iOc5kaFRQq0jBexU_NaK6hTaOkVF4"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest to-transparent"></div>
+<div class="absolute bottom-4 left-4">
+<p class="text-xs font-bold text-primary uppercase">Zone A</p>
+<p class="font-headline font-bold">Paper &amp; Stationery</p>
+</div>
+</div>
+<div class="bg-surface-container-high rounded-xl relative overflow-hidden group">
+<img class="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-30 transition-opacity" data-alt="close up of cyan magenta yellow and black ink bottles on a shelf with professional laboratory lighting in dark warehouse" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAEVI0xLPDnOmiGCb06pI_SGllRoVMGqzEX5X5ij-9WZtv-l1YVZxc6ZYeXJLUDHE9XvQI_VgA5Mvkofwg3bjKWyMSWAsYh-5dnZxpjj7cr6wetrIgtQjmLRKD8O1XSu7-iHhMfWqjsnYzfvQyNLGUhLDwLjLkRi77gwHBwJgbwpzxUGuQu6sjFH2q0EY0eIkXd0uOoZ47Q57XYiOQNmqgS9m3dMWT4PBFeYnP63mxG3yrSQN6M93SKb5T97xAf46YxBqAnFbnBts8"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest to-transparent"></div>
+<div class="absolute bottom-4 left-4">
+<p class="text-xs font-bold text-on-surface-variant uppercase">Zone B</p>
+<p class="font-headline font-bold">Inks</p>
+</div>
+</div>
+<div class="bg-surface-container-high rounded-xl relative overflow-hidden group">
+<div class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+<span class="material-symbols-outlined text-primary-container mb-2 text-3xl">map</span>
+<p class="text-xs font-medium text-on-surface-variant">View Interactive Map</p>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- FAB (Suppressed as per rules for Details/Focused pages, but added here for a Dashboard-like context if required by task - actually the task asks for a screen, and shared components suggest a side-nav layout. I will stick to the SideNav for desktop as defined in the JSON.) -->
+</body></html>

@@ -1,0 +1,585 @@
+{
+  ".svelte-kit/generated/server/internal.js": {
+    "file": "internal.js",
+    "name": "internal",
+    "src": ".svelte-kit/generated/server/internal.js",
+    "isEntry": true,
+    "imports": [
+      "_root.js",
+      "_environment.js",
+      "_internal.js"
+    ]
+  },
+  "_Icon.js": {
+    "file": "chunks/Icon.js",
+    "name": "Icon",
+    "imports": [
+      "_index2.js"
+    ]
+  },
+  "_api.js": {
+    "file": "chunks/api.js",
+    "name": "api"
+  },
+  "_app.DWJynIMu.css": {
+    "file": "_app/immutable/assets/app.DWJynIMu.css",
+    "src": "_app.DWJynIMu.css"
+  },
+  "_auth.js": {
+    "file": "chunks/auth.js",
+    "name": "auth",
+    "imports": [
+      "_index.js",
+      "_api.js",
+      "_url.js",
+      "_utils.js",
+      "_root.js",
+      "_exports.js",
+      "_state.svelte.js"
+    ]
+  },
+  "_building-2.js": {
+    "file": "chunks/building-2.js",
+    "name": "building-2",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_calendar-days.js": {
+    "file": "chunks/calendar-days.js",
+    "name": "calendar-days",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_circle-alert.js": {
+    "file": "chunks/circle-alert.js",
+    "name": "circle-alert",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_circle-check-big.js": {
+    "file": "chunks/circle-check-big.js",
+    "name": "circle-check-big",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_credit-card.js": {
+    "file": "chunks/credit-card.js",
+    "name": "credit-card",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_environment.js": {
+    "file": "chunks/environment.js",
+    "name": "environment"
+  },
+  "_exports.js": {
+    "file": "chunks/exports.js",
+    "name": "exports"
+  },
+  "_false.js": {
+    "file": "chunks/false.js",
+    "name": "false"
+  },
+  "_file-text.js": {
+    "file": "chunks/file-text.js",
+    "name": "file-text",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_index.js": {
+    "file": "chunks/index.js",
+    "name": "index",
+    "imports": [
+      "_index2.js"
+    ]
+  },
+  "_index2.js": {
+    "file": "chunks/index2.js",
+    "name": "index",
+    "imports": [
+      "_false.js"
+    ]
+  },
+  "_internal.js": {
+    "file": "chunks/internal.js",
+    "name": "internal",
+    "imports": [
+      "_root.js",
+      "_environment.js"
+    ]
+  },
+  "_loader-circle.js": {
+    "file": "chunks/loader-circle.js",
+    "name": "loader-circle",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_package.js": {
+    "file": "chunks/package.js",
+    "name": "package",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_plus.js": {
+    "file": "chunks/plus.js",
+    "name": "plus",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_root.js": {
+    "file": "chunks/root.js",
+    "name": "root",
+    "imports": [
+      "_index2.js"
+    ]
+  },
+  "_search.js": {
+    "file": "chunks/search.js",
+    "name": "search",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_shared.js": {
+    "file": "chunks/shared.js",
+    "name": "shared",
+    "imports": [
+      "_utils.js"
+    ]
+  },
+  "_state.svelte.js": {
+    "file": "chunks/state.svelte.js",
+    "name": "state.svelte",
+    "imports": [
+      "_index2.js",
+      "_url.js",
+      "_root.js"
+    ]
+  },
+  "_stores.js": {
+    "file": "chunks/stores.js",
+    "name": "stores",
+    "imports": [
+      "_index2.js",
+      "_url.js",
+      "_utils.js",
+      "_root.js",
+      "_exports.js",
+      "_state.svelte.js"
+    ]
+  },
+  "_triangle-alert.js": {
+    "file": "chunks/triangle-alert.js",
+    "name": "triangle-alert",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_truck.js": {
+    "file": "chunks/truck.js",
+    "name": "truck",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_uiClasses.js": {
+    "file": "chunks/uiClasses.js",
+    "name": "uiClasses"
+  },
+  "_upload.js": {
+    "file": "chunks/upload.js",
+    "name": "upload",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_url.js": {
+    "file": "chunks/url.js",
+    "name": "url"
+  },
+  "_users.js": {
+    "file": "chunks/users.js",
+    "name": "users",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_utils.js": {
+    "file": "chunks/utils.js",
+    "name": "utils"
+  },
+  "_x.js": {
+    "file": "chunks/x.js",
+    "name": "x",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "_zap.js": {
+    "file": "chunks/zap.js",
+    "name": "zap",
+    "imports": [
+      "_index2.js",
+      "_Icon.js"
+    ]
+  },
+  "node_modules/@sveltejs/kit/src/runtime/app/server/remote/index.js": {
+    "file": "remote-entry.js",
+    "name": "remote-entry",
+    "src": "node_modules/@sveltejs/kit/src/runtime/app/server/remote/index.js",
+    "isEntry": true,
+    "imports": [
+      "_shared.js",
+      "_false.js",
+      "_environment.js"
+    ]
+  },
+  "node_modules/@sveltejs/kit/src/runtime/server/index.js": {
+    "file": "index.js",
+    "name": "index",
+    "src": "node_modules/@sveltejs/kit/src/runtime/server/index.js",
+    "isEntry": true,
+    "imports": [
+      "_false.js",
+      "_environment.js",
+      "_shared.js",
+      "_url.js",
+      "_utils.js",
+      "_index.js",
+      "_internal.js",
+      "_exports.js"
+    ]
+  },
+  "src/routes/+error.svelte": {
+    "file": "entries/pages/_error.svelte.js",
+    "name": "entries/pages/_error.svelte",
+    "src": "src/routes/+error.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_stores.js",
+      "_triangle-alert.js",
+      "_Icon.js"
+    ]
+  },
+  "src/routes/+layout.svelte": {
+    "file": "entries/pages/_layout.svelte.js",
+    "name": "entries/pages/_layout.svelte",
+    "src": "src/routes/+layout.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_auth.js",
+      "_stores.js",
+      "_uiClasses.js",
+      "_Icon.js",
+      "_search.js",
+      "_file-text.js",
+      "_users.js",
+      "_truck.js",
+      "_index.js",
+      "_triangle-alert.js",
+      "_circle-alert.js",
+      "_circle-check-big.js",
+      "_x.js"
+    ],
+    "css": [
+      "_app/immutable/assets/app.DWJynIMu.css"
+    ]
+  },
+  "src/routes/+page.js": {
+    "file": "entries/pages/_page.js",
+    "name": "entries/pages/_page",
+    "src": "src/routes/+page.js",
+    "isEntry": true
+  },
+  "src/routes/+page.svelte": {
+    "file": "entries/pages/_page.svelte.js",
+    "name": "entries/pages/_page.svelte",
+    "src": "src/routes/+page.svelte",
+    "isEntry": true
+  },
+  "src/routes/about/+page.js": {
+    "file": "entries/pages/about/_page.js",
+    "name": "entries/pages/about/_page",
+    "src": "src/routes/about/+page.js",
+    "isEntry": true,
+    "imports": [
+      "_false.js"
+    ]
+  },
+  "src/routes/about/+page.svelte": {
+    "file": "entries/pages/about/_page.svelte.js",
+    "name": "entries/pages/about/_page.svelte",
+    "src": "src/routes/about/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_url.js",
+      "_root.js"
+    ]
+  },
+  "src/routes/admin/+layout.svelte": {
+    "file": "entries/pages/admin/_layout.svelte.js",
+    "name": "entries/pages/admin/_layout.svelte",
+    "src": "src/routes/admin/+layout.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_auth.js",
+      "_stores.js"
+    ],
+    "css": [
+      "_app/immutable/assets/_layout.Bu6qvdag.css",
+      "_app/immutable/assets/app.DWJynIMu.css"
+    ]
+  },
+  "src/routes/admin/+page.svelte": {
+    "file": "entries/pages/admin/_page.svelte.js",
+    "name": "entries/pages/admin/_page.svelte",
+    "src": "src/routes/admin/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_Icon.js",
+      "_building-2.js",
+      "_file-text.js",
+      "_zap.js",
+      "_credit-card.js",
+      "_triangle-alert.js",
+      "_circle-check-big.js",
+      "_users.js"
+    ]
+  },
+  "src/routes/admin/audit/+page.svelte": {
+    "file": "entries/pages/admin/audit/_page.svelte.js",
+    "name": "entries/pages/admin/audit/_page.svelte",
+    "src": "src/routes/admin/audit/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_Icon.js",
+      "_search.js",
+      "_loader-circle.js"
+    ]
+  },
+  "src/routes/admin/config/+page.svelte": {
+    "file": "entries/pages/admin/config/_page.svelte.js",
+    "name": "entries/pages/admin/config/_page.svelte",
+    "src": "src/routes/admin/config/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_credit-card.js",
+      "_zap.js",
+      "_Icon.js"
+    ]
+  },
+  "src/routes/admin/login/+page.svelte": {
+    "file": "entries/pages/admin/login/_page.svelte.js",
+    "name": "entries/pages/admin/login/_page.svelte",
+    "src": "src/routes/admin/login/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_url.js",
+      "_utils.js",
+      "_root.js",
+      "_exports.js",
+      "_state.svelte.js",
+      "_auth.js",
+      "_Icon.js"
+    ]
+  },
+  "src/routes/admin/tenants/+page.svelte": {
+    "file": "entries/pages/admin/tenants/_page.svelte.js",
+    "name": "entries/pages/admin/tenants/_page.svelte",
+    "src": "src/routes/admin/tenants/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_plus.js",
+      "_search.js",
+      "_loader-circle.js"
+    ]
+  },
+  "src/routes/admin/usuarios/+page.svelte": {
+    "file": "entries/pages/admin/usuarios/_page.svelte.js",
+    "name": "entries/pages/admin/usuarios/_page.svelte",
+    "src": "src/routes/admin/usuarios/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_plus.js",
+      "_search.js",
+      "_loader-circle.js"
+    ]
+  },
+  "src/routes/almacen/+page.svelte": {
+    "file": "entries/pages/almacen/_page.svelte.js",
+    "name": "entries/pages/almacen/_page.svelte",
+    "src": "src/routes/almacen/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_url.js",
+      "_utils.js",
+      "_root.js",
+      "_exports.js",
+      "_state.svelte.js",
+      "_uiClasses.js",
+      "_upload.js",
+      "_plus.js",
+      "_search.js"
+    ]
+  },
+  "src/routes/almacen/compras/+page.svelte": {
+    "file": "entries/pages/almacen/compras/_page.svelte.js",
+    "name": "entries/pages/almacen/compras/_page.svelte",
+    "src": "src/routes/almacen/compras/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_upload.js",
+      "_file-text.js",
+      "_package.js",
+      "_circle-alert.js"
+    ]
+  },
+  "src/routes/clientes/+page.svelte": {
+    "file": "entries/pages/clientes/_page.svelte.js",
+    "name": "entries/pages/clientes/_page.svelte",
+    "src": "src/routes/clientes/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_uiClasses.js"
+    ]
+  },
+  "src/routes/configuracion/+page.svelte": {
+    "file": "entries/pages/configuracion/_page.svelte.js",
+    "name": "entries/pages/configuracion/_page.svelte",
+    "src": "src/routes/configuracion/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js"
+    ]
+  },
+  "src/routes/cotizaciones/+page.svelte": {
+    "file": "entries/pages/cotizaciones/_page.svelte.js",
+    "name": "entries/pages/cotizaciones/_page.svelte",
+    "src": "src/routes/cotizaciones/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_api.js",
+      "_uiClasses.js",
+      "_x.js",
+      "_calendar-days.js",
+      "_Icon.js",
+      "_file-text.js",
+      "_circle-alert.js",
+      "_circle-check-big.js",
+      "_loader-circle.js",
+      "_plus.js"
+    ]
+  },
+  "src/routes/dashboard/+page.svelte": {
+    "file": "entries/pages/dashboard/_page.svelte.js",
+    "name": "entries/pages/dashboard/_page.svelte",
+    "src": "src/routes/dashboard/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_uiClasses.js",
+      "_Icon.js",
+      "_file-text.js",
+      "_truck.js",
+      "_package.js",
+      "_calendar-days.js",
+      "_circle-check-big.js",
+      "_circle-alert.js"
+    ]
+  },
+  "src/routes/despachos/+page.svelte": {
+    "file": "entries/pages/despachos/_page.svelte.js",
+    "name": "entries/pages/despachos/_page.svelte",
+    "src": "src/routes/despachos/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_uiClasses.js",
+      "_loader-circle.js"
+    ]
+  },
+  "src/routes/login/+page.svelte": {
+    "file": "entries/pages/login/_page.svelte.js",
+    "name": "entries/pages/login/_page.svelte",
+    "src": "src/routes/login/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_auth.js"
+    ]
+  },
+  "src/routes/produccion/+page.svelte": {
+    "file": "entries/pages/produccion/_page.svelte.js",
+    "name": "entries/pages/produccion/_page.svelte",
+    "src": "src/routes/produccion/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_Icon.js",
+      "_package.js",
+      "_circle-check-big.js",
+      "_search.js"
+    ]
+  },
+  "src/routes/superadmin/+page.svelte": {
+    "file": "entries/pages/superadmin/_page.svelte.js",
+    "name": "entries/pages/superadmin/_page.svelte",
+    "src": "src/routes/superadmin/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_auth.js",
+      "_url.js",
+      "_utils.js",
+      "_root.js",
+      "_exports.js",
+      "_state.svelte.js",
+      "_Icon.js",
+      "_building-2.js",
+      "_credit-card.js",
+      "_search.js",
+      "_circle-alert.js"
+    ],
+    "css": [
+      "_app/immutable/assets/_page.Cj_D_qZf.css"
+    ]
+  }
+}

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "outline-variant": "#c3c6d1",
+              "primary-fixed": "#d7e2ff",
+              "on-background": "#191c1e",
+              "tertiary-fixed-dim": "#e9c349",
+              "primary": "#001d44",
+              "secondary-fixed": "#8bf8c2",
+              "surface-container": "#edeef1",
+              "on-primary": "#ffffff",
+              "inverse-on-surface": "#f0f0f4",
+              "on-surface-variant": "#43474f",
+              "tertiary-container": "#cca830",
+              "error-container": "#ffdad6",
+              "on-tertiary": "#ffffff",
+              "tertiary-fixed": "#ffe088",
+              "surface": "#f9f9fd",
+              "on-secondary-fixed": "#002113",
+              "surface-container-highest": "#e2e2e6",
+              "inverse-primary": "#abc7ff",
+              "on-surface": "#191c1e",
+              "surface-bright": "#f9f9fd",
+              "surface-dim": "#d9dadd",
+              "primary-container": "#00326b",
+              "secondary-container": "#8bf8c2",
+              "secondary-fixed-dim": "#6edba7",
+              "error": "#ba1a1a",
+              "on-primary-container": "#6b9bef",
+              "surface-variant": "#e2e2e6",
+              "inverse-surface": "#2e3133",
+              "outline": "#737780",
+              "on-secondary": "#ffffff",
+              "primary-fixed-dim": "#abc7ff",
+              "on-primary-fixed": "#001b3f",
+              "on-tertiary-fixed": "#241a00",
+              "on-secondary-container": "#00734d",
+              "on-primary-fixed-variant": "#00458f",
+              "on-error": "#ffffff",
+              "on-tertiary-container": "#4f3e00",
+              "on-secondary-fixed-variant": "#005235",
+              "surface-container-lowest": "#ffffff",
+              "tertiary": "#735c00",
+              "on-tertiary-fixed-variant": "#574500",
+              "secondary": "#006c48",
+              "surface-tint": "#255dad",
+              "surface-container-low": "#f3f3f7",
+              "background": "#f9f9fd",
+              "on-error-container": "#93000a",
+              "surface-container-high": "#e7e8eb"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .glass-effect {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(20px);
+      }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface antialiased">
+<!-- SideNavBar Shell -->
+<aside class="fixed left-0 top-0 h-screen w-64 bg-slate-100 dark:bg-slate-900 flex flex-col h-full py-8 px-4 z-50">
+<div class="mb-10 px-2 flex items-center gap-3">
+<div class="w-10 h-10 bg-primary rounded flex items-center justify-center text-white">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">print</span>
+</div>
+<div>
+<h1 class="font-headline text-lg font-bold text-blue-900 dark:text-white leading-tight">PrintFlow</h1>
+<p class="text-xs text-slate-500 font-medium">Editorial Precision</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 dark:text-slate-400 font-medium hover:text-blue-700 dark:hover:text-blue-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-headline text-base tracking-tight">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 dark:text-slate-400 font-medium hover:text-blue-700 dark:hover:text-blue-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">receipt_long</span>
+<span class="font-headline text-base tracking-tight">Billing</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 dark:text-slate-400 font-medium hover:text-blue-700 dark:hover:text-blue-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="font-headline text-base tracking-tight">Inventory</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 dark:text-slate-400 font-medium hover:text-blue-700 dark:hover:text-blue-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">print</span>
+<span class="font-headline text-base tracking-tight">Orders</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 dark:text-slate-400 font-medium hover:text-blue-700 dark:hover:text-blue-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">verified_user</span>
+<span class="font-headline text-base tracking-tight">Compliance</span>
+</a>
+</nav>
+<div class="mt-auto space-y-4">
+<button class="w-full bg-gradient-to-br from-primary to-primary-container text-white py-3 px-4 rounded-md font-headline font-bold text-sm tracking-wide shadow-sm hover:opacity-90 active:scale-95 transition-all">
+                Emitir Factura
+            </button>
+<div class="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-1">
+<a class="flex items-center gap-3 px-4 py-2 text-slate-500 font-medium text-sm hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">help_outline</span>
+<span>Support</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-slate-500 font-medium text-sm hover:text-error transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">logout</span>
+<span>Logout</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- TopAppBar Shell -->
+<header class="fixed top-0 w-full z-40 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md shadow-sm flex items-center justify-between px-6 h-16 ml-64">
+<div class="flex items-center gap-4">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-lg">search</span>
+<input class="pl-10 pr-4 py-1.5 bg-surface-container-low border-none rounded-full text-sm w-64 focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-outline font-body" placeholder="Buscar notificaciones..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4 pr-64">
+<button class="p-2 rounded-full hover:bg-slate-200/50 text-blue-900 relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full ring-2 ring-white"></span>
+</button>
+<button class="p-2 rounded-full hover:bg-slate-200/50 text-blue-900">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="h-8 w-px bg-slate-200 mx-2"></div>
+<div class="flex items-center gap-3">
+<div class="text-right hidden sm:block">
+<p class="text-xs font-bold text-primary">Admin PrintFlow</p>
+<p class="text-[10px] text-outline uppercase tracking-widest">Editor Senior</p>
+</div>
+<img class="w-8 h-8 rounded-full object-cover border border-primary/10" data-alt="professional male executive portrait with soft natural lighting and neutral background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAtUM-FURDux9-YXZFDym4FK3cdZnFlcSjhSEgHHBpnFdQU8J02ILcYVI6oYJ67wCgT3wdOOtEVPIqz2Y6QUIaA8iYB1yTOItZv47dfYnYpTKk_DH1EaRlKikbQYvIqF0FdjeyuflKLvKHkkURxe9v_w-bSlokoAOD6vvL7IYV2OBHlPkkNtm0LWS_zUSOBC3DdgSEUjMt4g_v9CL9Pneu_l7NxrnmAiGXaecSHIdwJfCp0FrbGu2ZB3JBTz8pvi1PJIhHOt0EtA88"/>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-64 pt-24 pb-12 px-8 min-h-screen">
+<div class="max-w-4xl mx-auto">
+<!-- Header Section with Asymmetry -->
+<div class="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
+<div>
+<span class="inline-block px-3 py-1 bg-primary-fixed text-on-primary-fixed text-[10px] font-bold tracking-[0.2em] uppercase rounded-sm mb-3">Centro de Actividad</span>
+<h2 class="font-headline text-4xl font-extrabold text-primary tracking-tight leading-none">Notificaciones</h2>
+<p class="text-outline mt-2 font-body">Gestión de alertas críticas y cumplimiento editorial.</p>
+</div>
+<button class="flex items-center gap-2 text-primary font-bold text-sm hover:underline active:scale-95 transition-all">
+<span class="material-symbols-outlined text-lg">done_all</span>
+                    Marcar todas como leídas
+                </button>
+</div>
+<!-- Bento-style Categorized Container -->
+<div class="space-y-12">
+<!-- Alertas SUNAT Section -->
+<section>
+<div class="flex items-center gap-3 mb-6">
+<div class="w-8 h-8 bg-secondary-container rounded-full flex items-center justify-center text-on-secondary-container">
+<span class="material-symbols-outlined text-lg" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+<h3 class="font-headline text-xl font-bold text-primary">Alertas SUNAT</h3>
+<div class="flex-1 h-px bg-gradient-to-r from-outline-variant/30 to-transparent"></div>
+</div>
+<div class="space-y-3">
+<!-- Notification Card -->
+<div class="group relative flex items-center p-5 bg-surface-container-lowest rounded-xl border-l-4 border-secondary hover:bg-white transition-all duration-300">
+<div class="flex-1">
+<div class="flex items-center gap-3 mb-1">
+<span class="font-bold text-on-surface">Factura F001-102 aceptada</span>
+<span class="text-[10px] bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded-full font-bold">EXITOSO</span>
+</div>
+<p class="text-sm text-outline">El comprobante ha sido validado correctamente por SUNAT y enviado al cliente.</p>
+</div>
+<div class="text-right">
+<p class="text-xs font-medium text-outline">Hace 5 min</p>
+<button class="mt-2 text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-lg">arrow_forward</span>
+</button>
+</div>
+</div>
+<div class="group relative flex items-center p-5 bg-surface-container-low rounded-xl border-l-4 border-outline hover:bg-surface-container-lowest transition-all duration-300 opacity-80">
+<div class="flex-1">
+<div class="flex items-center gap-3 mb-1">
+<span class="font-bold text-on-surface">Factura F001-098 pendiente</span>
+<span class="text-[10px] bg-tertiary-container text-on-tertiary-container px-2 py-0.5 rounded-full font-bold">EN PROCESO</span>
+</div>
+<p class="text-sm text-outline">Esperando respuesta del servidor OSE/SUNAT para confirmación final.</p>
+</div>
+<div class="text-right">
+<p class="text-xs font-medium text-outline">Ayer, 4:30 PM</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Stock Bajo Section -->
+<section>
+<div class="flex items-center gap-3 mb-6">
+<div class="w-8 h-8 bg-error-container rounded-full flex items-center justify-center text-on-error-container">
+<span class="material-symbols-outlined text-lg" style="font-variation-settings: 'FILL' 1;">warning</span>
+</div>
+<h3 class="font-headline text-xl font-bold text-primary">Stock Bajo</h3>
+<div class="flex-1 h-px bg-gradient-to-r from-outline-variant/30 to-transparent"></div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div class="p-5 bg-surface-container-lowest rounded-xl border-l-4 border-error shadow-[0_12px_32px_rgba(25,28,30,0.04)] hover:scale-[1.02] transition-transform">
+<div class="flex justify-between items-start mb-3">
+<span class="material-symbols-outlined text-error">inventory</span>
+<span class="text-xs font-bold text-outline uppercase tracking-wider">Almacén Central</span>
+</div>
+<p class="font-bold text-on-surface mb-1">Papel Couché 150g</p>
+<p class="text-sm text-outline mb-4">Quedan menos de 5 resmas disponibles. Reposición urgente necesaria.</p>
+<div class="flex items-center justify-between">
+<span class="text-xs font-bold text-error">CRÍTICO</span>
+<button class="text-xs font-bold bg-primary text-white px-3 py-1.5 rounded-md">Orden de Compra</button>
+</div>
+</div>
+<div class="p-5 bg-surface-container-lowest rounded-xl border-l-4 border-tertiary shadow-[0_12px_32px_rgba(25,28,30,0.04)] hover:scale-[1.02] transition-transform">
+<div class="flex justify-between items-start mb-3">
+<span class="material-symbols-outlined text-tertiary">ink_highlighter</span>
+<span class="text-xs font-bold text-outline uppercase tracking-wider">Plotter HP-02</span>
+</div>
+<p class="font-bold text-on-surface mb-1">Tinta Cyan Eco-Solvent</p>
+<p class="text-sm text-outline mb-4">Nivel de cartucho al 12%. Estimado: 48 horas de producción.</p>
+<div class="flex items-center justify-between">
+<span class="text-xs font-bold text-tertiary">ADVERTENCIA</span>
+<button class="text-xs font-bold bg-surface-container-highest text-primary px-3 py-1.5 rounded-md">Ignorar</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Soporte Section -->
+<section>
+<div class="flex items-center gap-3 mb-6">
+<div class="w-8 h-8 bg-primary-fixed rounded-full flex items-center justify-center text-on-primary-fixed">
+<span class="material-symbols-outlined text-lg" style="font-variation-settings: 'FILL' 1;">support_agent</span>
+</div>
+<h3 class="font-headline text-xl font-bold text-primary">Soporte</h3>
+<div class="flex-1 h-px bg-gradient-to-r from-outline-variant/30 to-transparent"></div>
+</div>
+<div class="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-[0_12px_32px_rgba(25,28,30,0.02)]">
+<table class="w-full text-left border-collapse">
+<thead class="bg-surface-container-low">
+<tr>
+<th class="px-6 py-4 text-[10px] font-bold text-outline uppercase tracking-widest">Asunto</th>
+<th class="px-6 py-4 text-[10px] font-bold text-outline uppercase tracking-widest">Estado</th>
+<th class="px-6 py-4 text-[10px] font-bold text-outline uppercase tracking-widest">Fecha</th>
+<th class="px-6 py-4 text-[10px] font-bold text-outline uppercase tracking-widest text-right">Acción</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-slate-50">
+<tr class="hover:bg-slate-50 transition-colors">
+<td class="px-6 py-4">
+<p class="font-bold text-on-surface text-sm">Error de sincronización API SUNAT</p>
+<p class="text-xs text-outline">Ticket #29402 - Asignado a Soporte Nivel 2</p>
+</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">ACTIVO</span>
+</td>
+<td class="px-6 py-4 text-xs text-outline font-medium">Hace 2 horas</td>
+<td class="px-6 py-4 text-right">
+<button class="text-primary hover:text-primary-container"><span class="material-symbols-outlined">chat</span></button>
+</td>
+</tr>
+<tr class="hover:bg-slate-50 transition-colors">
+<td class="px-6 py-4">
+<p class="font-bold text-on-surface text-sm">Actualización de Parámetros de Impresión</p>
+<p class="text-xs text-outline">Información importante del sistema</p>
+</td>
+<td class="px-6 py-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-secondary-container text-on-secondary-container">RESUELTO</span>
+</td>
+<td class="px-6 py-4 text-xs text-outline font-medium">Hace 1 día</td>
+<td class="px-6 py-4 text-right">
+<button class="text-outline"><span class="material-symbols-outlined">visibility</span></button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+<!-- Footer Stats / Glass Badge -->
+<div class="mt-16 flex justify-center">
+<div class="glass-effect inline-flex items-center gap-6 px-8 py-4 rounded-full border border-white/50 shadow-lg">
+<div class="text-center">
+<p class="text-[10px] text-outline uppercase font-bold tracking-tighter">No leídas</p>
+<p class="text-xl font-headline font-extrabold text-error">03</p>
+</div>
+<div class="w-px h-8 bg-slate-200"></div>
+<div class="text-center">
+<p class="text-[10px] text-outline uppercase font-bold tracking-tighter">Leídas hoy</p>
+<p class="text-xl font-headline font-extrabold text-primary">12</p>
+</div>
+<div class="w-px h-8 bg-slate-200"></div>
+<div class="text-center">
+<p class="text-[10px] text-outline uppercase font-bold tracking-tighter">Sistema</p>
+<p class="text-sm font-bold text-secondary flex items-center gap-1">
+<span class="w-2 h-2 bg-secondary rounded-full"></span> Estable
+                        </p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Contextual FAB (Hidden on details, but could be shown for 'New Support Ticket') -->
+<button class="fixed bottom-8 right-8 w-14 h-14 bg-gradient-to-br from-primary to-primary-container text-white rounded-full flex items-center justify-center shadow-xl hover:scale-110 active:scale-95 transition-all z-50">
+<span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">add_comment</span>
+</button>
+</body></html>

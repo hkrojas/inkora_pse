@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Emitir Factura - PrintFlow</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "outline-variant": "#c3c6d1",
+              "primary-fixed": "#d7e2ff",
+              "on-background": "#191c1e",
+              "tertiary-fixed-dim": "#e9c349",
+              "primary": "#001d44",
+              "secondary-fixed": "#8bf8c2",
+              "surface-container": "#edeef1",
+              "on-primary": "#ffffff",
+              "inverse-on-surface": "#f0f0f4",
+              "on-surface-variant": "#43474f",
+              "tertiary-container": "#cca830",
+              "error-container": "#ffdad6",
+              "on-tertiary": "#ffffff",
+              "tertiary-fixed": "#ffe088",
+              "surface": "#f9f9fd",
+              "on-secondary-fixed": "#002113",
+              "surface-container-highest": "#e2e2e6",
+              "inverse-primary": "#abc7ff",
+              "on-surface": "#191c1e",
+              "surface-bright": "#f9f9fd",
+              "surface-dim": "#d9dadd",
+              "primary-container": "#00326b",
+              "secondary-container": "#8bf8c2",
+              "secondary-fixed-dim": "#6edba7",
+              "error": "#ba1a1a",
+              "on-primary-container": "#6b9bef",
+              "surface-variant": "#e2e2e6",
+              "inverse-surface": "#2e3133",
+              "outline": "#737780",
+              "on-secondary": "#ffffff",
+              "primary-fixed-dim": "#abc7ff",
+              "on-primary-fixed": "#001b3f",
+              "on-tertiary-fixed": "#241a00",
+              "on-secondary-container": "#00734d",
+              "on-primary-fixed-variant": "#00458f",
+              "on-error": "#ffffff",
+              "on-tertiary-container": "#4f3e00",
+              "on-secondary-fixed-variant": "#005235",
+              "surface-container-lowest": "#ffffff",
+              "tertiary": "#735c00",
+              "on-tertiary-fixed-variant": "#574500",
+              "secondary": "#006c48",
+              "surface-tint": "#255dad",
+              "surface-container-low": "#f3f3f7",
+              "background": "#f9f9fd",
+              "on-error-container": "#93000a",
+              "surface-container-high": "#e7e8eb"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        h1, h2, h3, .font-manrope { font-family: 'Manrope', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .glass-panel { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(20px); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="bg-surface text-on-surface">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-screen w-64 bg-slate-100 dark:bg-slate-900 flex flex-col h-full py-8 px-4 z-50">
+<div class="mb-10 px-2">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-primary flex items-center justify-center rounded-lg">
+<span class="material-symbols-outlined text-white" style="font-variation-settings: 'FILL' 1;">print</span>
+</div>
+<div>
+<h1 class="font-manrope text-lg font-bold text-blue-900 dark:text-white leading-tight">PrintFlow</h1>
+<p class="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Editorial Precision</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-500 dark:text-slate-400 font-medium hover:text-blue-700 dark:hover:text-blue-200 hover:bg-slate-200/50 transition-all duration-300 ease-in-out rounded-lg group" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-manrope text-base tracking-tight">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-500 dark:text-slate-400 font-medium hover:text-blue-700 dark:hover:text-blue-200 hover:bg-slate-200/50 transition-all duration-300 ease-in-out rounded-lg group" href="#">
+<span class="material-symbols-outlined">receipt_long</span>
+<span class="font-manrope text-base tracking-tight">Billing</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-500 dark:text-slate-400 font-medium hover:text-blue-700 dark:hover:text-blue-200 hover:bg-slate-200/50 transition-all duration-300 ease-in-out rounded-lg group" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="font-manrope text-base tracking-tight">Inventory</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-blue-900 dark:text-white font-bold border-r-4 border-blue-900 dark:border-blue-400 bg-slate-200/30 transition-all duration-300 ease-in-out rounded-l-lg group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">print</span>
+<span class="font-manrope text-base tracking-tight">Orders</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-slate-500 dark:text-slate-400 font-medium hover:text-blue-700 dark:hover:text-blue-200 hover:bg-slate-200/50 transition-all duration-300 ease-in-out rounded-lg group" href="#">
+<span class="material-symbols-outlined">verified_user</span>
+<span class="font-manrope text-base tracking-tight">Compliance</span>
+</a>
+</nav>
+<div class="mt-auto pt-6 space-y-4 border-t border-slate-200/50">
+<button class="w-full bg-gradient-to-br from-primary to-primary-container text-white py-3 px-4 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-primary/10">
+<span class="material-symbols-outlined text-sm">add_circle</span>
+<span>Emitir Factura</span>
+</button>
+<div class="space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 hover:text-blue-900 transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">help_outline</span>
+<span class="text-sm">Support</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 hover:text-error transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">logout</span>
+<span class="text-sm">Logout</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="ml-64 min-h-screen">
+<!-- TopAppBar -->
+<header class="fixed top-0 right-0 left-64 h-16 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md flex items-center justify-between px-8 z-40">
+<div class="flex items-center gap-4">
+<h2 class="font-manrope text-xl font-extrabold tracking-tight text-blue-900">Nueva Emisión</h2>
+<div class="h-4 w-[1px] bg-slate-300"></div>
+<nav class="flex items-center gap-6">
+<span class="text-blue-700 font-bold font-manrope text-sm cursor-default">Comprobante</span>
+<span class="text-slate-500 font-medium font-manrope text-sm cursor-pointer hover:text-blue-700 transition-colors">Guía de Remisión</span>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative">
+<button class="p-2 text-slate-500 hover:bg-slate-200/50 rounded-full transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
+</button>
+</div>
+<div class="flex items-center gap-3 pl-4 border-l border-slate-200">
+<div class="text-right">
+<p class="text-sm font-bold text-on-surface">Admin User</p>
+<p class="text-[10px] text-outline">Sucursal Lima Centro</p>
+</div>
+<img alt="User profile avatar" class="w-10 h-10 rounded-full object-cover ring-2 ring-primary/10" data-alt="professional headshot of a business man in a dark suit with soft studio lighting and a neutral grey background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJ2pHcfD2GE8J3adnFnmuLgWqQxle-XXllGbK-AxZ_lsqntVcKvjCHJLtOFzlEqajoHSMi07TLsIfFybly6Lcal-YOuy2io_O1sHX6ZV9j7JAK9uI9DsxJT6Z923nlc5LhjG7dO2QyA8DCSk_grk9UeLDupHZ3AQ1fLwg5divpkA6balY6j80TrsEqhknTsfAnwJTmBXvwt-Ke5_Q0tPHCfRZhbH2wFn2mZVUlZstDKta6Ag8vwsNARUsXV-PmbkXOn2W_uVuZgKc"/>
+</div>
+</div>
+</header>
+<!-- Content Area -->
+<div class="pt-24 pb-12 px-8 max-w-7xl mx-auto">
+<form class="space-y-8">
+<!-- Step 1: Document Config (Asymmetric Bento Grid) -->
+<section class="grid grid-cols-12 gap-6">
+<!-- Left: Document Details -->
+<div class="col-span-12 lg:col-span-8 space-y-6">
+<div class="bg-surface-container-lowest p-8 rounded-2xl shadow-sm border border-outline-variant/10">
+<div class="flex items-center justify-between mb-8">
+<h3 class="font-manrope text-lg font-bold flex items-center gap-2">
+<span class="w-1 h-6 bg-primary rounded-full"></span>
+                                    Información del Comprobante
+                                </h3>
+<!-- Bi-Currency Toggle -->
+<div class="flex items-center bg-surface-container-low p-1 rounded-full border border-outline-variant/20">
+<button class="px-4 py-1.5 rounded-full text-xs font-bold transition-all bg-white shadow-sm text-primary" type="button">Soles (S/)</button>
+<button class="px-4 py-1.5 rounded-full text-xs font-medium text-outline hover:text-primary transition-all" type="button">Dólares ($)</button>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="space-y-2">
+<label class="text-xs font-bold text-outline uppercase tracking-wider">Tipo de Documento</label>
+<select class="w-full bg-surface-container-low border-none rounded-xl py-3 px-4 text-on-surface font-medium focus:ring-2 focus:ring-primary/20">
+<option>Factura Electrónica</option>
+<option>Boleta de Venta</option>
+<option>Nota de Crédito</option>
+</select>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-bold text-outline uppercase tracking-wider">Serie</label>
+<input class="w-full bg-surface-container-low border-none rounded-xl py-3 px-4 text-on-surface font-bold focus:ring-2 focus:ring-primary/20" type="text" value="F001"/>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-bold text-outline uppercase tracking-wider">Número Correlativo</label>
+<input class="w-full bg-surface-container-low border-none rounded-xl py-3 px-4 text-on-surface font-bold focus:ring-2 focus:ring-primary/20" type="text" value="00002481"/>
+</div>
+</div>
+</div>
+<!-- Customer Search -->
+<div class="bg-surface-container-lowest p-8 rounded-2xl shadow-sm border border-outline-variant/10">
+<h3 class="font-manrope text-lg font-bold mb-6 flex items-center gap-2">
+<span class="w-1 h-6 bg-primary rounded-full"></span>
+                                Datos del Cliente
+                            </h3>
+<div class="relative group">
+<div class="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline group-focus-within:text-primary transition-colors">search</span>
+</div>
+<input class="w-full pl-12 pr-4 py-4 bg-surface-container-low border-none rounded-xl text-on-surface font-medium focus:ring-2 focus:ring-primary/20 transition-all" placeholder="Buscar por RUC, DNI o Nombre Comercial..." type="text"/>
+<button class="absolute right-3 top-1/2 -translate-y-1/2 bg-primary-container text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary transition-colors" type="button">
+                                    Validar SUNAT
+                                </button>
+</div>
+<!-- Selected Client Preview (Tonal Layering) -->
+<div class="mt-6 p-4 rounded-xl bg-primary/5 flex items-start gap-4">
+<div class="w-12 h-12 rounded-lg bg-primary-container/10 flex items-center justify-center text-primary-container">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">corporate_fare</span>
+</div>
+<div>
+<p class="font-bold text-primary">CORPORACIÓN GRAFICA DEL SUR S.A.C.</p>
+<p class="text-sm text-outline">RUC: 20458741235 • Av. Industrial 458, Ate, Lima</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Right: Quick Summary/Status (Glassmorphism) -->
+<div class="col-span-12 lg:col-span-4 space-y-6">
+<div class="bg-surface-container-low p-6 rounded-2xl border border-outline-variant/20 sticky top-24">
+<h3 class="font-manrope text-xs font-extrabold text-outline uppercase tracking-widest mb-4">Estado del Comprobante</h3>
+<div class="flex items-center gap-3 mb-6">
+<span class="px-3 py-1 bg-secondary-container text-on-secondary-container rounded-full text-[10px] font-bold uppercase tracking-wider">Borrador</span>
+<span class="px-3 py-1 bg-tertiary-container text-on-tertiary-container rounded-full text-[10px] font-bold uppercase tracking-wider">SUNAT: Pendiente</span>
+</div>
+<div class="space-y-4 pt-4 border-t border-outline-variant/30">
+<div class="flex justify-between items-center">
+<span class="text-sm text-outline">Fecha de Emisión</span>
+<span class="text-sm font-bold">24 Oct, 2023</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-sm text-outline">Vencimiento</span>
+<span class="text-sm font-bold text-error">Contado</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-sm text-outline">Punto de Venta</span>
+<span class="text-sm font-bold">Principal</span>
+</div>
+</div>
+<div class="mt-8 p-4 rounded-xl bg-white/50 backdrop-blur-md border border-white">
+<p class="text-[10px] text-outline uppercase font-bold mb-1">Total Estimado</p>
+<p class="text-3xl font-manrope font-extrabold text-primary">S/ 0.00</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Step 2: Items Table (Compliance Ledger Style) -->
+<section class="bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/10 overflow-hidden">
+<div class="p-8 border-b border-outline-variant/10 flex justify-between items-center">
+<h3 class="font-manrope text-lg font-bold flex items-center gap-2">
+<span class="w-1 h-6 bg-primary rounded-full"></span>
+                            Detalle de Productos / Servicios
+                        </h3>
+<button class="text-primary font-bold text-sm flex items-center gap-2 hover:underline" type="button">
+<span class="material-symbols-outlined text-base">add_box</span>
+                            Añadir Item Manual
+                        </button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low/50">
+<th class="py-4 px-8 text-[10px] font-extrabold text-outline uppercase tracking-widest">Item / Producto</th>
+<th class="py-4 px-4 text-[10px] font-extrabold text-outline uppercase tracking-widest text-center w-24">Cant.</th>
+<th class="py-4 px-4 text-[10px] font-extrabold text-outline uppercase tracking-widest text-right w-32">P. Unitario</th>
+<th class="py-4 px-4 text-[10px] font-extrabold text-outline uppercase tracking-widest text-right w-24">IGV (18%)</th>
+<th class="py-4 px-8 text-[10px] font-extrabold text-outline uppercase tracking-widest text-right w-40">Subtotal</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/10">
+<!-- Active Row Example -->
+<tr class="group hover:bg-primary/5 transition-colors">
+<td class="py-6 px-8 relative">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded bg-surface-container-low flex items-center justify-center">
+<span class="material-symbols-outlined text-outline">description</span>
+</div>
+<div class="flex-1">
+<input class="w-full bg-transparent border-none p-0 text-sm font-bold text-on-surface focus:ring-0" placeholder="Buscar en almacén..." type="text" value="Papel Couché 150gr A3 - Mate"/>
+<p class="text-xs text-outline">SKU: PAP-C150-A3M</p>
+</div>
+</div>
+</td>
+<td class="py-6 px-4">
+<input class="w-full bg-surface-container-low border-none rounded-lg text-center text-sm font-bold py-2 focus:ring-2 focus:ring-primary/20" type="number" value="1000"/>
+</td>
+<td class="py-6 px-4">
+<div class="flex items-center justify-end gap-1">
+<span class="text-xs text-outline">S/</span>
+<input class="w-20 bg-surface-container-low border-none rounded-lg text-right text-sm font-bold py-2 focus:ring-2 focus:ring-primary/20" type="text" value="0.45"/>
+</div>
+</td>
+<td class="py-6 px-4 text-right text-sm text-outline font-medium">S/ 81.00</td>
+<td class="py-6 px-8 text-right">
+<div class="flex flex-col items-end">
+<span class="text-sm font-bold text-primary">S/ 531.00</span>
+<span class="text-[10px] text-outline">$ 141.60</span>
+</div>
+</td>
+</tr>
+<!-- Blank Row -->
+<tr class="hover:bg-primary/5 transition-colors">
+<td class="py-6 px-8">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full border-2 border-dashed border-outline-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-outline text-sm">add</span>
+</div>
+<input class="w-full bg-transparent border-none p-0 text-sm text-outline italic focus:ring-0" placeholder="Escribe para buscar un producto..." type="text"/>
+</div>
+</td>
+<td></td>
+<td></td>
+<td></td>
+<td class="py-6 px-8 text-right">
+<button class="text-xs font-bold text-primary/50 hover:text-primary transition-colors">Remover</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<!-- Final Calculations & Action -->
+<section class="flex flex-col lg:flex-row gap-8 items-start">
+<!-- Notes / Footer -->
+<div class="flex-1 w-full space-y-4">
+<div class="bg-surface-container-low p-6 rounded-2xl">
+<label class="text-[10px] font-extrabold text-outline uppercase tracking-widest block mb-2">Observaciones / Notas de Factura</label>
+<textarea class="w-full bg-white border-none rounded-xl text-sm p-4 focus:ring-2 focus:ring-primary/20 placeholder:text-outline/50" placeholder="Incluir términos de pago, cuentas bancarias o notas de impresión..." rows="3"></textarea>
+</div>
+</div>
+<!-- Totals Block -->
+<div class="w-full lg:w-96 bg-primary text-white p-8 rounded-2xl shadow-2xl shadow-primary/20">
+<div class="space-y-4 mb-8">
+<div class="flex justify-between items-center text-on-primary-container">
+<span class="text-sm">Op. Gravada</span>
+<span class="text-sm font-bold">S/ 450.00</span>
+</div>
+<div class="flex justify-between items-center text-on-primary-container">
+<span class="text-sm">Op. Exonerada</span>
+<span class="text-sm font-bold">S/ 0.00</span>
+</div>
+<div class="flex justify-between items-center text-on-primary-container">
+<span class="text-sm">IGV (18%)</span>
+<span class="text-sm font-bold">S/ 81.00</span>
+</div>
+<div class="pt-4 border-t border-white/10 flex justify-between items-end">
+<span class="font-manrope text-sm font-bold uppercase tracking-widest">Total a Pagar</span>
+<div class="text-right">
+<p class="text-xs text-on-primary-container">$ 141.60</p>
+<p class="text-4xl font-manrope font-extrabold">S/ 531.00</p>
+</div>
+</div>
+</div>
+<button class="w-full bg-secondary-container text-on-secondary-container py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 hover:bg-secondary-fixed transition-colors active:scale-95" type="button">
+<span class="material-symbols-outlined">send</span>
+                            Emitir Comprobante
+                        </button>
+<p class="text-center mt-4 text-[10px] text-on-primary-container/70 uppercase font-bold tracking-tighter">
+                            Este documento será enviado automáticamente a SUNAT
+                        </p>
+</div>
+</section>
+</form>
+</div>
+</main>
+<!-- Contextual FAB (Hidden by suppression rule on transactional screens, but kept structure if needed later) -->
+<!-- We suppress FAB as per "Task-Focused: Any sub-page featuring a 'Close' or 'Back' action" & "Transactional" guidelines -->
+</body></html>

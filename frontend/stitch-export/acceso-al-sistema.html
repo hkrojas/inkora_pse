@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Iniciar Sesión | PrintFlow</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "outline-variant": "#c3c6d1",
+              "primary-fixed": "#d7e2ff",
+              "on-background": "#191c1e",
+              "tertiary-fixed-dim": "#e9c349",
+              "primary": "#001d44",
+              "secondary-fixed": "#8bf8c2",
+              "surface-container": "#edeef1",
+              "on-primary": "#ffffff",
+              "inverse-on-surface": "#f0f0f4",
+              "on-surface-variant": "#43474f",
+              "tertiary-container": "#cca830",
+              "error-container": "#ffdad6",
+              "on-tertiary": "#ffffff",
+              "tertiary-fixed": "#ffe088",
+              "surface": "#f9f9fd",
+              "on-secondary-fixed": "#002113",
+              "surface-container-highest": "#e2e2e6",
+              "inverse-primary": "#abc7ff",
+              "on-surface": "#191c1e",
+              "surface-bright": "#f9f9fd",
+              "surface-dim": "#d9dadd",
+              "primary-container": "#00326b",
+              "secondary-container": "#8bf8c2",
+              "secondary-fixed-dim": "#6edba7",
+              "error": "#ba1a1a",
+              "on-primary-container": "#6b9bef",
+              "surface-variant": "#e2e2e6",
+              "inverse-surface": "#2e3133",
+              "outline": "#737780",
+              "on-secondary": "#ffffff",
+              "primary-fixed-dim": "#abc7ff",
+              "on-primary-fixed": "#001b3f",
+              "on-tertiary-fixed": "#241a00",
+              "on-secondary-container": "#00734d",
+              "on-primary-fixed-variant": "#00458f",
+              "on-error": "#ffffff",
+              "on-tertiary-container": "#4f3e00",
+              "on-secondary-fixed-variant": "#005235",
+              "surface-container-lowest": "#ffffff",
+              "tertiary": "#735c00",
+              "on-tertiary-fixed-variant": "#574500",
+              "secondary": "#006c48",
+              "surface-tint": "#255dad",
+              "surface-container-low": "#f3f3f7",
+              "background": "#f9f9fd",
+              "on-error-container": "#93000a",
+              "surface-container-high": "#e7e8eb"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .bg-pattern {
+            background-color: #f9f9fd;
+            background-image: radial-gradient(#001d44 0.5px, transparent 0.5px), radial-gradient(#001d44 0.5px, #f9f9fd 0.5px);
+            background-size: 20px 20px;
+            background-position: 0 0, 10px 10px;
+            opacity: 0.03;
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
+<!-- Background Texture -->
+<div class="absolute inset-0 bg-pattern z-0"></div>
+<!-- Decorative Gradients -->
+<div class="absolute top-[-10%] right-[-10%] w-96 h-96 bg-primary-fixed opacity-20 blur-[120px] rounded-full"></div>
+<div class="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-secondary-container opacity-20 blur-[120px] rounded-full"></div>
+<!-- Login Container -->
+<main class="relative z-10 w-full max-w-md">
+<div class="bg-surface-container-lowest shadow-[0_12px_32px_rgba(25,28,30,0.04)] rounded-xl p-8 md:p-12 border border-outline-variant/10">
+<!-- Logo & Header -->
+<div class="flex flex-col items-center mb-10">
+<div class="w-14 h-14 bg-primary rounded-xl flex items-center justify-center mb-4 shadow-sm">
+<span class="material-symbols-outlined text-on-primary text-3xl" style="font-variation-settings: 'FILL' 1;">print</span>
+</div>
+<h1 class="font-headline text-3xl font-extrabold tracking-tight text-primary">PrintFlow</h1>
+<p class="text-on-surface-variant text-sm font-medium mt-1">Editorial Precision Management</p>
+</div>
+<!-- Login Form -->
+<form class="space-y-6">
+<!-- Email Field -->
+<div class="space-y-2">
+<label class="block font-label text-xs font-semibold text-outline tracking-wider uppercase" for="email">Correo electrónico</label>
+<div class="relative group">
+<div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline text-xl group-focus-within:text-primary transition-colors">mail</span>
+</div>
+<input class="block w-full pl-11 pr-4 py-3 bg-surface-container-low border-0 border-b-2 border-transparent focus:border-primary focus:ring-0 transition-all rounded-t-lg font-body text-on-surface placeholder:text-outline/60" id="email" name="email" placeholder="nombre@empresa.com" type="email"/>
+</div>
+</div>
+<!-- Password Field -->
+<div class="space-y-2">
+<div class="flex justify-between items-center">
+<label class="block font-label text-xs font-semibold text-outline tracking-wider uppercase" for="password">Contraseña</label>
+</div>
+<div class="relative group">
+<div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-outline text-xl group-focus-within:text-primary transition-colors">lock</span>
+</div>
+<input class="block w-full pl-11 pr-12 py-3 bg-surface-container-low border-0 border-b-2 border-transparent focus:border-primary focus:ring-0 transition-all rounded-t-lg font-body text-on-surface placeholder:text-outline/60" id="password" name="password" placeholder="••••••••" type="password"/>
+<button class="absolute inset-y-0 right-0 pr-4 flex items-center text-outline hover:text-primary transition-colors" type="button">
+<span class="material-symbols-outlined text-xl">visibility</span>
+</button>
+</div>
+</div>
+<!-- Action Links -->
+<div class="flex items-center justify-end">
+<a class="text-xs font-semibold text-primary hover:text-primary-container transition-colors tracking-tight" href="#">
+                        ¿Olvidaste tu contraseña?
+                    </a>
+</div>
+<!-- Submit Button -->
+<button class="w-full bg-gradient-to-br from-primary to-primary-container text-on-primary font-headline font-bold py-4 rounded-lg shadow-sm hover:shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 group" type="submit">
+<span>Iniciar Sesión</span>
+<span class="material-symbols-outlined text-lg group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</button>
+</form>
+<!-- Footer Compliance Note -->
+<div class="mt-12 pt-8 border-t border-outline-variant/20">
+<div class="flex flex-col items-center gap-4">
+<div class="flex items-center gap-2 px-3 py-1 bg-secondary-container/30 rounded-full">
+<span class="material-symbols-outlined text-on-secondary-container text-sm" style="font-variation-settings: 'FILL' 1;">verified_user</span>
+<span class="text-[10px] font-bold text-on-secondary-container uppercase tracking-widest">SUNAT Compliance Secure</span>
+</div>
+<p class="text-[11px] text-outline text-center leading-relaxed max-w-[240px]">
+                        Al iniciar sesión, aceptas nuestros términos de servicio y políticas de privacidad editorial.
+                    </p>
+</div>
+</div>
+</div>
+<!-- Support Access -->
+<div class="mt-8 flex justify-center items-center gap-6">
+<a class="flex items-center gap-1.5 text-xs font-medium text-outline hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-base">help_outline</span>
+                Soporte
+            </a>
+<div class="w-1 h-1 bg-outline-variant rounded-full"></div>
+<p class="text-xs font-medium text-outline">v2.4.0 Editorial</p>
+</div>
+</main>
+<!-- Visual Credibility Element: Minimal Stats Cards (Asymmetric) -->
+<div class="hidden xl:block absolute left-20 bottom-20 space-y-4">
+<div class="bg-surface-container-lowest/80 backdrop-blur-md p-4 rounded-xl border border-outline-variant/20 shadow-sm w-48">
+<div class="flex items-center gap-3 mb-2">
+<div class="p-2 bg-secondary-container/50 rounded-lg">
+<span class="material-symbols-outlined text-secondary text-sm">trending_up</span>
+</div>
+<span class="text-[10px] font-bold text-outline uppercase tracking-tighter">Eficiencia</span>
+</div>
+<p class="text-xl font-headline font-extrabold text-primary">99.8%</p>
+<p class="text-[10px] text-on-surface-variant font-medium mt-1">Precisión de impresión</p>
+</div>
+<div class="bg-surface-container-lowest/80 backdrop-blur-md p-4 rounded-xl border border-outline-variant/20 shadow-sm w-56 translate-x-12">
+<div class="flex items-center gap-3 mb-2">
+<div class="p-2 bg-primary-fixed/50 rounded-lg">
+<span class="material-symbols-outlined text-primary text-sm">description</span>
+</div>
+<span class="text-[10px] font-bold text-outline uppercase tracking-tighter">Legal</span>
+</div>
+<p class="text-xl font-headline font-extrabold text-primary">SUNAT</p>
+<p class="text-[10px] text-on-surface-variant font-medium mt-1">Sincronización en tiempo real</p>
+</div>
+</div>
+</body></html>
