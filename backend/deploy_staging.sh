@@ -54,8 +54,8 @@ run_migration migrate_document_flow_phase4.py
 run_migration migrate_saas_phase5.py
 run_migration migrate_phase6_launch_polish.py
 run_migration migrate_pagos.py
-run_migration migrate_phase8_onboarding.py
 run_migration migrate_phase9_beta.py
+run_migration migrate_phase8_onboarding.py
 run_migration migrate_analytics.py
 # migrate_broker.py y migrate_mrp.py son dominios congelados — omitidos
 

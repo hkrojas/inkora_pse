@@ -48,19 +48,19 @@ def run():
             try:
                 conn.execute(text(sql))
                 conn.commit()
-                print(f"  ✓  {tabla}.{columna}")
+                print(f"  [OK]  {tabla}.{columna}")
             except Exception as exc:
                 conn.rollback()
-                msg = f"  ✗  {tabla}.{columna}: {exc}"
+                msg = f"  [ERR] {tabla}.{columna}: {exc}"
                 print(msg)
                 errors.append(msg)
 
     if errors:
-        print(f"\n⚠️  {len(errors)} columna(s) con error (puede que ya existan con tipo diferente).")
+        print(f"\n[WARN] {len(errors)} columna(s) con error (puede que ya existan con tipo diferente).")
     else:
-        print("\n✅ Migración Fase 6 completada sin errores.")
+        print("\n[OK] Migracion Fase 6 completada sin errores.")
 
 
 if __name__ == "__main__":
-    print("Ejecutando migración Fase 6 — Launch Workflow Polish...\n")
+    print("Ejecutando migracion Fase 6 -- Launch Workflow Polish...\n")
     run()

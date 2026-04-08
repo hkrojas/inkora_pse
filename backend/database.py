@@ -96,5 +96,10 @@ def get_db():
         db.rollback()
         raise
     finally:
-        reset_tenant_context(tenant_token)
+        try:
+            reset_tenant_context(tenant_token)
+        except ValueError:
+            # El token fue creado en un contexto async diferente (anyio threadpool).
+            # En ese caso, simplemente limpiamos el ContextVar en el contexto actual.
+            current_tenant_id.set(None)
         db.close()

@@ -20,6 +20,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+from sqlalchemy import text
+
 from database import engine
 
 
@@ -52,9 +54,10 @@ def run_migration():
         else:
             # PostgreSQL y otros
             try:
-                conn.execute("SELECT is_pilot FROM subscriptions LIMIT 1")
+                conn.execute(text("SELECT is_pilot FROM subscriptions LIMIT 1"))
                 exists = True
             except Exception:
+                conn.rollback()
                 exists = False
 
         if exists:
@@ -62,10 +65,9 @@ def run_migration():
         else:
             print("[MIGRANDO] Agregando columna `is_pilot` a `subscriptions`...")
             conn.execute(
-                "ALTER TABLE subscriptions ADD COLUMN is_pilot BOOLEAN NOT NULL DEFAULT FALSE"
+                text("ALTER TABLE subscriptions ADD COLUMN is_pilot BOOLEAN NOT NULL DEFAULT FALSE")
             )
-            if hasattr(conn, "commit"):
-                conn.commit()
+            conn.commit()
             print("[OK] Columna `is_pilot` agregada exitosamente.")
 
         print("\n=== Migración Fase 9 completada ===")
