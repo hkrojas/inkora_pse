@@ -95,6 +95,10 @@ def create_app() -> FastAPI:
     # Compatibilidad temporal: endpoints congelados aislados fuera del launch scope.
     app.include_router(legacy_frozen.router)
 
+    @app.get("/health", tags=["ops"])
+    def health_check():
+        return {"status": "ok", "environment": settings.ENVIRONMENT}
+
     return app
 
 
