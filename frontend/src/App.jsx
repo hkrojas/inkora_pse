@@ -1,22 +1,41 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-
-// TODO: reconstruir vistas aquí
-function Placeholder({ name }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <p className="text-on-surface font-body text-sm opacity-60">{name}</p>
-    </div>
-  );
-}
+import { AuthProvider } from './context/AuthContext';
+import { ToastProvider } from './components/ui/Toast';
+import AppLayout from './layouts/AppLayout';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import ClientesPage from './pages/ClientesPage';
+import ProductosPage from './pages/ProductosPage';
+import CotizacionesPage from './pages/CotizacionesPage';
+import CotizacionDetalle from './pages/CotizacionDetalle';
+import CobranzaPage from './pages/CobranzaPage';
+import GuiasPage from './pages/GuiasPage';
+import ConfiguracionPage from './pages/ConfiguracionPage';
+import SuperadminPage from './pages/SuperadminPage';
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Placeholder name="Login" />} />
-        <Route path="/dashboard" element={<Placeholder name="Dashboard" />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <AuthProvider>
+      <ToastProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route element={<AppLayout />}>
+              <Route path="/dashboard"       element={<Dashboard />} />
+              <Route path="/clientes"        element={<ClientesPage />} />
+              <Route path="/productos"       element={<ProductosPage />} />
+              <Route path="/cotizaciones"    element={<CotizacionesPage />} />
+              <Route path="/cotizaciones/:id" element={<CotizacionDetalle />} />
+              <Route path="/cobranza"        element={<CobranzaPage />} />
+              <Route path="/guias"           element={<GuiasPage />} />
+              <Route path="/guias/:id"       element={<GuiasPage />} />
+              <Route path="/configuracion"   element={<ConfiguracionPage />} />
+              <Route path="/superadmin"      element={<SuperadminPage />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </ToastProvider>
+    </AuthProvider>
   );
 }
