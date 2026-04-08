@@ -3,10 +3,11 @@ import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 import models
 from config import settings
-from database import engine
+from database import SessionLocal, engine
 from logging_utils import configure_logging, get_logger
 from routers import (
     auth,
@@ -98,6 +99,20 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["ops"])
     def health_check():
         return {"status": "ok", "environment": settings.ENVIRONMENT}
+
+    @app.on_event("startup")
+    def _startup_db_ping() -> None:
+        """Falla rápido si la base de datos no es alcanzable al arrancar."""
+        try:
+            with SessionLocal() as db:
+                db.execute(text("SELECT 1"))
+            logger.info("db_ping_ok", extra={"event": "db_ping_ok"})
+        except Exception as exc:
+            logger.error(
+                "db_ping_failed",
+                extra={"event": "db_ping_failed", "error": str(exc)},
+            )
+            raise RuntimeError(f"No se pudo conectar a la base de datos: {exc}") from exc
 
     return app
 
