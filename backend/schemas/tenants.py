@@ -97,10 +97,20 @@ class TenantResponse(TenantSummaryResponse):
 
 
 class TenantSaaSUpdate(StrictInputModel):
+    # Datos maestros de empresa (solo superadmin)
+    business_name: Optional[str] = None
+    business_ruc: Optional[str] = None
+    business_address: Optional[str] = None
+    is_active: Optional[bool] = None
+    # Plan / suscripción
     plan_type: Optional[str] = None
     plan_start_date: Optional[datetime] = None
     plan_end_date: Optional[datetime] = None
     invoice_limit: Optional[int] = None
+    # ApisPeru — token de empresa (sin expiración)
+    apisperu_token: Optional[str] = None
+    apisperu_url: Optional[str] = None
+    # Credenciales SUNAT directas
     sunat_usuario_sol: Optional[str] = None
     sunat_clave_sol: Optional[str] = None
     sunat_cert_password: Optional[str] = None
