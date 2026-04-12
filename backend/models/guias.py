@@ -1,7 +1,7 @@
 """models/guias.py — GuiaRemision, GuiaRemisionItem."""
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -35,9 +35,14 @@ class GuiaRemision(Base):
     unidad_medida_peso = Column(String, default="KGM")
     numero_bultos = Column(Integer, nullable=True)
     modalidad_traslado = Column(String, default="01")
+    sustento_peso = Column(String, nullable=True)
+    ind_transbordo = Column(Boolean, nullable=True, default=False)
+    num_contenedor = Column(String, nullable=True)
+    cod_puerto = Column(String, nullable=True)
 
     transportista_ruc = Column(String, nullable=True)
     transportista_razon_social = Column(String, nullable=True)
+    transportista_nro_mtc = Column(String, nullable=True)
 
     conductor_tipo_doc = Column(String, nullable=True, default="1")
     conductor_nro_doc = Column(String, nullable=True)
@@ -45,6 +50,9 @@ class GuiaRemision(Base):
     conductor_apellidos = Column(String, nullable=True)
     conductor_licencia = Column(String, nullable=True)
     vehiculo_placa = Column(String, nullable=True)
+    vehiculo_nro_circulacion = Column(String, nullable=True)
+    vehiculo_cod_emisor = Column(String, nullable=True)
+    vehiculo_nro_autorizacion = Column(String, nullable=True)
 
     partida_ubigeo = Column(String, nullable=True)
     partida_direccion = Column(String, nullable=True)

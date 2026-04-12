@@ -103,13 +103,39 @@ def guardar_respuesta_sunat_gre(
         query = query.filter(models.GuiaRemision.tenant_id == tenant_id)
     db_guia = query.first()
     if db_guia:
-        links = data_sunat.get('links', {}) or data_sunat.get('sunat_response', {}).get('links', {})
+        links = data_sunat.get("links", {}) or data_sunat.get("sunat_response", {}).get("links", {})
         if links:
-            db_guia.sunat_xml_url = links.get('xml')
-            db_guia.sunat_pdf_url = links.get('pdf')
-            db_guia.sunat_cdr_url = links.get('cdr')
-        db_guia.estado = "emitida"
-        db_guia.sunat_error = None
+            db_guia.sunat_xml_url = links.get("xml")
+            db_guia.sunat_pdf_url = links.get("pdf")
+            db_guia.sunat_cdr_url = links.get("cdr")
+        if data_sunat.get("success"):
+            db_guia.estado = "emitida"
+            db_guia.sunat_error = None
+        else:
+            error = (
+                data_sunat.get("sunat_error")
+                or data_sunat.get("message")
+                or data_sunat.get("sunat_response", {}).get("error")
+                or data_sunat.get("provider_response", {}).get("error")
+            )
+            db_guia.sunat_error = str(error) if error else "El proveedor fiscal rechazo la guia."
+        db.commit()
+        db.refresh(db_guia)
+    return db_guia
+
+
+def guardar_error_sunat_gre(
+    db: Session,
+    guia_id: int,
+    error: str,
+    tenant_id: int | None = None,
+):
+    query = db.query(models.GuiaRemision).filter(models.GuiaRemision.id == guia_id)
+    if tenant_id is not None:
+        query = query.filter(models.GuiaRemision.tenant_id == tenant_id)
+    db_guia = query.first()
+    if db_guia:
+        db_guia.sunat_error = str(error)
         db.commit()
         db.refresh(db_guia)
     return db_guia

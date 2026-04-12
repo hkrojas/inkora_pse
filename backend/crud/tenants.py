@@ -1,4 +1,5 @@
 """crud/tenants.py — Tenants, suscripciones SaaS, superadmin, beta."""
+from sqlalchemy import delete
 from sqlalchemy.orm import Session, joinedload
 
 import models
@@ -66,6 +67,37 @@ def delete_tenant(db: Session, tenant_id: int):
     if not db_tenant:
         return None
     try:
+        related_counts = {
+            "clientes": db.query(models.Cliente).filter(models.Cliente.tenant_id == tenant_id).count(),
+            "productos": db.query(models.Producto).filter(models.Producto.tenant_id == tenant_id).count(),
+            "cotizaciones": db.query(models.Cotizacion).filter(models.Cotizacion.tenant_id == tenant_id).count(),
+            "guias": db.query(models.GuiaRemision).filter(models.GuiaRemision.tenant_id == tenant_id).count(),
+            "pagos": db.query(models.Pago).filter(models.Pago.tenant_id == tenant_id).count(),
+            "proveedores": db.query(models.Proveedor).filter(models.Proveedor.tenant_id == tenant_id).count(),
+            "insumos": db.query(models.Insumo).filter(models.Insumo.tenant_id == tenant_id).count(),
+            "recetas": db.query(models.RecetaBOM).filter(models.RecetaBOM.tenant_id == tenant_id).count(),
+            "ordenes_produccion": db.query(models.OrdenProduccion).filter(models.OrdenProduccion.tenant_id == tenant_id).count(),
+            "pagos_saas": db.query(models.SubscriptionPayment).filter(
+                models.SubscriptionPayment.tenant_id == tenant_id
+            ).count(),
+        }
+        blocking_relations = [name for name, count in related_counts.items() if count > 0]
+        if blocking_relations:
+            joined = ", ".join(blocking_relations)
+            raise ValueError(
+                "No se puede eliminar el tenant porque tiene datos relacionados: "
+                f"{joined}. Desactívelo si necesita conservar el historial."
+            )
+
+        user_ids = [
+            row[0]
+            for row in db.query(models.User.id).filter(models.User.tenant_id == tenant_id).all()
+        ]
+        if user_ids:
+            db.execute(delete(models.AuditLog).where(models.AuditLog.user_id.in_(user_ids)))
+            db.execute(delete(models.User).where(models.User.tenant_id == tenant_id))
+
+        db.execute(delete(models.Subscription).where(models.Subscription.tenant_id == tenant_id))
         db.delete(db_tenant)
         db.commit()
         return True

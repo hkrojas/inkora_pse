@@ -17,6 +17,14 @@ from api_utils import raise_internal_server_error
 router = APIRouter(tags=["guias"])
 
 
+def _gre_credentials_warning_message() -> str:
+    return (
+        "El tenant no tiene client_id/client_secret de SUNAT Nueva GRE configurados. "
+        "Si el envio falla con error interno del proveedor, configure esas credenciales "
+        "en el portal de ApisPeru para la empresa emisora."
+    )
+
+
 @router.post("/guias-remision/", response_model=schemas.GuiaRemisionResponse)
 def crear_guia_remision(
     guia_data: schemas.GuiaRemisionCreate,
@@ -155,6 +163,21 @@ def emitir_guia_remision_endpoint(
                 "No se puede emitir una guia duplicada ante SUNAT."
             ),
         )
+
+    tenant = current_user.tenant
+    if not tenant or not tenant.apisperu_token:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Pre-validacion fallida: El tenant no tiene token ApisPeru configurado. "
+                "Contacta al administrador para configurar el token de empresa."
+            ),
+        )
+
+    has_gre_credentials = bool(
+        tenant and tenant.sunat_gre_client_id and tenant.sunat_gre_client_secret
+    )
+
     try:
         resultado = facturacion_service.emitir_guia_remision(guia, current_user)
         crud.guardar_respuesta_sunat_gre(
@@ -163,9 +186,20 @@ def emitir_guia_remision_endpoint(
             resultado,
             tenant_id=current_user.tenant_id,
         )
+        if not has_gre_credentials:
+            resultado["gre_credentials_warning"] = _gre_credentials_warning_message()
         return resultado
     except facturacion_service.FacturacionException as exc:
-        raise HTTPException(400, str(exc))
+        crud.guardar_error_sunat_gre(
+            db,
+            guia.id,
+            str(exc),
+            tenant_id=current_user.tenant_id,
+        )
+        detail = str(exc)
+        if not has_gre_credentials:
+            detail = f"{detail} {_gre_credentials_warning_message()}"
+        raise HTTPException(400, detail)
     except Exception as exc:
         raise_internal_server_error(
             "emitir_guia_remision_endpoint",

@@ -67,6 +67,8 @@ class Cotizacion(Base):
         remote_side="Cotizacion.id",
         backref=backref("notas_emitidas", lazy="selectin"),
     )
+    nota_motivo_codigo = Column(String, nullable=True)
+    nota_motivo_descripcion = Column(Text, nullable=True)
 
     observaciones = Column(Text, nullable=True)
     condicion_pago = Column(String, nullable=True)

@@ -68,6 +68,7 @@ from crud.cotizaciones import (
     create_cotizacion,
     create_fiscal_document_from_quote,
     guardar_respuesta_sunat,
+    guardar_error_sunat,
     anular_cotizacion,
     crear_nota_credito_debito,
 )
@@ -77,6 +78,7 @@ from crud.guias import (
     get_guia_remision,
     create_guia_remision,
     guardar_respuesta_sunat_gre,
+    guardar_error_sunat_gre,
 )
 
 from crud.pagos import (

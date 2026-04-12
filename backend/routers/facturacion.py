@@ -115,6 +115,23 @@ def emitir_comprobante(
             ),
         )
 
+    # Verificar que el tenant tiene alguna vía de emisión configurada
+    tenant = (
+        db.query(models.Tenant)
+        .filter(models.Tenant.id == current_user.tenant_id)
+        .first()
+    )
+    has_direct_sunat = bool(tenant and tenant.sunat_usuario_sol and tenant.sunat_cert_url)
+    has_apisperu = bool(tenant and tenant.apisperu_token)
+    if not has_direct_sunat and not has_apisperu:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Pre-validacion fallida: El tenant no tiene credenciales de emision configuradas. "
+                "Contacta al administrador para configurar el token ApisPeru o las credenciales SUNAT."
+            ),
+        )
+
     # Fase 9: verificar límite de documentos antes de crear el fiscal
     try:
         crud.check_document_limit(db, current_user.tenant_id)
@@ -128,13 +145,8 @@ def emitir_comprobante(
             current_user.id,
             payload.tipo_comprobante,
         )
-        tenant = (
-            db.query(models.Tenant)
-            .filter(models.Tenant.id == current_user.tenant_id)
-            .first()
-        )
 
-        if tenant and tenant.sunat_usuario_sol and tenant.sunat_cert_url:
+        if has_direct_sunat:
             background_tasks.add_task(
                 process_direct_sunat_emission_bg,
                 fiscal_document.id,
@@ -184,6 +196,13 @@ def emitir_comprobante(
         return resultado
 
     except facturacion_service.FacturacionException as exc:
+        if "fiscal_document" in locals() and fiscal_document:
+            crud.guardar_error_sunat(
+                db,
+                fiscal_document.id,
+                str(exc),
+                tenant_id=current_user.tenant_id,
+            )
         raise HTTPException(400, str(exc))
     except Exception as exc:
         raise_internal_server_error(
@@ -245,6 +264,13 @@ def emitir_nota(
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except facturacion_service.FacturacionException as exc:
+        if "db_nota" in locals() and db_nota:
+            crud.guardar_error_sunat(
+                db,
+                db_nota.id,
+                str(exc),
+                tenant_id=current_user.tenant_id,
+            )
         raise HTTPException(400, str(exc))
     except Exception as exc:
         raise_internal_server_error(
@@ -296,6 +322,12 @@ def anular_documento(
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except facturacion_service.FacturacionException as exc:
+        crud.guardar_error_sunat(
+            db,
+            comprobante.id,
+            str(exc),
+            tenant_id=current_user.tenant_id,
+        )
         raise HTTPException(400, str(exc))
     except Exception as exc:
         raise_internal_server_error(

@@ -31,7 +31,7 @@ def get_company_bank_accounts(user: Any):
     return getattr(tenant, "bank_accounts", None) or getattr(user, "bank_accounts", None) or []
 
 
-def get_apisperu_token(user: Any, *, include_global_fallback: bool = True) -> Optional[str]:
+def get_apisperu_token(user: Any, *, include_global_fallback: bool = False) -> Optional[str]:
     tenant = get_company_tenant(user)
     token = getattr(tenant, "apisperu_token", None)
     if token:
@@ -49,7 +49,11 @@ def get_apisperu_token(user: Any, *, include_global_fallback: bool = True) -> Op
 
 
 def get_document_lookup_token(user: Any) -> Optional[str]:
+    if settings.DNIRUC_TOKEN:
+        return settings.DNIRUC_TOKEN
     token = get_apisperu_token(user, include_global_fallback=False)
     if token:
         return token
-    return settings.DNIRUC_TOKEN or None
+    # Fallback operativo: si no hay token dedicado de consulta documental,
+    # reutilizamos el token global ApisPeru configurado para la plataforma.
+    return settings.API_TOKEN or None

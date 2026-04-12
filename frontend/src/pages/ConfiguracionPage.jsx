@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { tenant as svc } from '../services/tenant';
 import Spinner from '../components/ui/Spinner';
 import { useToast } from '../components/ui/Toast';
@@ -51,7 +52,8 @@ export default function ConfiguracionPage() {
 
   if (loading) return <div className="flex h-64 items-center justify-center"><Spinner size="lg" /></div>;
 
-  const isAdmin = ['admin', 'superadmin'].includes(user?.rol);
+  const isSuperadmin = Boolean(user?.is_superadmin || user?.rol === 'superadmin');
+  const isAdmin = ['admin', 'superadmin'].includes(user?.rol) || isSuperadmin;
 
   return (
     <div className="p-6 max-w-2xl space-y-6">
@@ -115,7 +117,19 @@ export default function ConfiguracionPage() {
         </dl>
 
         <div className="mt-4 rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700">
-          Para actualizar credenciales fiscales (token, usuario SOL, certificado), contacta al administrador de la plataforma.
+          {isSuperadmin ? (
+            <span>
+              Como superadmin, gestiona RUC y credenciales fiscales desde{' '}
+              <Link to="/superadmin" className="font-semibold underline">
+                Superadmin
+              </Link>{' '}
+              editando el tenant.
+            </span>
+          ) : (
+            <span>
+              Para actualizar credenciales fiscales (token, usuario SOL, certificado), contacta al administrador de la plataforma.
+            </span>
+          )}
         </div>
       </div>
 
@@ -125,7 +139,7 @@ export default function ConfiguracionPage() {
         <dl className="space-y-2 text-sm">
           <div className="flex gap-2"><dt className="text-gray-500 w-28">Nombre:</dt><dd className="text-gray-900">{user?.nombre_completo || '—'}</dd></div>
           <div className="flex gap-2"><dt className="text-gray-500 w-28">Email:</dt><dd className="text-gray-900">{user?.email}</dd></div>
-          <div className="flex gap-2"><dt className="text-gray-500 w-28">Rol:</dt><dd className="text-gray-900 capitalize">{user?.rol}</dd></div>
+          <div className="flex gap-2"><dt className="text-gray-500 w-28">Rol:</dt><dd className="text-gray-900 capitalize">{isSuperadmin ? 'superadmin' : user?.rol}</dd></div>
         </dl>
       </div>
     </div>

@@ -21,3 +21,23 @@ __pycache__/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Configuracion y artefactos locales del agente
+/.agents/
+/.claude/
+CLAUDE.md
+agents.md
+skills-lock.json
+
+# Logs y salidas locales
+*.log
+output.txt
+frontend_dev.log
+/backend/*.log
+/backend/*.err.log
+
+# Base local de pruebas
+/backend/test.db
+
+# Evidencia y scripts temporales de pruebas manuales
+/pruebas/

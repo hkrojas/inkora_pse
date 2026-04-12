@@ -40,6 +40,14 @@ class UserResponse(UserIdentity):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SuperadminUserCreate(StrictInputModel):
+    """Schema para que el superadmin cree un usuario en un tenant específico."""
+    email: EmailStr
+    nombre_completo: Optional[str] = None
+    password: str
+    rol: str = "admin"
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str

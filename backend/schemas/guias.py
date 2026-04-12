@@ -23,9 +23,14 @@ class GuiaRemisionCreate(BaseModel):
     unidad_medida_peso: str = "KGM"
     numero_bultos: Optional[int] = None
     modalidad_traslado: str = "01"
+    sustento_peso: Optional[str] = None
+    ind_transbordo: Optional[bool] = False
+    num_contenedor: Optional[str] = None
+    cod_puerto: Optional[str] = None
 
     transportista_ruc: Optional[str] = None
     transportista_razon_social: Optional[str] = None
+    transportista_nro_mtc: Optional[str] = None
 
     conductor_tipo_doc: Optional[str] = "1"
     conductor_nro_doc: Optional[str] = None
@@ -33,6 +38,9 @@ class GuiaRemisionCreate(BaseModel):
     conductor_apellidos: Optional[str] = None
     conductor_licencia: Optional[str] = None
     vehiculo_placa: Optional[str] = None
+    vehiculo_nro_circulacion: Optional[str] = None
+    vehiculo_cod_emisor: Optional[str] = None
+    vehiculo_nro_autorizacion: Optional[str] = None
 
     partida_ubigeo: Optional[str] = None
     partida_direccion: str
@@ -87,13 +95,21 @@ class GuiaRemisionResponse(BaseModel):
     peso_bruto_total: Decimal
     unidad_medida_peso: str
     modalidad_traslado: str
+    sustento_peso: Optional[str] = None
+    ind_transbordo: Optional[bool] = None
+    num_contenedor: Optional[str] = None
+    cod_puerto: Optional[str] = None
     transportista_ruc: Optional[str] = None
     transportista_razon_social: Optional[str] = None
+    transportista_nro_mtc: Optional[str] = None
     conductor_nro_doc: Optional[str] = None
     conductor_nombres: Optional[str] = None
     conductor_apellidos: Optional[str] = None
     conductor_licencia: Optional[str] = None
     vehiculo_placa: Optional[str] = None
+    vehiculo_nro_circulacion: Optional[str] = None
+    vehiculo_cod_emisor: Optional[str] = None
+    vehiculo_nro_autorizacion: Optional[str] = None
     partida_ubigeo: Optional[str] = None
     partida_direccion: Optional[str] = None
     llegada_ubigeo: Optional[str] = None

@@ -30,6 +30,7 @@ Ejecutar:
 """
 import sys
 import os
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -346,6 +347,35 @@ class TestFlujoQuoteToFiscal:
         fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
         assert fiscal.estado == "pendiente"
 
+    def test_nota_credito_y_debito_usan_series_apisperu_reales(self, db_session):
+        tenant = make_tenant(db_session, "FF06")
+        user = make_user(db_session, tenant, email="ff06@test.com")
+        cliente = make_cliente(db_session, tenant, "FF06")
+        quote_factura = make_quote_via_crud(db_session, tenant, user, cliente)
+        quote_boleta = make_quote_via_crud(db_session, tenant, user, cliente)
+        factura = crud.create_fiscal_document_from_quote(db_session, quote_factura, user.id, "01")
+        boleta = crud.create_fiscal_document_from_quote(db_session, quote_boleta, user.id, "03")
+
+        nota_debito = crud.crear_nota_credito_debito(
+            db_session,
+            factura,
+            user.id,
+            "debito",
+            "02",
+            "AUMENTO DE VALOR",
+        )
+        nota_credito = crud.crear_nota_credito_debito(
+            db_session,
+            boleta,
+            user.id,
+            "credito",
+            "01",
+            "ANULACION DE LA OPERACION",
+        )
+
+        assert nota_debito.serie == "FF01"
+        assert nota_credito.serie == "BB01"
+
 
 # ============================================================================
 # D. FALLO DE API EXTERNA (MOCKED)
@@ -446,6 +476,114 @@ class TestFalloApiExterna:
         assert fiscal.estado != "facturada", (
             "El fiscal document fue marcado como 'facturada' aunque el envío a SUNAT falló"
         )
+
+
+class TestServicioApisPeruIntegrado:
+    def test_obtener_tipo_documento_codigo_preserva_codigos_numericos(self):
+        assert facturacion_service.obtener_tipo_documento_codigo("6") == "6"
+        assert facturacion_service.obtener_tipo_documento_codigo("1") == "1"
+
+    def test_emitir_factura_construye_payload_alineado_a_apisperu(self, db_session):
+        tenant = make_tenant(db_session, "AP01")
+        user = make_user(db_session, tenant, email="ap01@test.com")
+        tenant.apisperu_token = "fake_token"
+        tenant.apisperu_url = "https://facturacion.test/api/v1"
+        db_session.commit()
+
+        cliente = make_cliente(
+            db_session,
+            tenant,
+            "AP01",
+            tipo_documento="6",
+            numero_documento="20191308868",
+        )
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+        fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "hash": "abc123",
+            "xml": "<xml />",
+            "sunatResponse": {
+                "success": True,
+                "cdrZip": "zip64",
+                "cdrResponse": {
+                    "code": "0",
+                    "description": "Aceptado",
+                    "notes": [],
+                },
+            },
+        }
+
+        with patch("requests.post", return_value=mock_response) as post_mock:
+            result = facturacion_service.emitir_factura(
+                fiscal,
+                db_session,
+                user,
+                tipo_doc_override="01",
+            )
+
+        sent_payload = json.loads(post_mock.call_args.kwargs["data"])
+        assert sent_payload["tipoDoc"] == "01"
+        assert sent_payload["tipoOperacion"] == "0101"
+        assert sent_payload["client"]["tipoDoc"] == "6"
+        assert sent_payload["mtoImpVenta"] == 118.0
+        assert sent_payload["subTotal"] == 118.0
+        assert sent_payload["formaPago"]["tipo"] == "Contado"
+        assert result["success"] is True
+        assert result["sunat_response"]["cdrResponse"]["code"] == "0"
+
+    def test_anular_factura_usa_ticket_y_status_real(self, db_session):
+        tenant = make_tenant(db_session, "AP02")
+        user = make_user(db_session, tenant, email="ap02@test.com")
+        tenant.apisperu_token = "fake_token"
+        tenant.apisperu_url = "https://facturacion.test/api/v1"
+        db_session.commit()
+
+        cliente = make_cliente(db_session, tenant, "AP02")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+        fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+        fiscal.estado = "facturada"
+        db_session.commit()
+
+        send_response = MagicMock()
+        send_response.status_code = 200
+        send_response.json.return_value = {
+            "hash": "hash-ra",
+            "xml": "<voided />",
+            "sunatResponse": {
+                "success": True,
+                "ticket": "ticket-123",
+            },
+        }
+        status_response = MagicMock()
+        status_response.status_code = 200
+        status_response.json.return_value = {
+            "success": True,
+            "code": "0",
+            "cdrZip": "zip64",
+            "cdrResponse": {
+                "code": "0",
+                "description": "Aceptado",
+                "notes": [],
+            },
+        }
+
+        with patch("requests.post", return_value=send_response) as post_mock, patch(
+            "requests.get", return_value=status_response
+        ) as get_mock:
+            result = facturacion_service.anular_comprobante(
+                fiscal,
+                "ERROR EN CALCULOS",
+                user,
+            )
+
+        sent_payload = json.loads(post_mock.call_args.kwargs["data"])
+        assert sent_payload["details"][0]["desMotivoBaja"] == "ERROR EN CALCULOS"
+        assert get_mock.call_args.kwargs["params"]["ticket"] == "ticket-123"
+        assert result["success"] is True
+        assert result["ticket"] == "ticket-123"
 
 
 # ============================================================================

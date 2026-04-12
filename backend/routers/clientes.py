@@ -17,6 +17,23 @@ from tenant_access import get_document_lookup_token
 router = APIRouter(tags=["clientes"])
 
 
+def _extract_provider_detail(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+
+    if isinstance(payload, dict):
+        for key in ("message", "error", "detail"):
+            value = payload.get(key)
+            if value:
+                return str(value)
+    text = (response.text or "").strip()
+    if text:
+        return text[:200]
+    return f"HTTP {response.status_code}"
+
+
 def _consultar_documento(numero: str, current_user: models.User):
     numero = numero.strip()
     if len(numero) == 8:
@@ -41,9 +58,10 @@ def _consultar_documento(numero: str, current_user: models.User):
     try:
         response = requests.get(url, params={"token": token}, timeout=10)
         if response.status_code != 200:
+            provider_detail = _extract_provider_detail(response)
             raise HTTPException(
                 502,
-                "El servicio de consulta documental respondio con error.",
+                f"El servicio de consulta documental respondio con error ({response.status_code}): {provider_detail}",
             )
 
         data = response.json()

@@ -24,7 +24,8 @@ export default function Sidebar() {
     navigate('/login');
   };
 
-  const isSuperadmin = user?.rol === 'superadmin';
+  const isSuperadmin = user?.is_superadmin || user?.rol === 'superadmin';
+  const roleLabel = isSuperadmin ? 'superadmin' : user?.rol;
 
   return (
     <aside className="flex h-screen w-56 flex-col border-r border-gray-200 bg-white">
@@ -73,7 +74,7 @@ export default function Sidebar() {
       <div className="border-t border-gray-100 p-3">
         <div className="mb-2 px-3 py-1">
           <p className="truncate text-xs font-medium text-gray-900">{user?.nombre_completo || user?.email}</p>
-          <p className="truncate text-xs text-gray-400 capitalize">{user?.rol}</p>
+          <p className="truncate text-xs text-gray-400 capitalize">{roleLabel}</p>
         </div>
         <button
           onClick={handleLogout}

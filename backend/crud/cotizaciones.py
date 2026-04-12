@@ -251,28 +251,56 @@ def guardar_respuesta_sunat(
         query = query.filter(models.Cotizacion.tenant_id == tenant_id)
     db_cot = query.first()
     if db_cot:
-        links = data_sunat.get('links', {}) if data_sunat.get('links') else data_sunat.get('sunat_response', {}).get('links', {})
+        links = data_sunat.get("links", {}) if data_sunat.get("links") else data_sunat.get("sunat_response", {}).get("links", {})
         if links:
-            db_cot.sunat_xml_url = links.get('xml')
-            db_cot.sunat_pdf_url = links.get('pdf')
-            db_cot.sunat_cdr_url = links.get('cdr')
+            db_cot.sunat_xml_url = links.get("xml")
+            db_cot.sunat_pdf_url = links.get("pdf")
+            db_cot.sunat_cdr_url = links.get("cdr")
 
-        db_cot.estado = DOCUMENT_STATUS_ISSUED
-        db_cot.sunat_error = None
+        if data_sunat.get("success"):
+            db_cot.estado = DOCUMENT_STATUS_ISSUED
+            db_cot.sunat_error = None
+        else:
+            error = (
+                data_sunat.get("sunat_error")
+                or data_sunat.get("message")
+                or data_sunat.get("sunat_response", {}).get("error")
+                or data_sunat.get("provider_response", {}).get("error")
+            )
+            db_cot.sunat_error = str(error) if error else "El proveedor fiscal rechazo la emision."
 
-        if data_sunat.get('serie'): db_cot.serie = data_sunat.get('serie')
-        if data_sunat.get('correlativo'):
+        if data_sunat.get("serie"):
+            db_cot.serie = data_sunat.get("serie")
+        if data_sunat.get("correlativo"):
             try:
-                db_cot.correlativo = int(data_sunat.get('correlativo'))
-            except: pass
+                db_cot.correlativo = int(data_sunat.get("correlativo"))
+            except Exception:
+                pass
 
-        if db_cot.source_quote_id:
+        if data_sunat.get("success") and db_cot.source_quote_id:
             source_quote = _get_tenant_resource(
                 db, models.Cotizacion, db_cot.source_quote_id, db_cot.tenant_id,
             )
             if source_quote:
                 source_quote.estado = DOCUMENT_STATUS_ISSUED
 
+        db.commit()
+        db.refresh(db_cot)
+    return db_cot
+
+
+def guardar_error_sunat(
+    db: Session,
+    cotizacion_id: int,
+    error: str,
+    tenant_id: int | None = None,
+):
+    query = db.query(models.Cotizacion).filter(models.Cotizacion.id == cotizacion_id)
+    if tenant_id is not None:
+        query = query.filter(models.Cotizacion.tenant_id == tenant_id)
+    db_cot = query.first()
+    if db_cot:
+        db_cot.sunat_error = str(error)
         db.commit()
         db.refresh(db_cot)
     return db_cot
@@ -320,7 +348,7 @@ def crear_nota_credito_debito(
     tipo_comprobante = "07" if tipo_nota == "credito" else "08"
     document_kind = get_document_kind_for_note(tipo_nota)
     serie_origen = doc_afectado.serie
-    serie_nota = "FC01" if serie_origen.startswith("F") else "BC01"
+    serie_nota = "FF01" if serie_origen.startswith("F") else "BB01"
 
     last_doc = db.query(models.Cotizacion).filter(
         models.Cotizacion.tenant_id == doc_afectado.tenant_id,
@@ -351,6 +379,8 @@ def crear_nota_credito_debito(
         total_igv=doc_afectado.total_igv,
         total_venta=doc_afectado.total_venta,
         nota_referencia_id=doc_afectado.id,
+        nota_motivo_codigo=cod_motivo,
+        nota_motivo_descripcion=descripcion_motivo,
         items=items_nota
     )
 

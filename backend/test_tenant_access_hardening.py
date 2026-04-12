@@ -20,6 +20,7 @@ from access_control import (
 from api_dependencies import require_admin, require_document_emitter, require_payment_manager
 from database import Base
 import models
+import tenant_access
 
 
 @pytest.fixture
@@ -315,3 +316,35 @@ def test_get_pagos_cotizacion_filtra_por_tenant(db_session):
     assert len(pagos_a) == 1
     assert pagos_a[0].tenant_id == tenant_a.id
     assert pagos_b_wrong_tenant == []
+
+
+def test_document_lookup_token_prioriza_dniruc_token_antes_del_token_empresa(monkeypatch):
+    tenant = type("TenantStub", (), {"apisperu_token": "tenant-token"})()
+    user = type(
+        "UserStub",
+        (),
+        {"tenant": tenant, "apisperu_token": None},
+    )()
+
+    monkeypatch.setattr(tenant_access.settings, "DNIRUC_TOKEN", "dniruc-token")
+    monkeypatch.setattr(tenant_access.settings, "API_TOKEN", "global-token")
+
+    token = tenant_access.get_document_lookup_token(user)
+
+    assert token == "dniruc-token"
+
+
+def test_document_lookup_token_usa_token_empresa_si_no_hay_dniruc(monkeypatch):
+    tenant = type("TenantStub", (), {"apisperu_token": "tenant-token"})()
+    user = type(
+        "UserStub",
+        (),
+        {"tenant": tenant, "apisperu_token": None},
+    )()
+
+    monkeypatch.setattr(tenant_access.settings, "DNIRUC_TOKEN", "")
+    monkeypatch.setattr(tenant_access.settings, "API_TOKEN", "global-token")
+
+    token = tenant_access.get_document_lookup_token(user)
+
+    assert token == "tenant-token"

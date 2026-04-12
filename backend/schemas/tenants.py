@@ -62,6 +62,13 @@ class TenantResponse(TenantSummaryResponse):
     apisperu_token_secret: Optional[str] = Field(
         default=None, alias="apisperu_token", exclude=True, repr=False
     )
+    # GRE credentials — ocultas, solo se expone el estado booleano
+    sunat_gre_client_id_secret: Optional[str] = Field(
+        default=None, alias="sunat_gre_client_id", exclude=True, repr=False
+    )
+    sunat_gre_client_secret_secret: Optional[str] = Field(
+        default=None, alias="sunat_gre_client_secret", exclude=True, repr=False
+    )
 
     plan_type: Optional[str] = "Free"
     invoice_limit: Optional[int] = 50
@@ -84,6 +91,11 @@ class TenantResponse(TenantSummaryResponse):
     @property
     def has_apisperu_token(self) -> bool:
         return bool(self.apisperu_token_secret)
+
+    @computed_field(return_type=bool)
+    @property
+    def has_gre_credentials(self) -> bool:
+        return bool(self.sunat_gre_client_id_secret and self.sunat_gre_client_secret_secret)
 
     @computed_field(return_type=bool)
     @property
@@ -110,11 +122,38 @@ class TenantSaaSUpdate(StrictInputModel):
     # ApisPeru — token de empresa (sin expiración)
     apisperu_token: Optional[str] = None
     apisperu_url: Optional[str] = None
+    # Credenciales SUNAT Nueva GRE (requeridas para guía de remisión electrónica)
+    sunat_gre_client_id: Optional[str] = None
+    sunat_gre_client_secret: Optional[str] = None
     # Credenciales SUNAT directas
     sunat_usuario_sol: Optional[str] = None
     sunat_clave_sol: Optional[str] = None
     sunat_cert_password: Optional[str] = None
     sunat_cert_url: Optional[str] = None
+
+
+class SuperadminTenantCreate(StrictInputModel):
+    """Schema para que el superadmin cree un nuevo tenant desde el panel."""
+    business_name: str
+    business_ruc: str
+    business_address: Optional[str] = None
+    apisperu_token: Optional[str] = None
+    apisperu_url: Optional[str] = None
+
+
+class ApisPeruTokenValidationRequest(StrictInputModel):
+    token: str
+    api_url: Optional[str] = None
+    business_ruc: Optional[str] = None
+
+
+class ApisPeruTokenValidationResponse(BaseModel):
+    valid: bool
+    message: str
+    provider_status_code: Optional[int] = None
+    provider_detail: Optional[str] = None
+    token_company_ruc: Optional[str] = None
+    matches_business_ruc: Optional[bool] = None
 
 
 class SuperadminTenantResponse(TenantResponse):

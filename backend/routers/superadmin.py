@@ -11,7 +11,8 @@ import models
 import schemas
 from api_dependencies import get_db, get_superadmin
 from api_utils import raise_internal_server_error
-from services import subscription_service
+from security import get_password_hash
+from services import facturacion_service, subscription_service
 
 router = APIRouter(tags=["superadmin"])
 
@@ -27,6 +28,118 @@ class AuditLogResponse(BaseModel):
     ip_address: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+def _raise_token_validation_error(validation: dict) -> None:
+    detail = validation.get("message") or "El token de ApisPeru no es valido."
+    provider_detail = validation.get("provider_detail")
+    if provider_detail:
+        detail = f"{detail} Detalle proveedor: {provider_detail}"
+    raise HTTPException(status_code=400, detail=detail)
+
+
+@router.post(
+    "/superadmin/validate/apisperu-token",
+    response_model=schemas.ApisPeruTokenValidationResponse,
+    summary="Validar token de ApisPeru",
+)
+def validate_apisperu_token_endpoint(
+    data: schemas.ApisPeruTokenValidationRequest,
+    admin: models.User = Depends(get_superadmin),
+):
+    """
+    Valida un token de ApisPeru sin guardar cambios en BD ni emitir documentos.
+
+    La validacion se infiere a partir de una llamada de prueba no destructiva
+    al proveedor fiscal.
+    """
+    return facturacion_service.validate_apisperu_token(
+        token=data.token,
+        api_url=data.api_url,
+        business_ruc=data.business_ruc,
+    )
+
+
+@router.post(
+    "/superadmin/tenants",
+    response_model=schemas.SuperadminTenantResponse,
+    status_code=201,
+    summary="Crear nuevo tenant",
+)
+def create_tenant_endpoint(
+    data: schemas.SuperadminTenantCreate,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    """Crea un nuevo tenant (empresa). El superadmin puede incluir el token ApisPeru."""
+    try:
+        if data.apisperu_token and data.apisperu_token.strip():
+            validation = facturacion_service.validate_apisperu_token(
+                token=data.apisperu_token,
+                api_url=data.apisperu_url,
+                business_ruc=data.business_ruc,
+            )
+            if not validation["valid"]:
+                _raise_token_validation_error(validation)
+
+        tenant_create = schemas.TenantCreate(
+            business_name=data.business_name,
+            business_ruc=data.business_ruc,
+            business_address=data.business_address,
+        )
+        tenant = crud.create_tenant(db, tenant_create)
+        # Si se proporcionaron credenciales ApisPeru, actualizarlas de inmediato
+        if data.apisperu_token or data.apisperu_url:
+            extra = {}
+            if data.apisperu_token:
+                extra["apisperu_token"] = data.apisperu_token
+            if data.apisperu_url:
+                extra["apisperu_url"] = data.apisperu_url
+            tenant = crud.update_tenant_saas(db, tenant.id, extra)
+        return tenant
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise_internal_server_error("create_tenant_endpoint", "No se pudo crear el tenant.", exc)
+
+
+@router.post(
+    "/superadmin/tenants/{tenant_id}/users",
+    response_model=schemas.UserResponse,
+    status_code=201,
+    summary="Crear usuario para un tenant",
+)
+def create_tenant_user_endpoint(
+    tenant_id: int,
+    data: schemas.SuperadminUserCreate,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    """Crea un usuario admin (u otro rol) para un tenant específico."""
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+
+    existing = db.query(models.User).filter(models.User.email == data.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya existe un usuario con ese email.")
+
+    rol = normalize_role(data.rol) if data.rol else "admin"
+    new_user = models.User(
+        email=data.email,
+        nombre_completo=data.nombre_completo,
+        hashed_password=get_password_hash(data.password),
+        rol=rol,
+        tenant_id=tenant_id,
+    )
+    try:
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return new_user
+    except Exception as exc:
+        db.rollback()
+        raise_internal_server_error("create_tenant_user_endpoint", "No se pudo crear el usuario.", exc)
 
 
 @router.get("/superadmin/tenants", response_model=List[schemas.SuperadminTenantResponse])
@@ -46,13 +159,45 @@ def update_tenant_saas_endpoint(
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_superadmin),
 ):
+    current_tenant = crud.get_tenant(db, tenant_id)
+    if not current_tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+
+    target_ruc = updates.business_ruc or current_tenant.business_ruc
+    target_url = (
+        updates.apisperu_url.strip()
+        if updates.apisperu_url is not None and updates.apisperu_url.strip()
+        else current_tenant.apisperu_url
+    )
+    token_was_provided = updates.apisperu_token is not None
+    target_token = (
+        updates.apisperu_token.strip()
+        if token_was_provided and updates.apisperu_token is not None
+        else current_tenant.apisperu_token
+    )
+
+    should_validate_token = False
+    if token_was_provided and target_token:
+        should_validate_token = True
+    elif not token_was_provided and updates.business_ruc is not None and current_tenant.apisperu_token:
+        should_validate_token = True
+    elif not token_was_provided and updates.apisperu_url is not None and current_tenant.apisperu_token:
+        should_validate_token = True
+
+    if should_validate_token:
+        validation = facturacion_service.validate_apisperu_token(
+            token=target_token,
+            api_url=target_url,
+            business_ruc=target_ruc,
+        )
+        if not validation["valid"]:
+            _raise_token_validation_error(validation)
+
     updated_tenant = crud.update_tenant_saas(
         db,
         tenant_id,
         updates.model_dump(exclude_unset=True),
     )
-    if not updated_tenant:
-        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
     return updated_tenant
 
 
@@ -62,10 +207,21 @@ def delete_tenant_endpoint(
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_superadmin),
 ):
-    result = crud.delete_tenant(db, tenant_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
-    return {"message": "Tenant eliminado correctamente"}
+    try:
+        result = crud.delete_tenant(db, tenant_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+        return {"message": "Tenant eliminado correctamente"}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise_internal_server_error(
+            "delete_tenant_endpoint",
+            "No se pudo eliminar el tenant.",
+            exc,
+        )
 
 
 @router.get("/superadmin/usuarios", response_model=List[schemas.UserResponse])

@@ -15,7 +15,10 @@ from schemas.tenants import (
     TenantSummaryResponse,
     TenantResponse,
     TenantSaaSUpdate,
+    SuperadminTenantCreate,
     SuperadminTenantResponse,
+    ApisPeruTokenValidationRequest,
+    ApisPeruTokenValidationResponse,
 )
 
 from schemas.auth import (
@@ -23,6 +26,7 @@ from schemas.auth import (
     UserRegisterRequest,
     UserUpdateProfile,
     UserAdminUpdate,
+    SuperadminUserCreate,
     UserResponse,
     Token,
     TokenData,
@@ -112,10 +116,11 @@ __all__ = [
     "StrictInputModel",
     # tenants
     "TenantBase", "TenantCreate", "TenantUpdate", "TenantSummaryResponse",
-    "TenantResponse", "TenantSaaSUpdate", "SuperadminTenantResponse",
+    "TenantResponse", "TenantSaaSUpdate", "SuperadminTenantCreate", "SuperadminTenantResponse",
+    "ApisPeruTokenValidationRequest", "ApisPeruTokenValidationResponse",
     # auth
     "UserIdentity", "UserRegisterRequest", "UserUpdateProfile", "UserAdminUpdate",
-    "UserResponse", "Token", "TokenData",
+    "SuperadminUserCreate", "UserResponse", "Token", "TokenData",
     # clientes
     "CONDICION_PAGO_VALORES", "ClienteBase", "ClienteCreate", "ClienteUpdate", "ClienteResponse",
     # productos + MRP

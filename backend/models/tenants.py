@@ -33,6 +33,9 @@ class Tenant(Base):
     apisperu_token = Column(String, nullable=True)
     apisperu_url = Column(String, nullable=True)
 
+    sunat_gre_client_id = Column(String, nullable=True)
+    sunat_gre_client_secret = Column(String, nullable=True)
+
     plan_type = Column(String, default="Free")
     plan_start_date = Column(DateTime, default=datetime.now)
     plan_end_date = Column(DateTime, nullable=True)
