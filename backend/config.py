@@ -19,11 +19,16 @@ class Settings(BaseSettings):
 
     # Base de datos
     DATABASE_URL: str = ""
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT_SECONDS: int = 30
+    DB_POOL_RECYCLE_SECONDS: int = 1800
+    DB_POOL_PING: bool = True
 
     # Seguridad
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 720  # 12 horas
     LOG_LEVEL: str = "INFO"
     INTERNAL_REGISTRATION_TOKEN: str = ""
     INTERNAL_PROVISIONING_TOKEN: str = ""
@@ -35,6 +40,12 @@ class Settings(BaseSettings):
     DNIRUC_API_URL: str = "https://dniruc.apisperu.com/api/v1"
     DNIRUC_TOKEN: str = ""
     GEMINI_API_KEY: str = ""
+    EMISSION_MODE_DEFAULT: str = "sync"
+    EMISSION_WORKER_POLL_SECONDS: int = 2
+    EMISSION_MAX_ATTEMPTS: int = 5
+    EMISSION_RETRY_BASE_SECONDS: int = 15
+    EMISSION_PROCESSING_TIMEOUT_SECONDS: int = 300
+    EMISSION_WORKER_CONCURRENCY: int = 3
 
     # Storage / assets
     SUPABASE_URL: str = ""
@@ -66,6 +77,14 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_log_level(cls, value: str) -> str:
         return value.strip().upper()
+
+    @field_validator("EMISSION_MODE_DEFAULT")
+    @classmethod
+    def normalize_emission_mode(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"sync", "async"}:
+            raise ValueError("EMISSION_MODE_DEFAULT debe ser 'sync' o 'async'.")
+        return normalized
 
     def model_post_init(self, __context) -> None:
         if not self.DATABASE_URL.strip():

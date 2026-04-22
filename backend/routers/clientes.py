@@ -2,7 +2,7 @@ from typing import List, Optional
 
 import requests
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 import crud
@@ -146,6 +146,16 @@ def read_clientes(
     return crud.get_clientes(db, current_user.tenant_id, skip, limit, q=q)
 
 
+@router.get("/clientes/count")
+def count_clientes(
+    q: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Retorna el total de clientes del tenant (para paginación)."""
+    return {"total": crud.count_clientes(db, current_user.tenant_id, q=q)}
+
+
 # ============================================================
 # FASE 8: IMPORTACIÓN MASIVA DE CLIENTES
 # IMPORTANTE: Estas rutas literales deben declararse ANTES de
@@ -187,11 +197,13 @@ def descargar_plantilla_clientes():
         ",,,987000000,,,,Persona natural"
     )
     content = "\n".join([header, ejemplo_ruc, ejemplo_dni]) + "\n"
-    return Response(
+    response = Response(
         content=content.encode("utf-8-sig"),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=plantilla_clientes.csv"},
     )
+    response.headers["Cache-Control"] = "public, max-age=86400"  # 24h
+    return response
 
 
 @router.post(

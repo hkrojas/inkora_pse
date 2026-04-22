@@ -12,8 +12,11 @@ async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion):
     if cotizacion.sunat_pdf_url and "supabase.co" in cotizacion.sunat_pdf_url:
         return cotizacion.sunat_pdf_url
     
-    # 1. Generar el binario del PDF
-    pdf_buffer = pdf_generator.generar_pdf_cotizacion(cotizacion, cotizacion.tenant)
+    # 1. Generar el binario del PDF correcto segun el tipo de documento
+    if getattr(cotizacion, "document_kind", "quotation") == "fiscal_document":
+        pdf_buffer = pdf_generator.create_comprobante_pdf(cotizacion, cotizacion.tenant)
+    else:
+        pdf_buffer = pdf_generator.generar_pdf_cotizacion(cotizacion, cotizacion.tenant)
     pdf_bytes = pdf_buffer.getvalue()
     
     # 2. Subir a Supabase Storage

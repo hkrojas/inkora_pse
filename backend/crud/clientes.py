@@ -1,9 +1,31 @@
 """crud/clientes.py — CRUD de Clientes."""
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
 
 import models
 import schemas
 from crud._base import get_cliente_for_tenant
+
+
+def count_clientes(
+    db: Session,
+    tenant_id: int | None = None,
+    q: str | None = None,
+) -> int:
+    query = db.query(func.count(models.Cliente.id))
+    if tenant_id is not None:
+        query = query.filter(models.Cliente.tenant_id == tenant_id)
+    if q:
+        term = f"%{q.strip()}%"
+        query = query.filter(
+            or_(
+                models.Cliente.razon_social.ilike(term),
+                models.Cliente.numero_documento.ilike(term),
+                models.Cliente.nombre_comercial.ilike(term),
+                models.Cliente.contacto.ilike(term),
+            )
+        )
+    return query.scalar() or 0
 
 
 def get_clientes(
@@ -13,7 +35,6 @@ def get_clientes(
     limit: int = 100,
     q: str | None = None,
 ):
-    from sqlalchemy import or_
     query = db.query(models.Cliente)
     if tenant_id is not None:
         query = query.filter(models.Cliente.tenant_id == tenant_id)

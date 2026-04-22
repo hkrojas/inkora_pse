@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 
 <html class="light" lang="es"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Emitir Factura - PrintFlow</title>
+<title>Emitir Factura - Inkora</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
@@ -89,7 +89,7 @@
 <span class="material-symbols-outlined text-white" style="font-variation-settings: 'FILL' 1;">print</span>
 </div>
 <div>
-<h1 class="font-manrope text-lg font-bold text-blue-900 dark:text-white leading-tight">PrintFlow</h1>
+<h1 class="font-manrope text-lg font-bold text-blue-900 dark:text-white leading-tight">Inkora</h1>
 <p class="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Editorial Precision</p>
 </div>
 </div>
@@ -138,11 +138,11 @@
 <!-- TopAppBar -->
 <header class="fixed top-0 right-0 left-64 h-16 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md flex items-center justify-between px-8 z-40">
 <div class="flex items-center gap-4">
-<h2 class="font-manrope text-xl font-extrabold tracking-tight text-blue-900">Nueva Emisión</h2>
+<h2 class="font-manrope text-xl font-extrabold tracking-tight text-blue-900">Nueva EmisiÃ³n</h2>
 <div class="h-4 w-[1px] bg-slate-300"></div>
 <nav class="flex items-center gap-6">
 <span class="text-blue-700 font-bold font-manrope text-sm cursor-default">Comprobante</span>
-<span class="text-slate-500 font-medium font-manrope text-sm cursor-pointer hover:text-blue-700 transition-colors">Guía de Remisión</span>
+<span class="text-slate-500 font-medium font-manrope text-sm cursor-pointer hover:text-blue-700 transition-colors">GuÃ­a de RemisiÃ³n</span>
 </nav>
 </div>
 <div class="flex items-center gap-4">
@@ -172,21 +172,21 @@
 <div class="flex items-center justify-between mb-8">
 <h3 class="font-manrope text-lg font-bold flex items-center gap-2">
 <span class="w-1 h-6 bg-primary rounded-full"></span>
-                                    Información del Comprobante
+                                    InformaciÃ³n del Comprobante
                                 </h3>
 <!-- Bi-Currency Toggle -->
 <div class="flex items-center bg-surface-container-low p-1 rounded-full border border-outline-variant/20">
 <button class="px-4 py-1.5 rounded-full text-xs font-bold transition-all bg-white shadow-sm text-primary" type="button">Soles (S/)</button>
-<button class="px-4 py-1.5 rounded-full text-xs font-medium text-outline hover:text-primary transition-all" type="button">Dólares ($)</button>
+<button class="px-4 py-1.5 rounded-full text-xs font-medium text-outline hover:text-primary transition-all" type="button">DÃ³lares ($)</button>
 </div>
 </div>
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 <div class="space-y-2">
 <label class="text-xs font-bold text-outline uppercase tracking-wider">Tipo de Documento</label>
 <select class="w-full bg-surface-container-low border-none rounded-xl py-3 px-4 text-on-surface font-medium focus:ring-2 focus:ring-primary/20">
-<option>Factura Electrónica</option>
+<option>Factura ElectrÃ³nica</option>
 <option>Boleta de Venta</option>
-<option>Nota de Crédito</option>
+<option>Nota de CrÃ©dito</option>
 </select>
 </div>
 <div class="space-y-2">
@@ -194,7 +194,7 @@
 <input class="w-full bg-surface-container-low border-none rounded-xl py-3 px-4 text-on-surface font-bold focus:ring-2 focus:ring-primary/20" type="text" value="F001"/>
 </div>
 <div class="space-y-2">
-<label class="text-xs font-bold text-outline uppercase tracking-wider">Número Correlativo</label>
+<label class="text-xs font-bold text-outline uppercase tracking-wider">NÃºmero Correlativo</label>
 <input class="w-full bg-surface-container-low border-none rounded-xl py-3 px-4 text-on-surface font-bold focus:ring-2 focus:ring-primary/20" type="text" value="00002481"/>
 </div>
 </div>
@@ -220,8 +220,8 @@
 <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">corporate_fare</span>
 </div>
 <div>
-<p class="font-bold text-primary">CORPORACIÓN GRAFICA DEL SUR S.A.C.</p>
-<p class="text-sm text-outline">RUC: 20458741235 • Av. Industrial 458, Ate, Lima</p>
+<p class="font-bold text-primary">CORPORACIÃ“N GRAFICA DEL SUR S.A.C.</p>
+<p class="text-sm text-outline">RUC: 20458741235 â€¢ Av. Industrial 458, Ate, Lima</p>
 </div>
 </div>
 </div>
@@ -236,7 +236,7 @@
 </div>
 <div class="space-y-4 pt-4 border-t border-outline-variant/30">
 <div class="flex justify-between items-center">
-<span class="text-sm text-outline">Fecha de Emisión</span>
+<span class="text-sm text-outline">Fecha de EmisiÃ³n</span>
 <span class="text-sm font-bold">24 Oct, 2023</span>
 </div>
 <div class="flex justify-between items-center">
@@ -264,7 +264,7 @@
                         </h3>
 <button class="text-primary font-bold text-sm flex items-center gap-2 hover:underline" type="button">
 <span class="material-symbols-outlined text-base">add_box</span>
-                            Añadir Item Manual
+                            AÃ±adir Item Manual
                         </button>
 </div>
 <div class="overflow-x-auto">
@@ -288,7 +288,7 @@
 <span class="material-symbols-outlined text-outline">description</span>
 </div>
 <div class="flex-1">
-<input class="w-full bg-transparent border-none p-0 text-sm font-bold text-on-surface focus:ring-0" placeholder="Buscar en almacén..." type="text" value="Papel Couché 150gr A3 - Mate"/>
+<input class="w-full bg-transparent border-none p-0 text-sm font-bold text-on-surface focus:ring-0" placeholder="Buscar en almacÃ©n..." type="text" value="Papel CouchÃ© 150gr A3 - Mate"/>
 <p class="text-xs text-outline">SKU: PAP-C150-A3M</p>
 </div>
 </div>
@@ -337,7 +337,7 @@
 <div class="flex-1 w-full space-y-4">
 <div class="bg-surface-container-low p-6 rounded-2xl">
 <label class="text-[10px] font-extrabold text-outline uppercase tracking-widest block mb-2">Observaciones / Notas de Factura</label>
-<textarea class="w-full bg-white border-none rounded-xl text-sm p-4 focus:ring-2 focus:ring-primary/20 placeholder:text-outline/50" placeholder="Incluir términos de pago, cuentas bancarias o notas de impresión..." rows="3"></textarea>
+<textarea class="w-full bg-white border-none rounded-xl text-sm p-4 focus:ring-2 focus:ring-primary/20 placeholder:text-outline/50" placeholder="Incluir tÃ©rminos de pago, cuentas bancarias o notas de impresiÃ³n..." rows="3"></textarea>
 </div>
 </div>
 <!-- Totals Block -->
@@ -368,7 +368,7 @@
                             Emitir Comprobante
                         </button>
 <p class="text-center mt-4 text-[10px] text-on-primary-container/70 uppercase font-bold tracking-tighter">
-                            Este documento será enviado automáticamente a SUNAT
+                            Este documento serÃ¡ enviado automÃ¡ticamente a SUNAT
                         </p>
 </div>
 </section>

@@ -1,31 +1,37 @@
 const variants = {
-  default:  'bg-gray-100 text-gray-700',
-  success:  'bg-green-100 text-green-700',
-  warning:  'bg-yellow-100 text-yellow-700',
-  danger:   'bg-red-100 text-red-700',
-  info:     'bg-blue-100 text-blue-700',
-  pending:  'bg-orange-100 text-orange-700',
+  default: 'badge badge--neutral',
+  success: 'badge badge--success',
+  warning: 'badge badge--warning',
+  danger: 'badge badge--error',
+  info: 'badge badge--info',
+  brand: 'badge badge--brand',
+  outline: 'badge badge--outline',
+  pending: 'badge badge--warning',
+  accepted: 'badge badge--success',
+  rejected: 'badge badge--error',
+  observed: 'badge badge--warning',
 };
 
 export default function Badge({ children, variant = 'default', className = '' }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[variant]} ${className}`}
-    >
-      {children}
-    </span>
-  );
+  return <span className={`${variants[variant]} ${className}`.trim()}>{children}</span>;
 }
 
 export function statusBadge(estado) {
   const map = {
-    pendiente: 'warning',
-    pagado:    'success',
-    parcial:   'info',
-    vencido:   'danger',
-    anulada:   'danger',
-    emitida:   'success',
-    borrador:  'default',
+    pendiente: 'pending',
+    pagado: 'success',
+    parcial: 'info',
+    vencido: 'danger',
+    anulada: 'rejected',
+    emitida: 'success',
+    borrador: 'default',
+    aceptada: 'accepted',
+    rechazada: 'rejected',
+    observada: 'observed',
+    facturado: 'success',
+    activo: 'success',
+    inactivo: 'danger',
+    trial: 'brand',
   };
   return map[estado] || 'default';
 }

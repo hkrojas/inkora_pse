@@ -13,6 +13,30 @@ from config import settings
 # Configuración de hashing de contraseñas
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Top-100 contraseñas prohibidas (evita las más comunes)
+_COMMON_PASSWORDS = {
+    "password", "123456", "12345678", "1234567890", "qwerty", "abc123",
+    "password1", "iloveyou", "admin", "letmein", "welcome", "monkey",
+    "dragon", "master", "sunshine", "princess", "passw0rd", "shadow",
+    "superman", "michael", "football", "baseball", "soccer", "hockey",
+    "batman", "trustno1", "123123", "654321", "1q2w3e4r", "zxcvbn",
+}
+
+
+def validate_password_strength(password: str, email: str = "") -> str | None:
+    """Valida política de fortaleza. Retorna mensaje de error o None si es válida."""
+    if len(password) < 10:
+        return "La contraseña debe tener al menos 10 caracteres."
+    if not any(c.isalpha() for c in password):
+        return "La contraseña debe contener al menos una letra."
+    if not any(c.isdigit() for c in password):
+        return "La contraseña debe contener al menos un número."
+    if email and password.lower() == email.lower():
+        return "La contraseña no puede ser igual al email."
+    if password.lower() in _COMMON_PASSWORDS:
+        return "La contraseña es demasiado común. Elige una más segura."
+    return None
+
 # Esquema de autenticación (Token en Header)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -52,7 +76,8 @@ def create_access_token_with_claims(user, expires_delta: Optional[timedelta] = N
         "sub": user.email,
         "tenant_id": user.tenant_id,
         "is_superadmin": user.is_superadmin,
-        "rol": user.rol
+        "rol": user.rol,
+        "must_change_password": bool(user.must_change_password),
     }
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta

@@ -88,8 +88,8 @@ Campos adicionales mencionados:
 
 Uso practico:
 
-- si la empresa ya fue configurada manualmente en el portal de ApisPeru, PrintFlow no necesita replicar todo ese alta
-- PrintFlow solo necesita guardar el token de empresa correcto y el RUC al que pertenece
+- si la empresa ya fue configurada manualmente en el portal de ApisPeru, Inkora no necesita replicar todo ese alta
+- Inkora solo necesita guardar el token de empresa correcto y el RUC al que pertenece
 
 ## 3. Familias de documentos
 
@@ -456,7 +456,7 @@ Este endpoint no emite documentos. Solo genera la imagen QR de un comprobante ya
 - `clienteTipo`
 - `clienteNumero`
 
-## 7. Lo que PrintFlow deberia persistir
+## 7. Lo que Inkora deberia persistir
 
 Para documentos con `DocumentResponse`:
 
@@ -499,7 +499,7 @@ Para `StatusResult`:
 - `cdrResponse.description`
 - `cdrResponse.notes`
 
-## 8. Conclusiones practicas para PrintFlow
+## 8. Conclusiones practicas para Inkora
 
 1. No todos los documentos cierran en el `send`.
 2. Factura, boleta, nota, retencion y percepcion tienen respuesta directa.
@@ -930,7 +930,7 @@ Fecha de verificacion:
 
 Objetivo:
 
-- comprobar que el backend de PrintFlow siga el flujo operativo ya validado manualmente
+- comprobar que el backend de Inkora siga el flujo operativo ya validado manualmente
 - ejecutar la prueba entrando por las rutas HTTP del backend, no solo por scripts directos al proveedor
 
 Correccion aplicada antes de la prueba:

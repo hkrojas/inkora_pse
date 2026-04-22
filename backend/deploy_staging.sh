@@ -37,26 +37,10 @@ echo "[deploy] DATABASE_URL=***"
 # ── 3. Migraciones en orden ───────────────────────────────────────────────────
 echo ""
 echo "[deploy] === Ejecutando migraciones ==="
+python run_launch_migrations.py
+# El runner mantiene la cadena canonica launch/staging y omite dominios congelados.
 
-run_migration() {
-    local script="$1"
-    if [ -f "$script" ]; then
-        echo "[migrate] $script..."
-        python "$script"
-    else
-        echo "[migrate] SKIP: $script no encontrado"
-    fi
-}
 
-run_migration migrate_multitenancy.py
-run_migration migrate_fases_1_7.py
-run_migration migrate_document_flow_phase4.py
-run_migration migrate_saas_phase5.py
-run_migration migrate_phase6_launch_polish.py
-run_migration migrate_pagos.py
-run_migration migrate_phase9_beta.py
-run_migration migrate_phase8_onboarding.py
-run_migration migrate_analytics.py
 # migrate_broker.py y migrate_mrp.py son dominios congelados — omitidos
 
 echo "[deploy] === Migraciones completadas ==="
@@ -70,6 +54,7 @@ print(f'  ENVIRONMENT : {settings.ENVIRONMENT}')
 print(f'  BACKEND_URL : {settings.BACKEND_URL}')
 print(f'  HAS_SUPABASE: {settings.has_supabase_storage}')
 print(f'  INIT_DB_ON_STARTUP: {settings.INIT_DB_ON_STARTUP}')
+print(f'  EMISSION_MODE_DEFAULT: {settings.EMISSION_MODE_DEFAULT}')
 "
 
 # ── 5. Levantar servidor ──────────────────────────────────────────────────────

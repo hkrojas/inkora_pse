@@ -10,17 +10,18 @@ class ProductoBase(BaseModel):
     codigo_interno: Optional[str] = None
     nombre: str
     descripcion: Optional[str] = None
-    precio_unitario: Decimal = Field(..., gt=0)
     unidad_medida: str = "NIU"
     tipo_afectacion_igv: str = "10"
 
 
 class ProductoCreate(ProductoBase):
-    pass
+    precio_unitario: Decimal = Field(..., gt=0)
+    precio_incluye_igv: bool = True
 
 
 class ProductoResponse(ProductoBase):
     id: int
+    precio_unitario: Decimal
     valor_unitario: Decimal
     model_config = ConfigDict(from_attributes=True)
 

@@ -23,6 +23,7 @@ import crud
 import models
 import schemas
 from api_dependencies import get_current_user, get_db_tenant
+from services.quote_observation_service import observation_lines_to_plain_text
 
 router = APIRouter(tags=["reportes"])
 
@@ -211,7 +212,7 @@ def reporte_mensual_excel(
             float(monto_pagado),
             float(saldo),
             doc.condicion_pago or "",
-            doc.observaciones or "",
+            observation_lines_to_plain_text(doc.observaciones),
         ]
 
         ws.append(row_data)

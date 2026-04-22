@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, ShieldCheck, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import Spinner from '../components/ui/Spinner';
 
 export default function Login() {
   const { login, user, loading } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -29,57 +30,132 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-gray-900">PrintFlow</h1>
-          <p className="mt-1 text-sm text-gray-500">Ingresa a tu cuenta</p>
-        </div>
+    <div className="lp-shell">
+      <div className="lp-grid">
 
-        <form onSubmit={handleSubmit} className="rounded-xl bg-white p-8 shadow-sm border border-gray-200">
-          {error && (
-            <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
+        {/* ── Panel izquierdo ── */}
+        <section className="lp-brand">
+          <div className="lp-brand-inner">
+            {/* Logo */}
+            <div className="lp-logo-row">
+              <img src="/logo-icon.png" alt="Inkora" className="lp-logo-icon" />
+              <span className="lp-wordmark">Inkora</span>
             </div>
-          )}
 
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Correo electrónico
-            </label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              placeholder="usuario@empresa.com"
-            />
+            {/* Heading */}
+            <h1 className="lp-heading">
+              Sistema de Facturación<br />para Imprentas
+            </h1>
+            <p className="lp-desc">
+              Cotiza, emite y controla tu operación fiscal desde una interfaz directa,
+              con jerarquía fuerte y menos fricción para el operador.
+            </p>
+
+            {/* Chips */}
+            <div className="lp-chips">
+              <span className="lp-chip"><span className="lp-chip-dot" />Tenant aislado</span>
+              <span className="lp-chip"><span className="lp-chip-dot" />Emisión fiscal estable</span>
+              <span className="lp-chip"><span className="lp-chip-dot" />Flujo comercial continuo</span>
+            </div>
+
+            {/* Proof cards */}
+            <div className="lp-proof-row">
+              <div className="lp-proof-card">
+                <div className="lp-proof-label">
+                  <Zap className="lp-proof-icon" />
+                  Emisión
+                </div>
+                <div className="lp-proof-num">3.2s</div>
+                <p className="lp-proof-desc">
+                  Tiempo promedio estimado para disparar la operación documental base.
+                </p>
+              </div>
+              <div className="lp-proof-card">
+                <div className="lp-proof-label">
+                  <ShieldCheck className="lp-proof-icon" />
+                  Confianza
+                </div>
+                <div className="lp-proof-num">99.2%</div>
+                <p className="lp-proof-desc">
+                  Aceptación fiscal histórica del flujo central de Inkora.
+                </p>
+              </div>
+            </div>
           </div>
+        </section>
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Contraseña
-            </label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              placeholder="••••••••"
-            />
+        {/* ── Panel derecho — formulario ── */}
+        <section className="lp-form-panel">
+          <div className="lp-card">
+            {/* Chip ACCESO */}
+            <span className="lp-card-badge">Acceso</span>
+
+            <h2 className="lp-form-title">Bienvenido de vuelta</h2>
+            <p className="lp-form-sub">
+              Ingresa con tu correo y contraseña para continuar la operación.
+            </p>
+
+            <form onSubmit={handleSubmit} className="lp-form">
+              {error && (
+                <div className="lp-error">
+                  <span className="lp-error-dot" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <div className="lp-field">
+                <label className="lp-label">Correo electrónico</label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="lp-input"
+                  placeholder="admin@demo.inkora.pe"
+                />
+              </div>
+
+              <div className="lp-field">
+                <label className="lp-label">Contraseña</label>
+                <div className="lp-pw-wrap">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="lp-input lp-input-pw"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    className="lp-pw-eye"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  >
+                    {showPassword
+                      ? <EyeOff className="h-4 w-4" />
+                      : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="lp-trust">
+                <span className="lp-trust-dot" />
+                <span>SUNAT activa · cifrado E2E · tenant aislado</span>
+              </div>
+
+              <button type="submit" disabled={submitting} className="lp-btn">
+                {submitting && <span className="lp-btn-ring" />}
+                {submitting ? 'Accediendo…' : 'Acceder a mis facturas →'}
+              </button>
+            </form>
+
+            <p className="lp-footnote">
+              Acceso centrado en continuidad operativa y menos fricción en el primer segundo.
+            </p>
           </div>
+        </section>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition"
-          >
-            {submitting && <Spinner size="sm" />}
-            Ingresar
-          </button>
-        </form>
       </div>
     </div>
   );

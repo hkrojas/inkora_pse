@@ -1,20 +1,43 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 import crud
-from services import facturacion_service
+from services import emission_queue_service, facturacion_service
 import models
 import schemas
 from api_dependencies import (
     get_current_user,
     get_db_tenant,
     require_document_emitter,
+    require_emission_allowed,
 )
 from api_utils import raise_internal_server_error
+from models.tenants import USAGE_LIMIT_KIND_GUIA
 
 router = APIRouter(tags=["guias"])
+
+
+def _quota_error(exc: "crud.QuotaExceededError") -> HTTPException:
+    lim = exc.limit
+    return HTTPException(
+        status_code=402,
+        detail={
+            "code": "QUOTA_EXCEEDED",
+            "message": (
+                f"Cuota de guias excedida: {exc.used}/{lim.max_count} "
+                f"({lim.period}). Contacta al superadmin para ampliar el limite."
+            ),
+            "limit_kind": lim.document_kind,
+            "period": lim.period,
+            "max": lim.max_count,
+            "used": exc.used,
+            "scope": "user" if lim.user_id else "tenant",
+            "contact": "contacto@inkora.pe",
+        },
+    )
 
 
 def _gre_credentials_warning_message() -> str:
@@ -150,6 +173,8 @@ def emitir_guia_remision_endpoint(
     guia_id: int,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_document_emitter),
+    _emission_check: models.User = Depends(require_emission_allowed),
+    mode: str | None = Query(default=None, pattern="^(sync|async)$"),
 ):
     guia = crud.get_guia_remision(db, guia_id, current_user)
     if not guia:
@@ -174,11 +199,33 @@ def emitir_guia_remision_endpoint(
             ),
         )
 
+    if not current_user.is_superadmin:
+        try:
+            crud.check_emission_quota(
+                db, current_user.tenant_id, current_user.id, USAGE_LIMIT_KIND_GUIA
+            )
+        except crud.QuotaExceededError as exc:
+            raise _quota_error(exc)
+
     has_gre_credentials = bool(
         tenant and tenant.sunat_gre_client_id and tenant.sunat_gre_client_secret
     )
 
     try:
+        resolved_mode = emission_queue_service.resolve_emission_mode(mode)
+        if resolved_mode == emission_queue_service.EMISSION_MODE_ASYNC:
+            job, _ = emission_queue_service.enqueue_guide_job(db, guia, current_user)
+            return JSONResponse(
+                status_code=202,
+                content=emission_queue_service.build_job_acceptance_payload(
+                    job,
+                    message="Guía encolada para emisión fiscal.",
+                    resource_id=guia.id,
+                    resource_type=models.EMISSION_JOB_RESOURCE_GUIA,
+                    internal_order_number=guia.internal_order_number,
+                ),
+            )
+
         resultado = facturacion_service.emitir_guia_remision(guia, current_user)
         crud.guardar_respuesta_sunat_gre(
             db,

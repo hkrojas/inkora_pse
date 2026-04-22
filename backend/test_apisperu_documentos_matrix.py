@@ -347,6 +347,11 @@ class TestApisPeruDocumentosMatrix:
         sent_payload = json.loads(post_mock.call_args.kwargs["data"])
         assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/despatch/send"
         assert sent_payload["tipoDoc"] == "09"
+        assert sent_payload["company"]["address"]["codLocal"] == "0000"
+        assert sent_payload["envio"]["partida"]["codLocal"] == "0000"
+        assert sent_payload["envio"]["partida"]["ruc"] == guia.tenant.business_ruc
+        assert "codLocal" not in sent_payload["envio"]["llegada"]
+        assert "codEstablecimiento" not in sent_payload["envio"]["llegada"]
         assert sent_payload["envio"]["vehiculo"]["placa"] == "ABC123"
         assert sent_payload["envio"]["choferes"][0]["nroDoc"] == "72758912"
         assert "transportista" not in sent_payload["envio"]
@@ -369,6 +374,11 @@ class TestApisPeruDocumentosMatrix:
 
         payload = facturacion_service._base_payload_gre(guia, user)
 
+        assert payload["company"]["address"]["codLocal"] == "0000"
+        assert payload["envio"]["partida"]["codLocal"] == "0000"
+        assert payload["envio"]["partida"]["ruc"] == guia.tenant.business_ruc
+        assert "codLocal" not in payload["envio"]["llegada"]
+        assert "codEstablecimiento" not in payload["envio"]["llegada"]
         assert payload["envio"]["transportista"]["nroMtc"] == "12345678901"
         assert payload["envio"]["sustentoPeso"] == "MANUAL"
         assert payload["envio"]["indTransbordo"] is True
@@ -385,9 +395,31 @@ class TestApisPeruDocumentosMatrix:
 
         payload = facturacion_service._base_payload_gre(guia, user)
 
+        assert payload["company"]["address"]["codLocal"] == "0000"
+        assert payload["envio"]["partida"]["codLocal"] == "0000"
+        assert payload["envio"]["partida"]["ruc"] == guia.tenant.business_ruc
+        assert "codLocal" not in payload["envio"]["llegada"]
+        assert "codEstablecimiento" not in payload["envio"]["llegada"]
         assert payload["envio"]["vehiculo"]["nroCirculacion"] == "NC-001"
         assert payload["envio"]["vehiculo"]["codEmisor"] == "EM-01"
         assert payload["envio"]["vehiculo"]["nroAutorizacion"] == "AUTH-001"
+
+    def test_guia_traslado_interno_agrega_codlocal_en_llegada(self, db_session):
+        user, guia = _make_guia(db_session, "MX08D")
+        guia.motivo_traslado = "04"
+        guia.descripcion_motivo = "TRASLADO INTERNO"
+        guia.cotizacion.cliente.numero_documento = guia.tenant.business_ruc
+        guia.cotizacion.cliente.tipo_documento = "6"
+        guia.cotizacion.cliente.razon_social = guia.tenant.business_name
+        db_session.commit()
+
+        payload = facturacion_service._base_payload_gre(guia, user)
+
+        assert payload["company"]["address"]["codLocal"] == "0000"
+        assert payload["envio"]["partida"]["codLocal"] == "0000"
+        assert payload["envio"]["partida"]["ruc"] == guia.tenant.business_ruc
+        assert payload["envio"]["llegada"]["codLocal"] == "0000"
+        assert payload["envio"]["llegada"]["ruc"] == guia.tenant.business_ruc
 
     def test_retencion_usa_retention_send_y_respuesta_inmediata(self, db_session):
         _, user = _make_user_with_apisperu(db_session, "MX09")

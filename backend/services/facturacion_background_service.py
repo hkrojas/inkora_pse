@@ -10,7 +10,12 @@ from services import sunat_service
 logger = get_logger(__name__)
 
 
-def process_direct_sunat_emission_bg(cotizacion_id: int, tenant_id: int) -> None:
+def process_direct_sunat_emission_bg(
+    cotizacion_id: int,
+    tenant_id: int,
+    *,
+    raise_on_error: bool = False,
+) -> dict | None:
     """
     Pipeline completo de emision directa a SUNAT en segundo plano.
     Se mantiene fuera de los routers para que el HTTP layer quede fino.
@@ -33,6 +38,9 @@ def process_direct_sunat_emission_bg(cotizacion_id: int, tenant_id: int) -> None
             or not tenant.sunat_usuario_sol
             or not tenant.sunat_cert_url
         ):
+            detail = "Faltan credenciales SUNAT directas del tenant."
+            if cotizacion:
+                crud.guardar_error_sunat(db, cotizacion_id, detail, tenant_id=tenant_id)
             logger.error(
                 "sunat_credentials_missing",
                 extra={
@@ -41,7 +49,9 @@ def process_direct_sunat_emission_bg(cotizacion_id: int, tenant_id: int) -> None
                     "cotizacion_id": cotizacion_id,
                 },
             )
-            return
+            if raise_on_error:
+                raise RuntimeError(detail)
+            return {"success": False, "message": detail}
 
         emisor_data = {
             "ruc": tenant.business_ruc or "12345678901",
@@ -109,19 +119,20 @@ def process_direct_sunat_emission_bg(cotizacion_id: int, tenant_id: int) -> None
         )
 
         if resultado["success"]:
+            response_payload = {
+                "success": True,
+                "sunat_response": {
+                    "success": True,
+                    "cdrResponse": {
+                        "description": "Aceptado por SUNAT (Procesamiento Directo)"
+                    },
+                    "links": {"cdr": "stored_locally"},
+                },
+            }
             crud.guardar_respuesta_sunat(
                 db,
                 cotizacion_id,
-                {
-                    "success": True,
-                    "sunat_response": {
-                        "success": True,
-                        "cdrResponse": {
-                            "description": "Aceptado por SUNAT (Procesamiento Directo)"
-                        },
-                        "links": {"cdr": "stored_locally"},
-                    },
-                },
+                response_payload,
                 tenant_id=tenant_id,
             )
             logger.info(
@@ -132,7 +143,10 @@ def process_direct_sunat_emission_bg(cotizacion_id: int, tenant_id: int) -> None
                     "cotizacion_id": cotizacion_id,
                 },
             )
+            return response_payload
         else:
+            detail = resultado.get("message") or "SUNAT directo rechazó la emisión."
+            crud.guardar_error_sunat(db, cotizacion_id, detail, tenant_id=tenant_id)
             logger.error(
                 "sunat_emission_failed",
                 extra={
@@ -141,7 +155,17 @@ def process_direct_sunat_emission_bg(cotizacion_id: int, tenant_id: int) -> None
                     "cotizacion_id": cotizacion_id,
                 },
             )
-    except Exception:
+            if raise_on_error:
+                raise RuntimeError(detail)
+            return {"success": False, "message": detail}
+    except Exception as exc:
+        detail = str(exc) or "Fallo el procesamiento directo contra SUNAT."
+        crud.guardar_error_sunat(
+            db,
+            cotizacion_id,
+            detail,
+            tenant_id=tenant_id,
+        )
         logger.exception(
             "sunat_emission_background_failed",
             extra={
@@ -150,6 +174,9 @@ def process_direct_sunat_emission_bg(cotizacion_id: int, tenant_id: int) -> None
                 "cotizacion_id": cotizacion_id,
             },
         )
+        if raise_on_error:
+            raise
+        return {"success": False, "message": detail}
     finally:
         if tenant_token is not None:
             reset_tenant_context(tenant_token)

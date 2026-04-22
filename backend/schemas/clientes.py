@@ -1,7 +1,9 @@
 """schemas/clientes.py — Cliente schemas."""
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from services.phone_validation import normalize_and_validate_optional_peru_mobile
 
 
 CONDICION_PAGO_VALORES = {
@@ -26,7 +28,11 @@ class ClienteBase(BaseModel):
 
 
 class ClienteCreate(ClienteBase):
-    pass
+    @field_validator("telefono", "whatsapp")
+    @classmethod
+    def validate_mobile_fields(cls, value: Optional[str], info) -> Optional[str]:
+        label = "WhatsApp" if info.field_name == "whatsapp" else "Telefono"
+        return normalize_and_validate_optional_peru_mobile(value, label)
 
 
 class ClienteUpdate(BaseModel):
@@ -43,6 +49,12 @@ class ClienteUpdate(BaseModel):
     condicion_pago: Optional[str] = None
     direccion_entrega: Optional[str] = None
     observaciones: Optional[str] = None
+
+    @field_validator("telefono", "whatsapp")
+    @classmethod
+    def validate_mobile_fields(cls, value: Optional[str], info) -> Optional[str]:
+        label = "WhatsApp" if info.field_name == "whatsapp" else "Telefono"
+        return normalize_and_validate_optional_peru_mobile(value, label)
 
 
 class ClienteResponse(ClienteBase):

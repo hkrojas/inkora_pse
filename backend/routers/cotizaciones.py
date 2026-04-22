@@ -45,6 +45,33 @@ def create_cotizacion(
     return db_cotizacion
 
 
+@router.post(
+    "/cotizaciones/{cotizacion_id}/duplicar",
+    response_model=schemas.CotizacionResponse,
+    status_code=201,
+)
+def duplicar_cotizacion(
+    cotizacion_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    try:
+        db_cotizacion = crud.duplicate_cotizacion(db, cotizacion_id, current_user)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    if not db_cotizacion:
+        raise HTTPException(404, "Cotizacion no encontrada")
+
+    background_tasks.add_task(
+        pdf_storage_service.process_pdf_background,
+        db_cotizacion.id,
+        current_user.tenant_id,
+    )
+    return db_cotizacion
+
+
 @router.get("/cotizaciones/{cotizacion_id}", response_model=schemas.CotizacionResponse)
 def read_cotizacion(
     cotizacion_id: int,
@@ -55,6 +82,22 @@ def read_cotizacion(
     if not result:
         raise HTTPException(404)
     return result
+
+
+@router.delete("/cotizaciones/{cotizacion_id}")
+def delete_cotizacion(
+    cotizacion_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    try:
+        result = crud.delete_cotizacion(db, cotizacion_id, current_user)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    if result is None:
+        raise HTTPException(404, "Cotizacion no encontrada")
+    return {"msg": "Eliminado"}
 
 
 @router.get("/public/cotizaciones/{uuid_publico}/pdf")

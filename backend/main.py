@@ -3,6 +3,8 @@ import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 
 import models
@@ -21,8 +23,11 @@ from routers import (
     productos,
     reportes,
     superadmin,
+    sunat,
     tenants,
 )
+
+from rate_limit import limiter
 
 configure_logging(level=settings.LOG_LEVEL, environment=settings.ENVIRONMENT)
 logger = get_logger(__name__)
@@ -37,6 +42,8 @@ def create_app() -> FastAPI:
         models.Base.metadata.create_all(bind=engine)
 
     app = FastAPI(title="Sistema Cotizaciones SUNAT")
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     app.add_middleware(
         CORSMiddleware,
@@ -92,6 +99,7 @@ def create_app() -> FastAPI:
     app.include_router(guias.router)
     app.include_router(superadmin.router)
     app.include_router(dashboard.router)
+    app.include_router(sunat.router)
 
     # Compatibilidad temporal: endpoints congelados aislados fuera del launch scope.
     app.include_router(legacy_frozen.router)

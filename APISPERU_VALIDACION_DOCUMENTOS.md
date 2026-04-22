@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Este archivo deja una guia corta y operativa para validar cada documento fiscal en ApisPeru, tanto desde Swagger UI como desde el backend de PrintFlow.
+Este archivo deja una guia corta y operativa para validar cada documento fiscal en ApisPeru, tanto desde Swagger UI como desde el backend de Inkora.
 
 No reemplaza el flujo detallado de [APISPERU_FLUJO_EMISION.md](/C:/Users/HP/Desktop/mi_proyecto_cotizaciones/APISPERU_FLUJO_EMISION.md). Su funcion es servir como checklist de validacion por documento.
 
@@ -15,7 +15,7 @@ Antes de probar cualquier documento:
 3. Confirmar que `serie` y `correlativo` no choquen con una emision previa.
 4. Confirmar que el ambiente de la empresa es el esperado: beta o produccion.
 5. Probar primero en Swagger UI si se quiere aislar el comportamiento del proveedor.
-6. Probar luego desde el backend para verificar que PrintFlow arma el payload correctamente.
+6. Probar luego desde el backend para verificar que Inkora arma el payload correctamente.
 
 ## Regla de lectura de resultados
 

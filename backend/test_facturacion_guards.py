@@ -50,7 +50,12 @@ import crud
 import models
 import schemas
 from access_control import ROLE_ADMIN
-from routers.facturacion import _validar_pre_emision
+from routers.facturacion import (
+    _ensure_document_can_be_voided,
+    _ensure_note_target_is_facturada,
+    _raise_value_error_as_http,
+    _validar_pre_emision,
+)
 from services import facturacion_service
 
 
@@ -261,6 +266,86 @@ class TestEmisionDuplicada:
         linked = crud.get_latest_fiscal_document_for_quote(db_session, quote.id, tenant.id)
         assert linked is None
 
+
+class TestFacturacionRouterHelpers:
+    def test_raise_value_error_as_http_convierte_limite_en_402(self):
+        with pytest.raises(HTTPException) as exc:
+            _raise_value_error_as_http(ValueError("Límite de documentos excedido"))
+
+        assert exc.value.status_code == 402
+
+    def test_ensure_note_target_is_facturada_rechaza_estado_pendiente(self):
+        comprobante = MagicMock()
+        comprobante.estado = "pendiente"
+        comprobante.serie = "F001"
+        comprobante.correlativo = 15
+
+        with pytest.raises(HTTPException) as exc:
+            _ensure_note_target_is_facturada(comprobante)
+
+        assert exc.value.status_code == 400
+        assert "facturada" in exc.value.detail
+
+    def test_ensure_document_can_be_voided_rechaza_documento_pendiente(self):
+        comprobante = MagicMock()
+        comprobante.estado = "pendiente"
+
+        with pytest.raises(HTTPException) as exc:
+            _ensure_document_can_be_voided(comprobante)
+
+        assert exc.value.status_code == 400
+        assert "no requiere anulacion" in exc.value.detail.lower()
+
+
+class TestConteoDocumental:
+    def test_documents_used_no_incrementa_al_crear_fiscal_document(self, db_session):
+        tenant = make_tenant(db_session, "DOC01")
+        user = make_user(db_session, tenant, email="doc01@test.com")
+        cliente = make_cliente(db_session, tenant, "DOC01")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+        sub = crud.get_or_create_subscription(db_session, tenant.id)
+
+        fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+        db_session.refresh(sub)
+
+        assert fiscal is not None
+        assert sub.documents_used == 0
+
+    def test_documents_used_incrementa_solo_con_respuesta_exitosa(self, db_session):
+        tenant = make_tenant(db_session, "DOC02")
+        user = make_user(db_session, tenant, email="doc02@test.com")
+        cliente = make_cliente(db_session, tenant, "DOC02")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+        sub = crud.get_or_create_subscription(db_session, tenant.id)
+        fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+
+        crud.guardar_respuesta_sunat(
+            db_session,
+            fiscal.id,
+            {"success": False, "message": "rechazado"},
+            tenant_id=tenant.id,
+        )
+        db_session.refresh(sub)
+        assert sub.documents_used == 0
+
+        crud.guardar_respuesta_sunat(
+            db_session,
+            fiscal.id,
+            {"success": True, "serie": "F001", "correlativo": "000001"},
+            tenant_id=tenant.id,
+        )
+        db_session.refresh(sub)
+        assert sub.documents_used == 1
+
+        crud.guardar_respuesta_sunat(
+            db_session,
+            fiscal.id,
+            {"success": True, "serie": "F001", "correlativo": "000001"},
+            tenant_id=tenant.id,
+        )
+        db_session.refresh(sub)
+        assert sub.documents_used == 1
+
     def test_guia_ya_emitida_no_puede_reemitirse(self, db_session):
         """
         El router de guías verifica estado antes de enviar.
@@ -355,6 +440,9 @@ class TestFlujoQuoteToFiscal:
         quote_boleta = make_quote_via_crud(db_session, tenant, user, cliente)
         factura = crud.create_fiscal_document_from_quote(db_session, quote_factura, user.id, "01")
         boleta = crud.create_fiscal_document_from_quote(db_session, quote_boleta, user.id, "03")
+        factura.estado = "facturada"
+        boleta.estado = "facturada"
+        db_session.commit()
 
         nota_debito = crud.crear_nota_credito_debito(
             db_session,

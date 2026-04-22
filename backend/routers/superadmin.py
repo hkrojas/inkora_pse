@@ -12,6 +12,7 @@ import schemas
 from api_dependencies import get_db, get_superadmin
 from api_utils import raise_internal_server_error
 from security import get_password_hash
+from crud.auth import generate_temp_password
 from services import facturacion_service, subscription_service
 
 router = APIRouter(tags=["superadmin"])
@@ -105,7 +106,7 @@ def create_tenant_endpoint(
 
 @router.post(
     "/superadmin/tenants/{tenant_id}/users",
-    response_model=schemas.UserResponse,
+    response_model=schemas.CreateUserWithPasswordResponse,
     status_code=201,
     summary="Crear usuario para un tenant",
 )
@@ -115,7 +116,7 @@ def create_tenant_user_endpoint(
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_superadmin),
 ):
-    """Crea un usuario admin (u otro rol) para un tenant específico."""
+    """Crea un usuario para un tenant. Genera la contraseña temporal automáticamente."""
     tenant = crud.get_tenant(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant no encontrado.")
@@ -125,18 +126,24 @@ def create_tenant_user_endpoint(
         raise HTTPException(status_code=400, detail="Ya existe un usuario con ese email.")
 
     rol = normalize_role(data.rol) if data.rol else "admin"
+    temp_password = generate_temp_password()
     new_user = models.User(
         email=data.email,
         nombre_completo=data.nombre_completo,
-        hashed_password=get_password_hash(data.password),
+        hashed_password=get_password_hash(temp_password),
         rol=rol,
         tenant_id=tenant_id,
+        must_change_password=True,
     )
     try:
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        return new_user
+        return schemas.CreateUserWithPasswordResponse(
+            user=new_user,
+            temp_password=temp_password,
+            message="Usuario creado. Comparte la contraseña temporal de forma segura — no se puede recuperar después.",
+        )
     except Exception as exc:
         db.rollback()
         raise_internal_server_error("create_tenant_user_endpoint", "No se pudo crear el usuario.", exc)
@@ -297,7 +304,7 @@ def list_audit_logs_endpoint(
 # FASE 5: SUPERADMIN — CONTROL DE SUSCRIPCIONES SaaS
 # ============================================================
 # Todos los endpoints bajo /superadmin/tenants/{id}/...
-# operan sobre el dominio SaaS (PrintFlow → tenant).
+# operan sobre el dominio SaaS (Inkora → tenant).
 # No mezclar con el dominio operativo del tenant (Pago/cotizacion).
 
 
@@ -415,9 +422,9 @@ def register_saas_payment_endpoint(
     admin: models.User = Depends(get_superadmin),
 ):
     """
-    Registra un pago SaaS recibido de un tenant a PrintFlow.
+    Registra un pago SaaS recibido de un tenant a Inkora.
 
-    DOMINIO: tenant → PrintFlow (SaaS). No es un cobro del tenant a sus clientes.
+    DOMINIO: tenant → Inkora (SaaS). No es un cobro del tenant a sus clientes.
     Ver schemas.PagoCreate/PagoResponse para el dominio operativo del tenant.
     """
     return subscription_service.register_saas_payment(db, tenant_id, data, admin)
@@ -435,7 +442,7 @@ def list_saas_payments_endpoint(
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_superadmin),
 ):
-    """Lista todos los pagos SaaS registrados para un tenant (PrintFlow cobra al tenant)."""
+    """Lista todos los pagos SaaS registrados para un tenant (Inkora cobra al tenant)."""
     return subscription_service.get_saas_payments(db, tenant_id, skip, limit)
 
 
@@ -528,3 +535,191 @@ def update_tenant_notas_endpoint(
 
     updates = request.model_dump(exclude_unset=True)
     return crud.update_subscription_fields(db, tenant_id, updates)
+
+
+# ============================================================
+# USUARIOS POR TENANT — VISIBILIDAD Y GESTIÓN
+# ============================================================
+
+
+@router.get(
+    "/superadmin/tenants/{tenant_id}/users-detail",
+    response_model=List[schemas.UserDetailResponse],
+    summary="Usuarios del tenant con métricas de emisión",
+)
+def get_tenant_users_detail_endpoint(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    """Lista los usuarios de un tenant con sus conteos de documentos por tipo."""
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+    return crud.get_tenant_users_with_metrics(db, tenant_id)
+
+
+@router.patch(
+    "/superadmin/users/{user_id}/toggle-active",
+    response_model=schemas.UserResponse,
+    summary="Activar o bloquear un usuario",
+)
+def toggle_user_active_endpoint(
+    user_id: int,
+    request: schemas.ToggleUserActiveRequest,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    """Activa o bloquea el acceso de un usuario sin eliminarlo."""
+    user = crud.toggle_user_active(db, user_id, request.is_active)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    return user
+
+
+@router.post(
+    "/superadmin/users/{user_id}/reset-password",
+    response_model=schemas.ResetPasswordResponse,
+    summary="Resetear contraseña de un usuario",
+)
+def reset_user_password_endpoint(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    """Genera una contraseña temporal aleatoria para el usuario. Mostrarla al cliente de forma segura."""
+    result = crud.reset_user_password(db, user_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    crud.log_auth_event(
+        db, "user.password_reset",
+        user_id=admin.id, entity_id=user_id,
+        details=f"reset_by=superadmin:{admin.email}",
+    )
+    return result
+
+
+# ============================================================
+# EMISSION ERRORS Y HEALTH CHECK APISPERU
+# ============================================================
+
+
+@router.get(
+    "/superadmin/tenants/{tenant_id}/emission-errors",
+    response_model=List[schemas.EmissionErrorResponse],
+    summary="Últimos errores de emisión de un tenant",
+)
+def get_tenant_emission_errors_endpoint(
+    tenant_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    """Devuelve los jobs de emisión fallidos más recientes del tenant."""
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+    return crud.get_tenant_emission_errors(db, tenant_id, limit)
+
+
+@router.post(
+    "/superadmin/tenants/{tenant_id}/check-token-health",
+    response_model=schemas.TokenHealthResponse,
+    summary="Verificar token ApisPeru de un tenant",
+)
+def check_tenant_token_health_endpoint(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    """Llama a ApisPeru con el token guardado del tenant y actualiza su estado de salud."""
+    return crud.check_apisperu_token_health(db, tenant_id)
+
+
+@router.post(
+    "/superadmin/check-all-tokens",
+    response_model=List[schemas.TokenHealthResponse],
+    summary="Verificar todos los tokens ApisPeru",
+)
+def check_all_tokens_health_endpoint(
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    """Verifica el token ApisPeru de todos los tenants que tienen uno configurado."""
+    return crud.check_all_apisperu_tokens(db)
+
+
+# ============================================================
+# FASE 2 — Limites de emision por tenant/usuario
+# ============================================================
+
+
+@router.get(
+    "/superadmin/tenants/{tenant_id}/limits",
+    response_model=schemas.UsageLimitsWithUsage,
+    summary="Listar limites del tenant con uso actual",
+)
+def list_tenant_limits_endpoint(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    """Devuelve limites configurados y uso actual de cada uno."""
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+    limits = crud.get_tenant_limits(db, tenant_id)
+    usage = crud.build_tenant_usage_report(db, tenant_id)
+    return {"limits": limits, "usage": usage}
+
+
+@router.put(
+    "/superadmin/tenants/{tenant_id}/limits",
+    response_model=List[schemas.UsageLimitResponse],
+    summary="Upsert bulk de limites del tenant",
+)
+def upsert_tenant_limits_endpoint(
+    tenant_id: int,
+    payload: schemas.UsageLimitsBulkUpsert,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    """Crea o actualiza multiples limites para el tenant. max_count<=0 elimina el limite."""
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+
+    user_ids = {item.user_id for item in payload.limits if item.user_id is not None}
+    if user_ids:
+        owned_user_ids = {
+            row[0]
+            for row in db.query(models.User.id).filter(
+                models.User.tenant_id == tenant_id,
+                models.User.id.in_(user_ids),
+            ).all()
+        }
+        missing = user_ids - owned_user_ids
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Los usuarios {sorted(missing)} no pertenecen al tenant {tenant_id}.",
+            )
+
+    items = [item.model_dump() for item in payload.limits]
+    limits = crud.upsert_tenant_limits(db, tenant_id, items)
+    return limits
+
+
+@router.delete(
+    "/superadmin/limits/{limit_id}",
+    summary="Eliminar un limite de emision",
+)
+def delete_limit_endpoint(
+    limit_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    removed = crud.delete_limit(db, limit_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Limite no encontrado.")
+    return {"deleted": True, "limit_id": limit_id}

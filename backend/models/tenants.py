@@ -4,6 +4,10 @@ from datetime import datetime
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
+APISPERU_TOKEN_STATUS_OK = "ok"
+APISPERU_TOKEN_STATUS_INVALID = "invalid"
+APISPERU_TOKEN_STATUS_UNCHECKED = "unchecked"
+
 from database import Base
 
 # ==========================================
@@ -32,6 +36,8 @@ class Tenant(Base):
 
     apisperu_token = Column(String, nullable=True)
     apisperu_url = Column(String, nullable=True)
+    apisperu_token_status = Column(String, default=APISPERU_TOKEN_STATUS_UNCHECKED, nullable=True)
+    apisperu_token_checked_at = Column(DateTime, nullable=True)
 
     sunat_gre_client_id = Column(String, nullable=True)
     sunat_gre_client_secret = Column(String, nullable=True)
@@ -59,6 +65,7 @@ class Tenant(Base):
     proveedores = relationship("Proveedor", back_populates="tenant")
     subscription = relationship("Subscription", back_populates="tenant", uselist=False)
     subscription_payments = relationship("SubscriptionPayment", back_populates="tenant")
+    emission_jobs = relationship("DocumentEmissionJob", back_populates="tenant")
 
 
 # ==========================================
@@ -74,6 +81,10 @@ class User(Base):
     nombre_completo = Column(String)
     rol = Column(String, default="vendedor")
     is_superadmin = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    last_login_at = Column(DateTime, nullable=True)
+    must_change_password = Column(Boolean, default=False, nullable=False)
+    password_changed_at = Column(DateTime, nullable=True)
 
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
     tenant = relationship("Tenant", back_populates="users")
@@ -92,6 +103,7 @@ class User(Base):
     apisperu_url = Column(String, nullable=True)
 
     cotizaciones = relationship("Cotizacion", back_populates="usuario")
+    emission_jobs = relationship("DocumentEmissionJob", back_populates="created_by_user")
 
 
 # ==========================================
@@ -173,3 +185,56 @@ class SubscriptionPayment(Base):
     validated_by = relationship("User")
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
+
+
+# ==========================================
+# LIMITES DE EMISION (FASE 2 SUPERADMIN)
+# ==========================================
+
+USAGE_LIMIT_KIND_FACTURA = "fiscal_invoice"
+USAGE_LIMIT_KIND_BOLETA = "fiscal_boleta"
+USAGE_LIMIT_KIND_GUIA = "guia"
+USAGE_LIMIT_KIND_NOTA_CREDITO = "nota_credito"
+USAGE_LIMIT_KIND_NOTA_DEBITO = "nota_debito"
+
+USAGE_LIMIT_KINDS = (
+    USAGE_LIMIT_KIND_FACTURA,
+    USAGE_LIMIT_KIND_BOLETA,
+    USAGE_LIMIT_KIND_GUIA,
+    USAGE_LIMIT_KIND_NOTA_CREDITO,
+    USAGE_LIMIT_KIND_NOTA_DEBITO,
+)
+
+USAGE_LIMIT_PERIOD_MONTH = "month"
+USAGE_LIMIT_PERIOD_DAY = "day"
+USAGE_LIMIT_PERIOD_TOTAL = "total"
+
+USAGE_LIMIT_PERIODS = (
+    USAGE_LIMIT_PERIOD_MONTH,
+    USAGE_LIMIT_PERIOD_DAY,
+    USAGE_LIMIT_PERIOD_TOTAL,
+)
+
+
+class UsageLimit(Base):
+    """
+    Cuota configurable por superadmin sobre la emision de documentos fiscales.
+
+    - tenant_id: tenant al que aplica (siempre requerido)
+    - user_id NULL: limite a nivel tenant (suma de todos los usuarios)
+    - user_id NOT NULL: limite individual a ese usuario
+    - document_kind: tipo de documento limitado. NUNCA acepta 'quotation' (cotizaciones son ilimitadas).
+    - period: ventana de evaluacion del conteo
+    """
+    __tablename__ = "usage_limits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    document_kind = Column(String, nullable=False)
+    period = Column(String, default=USAGE_LIMIT_PERIOD_MONTH, nullable=False)
+    max_count = Column(Integer, nullable=False)
+    notify_at_pct = Column(Integer, default=80)
+    enabled = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

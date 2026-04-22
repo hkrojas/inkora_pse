@@ -124,3 +124,51 @@ def get_superadmin(current_user: models.User = Depends(get_current_user)):
             detail="Acceso denegado: Se requieren privilegios de Superadmin.",
         )
     return current_user
+
+
+def require_emission_allowed(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Bloquea la emisión fiscal si la suscripción del tenant está en mora o suspendida.
+    Las cotizaciones nunca se bloquean (este guard solo se aplica a rutas de emisión fiscal).
+    Superadmin siempre pasa.
+    """
+    if current_user.is_superadmin:
+        return current_user
+
+    from models.tenants import SUBSCRIPTION_STATUS_ACTIVE, SUBSCRIPTION_STATUS_TRIAL
+    sub = db.query(models.Subscription).filter(
+        models.Subscription.tenant_id == current_user.tenant_id
+    ).first()
+
+    if sub is None:
+        return current_user  # sin suscripción configurada, no bloqueamos
+
+    if sub.status in (SUBSCRIPTION_STATUS_ACTIVE, SUBSCRIPTION_STATUS_TRIAL, "grace"):
+        return current_user
+
+    if sub.status == "payment_required":
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "EMISSION_BLOCKED_PAYMENT_REQUIRED",
+                "message": "La emisión de documentos fiscales está bloqueada por pago pendiente. Las cotizaciones siguen disponibles.",
+                "subscription_status": sub.status,
+                "contact": "contacto@inkora.pe",
+            },
+        )
+
+    if sub.status == "suspended":
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "EMISSION_BLOCKED_SUSPENDED",
+                "message": "Cuenta suspendida. Contacta a soporte para reactivar.",
+                "subscription_status": sub.status,
+                "contact": "contacto@inkora.pe",
+            },
+        )
+
+    return current_user

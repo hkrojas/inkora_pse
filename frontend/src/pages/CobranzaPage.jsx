@@ -1,11 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Eye } from 'lucide-react';
+import { AlertCircle, DollarSign } from 'lucide-react';
 import { dashboard } from '../services/dashboard';
 import Spinner from '../components/ui/Spinner';
 import EmptyState from '../components/ui/EmptyState';
-import Badge, { statusBadge } from '../components/ui/Badge';
 import { useToast } from '../components/ui/Toast';
+
+function agingBadge(dias) {
+  const d = Number(dias || 0);
+  if (d > 30) return { variant: 'ink-aging-badge--danger', label: `+${d} Días` };
+  if (d > 0) return { variant: 'ink-aging-badge--warning', label: `+${d} Días` };
+  if (d === 0) return { variant: 'ink-aging-badge--neutral', label: 'Vence hoy' };
+  return { variant: 'ink-aging-badge--neutral', label: `Vence en ${Math.abs(d)}d` };
+}
+
+function agingDot(dias) {
+  const d = Number(dias || 0);
+  if (d > 30) return 'var(--color-error)';
+  if (d > 0)  return 'var(--color-warning)';
+  return 'var(--text-tertiary)';
+}
 
 export default function CobranzaPage() {
   const toast = useToast();
@@ -15,83 +29,153 @@ export default function CobranzaPage() {
 
   useEffect(() => {
     Promise.all([dashboard.cobranzaVencidas(), dashboard.cobranzaResumen()])
-      .then(([v, r]) => { setVencidas(Array.isArray(v) ? v : []); setResumen(r); })
+      .then(([vencidasResponse, resumenResponse]) => {
+        setVencidas(Array.isArray(vencidasResponse) ? vencidasResponse : []);
+        setResumen(resumenResponse);
+      })
       .catch(() => toast('Error al cargar cobranza', 'error'))
       .finally(() => setLoading(false));
   }, []);
 
-  const fmt = (n) => Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 });
+  const fmt = (value) =>
+    Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 });
 
-  if (loading) return <div className="flex h-64 items-center justify-center"><Spinner size="lg" /></div>;
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-lg font-semibold text-gray-900">Cobranza</h1>
-        <p className="text-sm text-gray-500">Seguimiento de cobros y saldos pendientes</p>
+    <div className="page-shell">
+      <div className="page-header">
+        <div className="page-header-copy">
+          <p className="page-kicker">Flujo de caja</p>
+          <h2 className="page-title">Cobranza</h2>
+          <p className="page-subtitle">Seguimiento de saldos pendientes y vencimientos comerciales.</p>
+        </div>
       </div>
 
-      {/* Resumen */}
       {resumen && (
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: 'Total pendiente', value: `S/ ${fmt(resumen.total_por_cobrar)}`, color: 'text-orange-600' },
-            { label: 'Docs vencidos', value: resumen.documentos_vencidos ?? '—', color: 'text-red-600' },
-            { label: 'Cobrado este mes', value: `S/ ${fmt(resumen.total_pagado_mes)}`, color: 'text-green-600' },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-              <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
+        <div className="ink-metric-grid md:grid-cols-3">
+          {/* Total pendiente */}
+          <div className="ink-kpi-card ink-kpi-card--warning">
+            <div className="ink-kpi-inner">
+              <p className="ink-kpi-label">Total Pendiente</p>
+              <p className="ink-kpi-value">S/ {fmt(resumen.total_por_cobrar)}</p>
+              <p className="ink-kpi-note">saldo por regularizar</p>
             </div>
-          ))}
+          </div>
+          {/* Docs vencidos */}
+          <div className="ink-kpi-card ink-kpi-card--danger">
+            <div className="ink-kpi-inner">
+              <p className="ink-kpi-label">Docs. Vencidos</p>
+              <p className="ink-kpi-value">{resumen.documentos_vencidos ?? '--'}</p>
+              <p className="ink-kpi-note">accion inmediata requerida</p>
+            </div>
+          </div>
+          {/* Cobrado este mes */}
+          <div className="ink-kpi-card ink-kpi-card--success">
+            <div className="ink-kpi-inner">
+              <p className="ink-kpi-label">Cobrado Este Mes</p>
+              <p className="ink-kpi-value">S/ {fmt(resumen.total_pagado_mes)}</p>
+              <p className="ink-kpi-note">monto recuperado</p>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Tabla vencidas */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center gap-2 border-b border-gray-100 px-5 py-3.5">
-          <AlertCircle className="h-4 w-4 text-red-500" />
-          <h2 className="text-sm font-semibold text-gray-900">Cotizaciones vencidas</h2>
-          <span className="ml-auto text-xs text-gray-400">{vencidas.length} registros</span>
+      <div className="ink-table-card">
+        <div className="ink-table-header" style={{ background: 'var(--color-error-bg)' }}>
+          <div className="ink-table-title">
+            <AlertCircle className="h-4 w-4" style={{ color: 'var(--color-error)' }} />
+            Aging Report
+          </div>
+          <span style={{ fontSize: '12px', color: '#64748B' }}>
+            Priorizar por días de mora.
+          </span>
         </div>
+
         {vencidas.length === 0 ? (
-          <EmptyState title="Sin vencimientos" description="No hay cotizaciones vencidas" />
+          <EmptyState title="Sin vencimientos" description="No hay cotizaciones vencidas." />
         ) : (
-          <table className="w-full text-sm">
+          <table className="ink-table">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                <th className="px-4 py-3">Orden</th>
-                <th className="px-4 py-3">Cliente</th>
-                <th className="px-4 py-3">Vencimiento</th>
-                <th className="px-4 py-3 text-right">Total</th>
-                <th className="px-4 py-3 text-right">Saldo</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3"></th>
+              <tr>
+                <th>Doc.</th>
+                <th>Cliente</th>
+                <th>Vence</th>
+                <th className="text-right">Saldo</th>
+                <th className="text-center">Días</th>
+                <th className="text-right" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
-              {vencidas.map((item) => (
-                <tr key={item.cotizacion_id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-xs text-gray-500">{item.internal_order_number || item.document_number || `#${item.cotizacion_id}`}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{item.cliente_nombre || '—'}</td>
-                  <td className="px-4 py-3 text-red-600 text-xs">
-                    {item.fecha_vencimiento ? new Date(item.fecha_vencimiento).toLocaleDateString('es-PE') : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-right">S/ {fmt(item.total_venta)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-red-600">S/ {fmt(item.saldo_pendiente)}</td>
-                  <td className="px-4 py-3">
-                    <span className="text-xs text-red-500">{item.dias_vencido}d</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link to={`/cotizaciones/${item.cotizacion_id}`} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 inline-flex">
-                      <Eye className="h-4 w-4" />
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+            <tbody>
+              {vencidas.map((item) => {
+                const badge = agingBadge(item.dias_vencido);
+                const dot = agingDot(item.dias_vencido);
+                const isOverdue = Number(item.dias_vencido || 0) > 0;
+                return (
+                  <tr
+                    key={item.cotizacion_id}
+                    style={isOverdue ? { background: 'var(--color-error-bg)' } : {}}
+                  >
+                    <td data-label="Doc.">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: dot, flexShrink: 0 }} />
+                        <span className="font-mono-label" style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+                          {item.internal_order_number || item.document_number || `#${item.cotizacion_id}`}
+                        </span>
+                      </div>
+                    </td>
+                    <td data-label="Cliente" style={{ fontWeight: 600 }}>{item.cliente_nombre || '--'}</td>
+                    <td data-label="Vence">
+                      <span className="font-mono-label" style={{ fontSize: '12px', color: '#64748B' }}>
+                        {item.fecha_vencimiento
+                          ? new Date(item.fecha_vencimiento).toLocaleDateString('es-PE')
+                          : '--'}
+                      </span>
+                    </td>
+                    <td data-label="Saldo" className="text-right">
+                      <span className="font-mono-label" style={{ fontSize: '14px', color: isOverdue ? 'var(--color-error)' : 'var(--text-primary)' }}>
+                        S/ {fmt(item.saldo_pendiente)}
+                      </span>
+                    </td>
+                    <td data-label="Dias" className="text-center">
+                      <span className={`ink-aging-badge ${badge.variant}`}>{badge.label}</span>
+                    </td>
+                    <td data-label="Acciones" className="text-right">
+                      <div className="ink-row-actions">
+                        <Link
+                          to={`/cotizaciones/${item.cotizacion_id}`}
+                          className="ink-row-btn"
+                          title="Ver cotizacion"
+                          style={{ textDecoration: 'none' }}
+                        >
+                          <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Ver</span>
+                        </Link>
+                        <button
+                          className="ink-row-action-pill"
+                          title="Registrar pago"
+                        >
+                          <DollarSign className="h-3 w-3" />
+                          <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Pagar</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
+        <div className="ink-table-footer">
+          <span className="ink-table-count">
+            <strong>{vencidas.length}</strong> registros en seguimiento
+          </span>
+        </div>
       </div>
     </div>
   );

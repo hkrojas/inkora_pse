@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 
 <html class="dark" lang="en"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>PrintFlow | Billing &amp; Invoice Emission</title>
+<title>Inkora | Billing &amp; Invoice Emission</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
@@ -86,7 +86,7 @@
 <!-- TopNavBar (Shared Component) -->
 <nav class="fixed top-0 w-full z-50 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/50 shadow-2xl shadow-slate-950/50 flex justify-between items-center px-6 h-16">
 <div class="flex items-center gap-8">
-<span class="text-xl font-bold tracking-tight text-blue-400 font-headline">PrintFlow</span>
+<span class="text-xl font-bold tracking-tight text-blue-400 font-headline">Inkora</span>
 <div class="hidden md:flex gap-6 items-center">
 <a class="text-slate-400 hover:text-slate-200 transition-colors text-sm font-medium font-headline" href="#">Dashboard</a>
 <a class="text-blue-400 font-semibold transition-colors text-sm font-headline" href="#">Billing</a>
@@ -106,7 +106,7 @@
 <!-- SideNavBar (Shared Component) - Hidden on Mobile -->
 <aside class="fixed left-0 top-0 h-full w-64 bg-slate-950 border-r border-slate-900 hidden md:flex flex-col py-8 gap-y-2 z-40 mt-16">
 <div class="px-6 mb-8">
-<h2 class="text-lg font-black text-blue-400 font-headline">PrintFlow</h2>
+<h2 class="text-lg font-black text-blue-400 font-headline">Inkora</h2>
 <p class="text-xs text-slate-500 font-medium">Enterprise Billing</p>
 </div>
 <nav class="flex-1 px-3 space-y-1">
@@ -148,11 +148,11 @@
 <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
 <div>
 <h1 class="text-4xl font-extrabold tracking-tight text-on-surface mb-2 font-headline">Emitir Comprobante</h1>
-<p class="text-on-surface-variant text-sm max-w-lg">Configura los detalles del documento tributario para su validación inmediata ante la SUNAT.</p>
+<p class="text-on-surface-variant text-sm max-w-lg">Configura los detalles del documento tributario para su validaciÃ³n inmediata ante la SUNAT.</p>
 </div>
 <div class="flex bg-surface-container-lowest p-1 rounded-lg border border-outline-variant/10 shadow-inner">
 <button class="px-6 py-1.5 rounded text-xs font-bold font-headline bg-primary text-on-primary shadow-lg shadow-primary/10 transition-all">SOLES (S/)</button>
-<button class="px-6 py-1.5 rounded text-xs font-bold font-headline text-on-surface-variant hover:text-on-surface transition-all">DÓLARES ($)</button>
+<button class="px-6 py-1.5 rounded text-xs font-bold font-headline text-on-surface-variant hover:text-on-surface transition-all">DÃ“LARES ($)</button>
 </div>
 </div>
 </header>
@@ -163,14 +163,14 @@
 <section class="bg-surface-container-high rounded-xl p-6 shadow-sm">
 <h3 class="text-sm font-bold uppercase tracking-widest text-primary mb-6 flex items-center gap-2">
 <span class="material-symbols-outlined text-sm">person_search</span>
-                        Información del Cliente
+                        InformaciÃ³n del Cliente
                     </h3>
 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
 <div class="md:col-span-3">
 <label class="block text-[10px] font-bold text-on-surface-variant uppercase mb-2 tracking-tight">RUC o DNI del Cliente</label>
 <div class="relative">
 <span class="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-500">search</span>
-<input class="w-full bg-surface-container-lowest border-0 rounded-lg py-3.5 pl-11 pr-4 text-sm text-on-surface focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-slate-600" placeholder="Ingresa el número de documento..." type="text" value="20601234567"/>
+<input class="w-full bg-surface-container-lowest border-0 rounded-lg py-3.5 pl-11 pr-4 text-sm text-on-surface focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-slate-600" placeholder="Ingresa el nÃºmero de documento..." type="text" value="20601234567"/>
 </div>
 </div>
 <div class="flex items-end">
@@ -180,8 +180,8 @@
                             </button>
 </div>
 <div class="md:col-span-4 mt-2 p-4 bg-surface-container-lowest rounded-lg border-l-4 border-primary">
-<p class="text-xs font-bold text-on-surface-variant uppercase mb-1">Razón Social</p>
-<p class="text-lg font-bold text-on-surface tracking-tight">INDUSTRIAS GRÁFICAS PERÚ S.A.C.</p>
+<p class="text-xs font-bold text-on-surface-variant uppercase mb-1">RazÃ³n Social</p>
+<p class="text-lg font-bold text-on-surface tracking-tight">INDUSTRIAS GRÃFICAS PERÃš S.A.C.</p>
 </div>
 </div>
 </section>
@@ -194,14 +194,14 @@
                         </h3>
 <button class="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
 <span class="material-symbols-outlined text-sm">add</span>
-                            Añadir Item
+                            AÃ±adir Item
                         </button>
 </div>
 <div class="overflow-x-auto">
 <table class="w-full text-left">
 <thead>
 <tr class="bg-surface-container-low/50">
-<th class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Descripción</th>
+<th class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">DescripciÃ³n</th>
 <th class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-center">Cant.</th>
 <th class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-right">P. Unitario</th>
 <th class="px-6 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Subtotal</th>
@@ -212,7 +212,7 @@
 <tr class="hover:bg-surface-container-highest/30 transition-colors">
 <td class="px-6 py-5">
 <div class="flex flex-col">
-<span class="text-sm font-semibold text-on-surface">Papel Couché 150gr A3 - Mate</span>
+<span class="text-sm font-semibold text-on-surface">Papel CouchÃ© 150gr A3 - Mate</span>
 <span class="text-[10px] text-on-surface-variant font-medium">SKU: PC-150-M-A3</span>
 </div>
 </td>
@@ -291,8 +291,8 @@
 <span class="material-symbols-outlined text-tertiary">check_circle</span>
 </div>
 <div>
-<h4 class="text-sm font-bold text-on-surface mb-1">Estado de Conexión</h4>
-<p class="text-xs text-on-surface-variant">La plataforma está sincronizada con SUNAT. Los documentos se enviarán en tiempo real.</p>
+<h4 class="text-sm font-bold text-on-surface mb-1">Estado de ConexiÃ³n</h4>
+<p class="text-xs text-on-surface-variant">La plataforma estÃ¡ sincronizada con SUNAT. Los documentos se enviarÃ¡n en tiempo real.</p>
 </div>
 </div>
 </div>

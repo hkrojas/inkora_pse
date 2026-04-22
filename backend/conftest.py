@@ -1,5 +1,5 @@
 """
-conftest.py — PrintFlow Phase 7 Test Infrastructure
+conftest.py — Inkora Phase 7 Test Infrastructure
 ====================================================
 Fixtures compartidos por todos los archivos de test de Fase 7.
 
@@ -10,6 +10,7 @@ import sys
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
@@ -18,6 +19,21 @@ from sqlalchemy.pool import StaticPool
 
 # ── path setup ──────────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+def _bootstrap_test_environment() -> None:
+    """
+    Defaults de entorno solo para pytest.
+
+    Permite importar `config.py` sin depender del `.env` real y sin pisar
+    variables ya definidas por el entorno del usuario o CI.
+    """
+    bootstrap_db_path = Path(__file__).with_name("pytest_bootstrap.db")
+    os.environ.setdefault("ENVIRONMENT", "test")
+    os.environ.setdefault("DATABASE_URL", f"sqlite:///{bootstrap_db_path.as_posix()}")
+    os.environ.setdefault("SECRET_KEY", "pytest-secret-key")
+
+
+_bootstrap_test_environment()
 
 import models
 from database import Base

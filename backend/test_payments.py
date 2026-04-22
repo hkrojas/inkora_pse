@@ -266,6 +266,8 @@ class TestPagoRestricciones:
         cliente = make_cliente(db_session, tenant, "P31")
         quote = make_quote_via_crud(db_session, tenant, user, cliente)
         fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+        fiscal.estado = "facturada"
+        db_session.commit()
 
         nota = crud.crear_nota_credito_debito(
             db=db_session,

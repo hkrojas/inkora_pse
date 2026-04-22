@@ -1,4 +1,4 @@
-# PrintFlow — Frontend
+# Inkora — Frontend
 
 React + Vite + Tailwind CSS.
 

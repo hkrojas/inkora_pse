@@ -26,6 +26,16 @@ def read_productos(
     return crud.get_productos(db, current_user.tenant_id, skip, limit, q=q)
 
 
+@router.get("/productos/count")
+def count_productos(
+    q: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Retorna el total de productos del tenant (para paginación)."""
+    return {"total": crud.count_productos(db, current_user.tenant_id, q=q)}
+
+
 # ============================================================
 # FASE 8: IMPORTACIÓN MASIVA DE PRODUCTOS
 # IMPORTANTE: Estas rutas literales deben declararse ANTES de
@@ -53,27 +63,29 @@ def descargar_plantilla_productos():
     Úsala como base para preparar tu archivo de importación masiva.
     """
     header = (
-        "nombre,precio_unitario,codigo_interno,descripcion,"
+        "nombre,precio_unitario,precio_incluye_igv,codigo_interno,descripcion,"
         "unidad_medida,tipo_afectacion_igv"
     )
     ejemplo1 = (
-        "Impresión A4 Full Color,5.90,IMP-A4-FC,"
+        "Impresión A4 Full Color,5.90,true,IMP-A4-FC,"
         "Impresión a color en papel A4 80gr,NIU,10"
     )
     ejemplo2 = (
-        "Plastificado Mate A4,2.50,PLAST-A4,"
+        "Plastificado Mate A4,2.12,false,PLAST-A4,"
         "Laminado mate tamaño A4,NIU,10"
     )
     ejemplo3 = (
-        "Diseño Gráfico por hora,80.00,DIS-HR,"
+        "Diseño Gráfico por hora,80.00,true,DIS-HR,"
         "Servicio de diseño gráfico por hora,ZZ,10"
     )
     content = "\n".join([header, ejemplo1, ejemplo2, ejemplo3]) + "\n"
-    return Response(
+    response = Response(
         content=content.encode("utf-8-sig"),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=plantilla_productos.csv"},
     )
+    response.headers["Cache-Control"] = "public, max-age=86400"  # 24h
+    return response
 
 
 @router.post(
@@ -90,7 +102,7 @@ async def importar_productos(
     Importa productos masivamente desde un archivo CSV o Excel (.xlsx).
 
     Columnas requeridas: nombre, precio_unitario
-    Columnas opcionales: codigo_interno, descripcion, unidad_medida, tipo_afectacion_igv
+    Columnas opcionales: precio_incluye_igv, codigo_interno, descripcion, unidad_medida, tipo_afectacion_igv
 
     - Los productos con nombre duplicado en el tenant se omiten.
     - Los errores por fila se reportan sin interrumpir el resto.
@@ -123,6 +135,7 @@ async def importar_productos(
         producto_data = schemas.ProductoCreate(
             nombre=fila.nombre,
             precio_unitario=fila.precio_unitario,
+            precio_incluye_igv=fila.precio_incluye_igv,
             codigo_interno=fila.codigo_interno,
             descripcion=fila.descripcion,
             unidad_medida=fila.unidad_medida,
@@ -136,6 +149,31 @@ async def importar_productos(
         omitidos=omitidos,
         errores=[schemas.ImportErrorDetail(**e) for e in errores_parse],
     )
+
+
+@router.get(
+    "/productos/codigo-sugerido",
+    summary="Genera un código único para un nuevo producto",
+)
+def codigo_sugerido(
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Devuelve un codigo_interno aleatorio que no existe en el tenant."""
+    import secrets
+    for _ in range(8):
+        candidate = f"PROD-{secrets.token_hex(3).upper()}"
+        exists = (
+            db.query(models.Producto)
+            .filter(
+                models.Producto.tenant_id == current_user.tenant_id,
+                models.Producto.codigo_interno == candidate,
+            )
+            .first()
+        )
+        if not exists:
+            return {"codigo": candidate}
+    raise HTTPException(500, "No se pudo generar un código único. Ingrésalo manualmente.")
 
 
 # ============================================================

@@ -2,12 +2,12 @@
 ==========================================================
 MIGRACION: Fase 5 - Superadmin / SaaS Billing Domain
 ==========================================================
-Crea las tablas de control SaaS de PrintFlow:
+Crea las tablas de control SaaS de Inkora:
   - subscriptions       (estado y plan de cada tenant)
-  - subscription_payments (pagos SaaS tenant → PrintFlow)
+  - subscription_payments (pagos SaaS tenant → Inkora)
 
 SEPARACION DE DOMINIOS:
-  - subscriptions/subscription_payments → PrintFlow cobra al tenant
+  - subscriptions/subscription_payments → Inkora cobra al tenant
   - pagos                               → tenant cobra a su cliente
   Nunca mezclar.
 

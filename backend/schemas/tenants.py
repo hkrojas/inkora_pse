@@ -2,9 +2,11 @@
 from datetime import datetime
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from schemas._base import StrictInputModel
+from services.bank_account_validation import validate_and_normalize_bank_accounts
+from services.phone_validation import normalize_and_validate_optional_peru_mobile
 
 
 class TenantBase(StrictInputModel):
@@ -15,6 +17,11 @@ class TenantBase(StrictInputModel):
 class TenantCreate(TenantBase):
     business_address: Optional[str] = None
     business_phone: Optional[str] = None
+
+    @field_validator("business_phone")
+    @classmethod
+    def validate_business_phone(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_and_validate_optional_peru_mobile(value, "Telefono de contacto")
 
 
 class TenantUpdate(StrictInputModel):
@@ -31,6 +38,16 @@ class TenantUpdate(StrictInputModel):
     apisperu_token: Optional[str] = None
     apisperu_url: Optional[str] = None
 
+    @field_validator("bank_accounts")
+    @classmethod
+    def validate_bank_accounts(cls, value: Optional[List[dict]]) -> Optional[List[dict]]:
+        return validate_and_normalize_bank_accounts(value)
+
+    @field_validator("business_phone")
+    @classmethod
+    def validate_business_phone(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_and_validate_optional_peru_mobile(value, "Telefono de contacto")
+
 
 class TenantAdminUpdate(StrictInputModel):
     """Schema restringido para admin del tenant.
@@ -38,6 +55,21 @@ class TenantAdminUpdate(StrictInputModel):
     Campos fiscales y datos maestros de empresa son de solo lectura para el tenant.
     """
     business_phone: Optional[str] = None
+    primary_color: Optional[str] = None
+    pdf_note_1: Optional[str] = None
+    pdf_note_1_color: Optional[str] = None
+    pdf_note_2: Optional[str] = None
+    bank_accounts: Optional[List[dict]] = None
+
+    @field_validator("bank_accounts")
+    @classmethod
+    def validate_bank_accounts(cls, value: Optional[List[dict]]) -> Optional[List[dict]]:
+        return validate_and_normalize_bank_accounts(value)
+
+    @field_validator("business_phone")
+    @classmethod
+    def validate_business_phone(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_and_validate_optional_peru_mobile(value, "Telefono de contacto")
 
 
 class TenantSummaryResponse(BaseModel):
@@ -57,6 +89,8 @@ class TenantResponse(TenantSummaryResponse):
     pdf_note_1_color: Optional[str] = None
     pdf_note_2: Optional[str] = None
     bank_accounts: Optional[Any] = None
+    apisperu_token_status: Optional[str] = None
+    apisperu_token_checked_at: Optional[datetime] = None
 
     # apisperu_url y apisperu_token NO se exponen al tenant — solo el estado booleano
     apisperu_token_secret: Optional[str] = Field(
@@ -139,6 +173,26 @@ class SuperadminTenantCreate(StrictInputModel):
     business_address: Optional[str] = None
     apisperu_token: Optional[str] = None
     apisperu_url: Optional[str] = None
+
+
+class EmissionErrorResponse(BaseModel):
+    job_id: int
+    action: str
+    resource_type: str
+    resource_id: int
+    last_error: Optional[str] = None
+    attempts: int
+    finished_at: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TokenHealthResponse(BaseModel):
+    tenant_id: int
+    status: str
+    checked_at: Optional[datetime] = None
+    message: str
 
 
 class ApisPeruTokenValidationRequest(StrictInputModel):

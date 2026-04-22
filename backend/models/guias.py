@@ -1,7 +1,7 @@
 """models/guias.py — GuiaRemision, GuiaRemisionItem."""
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -9,6 +9,14 @@ from database import Base
 
 class GuiaRemision(Base):
     __tablename__ = "guias_remision"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "serie",
+            "correlativo",
+            name="uq_guias_remision_tenant_serie_correlativo",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     serie = Column(String, default="T001")

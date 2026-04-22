@@ -1,11 +1,11 @@
 """
 subscription_service.py — Fase 5: Superadmin / SaaS Billing Domain
 
-Lógica de negocio para control interno de acceso y pagos SaaS de PrintFlow.
+Lógica de negocio para control interno de acceso y pagos SaaS de Inkora.
 
 SEPARACIÓN DE DOMINIOS:
   - Este servicio opera sobre Subscription y SubscriptionPayment.
-  - Subscription/SubscriptionPayment → PrintFlow cobra al tenant (SaaS).
+  - Subscription/SubscriptionPayment → Inkora cobra al tenant (SaaS).
   - Pago                             → tenant cobra a su cliente (operativo).
   Nunca mezclar estos dos dominios.
 """
@@ -174,9 +174,9 @@ def register_saas_payment(
     admin_user: models.User,
 ) -> models.SubscriptionPayment:
     """
-    Registra un pago SaaS recibido de un tenant a PrintFlow.
+    Registra un pago SaaS recibido de un tenant a Inkora.
 
-    DOMINIO: tenant → PrintFlow (SaaS). No es un cobro del tenant a sus clientes.
+    DOMINIO: tenant → Inkora (SaaS). No es un cobro del tenant a sus clientes.
     """
     _get_tenant_or_404(db, tenant_id)
     return crud.register_subscription_payment(db, tenant_id, data, admin_user.id)

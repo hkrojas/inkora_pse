@@ -1,4 +1,4 @@
-# Frozen Domains — PrintFlow Backend
+# Frozen Domains — Inkora Backend
 
 Este documento describe el estado de los dominios congelados en `routers/legacy_frozen.py`.
 Un dominio "congelado" existe en el código y tiene modelos/datos, pero **no forma parte del launch

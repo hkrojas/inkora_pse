@@ -13,7 +13,11 @@ requests
 python-multipart
 python-dateutil
 reportlab
+svglib
 num2words
 qrcode[pil]
 openpyxl
 supabase
+xmltodict
+signxml
+slowapi

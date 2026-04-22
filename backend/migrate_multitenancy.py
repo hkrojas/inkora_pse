@@ -43,7 +43,7 @@ def run_migration():
 
     with engine.connect() as conn:
         print("=" * 60)
-        print("MIGRACION MULTITENANCIA - PrintFlow SaaS B2B")
+        print("MIGRACION MULTITENANCIA - Inkora SaaS B2B")
         print("=" * 60)
 
         # ======================================================

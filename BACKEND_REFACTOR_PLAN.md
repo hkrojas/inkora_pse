@@ -1,6 +1,6 @@
 # BACKEND_REFACTOR_PLAN.md
 
-This file translates the current PrintFlow strategy into a **file-by-file backend refactor plan**.
+This file translates the current Inkora strategy into a **file-by-file backend refactor plan**.
 
 It is based on the current backend state and the current product decision:
 - **single launch plan only for now**

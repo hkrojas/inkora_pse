@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { BASE_URL } from './config';
 
 async function request(path, options = {}) {
   const token = localStorage.getItem('token');
@@ -24,7 +24,9 @@ async function request(path, options = {}) {
     // Handle unauthorized globally
     if (response.status === 401) {
       localStorage.removeItem('token');
-      // window.location.href = '/login'; // Optional: handled by store
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     const errorData = await response.json().catch(() => ({ detail: 'Error desconocido' }));
     throw new Error(errorData.detail || 'Error en la petición');

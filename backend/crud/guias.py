@@ -35,6 +35,19 @@ def get_guia_remision(db: Session, guia_id: int, usuario: models.User = None):
 
 
 def create_guia_remision(db: Session, data: dict, usuario_id: int, tenant_id: int):
+    """Crea una guia de remision.
+
+    Envuelto con retry transparente para colisiones de correlativo (Fase A).
+    """
+    from crud._base import _retry_on_correlativo_conflict
+    return _retry_on_correlativo_conflict(
+        _create_guia_remision_inner,
+        db, data, usuario_id, tenant_id,
+    )
+
+
+def _create_guia_remision_inner(db: Session, data: dict, usuario_id: int, tenant_id: int):
+    """Implementacion interna — llamada por el wrapper con retry."""
     items_data = data.pop("items", [])
     cotizacion_id = data.get("cotizacion_id")
     source_quote_id = None

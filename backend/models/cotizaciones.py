@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import backref, relationship
 
 from database import Base
@@ -10,6 +10,14 @@ from database import Base
 
 class Cotizacion(Base):
     __tablename__ = "cotizaciones"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "serie",
+            "correlativo",
+            name="uq_cotizaciones_tenant_serie_correlativo",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     serie = Column(String, default="COT")
@@ -51,6 +59,10 @@ class Cotizacion(Base):
     sunat_pdf_url = Column(String, nullable=True)
     sunat_cdr_url = Column(String, nullable=True)
     sunat_error = Column(Text, nullable=True)
+    sunat_xml_content = Column(Text, nullable=True)
+    sunat_hash = Column(String, nullable=True)
+    sunat_qr_payload = Column(JSON, nullable=True)
+    sunat_qr_svg = Column(Text, nullable=True)
 
     tipo_de_cambio = Column(Numeric(10, 4), nullable=True)
     sujeta_detraccion = Column(Boolean, default=False)

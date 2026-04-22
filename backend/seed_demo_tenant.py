@@ -35,8 +35,8 @@ import crud
 # ---------------------------------------------------------------------------
 
 DEMO_RUC = "20999999999"
-DEMO_BUSINESS_NAME = "Imprenta Demo PrintFlow SAC"
-DEMO_ADMIN_EMAIL = "admin@demo.printflow.pe"
+DEMO_BUSINESS_NAME = "Imprenta Demo Inkora SAC"
+DEMO_ADMIN_EMAIL = "admin@demo.inkora.pe"
 DEMO_ADMIN_PASSWORD = "demo1234"
 
 DEMO_CLIENTES = [
@@ -161,7 +161,7 @@ DEMO_PRODUCTOS = [
 # ---------------------------------------------------------------------------
 
 def main():
-    print("=== Seed Demo Tenant — PrintFlow Fase 8 ===\n")
+    print("=== Seed Demo Tenant — Inkora Fase 8 ===\n")
 
     # Crear tablas si no existen (solo para dev)
     Base.metadata.create_all(bind=engine)
@@ -192,7 +192,7 @@ def main():
             user = models.User(
                 email=DEMO_ADMIN_EMAIL,
                 hashed_password=get_password_hash(DEMO_ADMIN_PASSWORD),
-                nombre_completo="Admin Demo PrintFlow",
+                nombre_completo="Admin Demo Inkora",
                 rol="admin",
                 tenant_id=tenant.id,
             )

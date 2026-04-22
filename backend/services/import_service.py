@@ -15,7 +15,8 @@ Columnas CSV/Excel para clientes:
 
 Columnas CSV/Excel para productos:
   Requeridas : nombre, precio_unitario
-  Opcionales : codigo_interno, descripcion, unidad_medida, tipo_afectacion_igv
+  Opcionales : codigo_interno, descripcion, unidad_medida, tipo_afectacion_igv,
+               precio_incluye_igv
 """
 
 import csv
@@ -59,6 +60,7 @@ class FilaProductoParseada:
     descripcion: Optional[str] = None
     unidad_medida: str = "NIU"
     tipo_afectacion_igv: str = "10"
+    precio_incluye_igv: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +121,27 @@ def _get_field(row: dict, *aliases: str) -> str:
         if val:
             return val
     return ""
+
+
+def _parse_bool(val, *, default: bool = True) -> bool:
+    normalized = _str(val).lower().replace("-", "_").replace(" ", "_")
+    if not normalized:
+        return default
+
+    truthy = {
+        "1", "true", "t", "si", "sí", "yes", "y",
+        "con_igv", "incluye_igv", "precio_con_igv", "bruto",
+    }
+    falsy = {
+        "0", "false", "f", "no", "n",
+        "sin_igv", "precio_sin_igv", "neto", "base",
+    }
+
+    if normalized in truthy:
+        return True
+    if normalized in falsy:
+        return False
+    return default
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +254,10 @@ def parse_productos(
             descripcion=_get_field(row, "descripcion", "descripción", "detalle") or None,
             unidad_medida=_get_field(row, "unidad_medida") or "NIU",
             tipo_afectacion_igv=_get_field(row, "tipo_afectacion_igv") or "10",
+            precio_incluye_igv=_parse_bool(
+                _get_field(row, "precio_incluye_igv", "precio_con_igv", "incluye_igv"),
+                default=True,
+            ),
         ))
 
     return validas, errores

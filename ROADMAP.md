@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-This roadmap describes the current strategic execution path for PrintFlow.
+This roadmap describes the current strategic execution path for Inkora.
 
 The immediate objective is **not** to finish the full ERP vision. The objective is to build a **solid, safe, and sellable backend foundation** for a **single-plan launch product**.
 
@@ -35,7 +35,7 @@ This is the product to stabilize and validate first.
 # Milestone 1 — Scope reset
 
 ## Goal
-Turn PrintFlow from “expanding ERP vision” into a controlled launch product.
+Turn Inkora from “expanding ERP vision” into a controlled launch product.
 
 ## Strategic outcome
 - one launch plan
@@ -142,7 +142,7 @@ If quotations, invoices, notes, and related records are modeled ambiguously, fut
 # Milestone 6 — Superadmin and SaaS operations
 
 ## Goal
-Build the internal operating layer needed to run PrintFlow as a real SaaS.
+Build the internal operating layer needed to run Inkora as a real SaaS.
 
 ## Strategic focus
 - tenant activation/suspension
@@ -177,7 +177,7 @@ Perfect the single-plan launch workflow.
 This is the workflow customers will pay for. It must feel complete enough to replace scattered manual work.
 
 ## Success criteria
-- a real print shop can operate the core flow inside PrintFlow
+- a real print shop can operate the core flow inside Inkora
 - the workflow already beats spreadsheet + generic invoicing + manual guide/label work
 
 ---
@@ -281,7 +281,7 @@ A task belongs **later** if it mainly adds:
 # Definition of roadmap success
 
 This roadmap succeeds when:
-- PrintFlow has a stable backend core
+- Inkora has a stable backend core
 - the team can operate tenants and billing internally
 - the product supports a clean launch workflow
 - early customers can pay and use it reliably

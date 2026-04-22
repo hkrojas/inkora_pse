@@ -1,35 +1,47 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 export default function Modal({ open, onClose, title, children, size = 'md' }) {
   useEffect(() => {
-    if (!open) return;
-    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    if (!open) return undefined;
+
+    const handler = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   if (!open) return null;
 
-  const sizes = {
-    sm: 'max-w-sm',
-    md: 'max-w-lg',
-    lg: 'max-w-2xl',
-    xl: 'max-w-4xl',
-  };
+  const panelClassName = `modal-panel modal-panel--${size}`;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className={`relative w-full ${sizes[size]} rounded-xl bg-white shadow-2xl`}>
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-            <X className="h-5 w-5" />
+  return createPortal(
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className={panelClassName} onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <p className="modal-title">{title}</p>
+          <button onClick={onClose} aria-label="Cerrar" className="modal-close-btn">
+            <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="px-6 py-5">{children}</div>
+
+        <div className="modal-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

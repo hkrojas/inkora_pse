@@ -12,6 +12,8 @@ from crud._base import (
     get_producto_for_tenant,
     _clone_cotizacion_items,
     _next_correlativo_for_series,
+    _retry_on_correlativo_conflict,
+    MAX_CORRELATIVO_RETRIES,
     get_source_quote,
     get_latest_fiscal_document_for_quote,
     resolve_fiscal_document_reference,
@@ -22,6 +24,9 @@ from crud.auth import (
     get_user_by_email,
     get_user_by_id,
     create_user,
+    change_user_password,
+    generate_temp_password,
+    log_auth_event,
 )
 
 from crud.tenants import (
@@ -48,6 +53,7 @@ from crud.tenants import (
 
 from crud.clientes import (
     get_clientes,
+    count_clientes,
     create_cliente,
     update_cliente,
     patch_cliente,
@@ -56,6 +62,7 @@ from crud.clientes import (
 
 from crud.productos import (
     get_productos,
+    count_productos,
     create_producto,
     update_producto,
     delete_producto,
@@ -66,6 +73,8 @@ from crud.cotizaciones import (
     get_cotizacion,
     get_cotizacion_by_uuid,
     create_cotizacion,
+    duplicate_cotizacion,
+    delete_cotizacion,
     create_fiscal_document_from_quote,
     guardar_respuesta_sunat,
     guardar_error_sunat,
@@ -80,10 +89,45 @@ from crud.guias import (
     guardar_respuesta_sunat_gre,
     guardar_error_sunat_gre,
 )
+from crud.emission_jobs import (
+    get_emission_job,
+    get_emission_jobs,
+    get_active_emission_job_by_key,
+    get_emission_job_by_key,
+    create_emission_job,
+    claim_next_emission_job,
+    mark_emission_job_attempt_started,
+    mark_emission_job_succeeded,
+    mark_emission_job_retry,
+    requeue_emission_job,
+    recover_stale_processing_jobs,
+    mark_emission_job_failed,
+)
 
 from crud.pagos import (
     registrar_pago,
     get_pagos_cotizacion,
+)
+
+from crud.superadmin import (
+    get_tenant_users_with_metrics,
+    reset_user_password,
+    toggle_user_active,
+    get_tenant_emission_errors,
+    check_apisperu_token_health,
+    check_all_apisperu_tokens,
+)
+
+from crud.usage_limits import (
+    QuotaExceededError,
+    build_tenant_usage_report,
+    check_emission_quota,
+    count_usage_for_kind,
+    delete_limit,
+    get_active_limits,
+    get_limit_by_id,
+    get_tenant_limits,
+    upsert_tenant_limits,
 )
 
 from crud.reportes import (

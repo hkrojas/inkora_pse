@@ -1,5 +1,5 @@
 # backend/database.py
-# PrintFlow SaaS B2B - Multitenancia con filtro global automatico
+# Inkora SaaS B2B - Multitenancia con filtro global automatico
 # ================================================================
 
 from contextvars import ContextVar, Token
@@ -14,11 +14,26 @@ from logging_utils import get_logger
 # CONEXION A BASE DE DATOS
 # ==========================================
 
-engine = create_engine(
-    settings.DATABASE_URL,
-    pool_pre_ping=True,
-    echo=False,
-)
+engine_kwargs = {
+    "pool_pre_ping": settings.DB_POOL_PING,
+    "echo": False,
+}
+
+if not settings.DATABASE_URL.startswith("sqlite"):
+    engine_kwargs.update(
+        {
+            "pool_size": settings.DB_POOL_SIZE,
+            "max_overflow": settings.DB_MAX_OVERFLOW,
+            "pool_timeout": settings.DB_POOL_TIMEOUT_SECONDS,
+            "pool_recycle": settings.DB_POOL_RECYCLE_SECONDS,
+        }
+    )
+
+# Si la URL contiene "?pgbouncer=true", se asume modo transaccional.
+# PgBouncer en modo transaction no soporta prepared statements ni session vars.
+USES_PGBOUNCER = "pgbouncer" in settings.DATABASE_URL.lower()
+
+engine = create_engine(settings.DATABASE_URL, **engine_kwargs)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -46,12 +61,19 @@ def reset_tenant_context(token: Token) -> None:
 
 
 def apply_tenant_context(db: Session, tenant_id: int) -> Token:
-    """Sincroniza tenant_id en ContextVar y en la sesion SQL actual."""
+    """Sincroniza tenant_id en ContextVar y en la sesion SQL actual.
+
+    Con PgBouncer en modo transaccional, ``set_config`` no es confiable
+    porque cada query puede usar una conexion fisica distinta.
+    En ese caso solo se activa el ContextVar (el filtro ``do_orm_execute``
+    ya lo lee directamente).
+    """
     token = activate_tenant_context(tenant_id)
-    db.execute(
-        text("SELECT set_config('app.current_tenant_id', :tid, true)"),
-        {"tid": str(tenant_id)},
-    )
+    if not USES_PGBOUNCER:
+        db.execute(
+            text("SELECT set_config('app.current_tenant_id', :tid, true)"),
+            {"tid": str(tenant_id)},
+        )
     return token
 
 

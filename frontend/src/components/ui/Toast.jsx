@@ -1,7 +1,14 @@
-import { createContext, useContext, useState, useCallback } from 'react';
-import { CheckCircle, XCircle, X } from 'lucide-react';
+import { createContext, useCallback, useContext, useState } from 'react';
+import { AlertTriangle, CheckCircle, Info, X, XCircle } from 'lucide-react';
 
 const ToastContext = createContext(null);
+
+const ICON_MAP = {
+  error: <XCircle className="h-4 w-4 shrink-0 text-[var(--color-error)]" />,
+  warning: <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--color-warning)]" />,
+  info: <Info className="h-4 w-4 shrink-0 text-[var(--color-info)]" />,
+  success: <CheckCircle className="h-4 w-4 shrink-0 text-[var(--color-success)]" />,
+};
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
@@ -9,7 +16,9 @@ export function ToastProvider({ children }) {
   const push = useCallback((message, type = 'success') => {
     const id = Date.now();
     setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
   }, []);
 
   const remove = useCallback((id) => {
@@ -19,23 +28,19 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={push}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-        {toasts.map((t) => (
+      <div className="toast-container">
+        {toasts.map((toast) => (
           <div
-            key={t.id}
-            className={`flex items-center gap-3 rounded-lg px-4 py-3 shadow-lg text-sm font-medium ${
-              t.type === 'error'
-                ? 'bg-red-600 text-white'
-                : 'bg-gray-900 text-white'
-            }`}
+            key={toast.id}
+            className={`toast-item toast-item--${toast.type}`}
           >
-            {t.type === 'error' ? (
-              <XCircle className="h-4 w-4 shrink-0" />
-            ) : (
-              <CheckCircle className="h-4 w-4 shrink-0" />
-            )}
-            <span className="flex-1">{t.message}</span>
-            <button onClick={() => remove(t.id)} className="ml-2 opacity-70 hover:opacity-100">
+            {ICON_MAP[toast.type]}
+            <span className="flex-1">{toast.message}</span>
+            <button
+              onClick={() => remove(toast.id)}
+              className="btn-ghost p-0 min-h-[24px]"
+              aria-label="Cerrar"
+            >
               <X className="h-3.5 w-3.5" />
             </button>
           </div>

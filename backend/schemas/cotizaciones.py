@@ -130,6 +130,8 @@ class CobranzaVencidaItem(BaseModel):
 
 class FacturarPayload(StrictInputModel):
     tipo_comprobante: str
+    tipo_operacion: Optional[str] = None
+    serie_override: Optional[str] = None
 
 
 class NotaCreate(StrictInputModel):

@@ -19,6 +19,8 @@ from schemas.tenants import (
     SuperadminTenantResponse,
     ApisPeruTokenValidationRequest,
     ApisPeruTokenValidationResponse,
+    EmissionErrorResponse,
+    TokenHealthResponse,
 )
 
 from schemas.auth import (
@@ -28,8 +30,14 @@ from schemas.auth import (
     UserAdminUpdate,
     SuperadminUserCreate,
     UserResponse,
+    UserMetrics,
+    UserDetailResponse,
+    ResetPasswordResponse,
+    ToggleUserActiveRequest,
     Token,
     TokenData,
+    ChangePasswordRequest,
+    CreateUserWithPasswordResponse,
 )
 
 from schemas.clientes import (
@@ -111,6 +119,16 @@ from schemas.onboarding import (
     OnboardingChecklistItem,
     OnboardingEstadoResponse,
 )
+from schemas.emission_jobs import EmissionJobResponse
+
+from schemas.usage_limits import (
+    UsageLimitBase,
+    UsageLimitCreate,
+    UsageLimitResponse,
+    UsageLimitsBulkUpsert,
+    UsageLimitUsageItem,
+    UsageLimitsWithUsage,
+)
 
 __all__ = [
     "StrictInputModel",
@@ -118,9 +136,12 @@ __all__ = [
     "TenantBase", "TenantCreate", "TenantUpdate", "TenantSummaryResponse",
     "TenantResponse", "TenantSaaSUpdate", "SuperadminTenantCreate", "SuperadminTenantResponse",
     "ApisPeruTokenValidationRequest", "ApisPeruTokenValidationResponse",
+    "EmissionErrorResponse", "TokenHealthResponse",
     # auth
     "UserIdentity", "UserRegisterRequest", "UserUpdateProfile", "UserAdminUpdate",
-    "SuperadminUserCreate", "UserResponse", "Token", "TokenData",
+    "SuperadminUserCreate", "UserResponse", "UserMetrics", "UserDetailResponse",
+    "ResetPasswordResponse", "ToggleUserActiveRequest", "Token", "TokenData",
+    "ChangePasswordRequest", "CreateUserWithPasswordResponse",
     # clientes
     "CONDICION_PAGO_VALORES", "ClienteBase", "ClienteCreate", "ClienteUpdate", "ClienteResponse",
     # productos + MRP
@@ -149,4 +170,9 @@ __all__ = [
     # onboarding
     "ImportErrorDetail", "ImportResultResponse",
     "OnboardingChecklistItem", "OnboardingEstadoResponse",
+    # emission jobs
+    "EmissionJobResponse",
+    # usage limits
+    "UsageLimitBase", "UsageLimitCreate", "UsageLimitResponse",
+    "UsageLimitsBulkUpsert", "UsageLimitUsageItem", "UsageLimitsWithUsage",
 ]

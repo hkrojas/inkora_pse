@@ -1,6 +1,6 @@
 # TASKS.md
 
-This file is the execution checklist for the current PrintFlow phase.
+This file is the execution checklist for the current Inkora phase.
 
 The project is being narrowed to a **single launch plan**. The goal is to make the backend safe, maintainable, and ready for a small paid beta before expanding into inventory, MRP, advanced production, AI, or multi-plan pricing.
 
@@ -204,7 +204,7 @@ Quotations and fiscal documents are clearly distinguishable in behavior and trac
 # Phase 5 — Superadmin and SaaS billing domain
 
 ## Goal
-Build the internal operational layer required to run PrintFlow as a SaaS.
+Build the internal operational layer required to run Inkora as a SaaS.
 
 ## Tasks
 - [ ] Introduce backend domain for subscription/access control.

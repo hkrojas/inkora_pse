@@ -8,6 +8,8 @@ Estos helpers son importados por los demás módulos del paquete crud/.
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc
+from sqlalchemy.exc import IntegrityError
+import time
 
 import models
 from access_control import can_access_all_tenant_resources
@@ -30,6 +32,38 @@ from services.document_flow_service import (
 )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# ── Concurrencia: retry de correlativo (Fase A) ──────────────────────────
+# Bajo carga concurrente, dos transacciones pueden competir por el mismo
+# correlativo. El UNIQUE CONSTRAINT previene duplicados, pero el segundo
+# usuario recibe un IntegrityError. Este wrapper reintenta transparentemente
+# con backoff exponencial corto (50ms, 100ms, 150ms).
+MAX_CORRELATIVO_RETRIES = 3
+_CORRELATIVO_CONSTRAINT = "uq_cotizaciones_tenant_serie_correlativo"
+
+
+def _retry_on_correlativo_conflict(func, *args, **kwargs):
+    """Ejecuta *func* reintentando ante IntegrityError de correlativo.
+
+    La función debe aceptar un argumento ``db`` (Session) como primer
+    parámetro posicional o keyword. En cada reintento se hace rollback
+    para liberar el lock antes de volver a intentar.
+    """
+    for attempt in range(MAX_CORRELATIVO_RETRIES):
+        try:
+            return func(*args, **kwargs)
+        except IntegrityError as exc:
+            db = kwargs.get("db") or (args[0] if args else None)
+            if db is not None:
+                db.rollback()
+            if _CORRELATIVO_CONSTRAINT not in str(exc.orig):
+                raise
+            if attempt == MAX_CORRELATIVO_RETRIES - 1:
+                raise ValueError(
+                    "No se pudo asignar un numero correlativo. "
+                    "Intente nuevamente."
+                ) from exc
+            time.sleep(0.05 * (attempt + 1))  # 50ms, 100ms, 150ms
 
 
 def _get_tenant_resource(db: Session, model, resource_id: int, tenant_id: int):

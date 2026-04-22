@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 import models
 from config import settings
 from services import calculations
+from services import fiscal_xml_service
+from services.quote_observation_service import observation_lines_to_plain_text
 from tenant_access import (
     get_apisperu_token as _get_apisperu_token,
     get_company_address as _get_company_address,
@@ -242,6 +244,49 @@ def _normalize_links(data: dict) -> dict:
     return normalized
 
 
+def _fetch_sale_qr_svg(user, xml_content: str | None) -> tuple[dict | None, str | None]:
+    qr_payload = fiscal_xml_service.build_sale_qr_payload_from_xml(xml_content)
+    if not qr_payload or not all(
+        qr_payload.get(key)
+        for key in ("ruc", "tipo", "serie", "numero", "emision", "clienteTipo", "clienteNumero")
+    ):
+        return qr_payload, None
+
+    token = _get_apisperu_token(user)
+    if not token:
+        return qr_payload, None
+
+    url = f"{_get_api_base_url(user)}/sale/qr"
+    try:
+        response = requests.post(
+            url,
+            data=json.dumps(qr_payload, cls=SUNATDecimalEncoder),
+            headers=_provider_request_headers(token),
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException:
+        return qr_payload, None
+
+    content_type = (response.headers.get("Content-Type") or "").lower()
+    if response.status_code >= 400 or "svg" not in content_type:
+        return qr_payload, None
+
+    return qr_payload, response.text
+
+
+def _attach_sale_artifacts(result: dict, user) -> dict:
+    if not result.get("success"):
+        return result
+
+    xml_content = result.get("xml")
+    qr_payload, qr_svg = _fetch_sale_qr_svg(user, xml_content)
+    if qr_payload:
+        result["qr_payload"] = qr_payload
+    if qr_svg:
+        result["qr_svg"] = qr_svg
+    return result
+
+
 def _build_address_payload(
     direccion: str | None,
     ubigeo: str | None = None,
@@ -378,7 +423,44 @@ def _construir_items_payload(items):
     return items_payload, {key: calculations.redondear(value) for key, value in totales.items()}
 
 
-def _base_payload(cotizacion, user, tipo_doc_comprobante):
+def _resolve_tipo_operacion(tipo_doc_comprobante: str, tipo_operacion_override: str | None = None) -> str:
+    if tipo_operacion_override:
+        return str(tipo_operacion_override).strip()
+    return "0101"
+
+
+def _build_payment_terms(cotizacion, moneda: str, monto_total):
+    condicion_pago = str(getattr(cotizacion, "condicion_pago", "") or "").strip().lower()
+    if not condicion_pago or condicion_pago == "contado":
+        return {
+            "formaPago": {
+                "moneda": moneda,
+                "tipo": "Contado",
+            },
+            "cuotas": None,
+        }
+
+    fecha_vencimiento = getattr(cotizacion, "fecha_vencimiento", None)
+    forma_pago = {
+        "moneda": moneda,
+        "tipo": "Credito",
+        "monto": calculations.redondear(monto_total),
+    }
+
+    cuotas = None
+    if fecha_vencimiento:
+        cuotas = [
+            {
+                "moneda": moneda,
+                "monto": calculations.redondear(monto_total),
+                "fechaPago": _current_issue_datetime(fecha_vencimiento),
+            }
+        ]
+
+    return {"formaPago": forma_pago, "cuotas": cuotas}
+
+
+def _base_payload(cotizacion, user, tipo_doc_comprobante, *, tipo_operacion_override: str | None = None):
     cliente = cotizacion.cliente
     if not cliente:
         raise FacturacionException("Cotizacion sin cliente.")
@@ -408,11 +490,18 @@ def _base_payload(cotizacion, user, tipo_doc_comprobante):
     }
 
     if tipo_doc_comprobante in {"01", "03"}:
-        payload["tipoOperacion"] = "0101"
-        payload["formaPago"] = {
-            "moneda": payload["tipoMoneda"],
-            "tipo": "Contado",
-        }
+        payload["tipoOperacion"] = _resolve_tipo_operacion(
+            tipo_doc_comprobante,
+            tipo_operacion_override=tipo_operacion_override,
+        )
+        payment_terms = _build_payment_terms(cotizacion, payload["tipoMoneda"], totales["venta"])
+        payload["formaPago"] = payment_terms["formaPago"]
+        if payment_terms["cuotas"]:
+            payload["cuotas"] = payment_terms["cuotas"]
+        if getattr(cotizacion, "fecha_vencimiento", None):
+            payload["fecVencimiento"] = _current_issue_datetime(cotizacion.fecha_vencimiento)
+        if getattr(cotizacion, "observaciones", None):
+            payload["observacion"] = observation_lines_to_plain_text(cotizacion.observaciones)
 
     return payload, totales
 
@@ -820,6 +909,8 @@ def emitir_factura(
     db: Session,
     user: models.User,
     tipo_doc_override=None,
+    tipo_operacion_override: str | None = None,
+    serie_override: str | None = None,
 ):
     if tipo_doc_override:
         tipo_comprobante = tipo_doc_override
@@ -827,16 +918,22 @@ def emitir_factura(
         tipo_cliente = obtener_tipo_documento_codigo(cotizacion.cliente.tipo_documento)
         tipo_comprobante = "01" if tipo_cliente == "6" else "03"
 
-    serie = "F001" if tipo_comprobante == "01" else "B001"
-    payload, _ = _base_payload(cotizacion, user, tipo_comprobante)
-    payload["serie"] = cotizacion.serie or serie
+    serie = serie_override or ("F001" if tipo_comprobante == "01" else "B001")
+    payload, _ = _base_payload(
+        cotizacion,
+        user,
+        tipo_comprobante,
+        tipo_operacion_override=tipo_operacion_override,
+    )
+    payload["serie"] = serie_override or cotizacion.serie or serie
     payload["correlativo"] = str(cotizacion.correlativo or cotizacion.id).zfill(6)
 
     payload = _aplicar_detraccion(payload, cotizacion, user, db)
     payload = _aplicar_anticipos(payload, cotizacion, user)
     payload = _sync_invoice_totals(payload)
 
-    return _enviar_a_api(payload, user, "/invoice/send")
+    result = _enviar_a_api(payload, user, "/invoice/send")
+    return _attach_sale_artifacts(result, user)
 
 
 def emitir_nota(
@@ -866,7 +963,8 @@ def emitir_nota(
     )
     payload["mtoImporteTotal"] = payload["mtoImpVenta"]
 
-    return _enviar_a_api(payload, user, "/note/send")
+    result = _enviar_a_api(payload, user, "/note/send")
+    return _attach_sale_artifacts(result, user)
 
 
 def _build_summary_payload(comprobante, motivo: str, user) -> dict:
@@ -958,15 +1056,50 @@ def _resolve_guide_recipient(guia) -> dict:
     }
 
 
+def _build_company_payload_gre(user) -> dict:
+    """Company payload para GRE: incluye codLocal requerido por SUNAT Nueva GRE."""
+    company_ruc = _get_company_ruc(user)
+    company_name = _get_company_name(user)
+    company_address = _get_company_address(user)
+
+    if not company_ruc:
+        raise FacturacionException("Emisor sin RUC configurado.")
+    if not company_name:
+        raise FacturacionException("Emisor sin razon social configurada.")
+
+    address = _build_address_payload(company_address)
+    address["codLocal"] = "0000"
+
+    return {
+        "ruc": company_ruc,
+        "razonSocial": company_name,
+        "nombreComercial": company_name,
+        "address": address,
+    }
+
+
 def _base_payload_gre(guia, user):
+    cotizacion = getattr(guia, "cotizacion", None)
+    cliente = getattr(cotizacion, "cliente", None) if cotizacion else None
+    destinatario_ruc = str(cliente.numero_documento).strip() if cliente and cliente.numero_documento else None
+    company_ruc = _get_company_ruc(user)
+    llegada = {
+        "ubigueo": guia.llegada_ubigeo or DEFAULT_UBIGEO,
+        "direccion": guia.llegada_direccion,
+    }
+    if destinatario_ruc:
+        llegada["ruc"] = destinatario_ruc
+    if guia.motivo_traslado == "04" or (destinatario_ruc and destinatario_ruc == company_ruc):
+        llegada["codLocal"] = "0000"
+
     payload = {
-        "version": "2022",
+        "version": 2022,
         "tipoDoc": "09",
         "serie": guia.serie or "T001",
         "correlativo": str(guia.correlativo).zfill(6),
         "fechaEmision": _current_issue_datetime(getattr(guia, "fecha_emision", None)),
         "observacion": guia.descripcion_motivo or "GUIA DE REMISION",
-        "company": _build_company_payload(user),
+        "company": _build_company_payload_gre(user),
         "destinatario": _resolve_guide_recipient(guia),
         "envio": {
             "codTraslado": guia.motivo_traslado,
@@ -975,13 +1108,12 @@ def _base_payload_gre(guia, user):
             "fecTraslado": _current_issue_datetime(guia.fecha_traslado),
             "pesoTotal": calculations.redondear(getattr(guia, "peso_bruto_total", 0)),
             "undPesoTotal": guia.unidad_medida_peso or "KGM",
-            "llegada": {
-                "ubigueo": guia.llegada_ubigeo or DEFAULT_UBIGEO,
-                "direccion": guia.llegada_direccion,
-            },
+            "llegada": llegada,
             "partida": {
                 "ubigueo": guia.partida_ubigeo or DEFAULT_UBIGEO,
                 "direccion": guia.partida_direccion,
+                "codLocal": "0000",
+                "ruc": company_ruc,
             },
         },
         "details": [

@@ -137,6 +137,8 @@ def test_credit_note_inherits_traceability_from_fiscal_document(db_session):
         user.id,
         "01",
     )
+    fiscal_document.estado = "facturada"
+    db_session.commit()
     note = crud.crear_nota_credito_debito(
         db=db_session,
         doc_afectado=fiscal_document,

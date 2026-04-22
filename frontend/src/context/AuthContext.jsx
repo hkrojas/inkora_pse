@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { BASE_URL } from '../lib/utils/config';
 
 const AuthContext = createContext(null);
 
@@ -58,8 +57,13 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    const token = localStorage.getItem('token');
+    if (token) await fetchMe(token);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
