@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { tenant as svc } from '../services/tenant';
+import { Sun, Moon, Monitor } from 'lucide-react';
 import Spinner from '../components/ui/Spinner';
 import CustomSelect from '../components/ui/CustomSelect';
 import { FieldError } from '../components/ui/FieldError';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import {
   buildPaymentMethodErrorMap,
   digitsOnly,
@@ -147,7 +149,7 @@ function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
                 onChange={(event) => onChange('numero', normalizeWalletPhone(event.target.value))}
                 placeholder="999 999 999"
                 inputMode="numeric"
-                style={errors.numero ? { borderColor: '#DC2626', boxShadow: 'inset 0 0 0 1px #DC2626' } : undefined}
+                style={errors.numero ? { borderColor: 'var(--color-error)', boxShadow: 'inset 0 0 0 1px var(--color-error)' } : undefined}
               />
               <div className="settings-field-hint">Celular peruano: 9 digitos numericos e inicia en 9.</div>
               <FieldError message={errors.numero} />
@@ -205,7 +207,7 @@ function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
                 onChange={(event) => onChange('cuenta', event.target.value)}
                 inputMode="numeric"
                 placeholder="Solo digitos"
-                style={errors.cuenta ? { borderColor: '#DC2626', boxShadow: 'inset 0 0 0 1px #DC2626' } : undefined}
+                style={errors.cuenta ? { borderColor: 'var(--color-error)', boxShadow: 'inset 0 0 0 1px var(--color-error)' } : undefined}
               />
               <div className="settings-field-hint">{accountHint}</div>
               <FieldError message={errors.cuenta} />
@@ -218,7 +220,7 @@ function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
                 onChange={(event) => onChange('cci', event.target.value)}
                 inputMode="numeric"
                 placeholder="20 digitos"
-                style={errors.cci ? { borderColor: '#DC2626', boxShadow: 'inset 0 0 0 1px #DC2626' } : undefined}
+                style={errors.cci ? { borderColor: 'var(--color-error)', boxShadow: 'inset 0 0 0 1px var(--color-error)' } : undefined}
               />
               <div className="settings-field-hint">CCI: 20 digitos numericos.</div>
               <FieldError message={errors.cci} />
@@ -230,8 +232,142 @@ function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
   );
 }
 
-const TABS = ['empresa', 'fiscal', 'cuenta'];
-const TAB_LABELS = { empresa: 'Perfil de Empresa', fiscal: 'Config. Fiscal', cuenta: 'Mi Cuenta' };
+const TABS = ['empresa', 'fiscal', 'cuenta', 'apariencia'];
+const TAB_LABELS = { empresa: 'Perfil de Empresa', fiscal: 'Config. Fiscal', cuenta: 'Mi Cuenta', apariencia: 'Apariencia' };
+
+function AparienciaPanel() {
+  const { theme, setTheme, resolvedTheme, noise, setNoise } = useTheme();
+
+  const themeOptions = [
+    { value: 'light', label: 'Claro', Icon: Sun },
+    { value: 'dark', label: 'Oscuro', Icon: Moon },
+    { value: 'system', label: 'Sistema', Icon: Monitor },
+  ];
+
+  return (
+    <div className="settings-company-layout">
+      <section className="ink-table-card settings-panel">
+        <div className="settings-panel-header settings-panel-header--stacked">
+          <p className="page-kicker" style={{ margin: 0 }}>Visual</p>
+          <h3 className="settings-panel-title">Apariencia del sistema</h3>
+          <p className="settings-panel-copy">
+            Personaliza el tema y la textura visual de Inkora. Los cambios se aplican inmediatamente.
+          </p>
+        </div>
+
+        {/* Tema */}
+        <div style={{ marginBottom: '24px' }}>
+          <label className="label" style={{ marginBottom: '10px', display: 'block' }}>Tema</label>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            {themeOptions.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setTheme(opt.value)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 16px',
+                  border: theme === opt.value ? '1.5px solid var(--brand-600)' : '1.5px solid var(--border-subtle)',
+                  background: theme === opt.value ? 'var(--brand-100)' : 'var(--bg-surface)',
+                  color: theme === opt.value ? 'var(--brand-600)' : 'var(--text-primary)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                  transition: 'all 150ms',
+                }}
+              >
+                <opt.Icon size={16} strokeWidth={1.5} />
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '8px' }}>
+            Tema activo: <strong style={{ color: 'var(--text-primary)' }}>{resolvedTheme === 'dark' ? 'Oscuro' : 'Claro'}</strong>
+            {theme === 'system' && ' (heredado del sistema)'}
+          </p>
+        </div>
+
+        {/* Grain toggle */}
+        <div style={{ borderTop: '1px solid var(--border-hair)', paddingTop: '24px' }}>
+          <label className="label" style={{ marginBottom: '10px', display: 'block' }}>Textura editorial</label>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Grain de papel</p>
+              <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                Añade una textura sutil tipo prensa al fondo. Solo afecta visualmente, no el rendimiento.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNoise(!noise)}
+              style={{
+                position: 'relative',
+                width: '44px',
+                height: '24px',
+                borderRadius: 0,
+                border: '1.5px solid var(--border-subtle)',
+                background: noise ? 'var(--brand-600)' : 'var(--bg-surface-2)',
+                cursor: 'pointer',
+                flexShrink: 0,
+                transition: 'background 150ms',
+              }}
+            >
+              <span
+                style={{
+                  position: 'absolute',
+                  top: '3px',
+                  left: noise ? '23px' : '3px',
+                  width: '16px',
+                  height: '16px',
+                  background: '#fff',
+                  border: '1px solid var(--border-subtle)',
+                  transition: 'left 150ms',
+                }}
+              />
+            </button>
+          </div>
+
+          {/* Preview card */}
+          <div
+            style={{
+              marginTop: '16px',
+              padding: '20px',
+              border: '1.5px solid var(--border-subtle)',
+              background: 'var(--bg-surface)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <p className="tx-kicker" style={{ marginBottom: '8px' }}>Vista previa</p>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+              {noise
+                ? 'El grain editorial está activado. Notarás una textura sutil sobre los fondos.'
+                : 'Sin grain. Fondos lisos tipo papel estándar.'}
+            </p>
+            {noise && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  pointerEvents: 'none',
+                  opacity: 0.025,
+                  backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
+                  backgroundRepeat: 'repeat',
+                  backgroundSize: '128px 128px',
+                }}
+              />
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
 
 export default function ConfiguracionPage() {
   const { user } = useAuth();
@@ -254,7 +390,7 @@ export default function ConfiguracionPage() {
         setPaymentMethods(normalizePaymentMethods(tenantResponse.bank_accounts));
         setPaymentMethodErrors({});
       })
-      .catch(() => toast('Error al cargar configuracion', 'error'))
+      .catch(() => toast('No se pudo cargar la configuración. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -352,8 +488,8 @@ export default function ConfiguracionPage() {
             onClick={() => setActiveTab(tab)}
             className="settings-tab"
             style={{
-              borderBottom: activeTab === tab ? '2px solid #4F46E5' : '2px solid transparent',
-              color: activeTab === tab ? '#4F46E5' : '#64748B',
+              borderBottom: activeTab === tab ? '2px solid var(--brand-600)' : '2px solid transparent',
+              color: activeTab === tab ? 'var(--brand-600)' : 'var(--text-tertiary)',
             }}
           >
             {TAB_LABELS[tab]}
@@ -451,7 +587,7 @@ export default function ConfiguracionPage() {
                           }}
                           placeholder="+51 999 999 999"
                           inputMode="numeric"
-                          style={phoneError ? { borderColor: '#DC2626', boxShadow: 'inset 0 0 0 1px #DC2626' } : undefined}
+                          style={phoneError ? { borderColor: 'var(--color-error)', boxShadow: 'inset 0 0 0 1px var(--color-error)' } : undefined}
                         />
                         <div className="settings-field-hint">Celular peruano: 9 digitos numericos e inicia en 9.</div>
                         <FieldError message={phoneError} />
@@ -525,8 +661,8 @@ export default function ConfiguracionPage() {
           <dl className="settings-status-list">
             <div className="settings-status-row">
               <div>
-                <p style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A' }}>Token ApisPeru</p>
-                <p style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Conexion API para consulta RUC/DNI.</p>
+                <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Token ApisPeru</p>
+                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>Conexion API para consulta RUC/DNI.</p>
               </div>
               <StatusBadge
                 ok={tenantData?.has_apisperu_token}
@@ -537,8 +673,8 @@ export default function ConfiguracionPage() {
 
             <div className="settings-status-row">
               <div>
-                <p style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A' }}>Credenciales SOL</p>
-                <p style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Transmision a SUNAT.</p>
+                <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Credenciales SOL</p>
+                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>Transmision a SUNAT.</p>
               </div>
               <StatusBadge
                 ok={tenantData?.has_sunat_credentials}
@@ -551,8 +687,8 @@ export default function ConfiguracionPage() {
 
             <div className="settings-status-row">
               <div>
-                <p style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A' }}>Certificado digital (PFX)</p>
-                <p style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Firma electronica de XML.</p>
+                <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Certificado digital (PFX)</p>
+                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>Firma electronica de XML.</p>
               </div>
               <StatusBadge
                 ok={tenantData?.has_sunat_cert}
@@ -563,14 +699,14 @@ export default function ConfiguracionPage() {
           </dl>
 
           <div className="settings-restricted-alert">
-            <span style={{ fontSize: '18px', color: '#818CF8', marginTop: '1px' }}>ℹ</span>
+            <span style={{ fontSize: '18px', color: 'var(--brand-300)', marginTop: '1px' }}>ℹ</span>
             <div>
               <p style={{ color: '#fff', fontWeight: 700, fontSize: '14px', marginBottom: '4px' }}>Actualizacion Restringida</p>
-              <p style={{ color: '#C7D2FE', fontSize: '12px' }}>
+              <p style={{ color: 'var(--brand-200)', fontSize: '12px' }}>
                 {isSuperadmin ? (
                   <>
                     Como superadmin, gestiona credenciales fiscales desde{' '}
-                    <Link to="/superadmin" style={{ color: '#A5B4FC', textDecoration: 'underline' }}>
+                    <Link to="/superadmin" style={{ color: 'var(--brand-200)', textDecoration: 'underline' }}>
                       Superadmin
                     </Link>
                     .
@@ -595,8 +731,8 @@ export default function ConfiguracionPage() {
               {((user?.nombre_completo || user?.email || 'U')[0]).toUpperCase()}
             </div>
             <div>
-              <p style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>{user?.nombre_completo || user?.email}</p>
-              <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: '4px' }}>
+              <p style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>{user?.nombre_completo || user?.email}</p>
+              <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: '4px' }}>
                 {isSuperadmin ? 'superadmin' : user?.rol}
               </p>
             </div>
@@ -620,6 +756,8 @@ export default function ConfiguracionPage() {
           </dl>
         </div>
       )}
+
+      {activeTab === 'apariencia' && <AparienciaPanel />}
     </div>
   );
 }

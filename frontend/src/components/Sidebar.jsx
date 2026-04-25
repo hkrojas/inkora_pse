@@ -1,80 +1,62 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
-  BarChart2,
-  BookOpen,
+  BarChart3,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
   CreditCard,
-  Eye,
   FileText,
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Menu,
+  Moon,
   Package,
-  Palette,
   Receipt,
-  RefreshCw,
   Settings,
   ShieldCheck,
-  ShoppingBag,
+  Sun,
   Truck,
   Users,
   XCircle,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { cn } from '../lib/utils/cn';
 
 const GROUPS = [
   {
-    id: 'panel',
-    label: 'Dashboard',
+    id: 'principal',
+    label: 'Principal',
     icon: LayoutDashboard,
-    direct: '/dashboard',
-  },
-  {
-    id: 'ventas',
-    label: 'Ventas',
-    icon: ShoppingBag,
     items: [
-      { to: '/comprobantes/nuevo', label: 'Crear comprobante', icon: Receipt },
+      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/clientes', label: 'Clientes', icon: Users },
       { to: '/cotizaciones', label: 'Cotizaciones', icon: FileText },
       { to: '/facturas', label: 'Facturas', icon: Receipt },
-      { to: '/boletas', label: 'Boletas de venta', icon: Receipt },
-      { to: '/notas', label: 'Notas Cred/Deb', icon: RefreshCw },
+      { to: '/boletas', label: 'Boletas', icon: Receipt },
+      { to: '/guias', label: 'Guías', icon: Truck },
       { to: '/cobranza', label: 'Cobranza', icon: CreditCard },
-    ],
-  },
-  {
-    id: 'sunat',
-    label: 'Documentos SUNAT',
-    icon: ShieldCheck,
-    items: [
-      { to: '/retenciones', label: 'Retenciones', icon: ShieldCheck },
-      { to: '/percepciones', label: 'Percepciones', icon: Eye },
-      { to: '/resumen-diario', label: 'Resumen Diario', icon: BarChart2 },
-      { to: '/bajas', label: 'Bajas', icon: XCircle },
-      { to: '/reversiones', label: 'Reversiones', icon: RefreshCw },
-      { to: '/guias', label: 'Guias Remision', icon: Truck },
-    ],
-  },
-  {
-    id: 'maestros',
-    label: 'Maestros',
-    icon: BookOpen,
-    items: [
-      { to: '/clientes', label: 'Clientes', icon: Users },
       { to: '/productos', label: 'Productos', icon: Package },
     ],
   },
   {
-    id: 'sistema',
-    label: 'Configuracion',
+    id: 'gestion',
+    label: 'Gestión',
     icon: Settings,
     items: [
-      { to: '/configuracion', label: 'Perfil empresa', icon: Settings },
-      { to: '/diseno-pdf', label: 'Diseno PDF', icon: Palette },
+      { to: '/comprobantes/nuevo', label: 'Crear comprobante', icon: Receipt },
+      { to: '/notas', label: 'Notas Créd/Déb', icon: Receipt },
+      { to: '/resumen-diario', label: 'Resumen Diario', icon: BarChart3 },
+      { to: '/bajas', label: 'Bajas', icon: XCircle },
+      { to: '/reversiones', label: 'Reversiones', icon: Receipt },
+      { to: '/retenciones', label: 'Retenciones', icon: ShieldCheck },
+      { to: '/percepciones', label: 'Percepciones', icon: ShieldCheck },
+      { to: '/configuracion', label: 'Configuración', icon: Settings },
+      { to: '/cambiar-password', label: 'Seguridad', icon: KeyRound },
     ],
   },
 ];
@@ -99,33 +81,35 @@ function useLocalStorage(key, defaultValue) {
 
 export default function Sidebar() {
   const { user, logout } = useAuth();
+  const { resolvedTheme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
 
   const [collapsed, setCollapsed] = useLocalStorage('sidebar-collapsed', false);
-  const [mobileCollapsed, setMobileCollapsed] = useState(true);
-  const [openGroups, setOpenGroups] = useLocalStorage('sidebar-open-groups', []);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useLocalStorage('sidebar-open-groups', ['principal']);
   const [tooltip, setTooltip] = useState(null);
-  const [isMobileViewport, setIsMobileViewport] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
+  const initializedSessionRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 1023px)').matches : false,
   );
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
-
-    const mediaQuery = window.matchMedia('(max-width: 767px)');
-    const sync = (event) => setIsMobileViewport(event.matches);
-
-    setIsMobileViewport(mediaQuery.matches);
-
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener('change', sync);
-      return () => mediaQuery.removeEventListener('change', sync);
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const sync = (event) => setIsMobile(event.matches);
+    setIsMobile(mq.matches);
+    if (mq.addEventListener) {
+      mq.addEventListener('change', sync);
+      return () => mq.removeEventListener('change', sync);
     }
-
-    mediaQuery.addListener(sync);
-    return () => mediaQuery.removeListener(sync);
+    mq.addListener(sync);
+    return () => mq.removeListener(sync);
   }, []);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
 
   const showTooltip = useCallback((event, label) => {
     if (!label) return;
@@ -134,26 +118,30 @@ export default function Sidebar() {
   }, []);
 
   const hideTooltip = useCallback(() => setTooltip(null), []);
-  const handleSidebarToggle = useCallback(() => {
-    if (isMobileViewport) {
-      setMobileCollapsed((current) => !current);
-      return;
-    }
-    setCollapsed((current) => !current);
-  }, [isMobileViewport, setCollapsed]);
+
+  useEffect(() => {
+    const sessionKey = user?.id || user?.email;
+    if (!sessionKey || initializedSessionRef.current === sessionKey) return;
+    initializedSessionRef.current = sessionKey;
+    setOpenGroups(['principal']);
+    setCollapsed(false);
+  }, [user?.id, user?.email, setCollapsed, setOpenGroups]);
+
+  const handleToggle = () => {
+    if (isMobile) setMobileOpen((v) => !v);
+    else setCollapsed((v) => !v);
+  };
 
   const isSuperadmin = user?.is_superadmin || user?.rol === 'superadmin';
   const roleLabel = isSuperadmin ? 'superadmin' : user?.rol;
-  const effectiveCollapsed = isMobileViewport ? mobileCollapsed : collapsed;
+  const showCollapsed = !isMobile && collapsed;
 
   const groups = GROUPS.map((group) => {
-    if (group.id === 'sistema' && isSuperadmin) {
+    if (group.id === 'gestion' && isSuperadmin) {
       return {
         ...group,
-        label: 'Sistema',
         items: [
-          { to: '/configuracion', label: 'Perfil empresa', icon: Settings },
-          { to: '/diseno-pdf', label: 'Diseno PDF', icon: Palette },
+          ...group.items,
           { to: '/superadmin', label: 'Superadmin', icon: ShieldCheck, accent: true },
         ],
       };
@@ -167,140 +155,150 @@ export default function Sidebar() {
     );
   };
 
-  const isGroupActive = (group) => {
-    if (group.direct) {
-      return location.pathname === group.direct || location.pathname.startsWith(`${group.direct}/`);
-    }
-    return group.items.some(
+  const isGroupActive = (group) =>
+    group.items.some(
       (item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`),
     );
-  };
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  const asideClassName = [
-    'sidebar-shell',
-    effectiveCollapsed ? 'sidebar-collapsed' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const userInitial = (user?.nombre_completo || user?.email || 'U')[0].toUpperCase();
 
   return (
     <>
-      <aside className={asideClassName} id="sidebar-nav">
-        <div className="sidebar-brand-wrap">
-          <div className="sidebar-logo-row">
-            <img src="/logo-icon.png" alt="Inkora" className="sidebar-logo-icon" />
-            {!effectiveCollapsed && <span className="sidebar-brand">Inkora</span>}
-          </div>
+      {/* Mobile trigger */}
+      {isMobile && !mobileOpen && (
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          className="fixed left-4 top-4 z-40 inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-[var(--shadow-soft)] lg:hidden"
+          aria-label="Abrir menú"
+        >
+          <Menu size={20} />
+        </button>
+      )}
 
-          {!effectiveCollapsed && (
-            <div className="raw-lines" aria-hidden="true">
-              <div />
-              <div />
-              <div />
-            </div>
+      {/* Mobile overlay */}
+      {isMobile && mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <aside
+        className={cn(
+          'group/sidebar flex flex-col flex-shrink-0 bg-[var(--color-surface)] border-r border-[var(--color-border)] transition-[width] duration-300',
+          isMobile
+            ? 'fixed inset-y-0 left-0 z-50 w-72 shadow-[var(--shadow-floating)] transition-transform duration-300'
+            : 'sticky top-0 h-screen',
+          isMobile && !mobileOpen && '-translate-x-full',
+          !isMobile && (collapsed ? 'w-[72px]' : 'w-[260px]'),
+        )}
+      >
+        {/* Brand */}
+        <div className="flex items-center justify-between px-4 pt-5 pb-4 border-b border-[var(--color-border)]">
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src="/logo-icon.png"
+              alt="Inkora"
+              className="h-9 w-9 flex-shrink-0 object-contain"
+            />
+            {!showCollapsed && (
+              <span className="truncate text-lg font-extrabold tracking-tight text-[var(--color-text)]">
+                Inkora
+              </span>
+            )}
+          </div>
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]"
+              aria-label="Cerrar menú"
+            >
+              <X size={18} />
+            </button>
           )}
         </div>
 
-        <button
-          className="sidebar-toggle-btn"
-          onClick={handleSidebarToggle}
-          title={effectiveCollapsed ? 'Expandir panel' : 'Contraer panel'}
-          type="button"
-        >
-          {effectiveCollapsed ? (
-            <ChevronRight size={14} />
-          ) : (
-            <>
-              <ChevronLeft size={14} />
-              <span className="sidebar-toggle-label">Contraer</span>
-            </>
-          )}
-        </button>
+        {/* Collapse toggle (desktop) */}
+        {!isMobile && (
+          <button
+            type="button"
+            onClick={handleToggle}
+            className={cn(
+              'mx-3 mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-muted)] transition-colors',
+              showCollapsed && 'justify-center px-0',
+            )}
+          >
+            {showCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            {!showCollapsed && <span>Contraer</span>}
+          </button>
+        )}
 
-        <nav className="sidebar-nav">
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-1">
           {groups.map((group) => {
+            const isOpen = openGroups.includes(group.id);
             const groupActive = isGroupActive(group);
-            const isOpen = openGroups.includes(group.id) || groupActive;
             const GroupIcon = group.icon;
 
-            if (group.direct) {
-              return (
-                <div key={group.id} className="sidebar-group">
-                  <NavLink
-                    to={group.direct}
-                    className={({ isActive }) =>
-                      `sidebar-group-header${isActive ? ' sidebar-group-header-active' : ''}`
-                    }
-                    onMouseEnter={(event) => effectiveCollapsed && showTooltip(event, group.label)}
-                    onMouseLeave={hideTooltip}
-                  >
-                    <GroupIcon size={16} className="sidebar-group-icon" />
-                    {!effectiveCollapsed && <span className="sidebar-group-label">{group.label}</span>}
-                  </NavLink>
-                </div>
-              );
-            }
-
             return (
-              <div key={group.id} className="sidebar-group">
+              <div key={group.id}>
                 <button
-                  className={`sidebar-group-header${groupActive ? ' sidebar-group-header-active' : ''}`}
-                  onClick={() => toggleGroup(group.id)}
-                  onMouseEnter={(event) => effectiveCollapsed && showTooltip(event, group.label)}
-                  onMouseLeave={hideTooltip}
                   type="button"
+                  onClick={() => !showCollapsed && toggleGroup(group.id)}
+                  onMouseEnter={(e) => showCollapsed && showTooltip(e, group.label)}
+                  onMouseLeave={hideTooltip}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-xl px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] transition-colors',
+                    showCollapsed && 'justify-center px-0',
+                    groupActive
+                      ? 'text-[var(--color-text)]'
+                      : 'text-[var(--color-text-soft)] hover:text-[var(--color-text)]',
+                  )}
                 >
-                  <GroupIcon size={16} className="sidebar-group-icon" />
-                  {!effectiveCollapsed && (
+                  <GroupIcon size={16} className="flex-shrink-0" />
+                  {!showCollapsed && (
                     <>
-                      <span className="sidebar-group-label">{group.label}</span>
+                      <span className="flex-1 text-left">{group.label}</span>
                       <ChevronDown
-                        size={13}
-                        className="sidebar-group-chevron"
-                        style={{
-                          transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)',
-                          transition: 'transform 200ms',
-                        }}
+                        size={14}
+                        className={cn(
+                          'transition-transform duration-200',
+                          isOpen ? 'rotate-0' : '-rotate-90',
+                        )}
                       />
                     </>
                   )}
                 </button>
 
-                {!effectiveCollapsed && (
-                  <div className={`sidebar-group-items${isOpen ? ' sidebar-group-items-open' : ''}`}>
+                {(isOpen || showCollapsed) && (
+                  <div className={cn('mt-1 space-y-0.5', showCollapsed ? '' : 'pl-2')}>
                     {group.items.map(({ to, label, icon: Icon, accent }) => (
                       <NavLink
                         key={to}
                         to={to}
-                        className={({ isActive }) =>
-                          `sidebar-navlink${isActive ? ' sidebar-navlink-active' : ''}${accent && isActive ? ' sidebar-navlink-accent' : ''}`
-                        }
-                      >
-                        <Icon size={14} style={{ flexShrink: 0 }} />
-                        <span>{label}</span>
-                      </NavLink>
-                    ))}
-                  </div>
-                )}
-
-                {effectiveCollapsed && (
-                  <div className={`sidebar-collapsed-items${isOpen ? ' sidebar-collapsed-items-open' : ''}`}>
-                    {group.items.map(({ to, label, icon: Icon }) => (
-                      <NavLink
-                        key={to}
-                        to={to}
-                        className={({ isActive }) =>
-                          `sidebar-collapsed-link${isActive ? ' sidebar-navlink-active' : ''}`
-                        }
-                        onMouseEnter={(event) => showTooltip(event, label)}
+                        onMouseEnter={(e) => showCollapsed && showTooltip(e, label)}
                         onMouseLeave={hideTooltip}
+                        className={({ isActive }) =>
+                          cn(
+                            'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+                            showCollapsed && 'justify-center px-0',
+                            isActive
+                              ? accent
+                                ? 'bg-[var(--color-purple-soft)] text-[var(--color-purple-text)]'
+                                : 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]'
+                              : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text)]',
+                          )
+                        }
                       >
-                        <Icon size={13} />
+                        <Icon size={16} className="flex-shrink-0" />
+                        {!showCollapsed && <span className="truncate">{label}</span>}
                       </NavLink>
                     ))}
                   </div>
@@ -310,57 +308,74 @@ export default function Sidebar() {
           })}
         </nav>
 
-        <div className="sidebar-footer">
+        {/* Footer */}
+        <div className="border-t border-[var(--color-border)] p-3 space-y-2">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            onMouseEnter={(e) =>
+              showCollapsed && showTooltip(e, resolvedTheme === 'dark' ? 'Modo claro' : 'Modo oscuro')
+            }
+            onMouseLeave={hideTooltip}
+            className={cn(
+              'flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text)] transition-colors',
+              showCollapsed && 'justify-center px-0',
+            )}
+            aria-label="Cambiar tema"
+          >
+            {resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            {!showCollapsed && (
+              <span>{resolvedTheme === 'dark' ? 'Modo claro' : 'Modo oscuro'}</span>
+            )}
+          </button>
+
           <div
-            className="sidebar-user-card"
-            onClick={handleLogout}
-            onMouseEnter={(event) => effectiveCollapsed && showTooltip(event, 'Cerrar sesion')}
+            className={cn(
+              'flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-2.5',
+              showCollapsed && 'justify-center p-1.5',
+            )}
+            onMouseEnter={(e) => showCollapsed && showTooltip(e, 'Cerrar sesión')}
             onMouseLeave={hideTooltip}
           >
-            <div className="sidebar-user-avatar">
-              {(user?.nombre_completo || user?.email || 'U')[0].toUpperCase()}
+            <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-xl bg-[var(--color-primary-soft)] text-sm font-extrabold text-[var(--color-primary)]">
+              {userInitial}
             </div>
-            {!effectiveCollapsed && (
-              <div className="sidebar-user-info">
-                <p className="sidebar-user-name">{user?.nombre_completo || user?.email}</p>
-                <p className="sidebar-user-role">{roleLabel}</p>
-              </div>
-            )}
-            {!effectiveCollapsed && (
-              <div className="flex items-center gap-1">
-                <NavLink
-                  to="/cambiar-password"
-                  className="sidebar-user-logout"
-                  aria-label="Cambiar contraseña"
-                  title="Cambiar contraseña"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <KeyRound size={14} />
-                </NavLink>
+            {!showCollapsed && (
+              <>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-[var(--color-text)]">
+                    {user?.nombre_completo || user?.email}
+                  </p>
+                  <p className="truncate text-[11px] text-[var(--color-text-muted)] capitalize">
+                    {roleLabel}
+                  </p>
+                </div>
                 <button
-                  className="sidebar-user-logout"
-                  aria-label="Cerrar sesion"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleLogout();
-                  }}
                   type="button"
+                  onClick={handleLogout}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-danger)] transition-colors"
+                  aria-label="Cerrar sesión"
+                  title="Cerrar sesión"
                 >
                   <LogOut size={14} />
                 </button>
-              </div>
+              </>
             )}
           </div>
         </div>
-
-        {tooltip &&
-          createPortal(
-            <div className="sidebar-tooltip" style={{ top: tooltip.y, left: tooltip.x }}>
-              {tooltip.label}
-            </div>,
-            document.body,
-          )}
       </aside>
+
+      {/* Tooltip */}
+      {tooltip &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed z-[60] -translate-y-1/2 rounded-lg bg-[var(--color-text)] px-2.5 py-1.5 text-xs font-bold text-[var(--color-surface)] shadow-[var(--shadow-floating)]"
+            style={{ top: tooltip.y, left: tooltip.x }}
+          >
+            {tooltip.label}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

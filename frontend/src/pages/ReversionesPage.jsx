@@ -76,7 +76,7 @@ export default function ReversionesPage() {
       );
       setModalOpen(false);
     } catch (err) {
-      addToast(err?.message || 'Error al enviar la reversión', 'error');
+      addToast(err?.message || 'No se pudo enviar la reversión. Revisa los datos e inténtalo nuevamente.', 'error');
     } finally {
       setSubmitting(false);
     }

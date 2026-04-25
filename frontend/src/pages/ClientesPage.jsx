@@ -157,7 +157,7 @@ export default function ClientesPage() {
     setLoading(true);
     svc.list()
       .then(setList)
-      .catch(() => toast('Error al cargar clientes', 'error'))
+      .catch(() => toast('No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   };
 
@@ -275,11 +275,11 @@ export default function ClientesPage() {
                   <tr key={item.id}>
                     <td data-label="Razon social" style={{ fontWeight: 600 }}>{item.razon_social}</td>
                     <td data-label="RUC / DNI">
-                      <span className="font-mono-label text-xs" style={{ color: '#475569', fontWeight: 600 }}>
+                      <span className="font-mono-label text-xs" style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
                         {item.numero_documento}
                       </span>
                     </td>
-                    <td data-label="Contacto" style={{ color: '#64748B', fontSize: '13px' }}>
+                    <td data-label="Contacto" style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>
                       {item.email || item.telefono || <span className="ink-empty-cell">--</span>}
                     </td>
                     <td data-label="Condicion">

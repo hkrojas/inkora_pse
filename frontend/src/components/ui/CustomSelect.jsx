@@ -21,7 +21,7 @@ export default function CustomSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0, maxHeight: 260 });
   const triggerRef = useRef(null);
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -51,14 +51,40 @@ export default function CustomSelect({
     searchable && onCreateNew && normalizedQuery && !hasExactMatch,
   );
 
+  const syncDropdownPosition = () => {
+    const trigger = triggerRef.current;
+    if (!trigger || typeof window === 'undefined') return;
+
+    const rect = trigger.getBoundingClientRect();
+    const viewportPadding = 12;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const dropdownWidth = Math.min(
+      Math.max(rect.width, compact ? 220 : rect.width),
+      window.innerWidth - viewportPadding * 2,
+    );
+    const measuredHeight = dropdownRef.current?.offsetHeight || 260;
+    const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const spaceAbove = rect.top - viewportPadding;
+    const placeAbove = spaceBelow < Math.min(measuredHeight, 260) && spaceAbove > spaceBelow;
+    const availableHeight = Math.max(160, placeAbove ? spaceAbove : spaceBelow);
+    const renderedHeight = Math.min(measuredHeight, availableHeight);
+    const minLeft = scrollX + viewportPadding;
+    const maxLeft = scrollX + window.innerWidth - viewportPadding - dropdownWidth;
+    const left = Math.min(Math.max(rect.left + scrollX, minLeft), Math.max(minLeft, maxLeft));
+
+    setDropPos({
+      top: placeAbove
+        ? rect.top + scrollY - renderedHeight - 6
+        : rect.bottom + scrollY + 6,
+      left,
+      width: dropdownWidth,
+      maxHeight: availableHeight,
+    });
+  };
+
   const openDropdown = () => {
     if (disabled) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    setDropPos({
-      top: rect.bottom + window.scrollY,
-      left: rect.left + window.scrollX,
-      width: rect.width,
-    });
     setOpen(true);
   };
 
@@ -70,13 +96,19 @@ export default function CustomSelect({
       if (!insideTrigger && !insideDropdown) setOpen(false);
     };
     const handleKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const handleViewport = () => syncDropdownPosition();
+    syncDropdownPosition();
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('keydown', handleKey);
+    window.addEventListener('resize', handleViewport);
+    window.addEventListener('scroll', handleViewport, true);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKey);
+      window.removeEventListener('resize', handleViewport);
+      window.removeEventListener('scroll', handleViewport, true);
     };
-  }, [open]);
+  }, [open, compact, filteredOptions.length, showCreateOption]);
 
   useEffect(() => {
     if (!open) {
@@ -104,10 +136,15 @@ export default function CustomSelect({
 
   const chevron = (
     <svg
-      width="14" height="14" viewBox="0 0 24 24" fill="none"
-      stroke={open ? '#4F46E5' : '#94A3B8'} strokeWidth="2.5"
-      strokeLinecap="round" strokeLinejoin="round"
-      style={{ flexShrink: 0, transition: 'transform 150ms', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+      className={`ink-chevron ${open ? 'is-open' : ''}`}
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
       <polyline points="6 9 12 15 18 9" />
     </svg>
@@ -120,41 +157,15 @@ export default function CustomSelect({
         type="button"
         disabled={disabled}
         onClick={open ? () => setOpen(false) : openDropdown}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '8px',
-          width: '100%',
-          minHeight: compact ? '40px' : '44px',
-          padding: compact ? '8px 10px 8px 12px' : '10px 12px 10px 14px',
-          background: open ? '#ffffff' : '#F8FAFC',
-          border: open ? '1.5px solid #4F46E5' : '1.5px solid #E2E8F0',
-          borderRadius: 0,
-          boxShadow: open ? 'inset 0 0 0 1px #4F46E5' : 'none',
-          color: selected ? 'var(--text-primary)' : '#94A3B8',
-          fontSize: '14px',
-          fontFamily: 'var(--font-body)',
-          fontWeight: selected ? 500 : 400,
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.5 : 1,
-          transition: 'border-color 150ms, box-shadow 150ms, background 150ms',
-          textAlign: 'left',
-        }}
-        onMouseEnter={(e) => { if (!open && !disabled) e.currentTarget.style.borderColor = '#94A3B8'; }}
-        onMouseLeave={(e) => { if (!open && !disabled) e.currentTarget.style.borderColor = open ? '#4F46E5' : '#E2E8F0'; }}
+        className={`ink-select-trigger ${compact ? 'ink-select-trigger--compact' : ''} ${open ? 'is-open' : ''}`}
       >
-        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+        <div className={`ink-select-value ${selected ? '' : 'text-[var(--text-tertiary)]'}`}>
           {selected ? (
             renderPreview ? renderPreview(selected) : (
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-                {selected.label}
-              </span>
+              <span>{selected.label}</span>
             )
           ) : (
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-              {placeholder}
-            </span>
+            <span>{placeholder}</span>
           )}
         </div>
         {chevron}
@@ -163,29 +174,22 @@ export default function CustomSelect({
       {open && createPortal(
         <div
           ref={dropdownRef}
+          className="ink-select-dropdown"
           style={{
-            position: 'absolute',
             top: dropPos.top,
             left: dropPos.left,
             width: dropPos.width,
-            zIndex: 99999,
-            background: '#ffffff',
-            border: '1.5px solid #4F46E5',
-            borderTop: 'none',
-            boxShadow: '4px 4px 0px 0px rgba(99,102,241,0.35)',
-            maxHeight: '260px',
-            overflowY: 'auto',
+            maxHeight: dropPos.maxHeight,
           }}
         >
           {searchable && (
-            <div style={{ position: 'sticky', top: 0, zIndex: 1, background: '#ffffff', borderBottom: '1px solid #E2E8F0', padding: '10px 12px' }}>
+            <div className="ink-select-search">
               <input
                 ref={searchInputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="input-flat"
-                style={{ width: '100%', fontSize: '13px' }}
+                className="input-flat w-full text-xs"
                 onMouseDown={(e) => e.stopPropagation()}
               />
             </div>
@@ -197,31 +201,29 @@ export default function CustomSelect({
               <div
                 key={opt.value}
                 onMouseDown={(e) => { e.preventDefault(); handleSelect(opt.value); }}
-                style={{
-                  padding: '10px 14px',
-                  fontSize: '13px',
-                  fontFamily: 'var(--font-body)',
-                  fontWeight: isActive ? 700 : 400,
-                  color: isActive ? '#4F46E5' : '#0F172A',
-                  background: isActive ? '#EEF2FF' : 'transparent',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  borderLeft: isActive ? '3px solid #4F46E5' : '3px solid transparent',
-                  userSelect: 'none',
-                }}
-                onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.background = '#F8FAFC'; e.currentTarget.style.borderLeftColor = '#C7D2FE'; }}}
-                onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderLeftColor = 'transparent'; }}}
+                className={`ink-select-option ${isActive ? 'is-active' : ''}`}
               >
                 {renderOption ? (
                   renderOption(opt, { isActive, query: normalizedQuery })
                 ) : (
                   <>
-                    {isActive
-                      ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
-                      : <span style={{ width: '12px', flexShrink: 0 }} />
-                    }
+                    {isActive ? (
+                      <svg
+                        className="h-3 w-3 shrink-0"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : (
+                      <span className="w-3 shrink-0" />
+                    )}
                     {opt.label}
                   </>
                 )}
@@ -230,7 +232,7 @@ export default function CustomSelect({
           })}
 
           {!filteredOptions.length && !showCreateOption && (
-            <div style={{ padding: '12px 14px', fontSize: '12px', color: '#94A3B8' }}>
+            <div className="ink-select-option-empty">
               {noResultsLabel}
             </div>
           )}
@@ -241,17 +243,7 @@ export default function CustomSelect({
                 e.preventDefault();
                 handleCreate();
               }}
-              style={{
-                padding: '10px 14px',
-                fontSize: '13px',
-                fontFamily: 'var(--font-body)',
-                fontWeight: 700,
-                color: '#4F46E5',
-                background: '#EEF2FF',
-                cursor: 'pointer',
-                borderTop: '1px solid #E2E8F0',
-                userSelect: 'none',
-              }}
+              className="ink-select-option-action"
             >
               {typeof createLabel === 'function'
                 ? createLabel(query.trim())
@@ -267,23 +259,13 @@ export default function CustomSelect({
                 setOpen(false);
                 setQuery('');
               }}
-              style={{
-                padding: '10px 14px',
-                fontSize: '13px',
-                fontFamily: 'var(--font-body)',
-                fontWeight: 700,
-                color: '#4F46E5',
-                background: '#ffffff',
-                cursor: 'pointer',
-                borderTop: '1px solid #E2E8F0',
-                userSelect: 'none',
-              }}
+              className="ink-select-option-action"
             >
               {footerAction.label}
             </div>
           )}
         </div>,
-        document.body
+        document.body,
       )}
     </>
   );

@@ -33,7 +33,7 @@ export default function CobranzaPage() {
         setVencidas(Array.isArray(vencidasResponse) ? vencidasResponse : []);
         setResumen(resumenResponse);
       })
-      .catch(() => toast('Error al cargar cobranza', 'error'))
+      .catch(() => toast('No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -93,7 +93,7 @@ export default function CobranzaPage() {
             <AlertCircle className="h-4 w-4" style={{ color: 'var(--color-error)' }} />
             Aging Report
           </div>
-          <span style={{ fontSize: '12px', color: '#64748B' }}>
+          <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
             Priorizar por días de mora.
           </span>
         </div>
@@ -124,15 +124,15 @@ export default function CobranzaPage() {
                   >
                     <td data-label="Doc.">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: dot, flexShrink: 0 }} />
-                        <span className="font-mono-label" style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+                        <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: 0, background: dot, flexShrink: 0 }} />
+                        <span className="font-mono-label" style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
                           {item.internal_order_number || item.document_number || `#${item.cotizacion_id}`}
                         </span>
                       </div>
                     </td>
                     <td data-label="Cliente" style={{ fontWeight: 600 }}>{item.cliente_nombre || '--'}</td>
                     <td data-label="Vence">
-                      <span className="font-mono-label" style={{ fontSize: '12px', color: '#64748B' }}>
+                      <span className="font-mono-label" style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
                         {item.fecha_vencimiento
                           ? new Date(item.fecha_vencimiento).toLocaleDateString('es-PE')
                           : '--'}

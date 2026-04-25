@@ -27,7 +27,7 @@ export default function GuiaDetalle() {
   useEffect(() => {
     svc.get(id)
       .then(setGuia)
-      .catch(() => toast('Error al cargar la guia', 'error'))
+      .catch(() => toast('No se pudo cargar la guía. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   }, [id]);
 

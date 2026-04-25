@@ -103,7 +103,7 @@ export default function CotizacionDetalle() {
         setCot(cotizacionResponse);
         setPagos(Array.isArray(pagosResponse) ? pagosResponse : []);
       })
-      .catch(() => toast('Error al cargar cotizacion', 'error'))
+      .catch(() => toast('No se pudo cargar la cotización. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   };
 
@@ -127,7 +127,7 @@ export default function CotizacionDetalle() {
       setEmitirModal(null);
       load();
     } catch (err) {
-      toast(err.message || 'Error al emitir', 'error');
+      toast(err.message || 'No se pudo emitir el comprobante. Revisa los datos e inténtalo nuevamente.', 'error');
     } finally {
       setEmitiendo(false);
     }
@@ -181,7 +181,7 @@ export default function CotizacionDetalle() {
             Compartir
           </button>
           <a
-            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/cotizaciones/${id}/pdf`}
+            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/cotizaciones/${id}/pdf?redirect=1`}
             target="_blank"
             rel="noreferrer"
             className="btn-secondary flex items-center gap-2"

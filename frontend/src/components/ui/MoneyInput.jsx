@@ -45,7 +45,7 @@ export default function MoneyInput({
         fontFamily: 'var(--font-mono)',
         fontSize: compact ? '10px' : '11px',
         fontWeight: 700,
-        color: '#94A3B8',
+        color: 'var(--text-tertiary)',
         pointerEvents: 'none',
         userSelect: 'none',
         lineHeight: 1,
@@ -71,10 +71,10 @@ export default function MoneyInput({
           fontFamily: 'var(--font-mono)',
           fontSize: compact ? '12px' : '14px',
           fontWeight: 500,
-          background: disabled ? '#F8FAFC' : '#F8FAFC',
-          border: '1.5px solid #E2E8F0',
+          background: 'var(--bg-surface-2)',
+          border: '1.5px solid var(--border-subtle)',
           borderRadius: 0,
-          color: disabled ? '#94A3B8' : 'var(--text-primary)',
+          color: disabled ? 'var(--text-tertiary)' : 'var(--text-primary)',
           cursor: disabled ? 'not-allowed' : 'text',
           outline: 'none',
           // Suppress native spinners
@@ -83,8 +83,8 @@ export default function MoneyInput({
           appearance: 'none',
           transition: 'border-color 150ms',
         }}
-        onFocus={(e) => { e.currentTarget.style.borderColor = '#4F46E5'; e.currentTarget.style.boxShadow = 'inset 0 0 0 1px #4F46E5'; }}
-        onBlur={(e) => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.boxShadow = 'none'; }}
+        onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--brand-600)'; e.currentTarget.style.boxShadow = 'inset 0 0 0 1px var(--brand-600)'; }}
+        onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.boxShadow = 'none'; }}
         {...rest}
       />
     </div>

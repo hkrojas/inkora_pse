@@ -258,7 +258,7 @@ function LineRow({ item, index, moneda, incluyeIgv, products, isLast, onItemChan
 
       {/* Unit price */}
       <div style={{ position: 'relative' }}>
-        <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: '#94A3B8', pointerEvents: 'none' }}>{sym}</span>
+        <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: 'var(--text-tertiary)', pointerEvents: 'none' }}>{sym}</span>
         <input
           ref={priceRef}
           type="text"
@@ -274,8 +274,8 @@ function LineRow({ item, index, moneda, incluyeIgv, products, isLast, onItemChan
       </div>
 
       {/* Total (readonly) */}
-      <div className="comprobante-readonly" style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
-        <span style={{ fontSize: '10px', color: '#94A3B8', marginRight: '2px' }}>{sym}</span>
+      <div className="comprobante-readonly" style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+        <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginRight: '2px' }}>{sym}</span>
         {Number(line.total).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
       </div>
 
@@ -284,9 +284,9 @@ function LineRow({ item, index, moneda, incluyeIgv, products, isLast, onItemChan
         type="button"
         className="btn-ghost"
         onClick={() => onRemove(index)}
-        style={{ color: '#CBD5E1', padding: '6px' }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = '#EF4444'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = '#CBD5E1'; }}
+        style={{ color: 'var(--text-tertiary)', padding: '6px' }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-error)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; }}
       >
         <Trash2 size={14} />
       </button>
@@ -302,14 +302,14 @@ function ValidationSummary({ errors }) {
   return (
     <div style={{
       padding: '10px 14px',
-      background: '#FEF2F2',
-      border: '1.5px solid #FECACA',
+      background: 'var(--color-error-bg)',
+      border: '1.5px solid rgba(220,38,38,0.2)',
       marginTop: '10px',
     }}>
-      <p style={{ fontSize: '11px', fontWeight: 700, color: '#DC2626', marginBottom: '4px' }}>Faltan datos para emitir:</p>
+      <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-error)', marginBottom: '4px' }}>Faltan datos para emitir:</p>
       <ul style={{ margin: 0, padding: '0 0 0 14px' }}>
         {msgs.map((m, i) => (
-          <li key={i} style={{ fontSize: '11px', color: '#B91C1C', lineHeight: 1.6 }}>{m}</li>
+          <li key={i} style={{ fontSize: '11px', color: 'var(--color-error)', lineHeight: 1.6 }}>{m}</li>
         ))}
       </ul>
     </div>
@@ -445,7 +445,7 @@ export default function ComprobanteNuevoPage() {
     if (!file) return;
     const hasData = form.items.some((it) => it.descripcion.trim());
     if (hasData) {
-      const ok = window.confirm(`Vas a reemplazar ${form.items.length} línea(s) con el contenido del CSV. ¿Continuar?`);
+      const ok = window.confirm(`Vas a reemplazar ${form.items.length} línea(s) con el contenido del CSV. ¿Sí, reemplazar?`);
       if (!ok) { event.target.value = ''; return; }
     }
     try {
@@ -631,7 +631,7 @@ export default function ComprobanteNuevoPage() {
                     checked={form.incluye_igv}
                     onChange={handleIgvToggle}
                   />
-                  <p style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>
+                  <p style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
                     {form.incluye_igv ? 'El IGV se desglosa desde el precio ingresado.' : 'El IGV se agrega sobre el precio ingresado.'}
                   </p>
                 </div>
@@ -802,8 +802,8 @@ export default function ComprobanteNuevoPage() {
       {/* IGV toggle confirmation */}
       <Modal open={igvConfirmOpen} onClose={() => setIgvConfirmOpen(false)} title="Cambiar modo de precios" size="sm">
         <div className="space-y-4">
-          <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
-            Cambiar el modo de IGV va a <strong>recalcular los precios</strong> de todas las líneas ya ingresadas ({form.items.filter((it) => Number(it.precio_unitario) > 0).length} línea{form.items.filter((it) => Number(it.precio_unitario) > 0).length !== 1 ? 's' : ''}). ¿Continuar?
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Cambiar el modo de IGV va a <strong>recalcular los precios</strong> de todas las líneas ya ingresadas ({form.items.filter((it) => Number(it.precio_unitario) > 0).length} línea{form.items.filter((it) => Number(it.precio_unitario) > 0).length !== 1 ? 's' : ''}). ¿Sí, cambiar?
           </p>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
             <button className="btn-secondary" onClick={() => setIgvConfirmOpen(false)}>Cancelar</button>

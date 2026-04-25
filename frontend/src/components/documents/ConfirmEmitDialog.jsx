@@ -35,9 +35,9 @@ export default function ConfirmEmitDialog({
     note: 'La nota se enviará a SUNAT y consumirá un correlativo. Una nota no puede anularse por sí misma.',
   };
 
-  const accentColor = isVoid ? '#DC2626' : cfg.color;
-  const accentBg    = isVoid ? '#FEE2E2' : cfg.bg;
-  const accentBorder= isVoid ? '#FECACA' : cfg.border;
+  const accentColor = isVoid ? 'var(--color-error)' : cfg.color;
+  const accentBg    = isVoid ? 'var(--color-error-bg)' : cfg.bg;
+  const accentBorder= isVoid ? 'rgba(220,38,38,0.2)' : cfg.border;
 
   return (
     <Modal open={open} onClose={onClose} title={titles[mode]} size="sm">
@@ -68,14 +68,14 @@ export default function ConfirmEmitDialog({
             }}>
               {cfg.label} · {serie || 'Serie pendiente'}
             </p>
-            <p style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', marginBottom: '2px' }}>
+            <p style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
               {cliente || 'Cliente pendiente'}
             </p>
             <p style={{ fontFamily: 'var(--font-mono)', fontSize: '16px', fontWeight: 900, color: accentColor }}>
               {formatCurrency(total, moneda)}
             </p>
             {extraLines.map((line, i) => (
-              <p key={i} style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>{line}</p>
+              <p key={i} style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>{line}</p>
             ))}
           </div>
         </div>
@@ -83,7 +83,7 @@ export default function ConfirmEmitDialog({
         {/* Warning */}
         <p style={{
           fontSize: '12px',
-          color: '#64748B',
+          color: 'var(--text-tertiary)',
           lineHeight: 1.6,
           padding: '0 2px',
         }}>
@@ -101,9 +101,9 @@ export default function ConfirmEmitDialog({
               fontFamily: 'var(--font-body)',
               fontSize: '13px',
               fontWeight: 500,
-              color: '#475569',
-              background: '#F1F5F9',
-              border: '1.5px solid #E2E8F0',
+              color: 'var(--text-secondary)',
+              background: 'var(--bg-surface-2)',
+              border: '1.5px solid var(--border-subtle)',
               cursor: 'pointer',
             }}
           >
@@ -121,7 +121,7 @@ export default function ConfirmEmitDialog({
               letterSpacing: '0.06em',
               textTransform: 'uppercase',
               color: '#fff',
-              background: loading ? '#94A3B8' : (isVoid ? '#DC2626' : accentColor),
+              background: loading ? 'var(--text-tertiary)' : (isVoid ? 'var(--color-error)' : accentColor),
               border: 'none',
               cursor: loading ? 'not-allowed' : 'pointer',
               display: 'flex',
@@ -137,7 +137,7 @@ export default function ConfirmEmitDialog({
                 height: '12px',
                 border: '2px solid rgba(255,255,255,0.4)',
                 borderTopColor: '#fff',
-                borderRadius: '50%',
+                borderRadius: 0,
                 animation: 'spin 0.6s linear infinite',
               }} />
             )}

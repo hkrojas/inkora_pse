@@ -148,7 +148,7 @@ export default function ColorPickerField({
   const popoverRef = useRef(null);
   const safeValue = normalizeHex(value, fallback);
   const [isOpen, setIsOpen] = useState(false);
-  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0, width: 0 });
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0, width: 0, maxHeight: 420 });
   const [hexInput, setHexInput] = useState(safeValue);
   const rgb = useMemo(() => hexToRgb(safeValue), [safeValue]);
   const hsl = useMemo(() => rgbToHsl(rgb), [rgb]);
@@ -159,17 +159,46 @@ export default function ColorPickerField({
 
   useEffect(() => {
     if (!isOpen) return undefined;
+    const syncPopoverPosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger || typeof window === 'undefined') return;
 
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
+      const rect = trigger.getBoundingClientRect();
+      const viewportPadding = 12;
+      const scrollX = window.scrollX;
+      const scrollY = window.scrollY;
+      const popoverWidth = Math.min(
+        Math.max(rect.width, 316),
+        window.innerWidth - viewportPadding * 2,
+      );
+      const measuredHeight = popoverRef.current?.offsetHeight || 388;
+      const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+      const spaceAbove = rect.top - viewportPadding;
+      let placeAbove = Boolean(openUpward);
+
+      if (!openUpward && spaceBelow < Math.min(measuredHeight, 388) && spaceAbove > spaceBelow) {
+        placeAbove = true;
+      } else if (openUpward && spaceAbove < Math.min(measuredHeight, 388) && spaceBelow > spaceAbove) {
+        placeAbove = false;
+      }
+
+      const availableHeight = Math.max(220, placeAbove ? spaceAbove : spaceBelow);
+      const renderedHeight = Math.min(measuredHeight, availableHeight);
+      const minLeft = scrollX + viewportPadding;
+      const maxLeft = scrollX + window.innerWidth - viewportPadding - popoverWidth;
+      const left = Math.min(Math.max(rect.left + scrollX, minLeft), Math.max(minLeft, maxLeft));
+
       setPopoverPos({
-        top: openUpward
-          ? rect.top + window.scrollY - 4
-          : rect.bottom + window.scrollY + 4,
-        left: rect.left + window.scrollX,
-        width: Math.max(rect.width, 280),
+        top: placeAbove
+          ? rect.top + scrollY - renderedHeight - 8
+          : rect.bottom + scrollY + 8,
+        left,
+        width: popoverWidth,
+        maxHeight: availableHeight,
       });
-    }
+    };
+
+    syncPopoverPosition();
 
     const handlePointerDown = (event) => {
       const inRoot = rootRef.current && rootRef.current.contains(event.target);
@@ -185,13 +214,19 @@ export default function ColorPickerField({
       }
     };
 
+    const handleViewport = () => syncPopoverPosition();
+
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('keydown', handleEscape);
+    window.addEventListener('resize', handleViewport);
+    window.addEventListener('scroll', handleViewport, true);
     return () => {
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('resize', handleViewport);
+      window.removeEventListener('scroll', handleViewport, true);
     };
-  }, [isOpen]);
+  }, [isOpen, openUpward]);
 
   const commitHex = (nextHex) => {
     const normalized = normalizeHex(nextHex, fallback);
@@ -271,11 +306,10 @@ export default function ColorPickerField({
           ref={popoverRef}
           className="pdf-color-picker-popover"
           style={{
-            position: 'absolute',
             top: popoverPos.top,
             left: popoverPos.left,
             width: popoverPos.width,
-            transform: openUpward ? 'translateY(-100%)' : 'none',
+            maxHeight: popoverPos.maxHeight,
             zIndex: 9999,
           }}
         >

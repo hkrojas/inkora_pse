@@ -75,7 +75,7 @@ export default function RetencionesPage() {
       setModalOpen(false);
       setForm(EMPTY_FORM);
     } catch (err) {
-      addToast(err?.message || 'Error al emitir la retención', 'error');
+      addToast(err?.message || 'No se pudo emitir la retención. Revisa los datos e inténtalo nuevamente.', 'error');
     } finally {
       setSubmitting(false);
     }

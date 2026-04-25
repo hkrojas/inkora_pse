@@ -2,12 +2,12 @@
 // DocumentTypeSwitcher — segmented control prominente Factura / Boleta
 
 const TYPE_CONFIG = {
-  '01': { label: 'Factura',       short: 'F',  color: '#4F46E5', bg: '#EEF2FF', border: '#C7D2FE' },
-  '03': { label: 'Boleta',        short: 'B',  color: '#0284C7', bg: '#E0F2FE', border: '#BAE6FD' },
-  '07': { label: 'Nota Crédito',  short: 'NC', color: '#D97706', bg: '#FEF3C7', border: '#FDE68A' },
-  '08': { label: 'Nota Débito',   short: 'ND', color: '#DC2626', bg: '#FEE2E2', border: '#FECACA' },
-  '00': { label: 'Cotización',    short: 'COT',color: '#475569', bg: '#F1F5F9', border: '#CBD5E1' },
-  'GR': { label: 'Guía de Remisión', short: 'GR', color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE' },
+  '01': { label: 'Factura',       short: 'F',  color: 'var(--brand-600)', bg: 'var(--brand-100)', border: 'var(--brand-200)' },
+  '03': { label: 'Boleta',        short: 'B',  color: 'var(--color-info)', bg: 'var(--color-info-bg)', border: 'rgba(3,105,161,0.2)' },
+  '07': { label: 'Nota Crédito',  short: 'NC', color: 'var(--color-warning)', bg: 'var(--color-warning-bg)', border: 'rgba(217,119,6,0.2)' },
+  '08': { label: 'Nota Débito',   short: 'ND', color: 'var(--color-error)', bg: 'var(--color-error-bg)', border: 'rgba(220,38,38,0.2)' },
+  '00': { label: 'Cotización',    short: 'COT',color: 'var(--text-secondary)', bg: 'var(--bg-surface-2)', border: 'var(--border-subtle)' },
+  'GR': { label: 'Guía de Remisión', short: 'GR', color: 'var(--brand-700)', bg: 'var(--brand-100)', border: 'var(--brand-200)' },
 };
 
 export function getTypeConfig(tipo) {
@@ -42,8 +42,8 @@ export function DocumentTypeSwitcher({ value, onChange, options = ['01', '03'] }
   return (
     <div style={{
       display: 'inline-flex',
-      border: '1.5px solid #E2E8F0',
-      background: '#F8FAFC',
+      border: '1.5px solid var(--border-subtle)',
+      background: 'var(--bg-surface-2)',
       overflow: 'hidden',
     }}>
       {options.map((tipo) => {
@@ -65,9 +65,9 @@ export function DocumentTypeSwitcher({ value, onChange, options = ['01', '03'] }
               letterSpacing: '0.08em',
               textTransform: 'uppercase',
               border: 'none',
-              borderRight: '1.5px solid #E2E8F0',
+              borderRight: '1.5px solid var(--border-subtle)',
               background: isActive ? cfg.color : 'transparent',
-              color: isActive ? '#fff' : '#64748B',
+              color: isActive ? '#fff' : 'var(--text-tertiary)',
               cursor: 'pointer',
               transition: 'all 150ms',
               whiteSpace: 'nowrap',
@@ -85,7 +85,7 @@ export function DocumentTypeSwitcher({ value, onChange, options = ['01', '03'] }
               justifyContent: 'center',
               width: '20px',
               height: '20px',
-              borderRadius: '50%',
+              borderRadius: 0,
               background: isActive ? 'rgba(255,255,255,0.2)' : cfg.bg,
               color: isActive ? '#fff' : cfg.color,
               fontSize: '10px',

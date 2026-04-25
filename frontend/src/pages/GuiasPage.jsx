@@ -186,9 +186,9 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
     letterSpacing: '0.06em',
     textTransform: 'uppercase',
     border: 'none',
-    borderBottom: tab === id ? '2px solid #4F46E5' : '2px solid transparent',
+    borderBottom: tab === id ? '2px solid var(--brand-600)' : '2px solid transparent',
     background: 'none',
-    color: tab === id ? '#4F46E5' : '#64748B',
+    color: tab === id ? 'var(--brand-600)' : 'var(--text-tertiary)',
     cursor: 'pointer',
   });
 
@@ -196,7 +196,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 0, minHeight: '400px' }}>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #E2E8F0', padding: '0 0 0 4px', marginBottom: '0' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', padding: '0 0 0 4px', marginBottom: '0' }}>
         {tabs.map((t) => (
           <button key={t.id} type="button" style={tabStyle(t.id)} onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
@@ -231,7 +231,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
                 onChange={set('peso_bruto_total')}
                 placeholder="0.000"
               />
-              <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: '#94A3B8', pointerEvents: 'none' }}>KGM</span>
+              <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: 'var(--text-tertiary)', pointerEvents: 'none' }}>KGM</span>
             </div>
             <FieldError message={errors.peso} />
           </div>
@@ -268,8 +268,8 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
           {/* Partida */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <MapPin size={13} style={{ color: '#475569' }} />
-              <p style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#475569' }}>Punto de partida</p>
+              <MapPin size={13} style={{ color: 'var(--text-secondary)' }} />
+              <p style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-secondary)' }}>Punto de partida</p>
             </div>
             <div>
               <label className="label">Dirección</label>
@@ -286,8 +286,8 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
           {/* Llegada */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <MapPin size={13} style={{ color: '#4F46E5' }} />
-              <p style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#4F46E5' }}>Punto de llegada</p>
+              <MapPin size={13} style={{ color: 'var(--brand-600)' }} />
+              <p style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--brand-600)' }}>Punto de llegada</p>
             </div>
             <div>
               <label className="label">Dirección</label>
@@ -307,35 +307,35 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
       {tab === 'bienes' && (
         <div style={{ padding: '20px' }}>
           <FieldError message={errors.items} />
-          <div style={{ background: '#fff', border: '1px solid #CBD5E1', overflow: 'hidden', marginTop: '8px' }}>
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', overflow: 'hidden', marginTop: '8px' }}>
             <div className="ink-table-scroll">
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1' }}>
+                <thead style={{ background: 'var(--bg-surface-2)', borderBottom: '1px solid var(--border-subtle)' }}>
                   <tr>
-                    <th style={{ padding: '8px 16px', textAlign: 'left', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', borderRight: '1px solid #E2E8F0', width: '55%' }}>Descripción del bien</th>
-                    <th style={{ padding: '8px 16px', textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', borderRight: '1px solid #E2E8F0', width: '22%' }}>Unidad</th>
-                    <th style={{ padding: '8px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', borderRight: '1px solid #E2E8F0', width: '18%' }}>Cant.</th>
-                    <th style={{ width: '5%', background: '#F1F5F9' }} />
+                    <th style={{ padding: '8px 16px', textAlign: 'left', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', borderRight: '1px solid var(--border-hair)', width: '55%' }}>Descripción del bien</th>
+                    <th style={{ padding: '8px 16px', textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', borderRight: '1px solid var(--border-hair)', width: '22%' }}>Unidad</th>
+                    <th style={{ padding: '8px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', borderRight: '1px solid var(--border-hair)', width: '18%' }}>Cant.</th>
+                    <th style={{ width: '5%', background: 'var(--bg-surface-2)' }} />
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item, index) => (
-                    <tr key={index} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid #E2E8F0', padding: 0 }}>
+                    <tr key={index} style={{ borderBottom: '1px solid var(--border-hair)' }}>
+                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-hair)', padding: 0 }}>
                         <input required className="spreadsheet-input" placeholder="Descripción..." value={item.descripcion} onChange={(e) => setItem(index, 'descripcion', e.target.value)} />
                       </td>
-                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid #E2E8F0', padding: 0 }}>
+                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-hair)', padding: 0 }}>
                         <CustomSelect compact value={item.unidad_medida} onChange={(v) => setItem(index, 'unidad_medida', v)} options={UNIT_OPTS} />
                       </td>
-                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid #E2E8F0', padding: 0 }}>
+                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-hair)', padding: 0 }}>
                         <input required type="number" min="1" className="spreadsheet-input spreadsheet-input-mono" value={item.cantidad} onChange={(e) => setItem(index, 'cantidad', e.target.value)} />
                       </td>
                       <td style={{ padding: 0, textAlign: 'center' }}>
                         {items.length > 1 && (
                           <button type="button" onClick={() => setItems((cur) => cur.filter((_, i) => i !== index))}
-                            style={{ width: '100%', minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: '#CBD5E1', cursor: 'pointer' }}
-                            onMouseEnter={(e) => { e.currentTarget.style.color = '#EF4444'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.color = '#CBD5E1'; }}>
+                            style={{ width: '100%', minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-error)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; }}>
                             <Trash2 style={{ width: '14px', height: '14px' }} />
                           </button>
                         )}
@@ -345,10 +345,10 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
                 </tbody>
               </table>
             </div>
-            <div style={{ padding: '8px', background: '#fff', borderTop: '1px solid #E2E8F0' }}>
+            <div style={{ padding: '8px', background: 'var(--bg-surface)', borderTop: '1px solid var(--border-hair)' }}>
               <button type="button" onClick={() => setItems((cur) => [...cur, EMPTY_ITEM()])}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#4F46E5', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 16px' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#EEF2FF'; }}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--brand-600)', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 16px' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--brand-100)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}>
                 <PlusCircle style={{ width: '14px', height: '14px' }} /> Agregar bien
               </button>
@@ -360,12 +360,12 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
       {/* ── Tab: Transportista ── */}
       {tab === 'transportista' && (
         <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: '#EEF2FF', border: '1px solid #C7D2FE', fontSize: '12px', color: '#4F46E5' }}>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'var(--brand-100)', border: '1px solid var(--brand-200)', fontSize: '12px', color: 'var(--brand-600)' }}>
             <AlertCircle size={14} />
             Modalidad pública requiere datos del transportista para SUNAT.
           </div>
           <div>
-            <label className="label">RUC del transportista <span style={{ color: '#DC2626' }}>*</span></label>
+            <label className="label">RUC del transportista <span style={{ color: 'var(--color-error)' }}>*</span></label>
             <input className="input" value={form.ruc_transportista} onChange={set('ruc_transportista')} placeholder="20XXXXXXXXX" maxLength={11} style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, letterSpacing: '0.08em' }} />
             <FieldError message={errors.ruc_transportista} />
           </div>
@@ -374,7 +374,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
             <input className="input" value={form.nombre_transportista} onChange={set('nombre_transportista')} placeholder="Empresa de Transportes S.A.C." />
           </div>
           <div>
-            <label className="label">Placa del vehículo <span style={{ color: '#DC2626' }}>*</span></label>
+            <label className="label">Placa del vehículo <span style={{ color: 'var(--color-error)' }}>*</span></label>
             <input className="input" value={form.placa_vehiculo} onChange={set('placa_vehiculo')} placeholder="ABC-123" style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase' }} />
             <FieldError message={errors.placa_vehiculo} />
           </div>
@@ -418,7 +418,7 @@ export default function GuiasPage() {
     setLoading(true);
     svc.list()
       .then(setList)
-      .catch(() => toast('Error al cargar guías', 'error'))
+      .catch(() => toast('No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   };
 

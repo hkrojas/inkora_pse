@@ -38,23 +38,23 @@ function SpinnerPanel({
         flexDirection: 'column',
         alignItems: 'center',
         gap: '20px',
-        background: 'var(--color-surface, #fff)',
-        border: '1px solid var(--color-border, #e2e8f0)',
-        borderRadius: '8px',
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 0,
         padding: '32px 48px',
         minWidth: '260px',
         boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
       }}>
         <SpinnerGlyph size={32} />
         <div style={{ textAlign: 'center' }}>
-          <p style={{ margin: 0, fontWeight: 700, fontSize: '13px', color: 'var(--color-text-primary, #0f172a)', letterSpacing: '0.01em' }}>{label}</p>
-          {hint && <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--color-text-muted, #94a3b8)' }}>{hint}</p>}
+          <p style={{ margin: 0, fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)', letterSpacing: '0.01em' }}>{label}</p>
+          {hint && <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--text-tertiary)' }}>{hint}</p>}
         </div>
-        <div style={{ width: '100%', height: '2px', background: 'var(--color-border, #e2e8f0)', borderRadius: '2px', overflow: 'hidden' }}>
+        <div style={{ width: '100%', height: '2px', background: 'var(--border-subtle)', borderRadius: 0, overflow: 'hidden' }}>
           <div style={{
             height: '100%',
             width: '40%',
-            background: 'var(--color-brand, #6366f1)',
+            background: 'var(--brand-600)',
             borderRadius: '2px',
             animation: 'spinner-bar-slide 1.4s ease-in-out infinite',
           }} />

@@ -7,15 +7,15 @@ import Modal from '../components/ui/Modal';
 import CustomSelect from '../components/ui/CustomSelect';
 import { useToast } from '../components/ui/Toast';
 
-const DOT_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#3B82F6', '#8B5CF6'];
+const DOT_COLORS = ['var(--brand-600)', 'var(--color-success)', 'var(--color-warning)', 'var(--color-info)', 'var(--brand-500)'];
 
 const UM_COLORS = {
-  NIU: { bg: '#F0FDF4', color: '#15803D', border: '#BBF7D0' },
-  ZZ:  { bg: '#EFF6FF', color: '#1D4ED8', border: '#BFDBFE' },
-  KGM: { bg: '#FFF7ED', color: '#C2410C', border: '#FED7AA' },
-  MTR: { bg: '#F5F3FF', color: '#7C3AED', border: '#DDD6FE' },
+  NIU: { bg: 'var(--color-success-bg)', color: 'var(--color-success)', border: 'rgba(5,150,105,0.2)' },
+  ZZ:  { bg: 'var(--color-info-bg)',    color: 'var(--color-info)',    border: 'rgba(3,105,161,0.2)' },
+  KGM: { bg: 'var(--color-warning-bg)', color: 'var(--color-warning)', border: 'rgba(217,119,6,0.2)' },
+  MTR: { bg: 'var(--brand-100)',        color: 'var(--brand-700)',     border: 'var(--brand-200)' },
 };
-const UM_DEFAULT = { bg: '#F8FAFC', color: '#475569', border: '#E2E8F0' };
+const UM_DEFAULT = { bg: 'var(--bg-surface-2)', color: 'var(--text-secondary)', border: 'var(--border-subtle)' };
 const IGV_FACTOR = 1.18;
 
 const formatCurrency = (value) =>
@@ -70,7 +70,7 @@ function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving }) {
             {form.precio_incluye_igv ? 'Precio unitario (con IGV)' : 'Precio unitario (sin IGV)'}
           </label>
           <div style={{ position: 'relative' }}>
-            <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: '#94A3B8', fontFamily: 'var(--font-mono)', fontSize: '13px', pointerEvents: 'none' }}>S/</span>
+            <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', fontSize: '13px', pointerEvents: 'none' }}>S/</span>
             <input
               required
               type="number"
@@ -83,12 +83,12 @@ function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving }) {
             />
           </div>
           {showPreview && (
-            <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748B', lineHeight: 1.5 }}>
+            <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
               <div>
-                Base sin IGV: <strong style={{ color: '#0F172A' }}>S/ {formatCurrency(precioBase)}</strong>
+                Base sin IGV: <strong style={{ color: 'var(--text-primary)' }}>S/ {formatCurrency(precioBase)}</strong>
               </div>
               <div>
-                Precio final: <strong style={{ color: '#2563EB' }}>S/ {formatCurrency(precioFinal)}</strong>
+                Precio final: <strong style={{ color: 'var(--brand-600)' }}>S/ {formatCurrency(precioFinal)}</strong>
               </div>
             </div>
           )}
@@ -165,7 +165,7 @@ export default function ProductosPage() {
     setLoading(true);
     svc.list()
       .then(setList)
-      .catch(() => toast('Error al cargar productos', 'error'))
+      .catch(() => toast('No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   };
 
@@ -269,13 +269,13 @@ export default function ProductosPage() {
                   <tr key={item.id}>
                     <td data-label="Nombre y descripcion">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: dot, flexShrink: 0 }} />
-                        <span style={{ fontWeight: 700, color: '#0F172A', fontSize: '13px' }}>{item.nombre}</span>
+                        <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: 0, background: dot, flexShrink: 0 }} />
+                        <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '13px' }}>{item.nombre}</span>
                       </div>
                     </td>
                     <td data-label="Codigo (SKU)">
                       {item.codigo_interno
-                        ? <span style={{ display: 'inline-block', padding: '2px 8px', background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#475569', fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em' }}>{item.codigo_interno}</span>
+                        ? <span style={{ display: 'inline-block', padding: '2px 8px', background: 'var(--bg-surface-2)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em' }}>{item.codigo_interno}</span>
                         : <span className="ink-empty-cell">--</span>
                       }
                     </td>
@@ -287,12 +287,12 @@ export default function ProductosPage() {
                     <td data-label="Precio venta" className="text-right">
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'baseline', gap: '3px' }}>
-                          <span style={{ fontSize: '10px', fontWeight: 700, color: '#94A3B8' }}>S/</span>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                          <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-tertiary)' }}>S/</span>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
                             {formatCurrency(item.precio_unitario)}
                           </span>
                         </div>
-                        <div style={{ fontSize: '11px', color: '#64748B' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
                           Base: S/ {formatCurrency(item.valor_unitario)}
                         </div>
                       </div>

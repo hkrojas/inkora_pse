@@ -62,15 +62,18 @@ export default function ChangePasswordPage() {
         new_password: form.new_password,
         confirm_password: form.confirm_password,
       });
-      // Actualizar token en localStorage (el backend devuelve uno nuevo sin must_change_password)
+      // Mantiene la preferencia de sesion al reemplazar el token sin must_change_password.
       if (data.access_token) {
-        localStorage.setItem('token', data.access_token);
+        const storage = localStorage.getItem('token') ? localStorage : sessionStorage;
+        localStorage.removeItem('token');
+        sessionStorage.removeItem('token');
+        storage.setItem('token', data.access_token);
       }
       await refreshUser();
       setSuccess(true);
       setTimeout(() => navigate('/dashboard', { replace: true }), 1500);
     } catch (err) {
-      setError(err.message || 'Error al cambiar la contraseña.');
+      setError(err.message || 'No se pudo cambiar la contraseña. Revisa tu conexión e inténtalo nuevamente.');
     } finally {
       setSaving(false);
     }

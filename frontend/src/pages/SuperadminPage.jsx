@@ -36,8 +36,8 @@ function getTenantLookupFields(data) {
 
 function StatusDot({ ok }) {
   return (
-    <span className={`badge ${ok ? 'badge--success' : 'badge--neutral'}`}>
-      <span className={ok ? 'inline-block h-1.5 w-1.5 rounded-full bg-current' : 'inline-block h-1.5 w-1.5 rounded-full bg-[var(--text-tertiary)]'} />
+    <span className={`badge status-dot ${ok ? 'badge--success' : 'badge--neutral'}`}>
+      <span className={ok ? 'status-dot-indicator' : 'status-dot-indicator text-[var(--text-tertiary)]'} />
       {ok ? 'configurado' : 'no configurado'}
     </span>
   );
@@ -65,10 +65,10 @@ function ValidationNotice({ result }) {
 
 function SectionHeader({ kicker, title, copy }) {
   return (
-    <div className="mb-5">
+    <div className="mb-4">
       <p className="page-kicker">{kicker}</p>
-      <h3 className="ink-heading-md mt-2 text-lg font-semibold">{title}</h3>
-      {copy ? <p className="mt-2 text-sm text-[var(--text-secondary)]">{copy}</p> : null}
+      <h3 className="mt-1 font-heading text-base font-semibold tracking-[-0.02em] text-[var(--text-primary)]">{title}</h3>
+      {copy ? <p className="mt-1.5 max-w-2xl text-sm leading-5 text-[var(--text-secondary)]">{copy}</p> : null}
     </div>
   );
 }
@@ -1059,12 +1059,29 @@ function TenantLimitsModal({ tenant, onClose }) {
   };
 
   const progressColor = (pct, wouldBlock) => {
-    if (wouldBlock) return '#dc2626';
-    if (pct >= 95) return '#dc2626';
-    if (pct >= 80) return '#d97706';
-    if (pct >= 50) return '#2563eb';
-    return '#10b981';
+    if (wouldBlock) return 'var(--color-error)';
+    if (pct >= 95) return 'var(--color-error)';
+    if (pct >= 80) return 'var(--color-warning)';
+    if (pct >= 50) return 'var(--brand-600)';
+    return 'var(--color-success)'
   };
+
+  const scopeOptions = [
+    { value: 'tenant', label: 'Tenant completo' },
+    { value: 'user', label: 'Usuario especifico' },
+  ];
+  const userOptions = [
+    { value: '', label: 'Elegir usuario' },
+    ...users.map((userOption) => ({ value: String(userOption.id), label: userOption.email })),
+  ];
+  const documentKindOptions = LIMIT_KINDS.map((kind) => ({
+    value: kind,
+    label: LIMIT_KIND_LABELS[kind],
+  }));
+  const periodOptions = LIMIT_PERIODS.map((period) => ({
+    value: period,
+    label: LIMIT_PERIOD_LABELS[period],
+  }));
 
   return (
     <Modal open={true} onClose={onClose} title={`Límites de emisión · ${tenant.business_name}`} size="xl">
@@ -1083,56 +1100,42 @@ function TenantLimitsModal({ tenant, onClose }) {
         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
           <div>
             <label className="label">Alcance</label>
-            <select
+            <CustomSelect
               value={newLimit.scope}
-              onChange={(e) => setNewLimit((s) => ({ ...s, scope: e.target.value, user_id: '' }))}
-              className="select"
-            >
-              <option value="tenant">Tenant completo</option>
-              <option value="user">Usuario específico</option>
-            </select>
+              onChange={(value) => setNewLimit((current) => ({ ...current, scope: value, user_id: '' }))}
+              options={scopeOptions}
+            />
           </div>
 
           {newLimit.scope === 'user' && (
             <div>
               <label className="label">Usuario</label>
-              <select
+              <CustomSelect
                 value={newLimit.user_id}
-                onChange={(e) => setNewLimit((s) => ({ ...s, user_id: e.target.value }))}
-                className="select"
-              >
-                <option value="">— Elegir —</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>{u.email}</option>
-                ))}
-              </select>
+                onChange={(value) => setNewLimit((current) => ({ ...current, user_id: value }))}
+                options={userOptions}
+                searchable
+                searchPlaceholder="Buscar usuario..."
+              />
             </div>
           )}
 
           <div>
             <label className="label">Tipo de documento</label>
-            <select
+            <CustomSelect
               value={newLimit.document_kind}
-              onChange={(e) => setNewLimit((s) => ({ ...s, document_kind: e.target.value }))}
-              className="select"
-            >
-              {LIMIT_KINDS.map((k) => (
-                <option key={k} value={k}>{LIMIT_KIND_LABELS[k]}</option>
-              ))}
-            </select>
+              onChange={(value) => setNewLimit((current) => ({ ...current, document_kind: value }))}
+              options={documentKindOptions}
+            />
           </div>
 
           <div>
-            <label className="label">Período</label>
-            <select
+            <label className="label">Periodo</label>
+            <CustomSelect
               value={newLimit.period}
-              onChange={(e) => setNewLimit((s) => ({ ...s, period: e.target.value }))}
-              className="select"
-            >
-              {LIMIT_PERIODS.map((p) => (
-                <option key={p} value={p}>{LIMIT_PERIOD_LABELS[p]}</option>
-              ))}
-            </select>
+              onChange={(value) => setNewLimit((current) => ({ ...current, period: value }))}
+              options={periodOptions}
+            />
           </div>
 
           <div>
@@ -1212,17 +1215,16 @@ function TenantLimitsModal({ tenant, onClose }) {
                       <span className="text-[var(--text-tertiary)]"> / {lim.max_count}</span>
                     </td>
                     <td style={{ width: 160 }}>
-                      <div className="overflow-hidden rounded-none h-2" style={{ background: 'var(--bg-surface-high)' }}>
+                      <div className="superadmin-progress-track">
                         <div
+                          className="superadmin-progress-bar"
                           style={{
                             width: `${Math.min(100, u.pct)}%`,
-                            height: '100%',
                             background: progressColor(u.pct, u.would_block),
-                            transition: 'width 0.3s var(--ease-out)',
                           }}
                         />
                       </div>
-                      <p className="mt-1 text-[10px] text-[var(--text-tertiary)]">{u.pct}%</p>
+                      <p className="superadmin-mini-note mt-1">{u.pct}%</p>
                     </td>
                     <td>
                       {u.would_block ? (
@@ -1239,7 +1241,7 @@ function TenantLimitsModal({ tenant, onClose }) {
                           type="button"
                           onClick={() => handleToggle(lim)}
                           disabled={saving}
-                          className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--text-secondary)] transition-opacity hover:opacity-70 disabled:cursor-not-allowed"
+                          className="superadmin-toolbar-btn"
                         >
                           {lim.enabled ? 'Pausar' : 'Activar'}
                         </button>
@@ -1247,7 +1249,7 @@ function TenantLimitsModal({ tenant, onClose }) {
                           type="button"
                           onClick={() => handleDelete(lim.id)}
                           disabled={saving}
-                          className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-error)] transition-opacity hover:opacity-70 disabled:cursor-not-allowed"
+                          className="superadmin-toolbar-btn superadmin-toolbar-btn--danger"
                         >
                           <Trash2 className="h-3 w-3" />
                           Eliminar
@@ -1343,7 +1345,7 @@ export default function SuperadminPage() {
   useEffect(() => {
     svc.tenants()
       .then(setTenants)
-      .catch(() => toast('Error al cargar tenants', 'error'))
+      .catch(() => toast('No se pudo cargar la lista de tenants. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   }, [toast]);
 
@@ -1413,7 +1415,7 @@ export default function SuperadminPage() {
   ];
 
   return (
-    <div className="page-shell">
+    <div className="page-shell page-shell--dense superadmin-shell">
       <div className="page-header">
         <div className="page-header-copy">
           <p className="page-kicker">Control interno</p>
@@ -1435,10 +1437,10 @@ export default function SuperadminPage() {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_320px]">
           <div>
             <p className="page-kicker">Base operativa</p>
-            <h3 className="mt-2 font-[var(--font-heading)] text-2xl font-semibold tracking-[-0.03em]">
+            <h3 className="superadmin-section-title mt-2">
               El frente interno ahora usa la misma gramatica visual de Inkora.
             </h3>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">
+            <p className="superadmin-hero-note">
               Aqui concentras altas, cambios fiscales y administracion inicial por tenant. La prioridad sigue siendo
               claridad operativa, no volumen visual.
             </p>
@@ -1449,7 +1451,7 @@ export default function SuperadminPage() {
             </div>
           </div>
 
-          <div className="ink-card p-5">
+          <div className="ink-card p-4">
             <p className="label">Observacion</p>
             <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
               La validacion de token ya esta conectada al backend. Si el token no corresponde al RUC del tenant, el
@@ -1485,7 +1487,7 @@ export default function SuperadminPage() {
           description="Crea el primer tenant para iniciar la operacion multiempresa."
         />
       ) : (
-        <div className="ink-table-card" style={{ borderTop: '2px solid transparent', borderImage: 'var(--inkora-gradient) 1' }}>
+        <div className="ink-table-card">
           <div className="ink-card-header">
             <div>
               <h3 className="ink-card-title">Tenants registrados</h3>
@@ -1523,10 +1525,7 @@ export default function SuperadminPage() {
                     <td data-label="Empresa">
                       <div className="flex items-center gap-3">
                         {/* Avatar inicial */}
-                        <div
-                          className="flex h-8 w-8 shrink-0 items-center justify-center font-mono text-[11px] font-bold text-white"
-                          style={{ background: 'var(--inkora-gradient)', letterSpacing: '0.04em' }}
-                        >
+                        <div className="superadmin-avatar">
                           {initials}
                         </div>
                         <div>
@@ -1559,8 +1558,7 @@ export default function SuperadminPage() {
                               title="Verificar token ahora"
                               disabled={checkingTokenId === tenant.id}
                               onClick={() => handleCheckTokenHealth(tenant)}
-                              className="text-[var(--text-secondary)] transition-all hover:text-[var(--text-brand)] hover:rotate-180 disabled:cursor-not-allowed disabled:opacity-40"
-                              style={{ transition: 'color 150ms, transform 400ms' }}
+                              className="superadmin-token-check"
                             >
                               <RefreshCw className="h-3 w-3" />
                             </button>
@@ -1580,7 +1578,7 @@ export default function SuperadminPage() {
                         <button
                           type="button"
                           onClick={() => setEditing(tenant)}
-                          className="inline-flex items-center gap-1.5 border border-[var(--border-brand)] bg-[var(--ink-primary-fixed)] px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--text-brand)] transition-all hover:bg-[var(--ink-primary-fixed-dim)]"
+                          className="superadmin-toolbar-btn superadmin-toolbar-btn--brand"
                         >
                           <PencilLine className="h-3 w-3" />
                           Editar
@@ -1589,7 +1587,7 @@ export default function SuperadminPage() {
                         <button
                           type="button"
                           onClick={() => setViewingUsersOf(tenant)}
-                          className="inline-flex items-center gap-1.5 border border-[var(--border-subtle)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-secondary)] transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-surface-low)] hover:text-[var(--text-primary)]"
+                          className="superadmin-toolbar-btn"
                         >
                           <Users className="h-3 w-3" />
                           Usuarios
@@ -1598,7 +1596,7 @@ export default function SuperadminPage() {
                         <button
                           type="button"
                           onClick={() => setViewingErrorsOf(tenant)}
-                          className="inline-flex items-center gap-1.5 border border-[var(--border-subtle)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-secondary)] transition-all hover:border-[#f59e0b] hover:bg-[#fffbeb] hover:text-[#92400e]"
+                          className="superadmin-toolbar-btn superadmin-toolbar-btn--warning"
                         >
                           <AlertCircle className="h-3 w-3" />
                           Errores
@@ -1607,7 +1605,7 @@ export default function SuperadminPage() {
                         <button
                           type="button"
                           onClick={() => setViewingLimitsOf(tenant)}
-                          className="inline-flex items-center gap-1.5 border border-[var(--border-subtle)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-secondary)] transition-all hover:border-[var(--ink-secondary)] hover:bg-[var(--ink-secondary-fixed)] hover:text-[var(--ink-secondary)]"
+                          className="superadmin-toolbar-btn superadmin-toolbar-btn--accent"
                         >
                           <Gauge className="h-3 w-3" />
                           Límites

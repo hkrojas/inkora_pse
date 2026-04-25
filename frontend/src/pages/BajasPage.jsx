@@ -30,7 +30,7 @@ export default function BajasPage() {
       const res = await api.get('/facturas-emitidas/');
       setFacturas(res.filter((f) => f.estado === 'facturada'));
     } catch {
-      addToast('Error al cargar facturas', 'error');
+      addToast('No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error');
     } finally {
       setLoading(false);
     }
@@ -53,7 +53,7 @@ export default function BajasPage() {
       setModalOpen(false);
       load();
     } catch (err) {
-      addToast(err?.message || 'Error al procesar la baja', 'error');
+      addToast(err?.message || 'No se pudo procesar la baja. Revisa los datos e inténtalo nuevamente.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -120,17 +120,17 @@ export default function BajasPage() {
       {selected && (
         <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Confirmar Comunicación de Baja">
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 14px', background: '#FFF7ED', border: '1.5px solid #F97316' }}>
-              <AlertTriangle size={18} style={{ color: '#F97316', flexShrink: 0, marginTop: 2 }} />
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 14px', background: 'var(--color-warning-bg)', border: '1.5px solid var(--color-warning)' }}>
+              <AlertTriangle size={18} style={{ color: 'var(--color-warning)', flexShrink: 0, marginTop: 2 }} />
               <div>
-                <p style={{ fontWeight: 700, fontSize: 13, color: '#0F172A' }}>
+                <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
                   {selected.serie}-{String(selected.correlativo).padStart(6, '0')}
                 </p>
-                <p style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                   {selected.cliente?.nombre || selected.cliente?.razon_social} ·{' '}
                   {selected.moneda === 'USD' ? '$' : 'S/'} {Number(selected.total_venta || 0).toFixed(2)}
                 </p>
-                <p style={{ fontSize: 11, color: '#94A3B8', marginTop: 4 }}>
+                <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
                   Esta acción notificará a SUNAT que el documento debe ser anulado. Es irreversible.
                 </p>
               </div>

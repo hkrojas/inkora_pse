@@ -87,7 +87,7 @@ export default function ResumenDiarioPage() {
       );
       setModalOpen(false);
     } catch (err) {
-      addToast(err?.message || 'Error al enviar el resumen', 'error');
+      addToast(err?.message || 'No se pudo enviar el resumen. Revisa los datos e inténtalo nuevamente.', 'error');
     } finally {
       setSubmitting(false);
     }

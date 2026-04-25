@@ -51,7 +51,7 @@ export default function NotasPage() {
       setNotas(notasRes);
       setFacturas(facturasRes.filter((f) => f.estado === 'facturada'));
     } catch {
-      addToast('Error al cargar datos', 'error');
+      addToast('No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error');
     } finally {
       setLoading(false);
     }
@@ -113,7 +113,7 @@ export default function NotasPage() {
       setFormErrors({});
       load();
     } catch (err) {
-      addToast(err?.message || 'Error al emitir la nota', 'error');
+      addToast(err?.message || 'No se pudo emitir la nota. Revisa los datos e inténtalo nuevamente.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -199,7 +199,7 @@ export default function NotasPage() {
           {/* Comprobante afectado — enriched combobox */}
           <div>
             <label className="label">
-              Comprobante afectado <span style={{ color: '#DC2626' }}>*</span>
+              Comprobante afectado <span style={{ color: 'var(--color-error)' }}>*</span>
             </label>
             <CustomSelect
               value={form.comprobante_afectado_id}
@@ -212,11 +212,11 @@ export default function NotasPage() {
               renderOption={(opt) => (
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', minWidth: 0 }}>
                   <div style={{ minWidth: 0 }}>
-                    <p style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: '#4F46E5' }}>{opt.num}</p>
-                    <p style={{ fontSize: '12px', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.cliente}</p>
-                    <p style={{ fontSize: '10px', color: '#94A3B8' }}>{opt.fecha}</p>
+                    <p style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: 'var(--brand-600)' }}>{opt.num}</p>
+                    <p style={{ fontSize: '12px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.cliente}</p>
+                    <p style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>{opt.fecha}</p>
                   </div>
-                  <p style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', fontWeight: 700, color: '#0F172A', flexShrink: 0 }}>{opt.total}</p>
+                  <p style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', flexShrink: 0 }}>{opt.total}</p>
                 </div>
               )}
               renderPreview={(opt) => (
@@ -227,17 +227,17 @@ export default function NotasPage() {
             />
             <FieldError message={formErrors.comprobante} />
             {selectedFactura && (
-              <div style={{ marginTop: '6px', padding: '8px 12px', background: '#F8FAFC', border: '1px solid #E2E8F0', fontSize: '11px', color: '#475569', display: 'flex', gap: '16px' }}>
-                <span><strong style={{ color: '#0F172A' }}>{selectedFactura.num}</strong></span>
+              <div style={{ marginTop: '6px', padding: '8px 12px', background: 'var(--bg-surface-2)', border: '1px solid var(--border-rule)', fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', gap: '16px' }}>
+                <span><strong style={{ color: 'var(--text-primary)' }}>{selectedFactura.num}</strong></span>
                 <span>{selectedFactura.cliente}</span>
-                <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#0F172A' }}>{selectedFactura.total}</span>
+                <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' }}>{selectedFactura.total}</span>
               </div>
             )}
           </div>
 
           {/* Motivo */}
           <div>
-            <label className="label">Motivo <span style={{ color: '#DC2626' }}>*</span></label>
+            <label className="label">Motivo <span style={{ color: 'var(--color-error)' }}>*</span></label>
             <CustomSelect
               value={form.cod_motivo}
               onChange={(v) => { setForm((c) => ({ ...c, cod_motivo: v })); setFormErrors((e) => ({ ...e, motivo: undefined })); }}
@@ -249,7 +249,7 @@ export default function NotasPage() {
 
           {/* Descripción motivo */}
           <div>
-            <label className="label">Descripción del motivo <span style={{ color: '#DC2626' }}>*</span></label>
+            <label className="label">Descripción del motivo <span style={{ color: 'var(--color-error)' }}>*</span></label>
             <input
               className="input"
               value={form.descripcion_motivo}

@@ -1,7 +1,22 @@
 import { BASE_URL } from './config';
 
+function getStoredToken() {
+  return localStorage.getItem('token') || sessionStorage.getItem('token');
+}
+
+function clearStoredToken() {
+  localStorage.removeItem('token');
+  sessionStorage.removeItem('token');
+}
+
+function getApiErrorMessage(detail, fallback) {
+  if (typeof detail === 'string') return detail;
+  if (detail?.message) return detail.message;
+  return fallback;
+}
+
 async function request(path, options = {}) {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers = {
     ...options.headers
@@ -21,15 +36,25 @@ async function request(path, options = {}) {
   });
 
   if (!response.ok) {
-    // Handle unauthorized globally
-    if (response.status === 401) {
-      localStorage.removeItem('token');
+    const errorData = await response.json().catch(() => ({ detail: 'Error desconocido' }));
+    const message = getApiErrorMessage(errorData.detail, 'Error en la peticion');
+    const normalizedMessage = message.toLowerCase();
+    const shouldEndSession = response.status === 401 || (
+      response.status === 403
+      && (
+        normalizedMessage.includes('usuario se encuentra bloqueado')
+        || normalizedMessage.includes('tenant se encuentra suspendido')
+      )
+    );
+
+    if (shouldEndSession) {
+      clearStoredToken();
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
     }
-    const errorData = await response.json().catch(() => ({ detail: 'Error desconocido' }));
-    throw new Error(errorData.detail || 'Error en la petición');
+
+    throw new Error(message);
   }
 
   return response.json();

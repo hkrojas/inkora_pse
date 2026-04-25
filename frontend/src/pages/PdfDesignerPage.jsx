@@ -404,7 +404,7 @@ export default function PdfDesignerPage() {
         setTenantData(response);
         setDraft(buildDraftState(response));
       })
-      .catch(() => toast('Error al cargar el diseño del PDF', 'error'))
+      .catch(() => toast('No se pudo cargar el diseño del PDF. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -553,7 +553,7 @@ export default function PdfDesignerPage() {
                 <p className="page-kicker" style={{ margin: 0 }}>Vista previa</p>
                 <h2 className="pdf-designer-panel-title">Cambios en tiempo real</h2>
               </div>
-              <div style={{ display: 'flex', gap: '4px', background: 'var(--color-surface-raised, #f1f5f9)', borderRadius: '6px', padding: '3px' }}>
+              <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-surface-2)', borderRadius: 0, padding: '3px' }}>
                 <button
                   type="button"
                   onClick={() => setPreviewTab('cotizacion')}
@@ -564,9 +564,9 @@ export default function PdfDesignerPage() {
                     borderRadius: '4px',
                     border: 'none',
                     cursor: 'pointer',
-                    background: previewTab === 'cotizacion' ? '#fff' : 'transparent',
-                    color: previewTab === 'cotizacion' ? 'var(--color-text-primary, #0f172a)' : 'var(--color-text-muted, #64748b)',
-                    boxShadow: previewTab === 'cotizacion' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    background: previewTab === 'cotizacion' ? 'var(--bg-surface)' : 'transparent',
+                    color: previewTab === 'cotizacion' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    boxShadow: previewTab === 'cotizacion' ? 'var(--shadow-brut-sm)' : 'none',
                     transition: 'all 0.15s',
                   }}
                 >
@@ -582,9 +582,9 @@ export default function PdfDesignerPage() {
                     borderRadius: '4px',
                     border: 'none',
                     cursor: 'pointer',
-                    background: previewTab === 'fiscal' ? '#fff' : 'transparent',
-                    color: previewTab === 'fiscal' ? 'var(--color-text-primary, #0f172a)' : 'var(--color-text-muted, #64748b)',
-                    boxShadow: previewTab === 'fiscal' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    background: previewTab === 'fiscal' ? 'var(--bg-surface)' : 'transparent',
+                    color: previewTab === 'fiscal' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    boxShadow: previewTab === 'fiscal' ? 'var(--shadow-brut-sm)' : 'none',
                     transition: 'all 0.15s',
                   }}
                 >

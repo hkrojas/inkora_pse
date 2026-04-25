@@ -400,7 +400,7 @@ function CotizacionPreviewSheet({
   igv,
   totalGeneral,
 }) {
-  const accentColor = tenantData?.primary_color || '#004aad';
+  const accentColor = tenantData?.primary_color || 'var(--brand-600)';
   const companyName = tenantData?.business_name || user?.tenant?.business_name || 'Nombre del negocio';
   const companyRuc = tenantData?.business_ruc || user?.tenant?.business_ruc || '';
   const companyAddress = tenantData?.business_address || 'Direccion no especificada';
@@ -436,7 +436,7 @@ function CotizacionPreviewSheet({
   const currencySymbol = moneda === 'USD' ? '$' : 'S/';
 
   return (
-    <div style={{ background: '#e5e7eb', padding: '16px', display: 'flex', justifyContent: 'center' }}>
+    <div style={{ background: 'var(--border-subtle)', padding: '16px', display: 'flex', justifyContent: 'center' }}>
       <div className="cotizacion-preview-sheet" style={{ '--quote-preview-accent': accentColor, width: '794px', minHeight: '1123px', background: '#fff', boxShadow: '0 2px 16px rgba(0,0,0,0.18)', padding: '32px 36px', display: 'flex', flexDirection: 'column' }}>
         <div className="cotizacion-preview-header">
           <div className="cotizacion-preview-logo">
@@ -743,14 +743,14 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <div style={{ padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-        <p style={{ fontSize: '12px', color: '#64748B', marginBottom: '2px' }}>Cotización origen</p>
+      <div style={{ padding: '12px 16px', background: 'var(--bg-surface-2)', border: '1px solid var(--border-subtle)' }}>
+        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '2px' }}>Cotización origen</p>
         <p style={{ fontWeight: 700, fontSize: '14px' }}>
           {cotizacion?.internal_order_number || `#${cotizacion?.id}`}
           {' — '}
           {cliente?.razon_social}
         </p>
-        <p style={{ fontSize: '12px', color: '#64748B' }}>
+        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
           Doc. cliente: {cliente?.numero_documento} ({tipoDocCliente === '6' ? 'RUC' : tipoDocCliente === '1' ? 'DNI' : tipoDocCliente})
         </p>
       </div>
@@ -768,7 +768,7 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
       </div>
 
       {facturaInvalida && (
-        <div style={{ padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', fontSize: '13px' }}>
+        <div style={{ padding: '10px 14px', background: 'var(--color-error-bg)', border: '1px solid rgba(220,38,38,0.2)', color: 'var(--color-error)', fontSize: '13px' }}>
           Para emitir factura, el cliente debe tener RUC (11 dígitos). El cliente actual tiene{' '}
           {esDNI ? 'DNI' : `documento tipo ${tipoDocCliente}`}.
           Cambia a Boleta o actualiza el documento del cliente.
@@ -827,11 +827,11 @@ function AnularModal({ documento, onClose, onSuccess }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div style={{ padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FECACA' }}>
-        <p style={{ fontSize: '13px', fontWeight: 700, color: '#B91C1C' }}>
+      <div style={{ padding: '12px 16px', background: 'var(--color-error-bg)', border: '1px solid rgba(220,38,38,0.2)' }}>
+        <p style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-error)' }}>
           Anulación: {docNum}
         </p>
-        <p style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
           {documento.cliente?.razon_social} — Total: {documento.moneda === 'USD' ? '$' : 'S/'} {fmt(documento.total_venta)}
         </p>
       </div>
@@ -849,7 +849,7 @@ function AnularModal({ documento, onClose, onSuccess }) {
       </div>
       <div className="flex justify-end gap-3">
         <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
-        <button type="submit" disabled={saving || !motivo.trim()} className="btn-primary flex items-center gap-2" style={{ background: '#EF4444' }}>
+        <button type="submit" disabled={saving || !motivo.trim()} className="btn-primary flex items-center gap-2" style={{ background: 'var(--color-error)' }}>
           {saving && <Spinner size="sm" />} Anular documento
         </button>
       </div>
@@ -893,8 +893,8 @@ function NotaModal({ documento, onClose, onSuccess }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div style={{ padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-        <p style={{ fontSize: '12px', color: '#64748B' }}>Documento afectado</p>
+      <div style={{ padding: '12px 16px', background: 'var(--bg-surface-2)', border: '1px solid var(--border-subtle)' }}>
+        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Documento afectado</p>
         <p style={{ fontWeight: 700, fontSize: '14px' }}>{docNum} — {documento.cliente?.razon_social}</p>
       </div>
 
@@ -1216,10 +1216,10 @@ function NuevaCotizacionForm({
           </button>
         </div>
 
-        <div style={{ background: '#fff', border: '1px solid #CBD5E1', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', border: '1px solid var(--border-subtle)', overflow: 'hidden' }}>
           <div className="ink-table-scroll">
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1' }}>
+              <thead style={{ background: 'var(--bg-surface-2)', borderBottom: '1px solid var(--border-subtle)' }}>
                 <tr>
                   <th style={thStyle(avanzado ? '44%' : '60%')}>Código / Producto</th>
                   {avanzado && <th style={thStyle('10%')}>Unidad</th>}
@@ -1227,15 +1227,15 @@ function NuevaCotizacionForm({
                   <th style={thStyle('8%', 'right')}>Cant.</th>
                   <th style={thStyle('12%', 'right')}>P. Unit.</th>
                   <th style={thStyle('10%', 'right')}>Total</th>
-                  <th style={{ width: '4%', background: '#F1F5F9' }} />
+                  <th style={{ width: '4%', background: 'var(--bg-surface-2)' }} />
                 </tr>
               </thead>
-              <tbody style={{ borderBottom: '1px solid #E2E8F0' }}>
+              <tbody style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                 {items.map((item, idx) => {
                   const lineTotal = Number(item.cantidad) * Number(item.precio_unitario) || 0;
                   return (
-                    <tr key={idx} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid #E2E8F0', padding: '4px 6px' }}>
+                    <tr key={idx} style={{ borderBottom: '1px solid var(--bg-surface-2)' }}>
+                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-subtle)', padding: '4px 6px' }}>
                         <ProductLineCell
                           value={item}
                           onChange={(next) => setItemAll(idx, next)}
@@ -1246,7 +1246,7 @@ function NuevaCotizacionForm({
                         />
                       </td>
                       {avanzado && (
-                        <td className="spreadsheet-cell" style={{ borderRight: '1px solid #E2E8F0', padding: 0 }}>
+                        <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-subtle)', padding: 0 }}>
                           <CustomSelect
                             compact
                             value={item.unidad_medida}
@@ -1256,7 +1256,7 @@ function NuevaCotizacionForm({
                         </td>
                       )}
                       {avanzado && (
-                        <td className="spreadsheet-cell" style={{ borderRight: '1px solid #E2E8F0', padding: 0 }}>
+                        <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-subtle)', padding: 0 }}>
                           <CustomSelect
                             compact
                             value={item.tipo_afectacion_igv}
@@ -1265,7 +1265,7 @@ function NuevaCotizacionForm({
                           />
                         </td>
                       )}
-                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid #E2E8F0', padding: 0 }}>
+                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-subtle)', padding: 0 }}>
                         <input
                           required type="number" min="0.01" step="any"
                           className="spreadsheet-input spreadsheet-input-mono input-no-spinner"
@@ -1273,7 +1273,7 @@ function NuevaCotizacionForm({
                           onChange={(e) => setItem(idx, 'cantidad', e.target.value)}
                         />
                       </td>
-                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid #E2E8F0', padding: 0, position: 'relative' }}>
+                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-subtle)', padding: 0, position: 'relative' }}>
                         <span style={prefixStyle}>{sym}</span>
                         <input
                           required type="number" min="0.01" step="0.01"
@@ -1283,12 +1283,12 @@ function NuevaCotizacionForm({
                           onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)}
                         />
                       </td>
-                      <td style={{ borderRight: '1px solid #E2E8F0', background: '#F8FAFC', position: 'relative' }}>
+                      <td style={{ borderRight: '1px solid var(--border-subtle)', background: 'var(--bg-surface-2)', position: 'relative' }}>
                         <span style={prefixStyle}>{sym}</span>
                         <input
                           readOnly
                           className="spreadsheet-input spreadsheet-input-mono"
-                          style={{ paddingLeft: '24px', color: '#64748B' }}
+                          style={{ paddingLeft: '24px', color: 'var(--text-tertiary)' }}
                           value={fmt(lineTotal)}
                         />
                       </td>
@@ -1297,9 +1297,9 @@ function NuevaCotizacionForm({
                           <button
                             type="button"
                             onClick={() => removeItem(idx)}
-                            style={{ width: '100%', minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: '#CBD5E1', cursor: 'pointer' }}
-                            onMouseEnter={(e) => { e.currentTarget.style.color = '#EF4444'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.color = '#CBD5E1'; }}
+                            style={{ width: '100%', minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: 'var(--border-subtle)', cursor: 'pointer' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-error)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--border-subtle)'; }}
                           >
                             <Trash2 style={{ width: '14px', height: '14px' }} />
                           </button>
@@ -1311,12 +1311,12 @@ function NuevaCotizacionForm({
               </tbody>
             </table>
           </div>
-          <div style={{ padding: '8px', background: '#fff', borderTop: '1px solid #E2E8F0' }}>
+          <div style={{ padding: '8px', background: '#fff', borderTop: '1px solid var(--border-subtle)' }}>
             <button
               type="button"
               onClick={addItem}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#4F46E5', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 16px' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#EEF2FF'; }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--brand-600)', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 16px' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--brand-100)'; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
             >
               <PlusCircle style={{ width: '14px', height: '14px' }} /> Agregar línea
@@ -1330,37 +1330,37 @@ function NuevaCotizacionForm({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontFamily: 'var(--font-mono)', fontSize: '13px' }}>
               {totales.gravado > 0 && (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748B' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
                     <span>Subtotal gravado</span>
                     <span>{sym} {fmt(subtotalGravado)}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748B' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
                     <span>IGV (18%)</span>
                     <span>{sym} {fmt(igv)}</span>
                   </div>
                 </>
               )}
               {totales.exonerado > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748B' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
                   <span>Exonerado</span>
                   <span>{sym} {fmt(totales.exonerado)}</span>
                 </div>
               )}
               {totales.inafecto > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748B' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
                   <span>Inafecto</span>
                   <span>{sym} {fmt(totales.inafecto)}</span>
                 </div>
               )}
               {totales.exportacion > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748B' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
                   <span>Exportación</span>
                   <span>{sym} {fmt(totales.exportacion)}</span>
                 </div>
               )}
-              <div style={{ paddingTop: '12px', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                <span style={{ fontWeight: 700, color: '#0F172A', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Total cotización</span>
-                <span style={{ fontSize: '22px', fontWeight: 900, color: '#4F46E5' }}>{sym} {fmt(totalGeneral)}</span>
+              <div style={{ paddingTop: '12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Total cotización</span>
+                <span style={{ fontSize: '22px', fontWeight: 900, color: 'var(--brand-600)' }}>{sym} {fmt(totalGeneral)}</span>
               </div>
             </div>
           </div>
@@ -1393,13 +1393,13 @@ function NuevaCotizacionForm({
               <div style={{ display: 'grid', gap: '12px' }}>
                 <label className="label">Observaciones (aparecen en el PDF)</label>
                 {observationLines.map((line, index) => (
-                  <div key={`observation-line-${index}`} style={{ border: '1px solid #E2E8F0', background: '#F8FAFC', padding: '12px' }}>
+                  <div key={`observation-line-${index}`} style={{ border: '1px solid var(--border-subtle)', background: 'var(--bg-surface-2)', padding: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#475569' }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
                         Linea {index + 1}
                       </span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
                           <input
                             type="checkbox"
                             checked={line.bold}
@@ -1407,13 +1407,13 @@ function NuevaCotizacionForm({
                           />
                           Negrita
                         </label>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
                           Color
                           <ColorPickerField
                             value={line.color}
                             onChange={(val) => updateObservationLine(index, { color: val })}
-                            fallback={index === 0 ? '#FF0000' : '#111111'}
-                            presets={['#FF0000', '#DC2626', '#F97316', '#CA8A04', '#0F172A', '#2563EB']}
+                            fallback={index === 0 ? 'var(--color-error)' : '#111111'}
+                            presets={['var(--color-error)', 'var(--color-error)', 'var(--color-warning)', 'var(--color-warning)', 'var(--text-primary)', 'var(--brand-600)']}
                             openUpward
                           />
                         </div>
@@ -1499,10 +1499,10 @@ const thStyle = (width, textAlign = 'left') => ({
   fontFamily: 'var(--font-mono)',
   fontSize: '10px',
   fontWeight: 700,
-  color: '#475569',
+  color: 'var(--text-secondary)',
   textTransform: 'uppercase',
   letterSpacing: '0.08em',
-  borderRight: '1px solid #E2E8F0',
+  borderRight: '1px solid var(--border-subtle)',
   width,
 });
 
@@ -1512,7 +1512,7 @@ const prefixStyle = {
   top: '50%',
   transform: 'translateY(-50%)',
   fontSize: '10px',
-  color: '#94A3B8',
+  color: 'var(--text-tertiary)',
   fontFamily: 'var(--font-mono)',
   fontWeight: 700,
   pointerEvents: 'none',
@@ -1570,7 +1570,7 @@ export default function CotizacionesPage() {
     setLoading(true);
     svc.list()
       .then(setList)
-      .catch(() => toast('Error al cargar documentos', 'error'))
+      .catch(() => toast('No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -1867,7 +1867,7 @@ export default function CotizacionesPage() {
                         <td className="ink-td">
                           {hasLinked ? (
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: '#4F46E5' }}>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: 'var(--brand-600)' }}>
                                 {item.linked_fiscal_document_number}
                               </span>
                               {linkedSunat && (
@@ -1878,7 +1878,7 @@ export default function CotizacionesPage() {
                               )}
                             </div>
                           ) : (
-                            <span style={{ fontSize: '10px', color: '#94A3B8' }}>Sin emitir</span>
+                            <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>Sin emitir</span>
                           )}
                         </td>
                         <td className="ink-td">
@@ -1886,7 +1886,7 @@ export default function CotizacionesPage() {
                             <div className="history-actions-cluster">
                               <Link
                                 to={`/cotizaciones/${item.id}`}
-                                className="row-action-icon bg-[var(--inkora-primary)] text-white"
+                                className="row-action-icon row-action-icon--brand"
                                 title="Ver detalle"
                               >
                                 <Eye className="h-3 w-3" />
@@ -1894,7 +1894,7 @@ export default function CotizacionesPage() {
                               <button
                                 type="button"
                                 title="Duplicar cotizacion"
-                                className="row-action-icon bg-slate-100 text-slate-700"
+                                className="row-action-icon row-action-icon--neutral"
                                 onClick={() => handleDuplicateQuote(item)}
                               >
                                 <Copy className="h-3 w-3" />
@@ -1902,7 +1902,7 @@ export default function CotizacionesPage() {
                               <button
                                 type="button"
                                 title="Descargar PDF"
-                                className="row-action-icon bg-blue-50 text-blue-600"
+                                className="row-action-icon row-action-icon--info"
                                 onClick={() => handleOpenPdf(item)}
                               >
                                 <Download className="h-3 w-3" />
@@ -1910,7 +1910,7 @@ export default function CotizacionesPage() {
                               <button
                                 type="button"
                                 title="Copiar enlace publico"
-                                className="row-action-icon bg-blue-50 text-blue-600"
+                                className="row-action-icon row-action-icon--info"
                                 onClick={() => handleCopyShareLink(item)}
                               >
                                 <Share2 className="h-3 w-3" />
@@ -1921,7 +1921,7 @@ export default function CotizacionesPage() {
                                   target="_blank"
                                   rel="noreferrer"
                                   title="Enviar por WhatsApp"
-                                  className="row-action-icon bg-green-50 text-green-600"
+                                  className="row-action-icon row-action-icon--success"
                                 >
                                   <MessageCircle className="h-3 w-3" />
                                 </a>
@@ -1930,7 +1930,7 @@ export default function CotizacionesPage() {
                                 <a
                                   href={emailLink}
                                   title="Enviar por correo"
-                                  className="row-action-icon bg-blue-50 text-blue-600"
+                                  className="row-action-icon row-action-icon--info"
                                 >
                                   <Mail className="h-3 w-3" />
                                 </a>
@@ -1939,7 +1939,7 @@ export default function CotizacionesPage() {
                                 <button
                                   type="button"
                                   title="WhatsApp + correo"
-                                  className="row-action-icon bg-indigo-50 text-indigo-600"
+                                  className="row-action-icon row-action-icon--accent"
                                   onClick={() => {
                                     window.open(waLink, '_blank', 'noopener,noreferrer');
                                     window.setTimeout(() => window.open(emailLink, '_blank', 'noopener,noreferrer'), 80);
@@ -1955,7 +1955,7 @@ export default function CotizacionesPage() {
                                 <button
                                   type="button"
                                   title="Emitir factura o boleta"
-                                  className="row-action-icon bg-indigo-50 text-indigo-600"
+                                  className="row-action-icon row-action-icon--accent"
                                   onClick={() => setEmitirDoc(item)}
                                 >
                                   <Receipt className="h-3 w-3" />
@@ -1965,7 +1965,7 @@ export default function CotizacionesPage() {
                                 <button
                                   type="button"
                                   title="Eliminar cotizacion"
-                                  className="row-action-icon bg-slate-100 text-slate-600"
+                                  className="row-action-icon row-action-icon--danger"
                                   onClick={() => handleDeleteQuote(item)}
                                 >
                                   <Trash2 className="h-3 w-3" />
@@ -1975,7 +1975,7 @@ export default function CotizacionesPage() {
                           </div>
 
                           <details className="history-actions-mobile">
-                            <summary className="row-action-icon bg-slate-100 text-slate-700" title="Mas acciones">
+                            <summary className="row-action-icon row-action-icon--neutral" title="Mas acciones">
                               <MoreHorizontal className="h-3 w-3" />
                             </summary>
                             <div className="history-actions-mobile-menu">
@@ -2131,8 +2131,8 @@ export default function CotizacionesPage() {
           </div>
 
           {/* Barra de resultados y acciones */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderTop: 'none', marginBottom: '0' }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: '#64748B' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', background: 'var(--bg-surface-2)', border: '1px solid var(--border-subtle)', borderTop: 'none', marginBottom: '0' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: 'var(--text-tertiary)' }}>
               Total registros: {filteredFiscal.length}
             </span>
             <div className="cotizacion-fiscal-toolbar">
@@ -2146,7 +2146,7 @@ export default function CotizacionesPage() {
                 className="btn-ghost text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
                 disabled={!selectedFiscal || !['01','03'].includes(selectedFiscal?.tipo_comprobante) || selectedFiscal?.estado === 'anulada'}
                 onClick={() => selectedFiscal && setNotaDoc(selectedFiscal)}
-                style={{ color: selectedFiscal ? '#92400E' : '#CBD5E1', cursor: selectedFiscal ? 'pointer' : 'default' }}
+                style={{ color: selectedFiscal ? 'var(--color-warning)' : 'var(--border-subtle)', cursor: selectedFiscal ? 'pointer' : 'default' }}
               >
                 Nota de Crédito
               </button>
@@ -2154,28 +2154,28 @@ export default function CotizacionesPage() {
                 className="btn-ghost text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
                 disabled={!selectedFiscal || !['01','03'].includes(selectedFiscal?.tipo_comprobante) || selectedFiscal?.estado === 'anulada'}
                 onClick={() => selectedFiscal && setNotaDoc(selectedFiscal)}
-                style={{ color: selectedFiscal ? '#92400E' : '#CBD5E1', cursor: selectedFiscal ? 'pointer' : 'default' }}
+                style={{ color: selectedFiscal ? 'var(--color-warning)' : 'var(--border-subtle)', cursor: selectedFiscal ? 'pointer' : 'default' }}
               >
                 Nota de Débito
               </button>
-              <div style={{ width: '1px', height: '16px', background: '#CBD5E1' }} />
+              <div style={{ width: '1px', height: '16px', background: 'var(--border-subtle)' }} />
               <button
                 className="btn-ghost text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
                 disabled={!selectedFiscal || selectedFiscal?.estado === 'anulada'}
                 onClick={() => selectedFiscal && setAnularDoc(selectedFiscal)}
-                style={{ color: selectedFiscal ? '#B91C1C' : '#CBD5E1', cursor: selectedFiscal ? 'pointer' : 'default' }}
+                style={{ color: selectedFiscal ? 'var(--color-error)' : 'var(--border-subtle)', cursor: selectedFiscal ? 'pointer' : 'default' }}
               >
                 Anular
               </button>
-              <div style={{ width: '1px', height: '16px', background: '#CBD5E1' }} />
+              <div style={{ width: '1px', height: '16px', background: 'var(--border-subtle)' }} />
               {/* Iconos de descarga rápida para el registro seleccionado */}
               <a
                 href={selectedFiscal?.sunat_pdf_url || '#'}
                 target={selectedFiscal?.sunat_pdf_url ? '_blank' : undefined}
                 rel="noreferrer"
                 title="PDF"
-                style={{ opacity: selectedFiscal?.sunat_pdf_url ? 1 : 0.3, color: '#EF4444', pointerEvents: selectedFiscal?.sunat_pdf_url ? 'auto' : 'none' }}
-                className="row-action-icon bg-red-50"
+                style={{ opacity: selectedFiscal?.sunat_pdf_url ? 1 : 0.3, color: 'var(--color-error)', pointerEvents: selectedFiscal?.sunat_pdf_url ? 'auto' : 'none' }}
+                className="row-action-icon row-action-icon--danger"
               >
                 <FileText className="h-3 w-3" />
               </a>
@@ -2184,8 +2184,8 @@ export default function CotizacionesPage() {
                 target={selectedFiscal?.sunat_xml_url ? '_blank' : undefined}
                 rel="noreferrer"
                 title="XML"
-                style={{ opacity: selectedFiscal?.sunat_xml_url ? 1 : 0.3, color: '#3B82F6', pointerEvents: selectedFiscal?.sunat_xml_url ? 'auto' : 'none' }}
-                className="row-action-icon bg-blue-50"
+                style={{ opacity: selectedFiscal?.sunat_xml_url ? 1 : 0.3, color: 'var(--color-info)', pointerEvents: selectedFiscal?.sunat_xml_url ? 'auto' : 'none' }}
+                className="row-action-icon row-action-icon--info"
               >
                 <Download className="h-3 w-3" />
               </a>
@@ -2234,7 +2234,7 @@ export default function CotizacionesPage() {
                         key={item.id}
                         className="ink-tr"
                         onClick={() => setSelectedFiscal(isSelected ? null : item)}
-                        style={{ cursor: 'pointer', background: isSelected ? '#EEF2FF' : undefined, boxShadow: isSelected ? 'inset 3px 0 0 #4F46E5' : undefined }}
+                        style={{ cursor: 'pointer', background: isSelected ? 'var(--ink-primary-fixed)' : undefined, boxShadow: isSelected ? 'inset 2px 0 0 var(--ink-primary)' : undefined }}
                       >
                         <td className="ink-td">
                           <span className="font-mono-label text-[10px] uppercase">
@@ -2278,16 +2278,16 @@ export default function CotizacionesPage() {
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.08em',
                                 borderRadius: '2px',
-                                ...(sunatSt.variant === 'success' ? { background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }
-                                  : sunatSt.variant === 'danger'  ? { background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA' }
-                                  : { background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }),
+                                ...(sunatSt.variant === 'success' ? { background: 'var(--color-success-bg)', color: 'var(--color-success)', border: '1px solid rgba(5,150,105,0.2)' }
+                                  : sunatSt.variant === 'danger'  ? { background: 'var(--color-error-bg)', color: 'var(--color-error)', border: '1px solid rgba(220,38,38,0.2)' }
+                                  : { background: 'var(--color-warning-bg)', color: 'var(--color-warning)', border: '1px solid rgba(217,119,6,0.2)' }),
                               }}
                             >
                               <sunatSt.icon style={{ width: '10px', height: '10px' }} />
                               {sunatSt.label}
                             </div>
                           ) : (
-                            <span style={{ color: '#94A3B8', fontSize: '11px' }}>—</span>
+                            <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>—</span>
                           )}
                         </td>
                         <td className="ink-td">
@@ -2295,28 +2295,28 @@ export default function CotizacionesPage() {
                             {item.sunat_pdf_url && (
                               <a href={item.sunat_pdf_url} target="_blank" rel="noreferrer"
                                 title="Descargar PDF"
-                                className="row-action-icon bg-red-50 text-red-600">
+                                className="row-action-icon row-action-icon--danger">
                                 <FileText className="h-3 w-3" />
                               </a>
                             )}
                             {item.sunat_xml_url && (
                               <a href={item.sunat_xml_url} target="_blank" rel="noreferrer"
                                 title="Descargar XML"
-                                className="row-action-icon bg-blue-50 text-blue-600">
+                                className="row-action-icon row-action-icon--info">
                                 <Download className="h-3 w-3" />
                               </a>
                             )}
                             {waLink && (
                               <a href={waLink} target="_blank" rel="noreferrer"
                                 title="Enviar por WhatsApp"
-                                className="row-action-icon bg-green-50 text-green-600">
+                                className="row-action-icon row-action-icon--success">
                                 <Send className="h-3 w-3" />
                               </a>
                             )}
                             {canNota && (
                               <button
                                 title="Emitir nota de crédito/débito"
-                                className="row-action-icon bg-amber-50 text-amber-600"
+                                className="row-action-icon row-action-icon--warning"
                                 onClick={() => setNotaDoc(item)}
                               >
                                 <FileText className="h-3 w-3" />
@@ -2325,16 +2325,16 @@ export default function CotizacionesPage() {
                             {canAnular && (
                               <button
                                 title="Anular documento"
-                                className="row-action-icon bg-slate-100 text-slate-600"
+                                className="row-action-icon row-action-icon--danger"
                                 onClick={() => setAnularDoc(item)}
                               >
                                 <XCircle className="h-3 w-3" />
                               </button>
                             )}
-                            <div className="h-4 w-[1px] bg-slate-200 mx-1" />
+                            <div className="history-actions-divider mx-1 h-4" />
                             <Link
                               to={`/cotizaciones/${item.id}`}
-                              className="row-action-icon bg-[var(--inkora-primary)] text-white"
+                              className="row-action-icon row-action-icon--brand"
                               title="Ver detalle"
                             >
                               <Eye className="h-3 w-3" />
@@ -2399,7 +2399,7 @@ export default function CotizacionesPage() {
 function SearchBar({ search, onSearch, showFilters, onToggleFilters, onNewAction, newLabel }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0 14px', height: '40px' }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-surface-2)', border: '1px solid var(--border-subtle)', padding: '0 14px', height: '40px' }}>
         <Search className="h-4 w-4 text-[var(--text-tertiary)]" style={{ flexShrink: 0 }} />
         <input
           className="input-flat"

@@ -153,9 +153,9 @@ export default function ProductLineCell({
           fontWeight: 700,
           letterSpacing: '0.04em',
           padding: '0 8px',
-          border: `1.5px solid ${isNew && !value.codigo ? '#F59E0B' : isExisting ? '#E2E8F0' : '#CBD5E1'}`,
-          background: isExisting ? '#F8FAFC' : '#fff',
-          color: isExisting ? '#64748B' : '#0F172A',
+          border: `1.5px solid ${isNew && !value.codigo ? 'var(--color-warning)' : isExisting ? 'var(--border-subtle)' : 'var(--border-subtle)'}`,
+          background: isExisting ? 'var(--bg-surface-2)' : 'var(--bg-surface)',
+          color: isExisting ? 'var(--text-tertiary)' : 'var(--text-primary)',
           outline: 'none',
           boxSizing: 'border-box',
           textTransform: 'uppercase',
@@ -176,9 +176,9 @@ export default function ProductLineCell({
           fontFamily: 'var(--font-body)',
           fontSize: '13px',
           padding: '0 8px',
-          border: `1.5px solid ${isExisting ? '#E2E8F0' : '#CBD5E1'}`,
-          background: '#fff',
-          color: '#0F172A',
+          border: `1.5px solid ${isExisting ? 'var(--border-subtle)' : 'var(--border-subtle)'}`,
+          background: 'var(--bg-surface)',
+          color: 'var(--text-primary)',
           outline: 'none',
           boxSizing: 'border-box',
         }}
@@ -190,7 +190,7 @@ export default function ProductLineCell({
           type="button"
           onClick={handleClear}
           title="Quitar producto"
-          style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', display: 'flex', padding: '4px', lineHeight: 1 }}
+          style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', padding: '4px', lineHeight: 1 }}
         >
           <X size={12} />
         </button>
@@ -202,7 +202,7 @@ export default function ProductLineCell({
           onClick={handleGenerateCode}
           disabled={generating}
           title="Generar código automático"
-          style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '3px', padding: '0 8px', height: '28px', background: '#FEF3C7', border: '1px solid #FDE68A', color: '#D97706', fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700, cursor: generating ? 'wait' : 'pointer', whiteSpace: 'nowrap', letterSpacing: '0.06em', textTransform: 'uppercase' }}
+          style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '3px', padding: '0 8px', height: '28px', background: 'var(--color-warning-bg)', border: '1px solid rgba(217,119,6,0.2)', color: 'var(--color-warning)', fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700, cursor: generating ? 'wait' : 'pointer', whiteSpace: 'nowrap', letterSpacing: '0.06em', textTransform: 'uppercase' }}
         >
           <RotateCw size={10} style={generating ? { animation: 'spin 1s linear infinite' } : {}} />
           {generating ? '...' : 'Código'}
@@ -211,7 +211,7 @@ export default function ProductLineCell({
 
       {/* ── New-product indicator ── */}
       {isNew && value.descripcion && (
-        <span style={{ flexShrink: 0, fontSize: '9px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#D97706', background: '#FEF3C7', border: '1px solid #FDE68A', padding: '2px 6px', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+        <span style={{ flexShrink: 0, fontSize: '9px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-warning)', background: 'var(--color-warning-bg)', border: '1px solid rgba(217,119,6,0.2)', padding: '2px 6px', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
           Nuevo
         </span>
       )}
@@ -220,26 +220,26 @@ export default function ProductLineCell({
       {activeInput && dropdownItems.length > 0 && createPortal(
         <div
           ref={dropdownRef}
-          style={{ position: 'absolute', top: pos.top, left: pos.left, width: pos.width, background: '#fff', border: '1.5px solid #C7D2FE', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 9999, maxHeight: '240px', overflowY: 'auto' }}
+          style={{ position: 'absolute', top: pos.top, left: pos.left, width: pos.width, background: 'var(--bg-surface)', border: '1.5px solid var(--brand-200)', boxShadow: 'var(--shadow-brut-md)', zIndex: 9999, maxHeight: '240px', overflowY: 'auto' }}
         >
           {dropdownItems.map((p) => (
             <button
               key={p.id}
               type="button"
               onMouseDown={(e) => { e.preventDefault(); handleSelectProduct(p); }}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', border: 'none', borderBottom: '1px solid #F1F5F9', background: '#fff', cursor: 'pointer', textAlign: 'left', gap: '12px' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#F8FAFC'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', border: 'none', borderBottom: '1px solid var(--border-hair)', background: 'var(--bg-surface)', cursor: 'pointer', textAlign: 'left', gap: '12px' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-surface-2)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-surface)'; }}
             >
               <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: '#4F46E5', flexShrink: 0, minWidth: '68px' }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: 'var(--brand-600)', flexShrink: 0, minWidth: '68px' }}>
                   {p.codigo_interno || '—'}
                 </span>
-                <span style={{ fontSize: '13px', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {p.nombre}
                 </span>
               </div>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: '#64748B', flexShrink: 0 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: 'var(--text-tertiary)', flexShrink: 0 }}>
                 {formatPrice(p, incluyeIgv, sym)}
               </span>
             </button>
