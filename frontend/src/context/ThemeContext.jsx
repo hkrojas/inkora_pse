@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 const ThemeContext = createContext(null);
 const THEME_KEY = 'inkora-theme';
@@ -41,7 +41,35 @@ function storeNoise(value) {
   }
 }
 
+function getOriginPoint(origin) {
+  if (typeof window === 'undefined') return { x: '100%', y: '0%' };
+
+  const fallback = { x: `${window.innerWidth - 32}px`, y: '32px' };
+  if (!origin) return fallback;
+
+  const target = origin.currentTarget || origin.target;
+  if (target?.getBoundingClientRect) {
+    const rect = target.getBoundingClientRect();
+    return {
+      x: `${rect.left + rect.width / 2}px`,
+      y: `${rect.top + rect.height / 2}px`,
+    };
+  }
+
+  if (Number.isFinite(origin.clientX) && Number.isFinite(origin.clientY)) {
+    return { x: `${origin.clientX}px`, y: `${origin.clientY}px` };
+  }
+
+  if (Number.isFinite(origin.x) && Number.isFinite(origin.y)) {
+    return { x: `${origin.x}px`, y: `${origin.y}px` };
+  }
+
+  return fallback;
+}
+
 export function ThemeProvider({ children }) {
+  const mountedRef = useRef(false);
+  const transitionTimeoutRef = useRef(null);
   const [theme, setThemeState] = useState(() => {
     const stored = getStoredTheme();
     return stored || 'system';
@@ -54,22 +82,75 @@ export function ThemeProvider({ children }) {
 
   const resolvedTheme = theme === 'system' ? getSystemTheme() : theme;
 
+  const startThemeTransition = useCallback((nextResolvedTheme, origin) => {
+    if (!mountedRef.current || nextResolvedTheme === resolvedTheme || typeof document === 'undefined') {
+      return;
+    }
+
+    const root = document.documentElement;
+    const { x, y } = getOriginPoint(origin);
+
+    if (transitionTimeoutRef.current) {
+      window.clearTimeout(transitionTimeoutRef.current);
+    }
+
+    root.classList.remove(
+      'theme-switching',
+      'theme-switching--light',
+      'theme-switching--dark',
+      'theme-switching--from-light',
+      'theme-switching--from-dark',
+    );
+    root.style.setProperty('--theme-origin-x', x);
+    root.style.setProperty('--theme-origin-y', y);
+    root.classList.add('theme-switching', `theme-switching--${nextResolvedTheme}`);
+    void root.offsetWidth;
+
+    transitionTimeoutRef.current = window.setTimeout(() => {
+      root.classList.remove(
+        'theme-switching',
+        'theme-switching--light',
+        'theme-switching--dark',
+        'theme-switching--from-light',
+        'theme-switching--from-dark',
+      );
+      root.style.removeProperty('--theme-origin-x');
+      root.style.removeProperty('--theme-origin-y');
+      transitionTimeoutRef.current = null;
+    }, 760);
+  }, [resolvedTheme]);
+
   useEffect(() => {
     const root = document.documentElement;
+
     root.classList.remove('light', 'dark');
     root.classList.add(resolvedTheme);
 
     // Keep data-theme for backward compatibility with old CSS
     root.dataset.theme = resolvedTheme;
 
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+    }
+
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
       meta.setAttribute(
         'content',
-        resolvedTheme === 'dark' ? '#0B0B14' : '#F4F3FF'
+        resolvedTheme === 'dark' ? '#0f1a10' : '#eef1f4'
       );
     }
+
   }, [resolvedTheme]);
+
+  useEffect(() => {
+    return () => {
+      if (transitionTimeoutRef.current) {
+        window.clearTimeout(transitionTimeoutRef.current);
+        transitionTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -88,19 +169,20 @@ export function ThemeProvider({ children }) {
     return () => mq.removeEventListener('change', handler);
   }, [theme]);
 
-  const setTheme = useCallback((next) => {
+  const setTheme = useCallback((next, origin) => {
+    const nextResolvedTheme = next === 'system' ? getSystemTheme() : next;
+    startThemeTransition(nextResolvedTheme, origin);
     setThemeState(next);
     storeTheme(next);
-  }, []);
+  }, [startThemeTransition]);
 
-  const toggleTheme = useCallback(() => {
-    setThemeState((current) => {
-      const resolved = current === 'system' ? getSystemTheme() : current;
-      const next = resolved === 'dark' ? 'light' : 'dark';
-      storeTheme(next);
-      return next;
-    });
-  }, []);
+  const toggleTheme = useCallback((origin) => {
+    const currentResolved = theme === 'system' ? getSystemTheme() : theme;
+    const next = currentResolved === 'dark' ? 'light' : 'dark';
+    startThemeTransition(next, origin);
+    storeTheme(next);
+    setThemeState(next);
+  }, [startThemeTransition, theme]);
 
   const setNoise = useCallback((value) => {
     setNoiseState(value);

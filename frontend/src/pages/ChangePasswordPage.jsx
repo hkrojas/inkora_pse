@@ -1,18 +1,18 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { KeyRound, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/utils/api';
 
 function PasswordInput({ label, value, onChange, required }) {
   const [show, setShow] = useState(false);
   return (
-    <div>
-      <label className="label">{label}</label>
+    <div className="field">
+      <label>{label}</label>
       <div className="relative">
         <input
           type={show ? 'text' : 'password'}
-          className="input pr-10"
+          className="control pr-10"
           value={value}
           onChange={onChange}
           required={required}
@@ -20,11 +20,11 @@ function PasswordInput({ label, value, onChange, required }) {
         />
         <button
           type="button"
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-soft)] hover:text-[var(--color-text-muted)]"
           onClick={() => setShow((s) => !s)}
           tabIndex={-1}
         >
-          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          {show ? <EyeOff size={15} /> : <Eye size={15} />}
         </button>
       </div>
     </div>
@@ -45,16 +45,14 @@ export default function ChangePasswordPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-
     if (form.new_password !== form.confirm_password) {
-      setError('Las contraseñas nuevas no coinciden.');
+      setError('Las contrasenas nuevas no coinciden.');
       return;
     }
     if (form.new_password.length < 10) {
-      setError('La contraseña debe tener al menos 10 caracteres.');
+      setError('La contrasena debe tener al menos 10 caracteres.');
       return;
     }
-
     setSaving(true);
     try {
       const data = await api.post('/users/me/change-password', {
@@ -62,7 +60,6 @@ export default function ChangePasswordPage() {
         new_password: form.new_password,
         confirm_password: form.confirm_password,
       });
-      // Mantiene la preferencia de sesion al reemplazar el token sin must_change_password.
       if (data.access_token) {
         const storage = localStorage.getItem('token') ? localStorage : sessionStorage;
         localStorage.removeItem('token');
@@ -73,7 +70,7 @@ export default function ChangePasswordPage() {
       setSuccess(true);
       setTimeout(() => navigate('/dashboard', { replace: true }), 1500);
     } catch (err) {
-      setError(err.message || 'No se pudo cambiar la contraseña. Revisa tu conexión e inténtalo nuevamente.');
+      setError(err.message || 'No se pudo cambiar la contrasena. Revisa tu conexion e intentalo nuevamente.');
     } finally {
       setSaving(false);
     }
@@ -83,9 +80,11 @@ export default function ChangePasswordPage() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="text-center space-y-3">
-          <ShieldCheck className="h-12 w-12 text-green-600 mx-auto" />
-          <p className="font-semibold text-lg">Contraseña actualizada</p>
-          <p className="text-sm text-[var(--text-secondary)]">Redirigiendo...</p>
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--color-success-soft)]">
+            <ShieldCheck size={24} className="text-[var(--color-success)]" />
+          </div>
+          <p className="font-bold text-lg">Contrasena actualizada</p>
+          <p className="text-sm text-[var(--color-text-muted)]">Redirigiendo...</p>
         </div>
       </div>
     );
@@ -93,52 +92,60 @@ export default function ChangePasswordPage() {
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
+      <div className="w-full max-w-md space-y-5">
         {isFirstLogin && (
-          <div className="ink-inline-alert ink-inline-alert-warning">
+          <div className="proto-alert warning">
+            <ShieldCheck size={15} className="flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-bold text-sm">Debes cambiar tu contraseña antes de continuar</p>
+              <p className="font-bold text-sm">Debes cambiar tu contrasena antes de continuar</p>
               <p className="text-xs mt-1 opacity-80">
-                Es la primera vez que accedes con esta cuenta. Elige una contraseña segura que solo tú conozcas.
+                Es la primera vez que accedes con esta cuenta. Elige una contrasena segura que solo tu conozcas.
               </p>
             </div>
           </div>
         )}
 
-        <div className="card-raw p-6 space-y-5">
-          <div className="flex items-center gap-3">
-            <KeyRound className="h-5 w-5 text-[var(--text-secondary)]" />
-            <h2 className="font-semibold text-lg">
-              {isFirstLogin ? 'Crear contraseña' : 'Cambiar contraseña'}
-            </h2>
+        <div
+          className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-2xl)] p-7 shadow-[var(--shadow-card)]"
+        >
+          <div className="flex items-center gap-3 mb-6">
+            <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-soft)]">
+              <KeyRound size={16} className="text-[var(--color-primary-text)]" />
+            </div>
+            <div>
+              <h2 className="text-[16px] font-extrabold tracking-[-0.03em] text-[var(--color-text)]">
+                {isFirstLogin ? 'Crear contrasena' : 'Cambiar contrasena'}
+              </h2>
+              <p className="text-[12px] text-[var(--color-text-muted)]">Seguridad de la cuenta</p>
+            </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <PasswordInput
-              label={isFirstLogin ? 'Contraseña temporal (la que te enviaron)' : 'Contraseña actual'}
+              label={isFirstLogin ? 'Contrasena temporal (la que te enviaron)' : 'Contrasena actual'}
               value={form.current_password}
               onChange={setField('current_password')}
               required
             />
             <PasswordInput
-              label="Nueva contraseña"
+              label="Nueva contrasena"
               value={form.new_password}
               onChange={setField('new_password')}
               required
             />
             <PasswordInput
-              label="Confirmar nueva contraseña"
+              label="Confirmar nueva contrasena"
               value={form.confirm_password}
               onChange={setField('confirm_password')}
               required
             />
 
-            <p className="text-xs text-[var(--text-tertiary)]">
-              Mínimo 10 caracteres, al menos una letra y un número.
+            <p className="text-[11px] text-[var(--color-text-soft)]">
+              Minimo 10 caracteres, al menos una letra y un numero.
             </p>
 
             {error && (
-              <div className="ink-inline-alert ink-inline-alert-error">
+              <div className="proto-alert danger">
                 <p className="text-sm">{error}</p>
               </div>
             )}
@@ -150,7 +157,7 @@ export default function ChangePasswordPage() {
                 </button>
               )}
               <button type="submit" disabled={saving} className="btn-primary">
-                {saving ? 'Guardando...' : 'Cambiar contraseña'}
+                {saving ? 'Guardando...' : 'Cambiar contrasena'}
               </button>
             </div>
           </form>

@@ -14,6 +14,7 @@ class Producto(Base):
     descripcion = Column(Text, nullable=True)
     precio_unitario = Column(Numeric(12, 2))
     valor_unitario = Column(Numeric(12, 2))
+    moneda = Column(String, default="PEN")
     unidad_medida = Column(String, default="NIU")
     tipo_afectacion_igv = Column(String, default="10")
 

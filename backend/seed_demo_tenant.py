@@ -134,7 +134,7 @@ DEMO_PRODUCTOS = [
         "descripcion": "Troquelado en forma personalizada por millar",
         "precio_unitario": "80.00",
         "codigo_interno": "TROQ-ESP",
-        "unidad_medida": "MIL",
+        "unidad_medida": "MLL",
         "tipo_afectacion_igv": "10",
     },
     {
@@ -142,7 +142,7 @@ DEMO_PRODUCTOS = [
         "descripcion": "1000 tarjetas personales full color 2 caras, 350gr",
         "precio_unitario": "120.00",
         "codigo_interno": "TARJ-1MIL",
-        "unidad_medida": "MIL",
+        "unidad_medida": "MLL",
         "tipo_afectacion_igv": "10",
     },
     {

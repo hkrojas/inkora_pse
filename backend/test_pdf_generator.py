@@ -3,9 +3,13 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from fastapi import BackgroundTasks
+
 import crud
+import schemas
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
-from services import fiscal_xml_service, pdf_generator, pdf_storage_service
+from routers import cotizaciones as cotizaciones_router
+from services import fiscal_xml_service, pdf_generator, pdf_storage_service, storage_service
 
 
 SAMPLE_INVOICE_XML = """<?xml version="1.0" encoding="utf-8"?>
@@ -158,7 +162,17 @@ def test_generar_pdf_cotizacion_crea_binario():
     assert len(buffer.getvalue()) > 0
 
 
-def test_generar_pdf_cotizacion_no_genera_qr():
+def test_generar_pdf_cotizacion_genera_qr_para_billetera_o_fallback():
+    tenant = _fake_tenant()
+    tenant.bank_accounts = [
+        {
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Inkora Test SAC",
+            "numero": "999888777",
+            "nota": "Pago inmediato",
+        }
+    ]
     cotizacion = SimpleNamespace(
         cliente=_fake_cliente(),
         items=[_fake_item()],
@@ -169,12 +183,12 @@ def test_generar_pdf_cotizacion_no_genera_qr():
         usuario=_fake_user(),
     )
 
-    with patch("services.pdf_generator.qrcode.make") as qr_make:
-        buffer = pdf_generator.generar_pdf_cotizacion(cotizacion, _fake_tenant())
+    with patch("services.pdf_generator.qrcode.make", wraps=pdf_generator.qrcode.make) as qr_make:
+        buffer = pdf_generator.generar_pdf_cotizacion(cotizacion, tenant)
 
     assert isinstance(buffer, BytesIO)
     assert len(buffer.getvalue()) > 0
-    qr_make.assert_not_called()
+    qr_make.assert_called()
 
 
 def test_resolve_quote_company_data_usa_email_usuario_y_fallback_bancario():
@@ -189,7 +203,8 @@ def test_resolve_quote_company_data_usa_email_usuario_y_fallback_bancario():
     )
 
     assert company_data["email"] == "ventas@inkora.test"
-    assert company_data["bank_accounts"] == user.bank_accounts
+    assert company_data["bank_accounts"] == []
+    assert company_data["name"] == tenant.business_name
 
 
 def test_build_payment_methods_text_soporta_bancos_y_billeteras():
@@ -222,6 +237,25 @@ def test_build_payment_methods_text_soporta_bancos_y_billeteras():
     assert "Titular: Inkora Test SAC" in payment_text
     assert "Numero: 999888777" in payment_text
     assert "Pago inmediato" in payment_text
+
+
+def test_build_quote_wallet_qr_content_prefiere_wallet():
+    qr_content, wallet = pdf_generator._build_quote_wallet_qr_content(
+        [
+            {
+                "tipo": "wallet",
+                "proveedor": "Yape",
+                "titular": "Inkora Test SAC",
+                "numero": "999888777",
+                "nota": "Pago inmediato",
+            }
+        ],
+        beneficiary_name="Inkora Test SAC",
+    )
+
+    assert "Yape" in qr_content
+    assert "999888777" in qr_content
+    assert wallet is not None
 
 
 def test_create_comprobante_pdf_crea_binario():
@@ -273,6 +307,9 @@ def test_generate_and_upload_pdf_usa_renderer_de_cotizacion(db_session):
     user = make_user(db_session, tenant, email="pdf01@test.com")
     cliente = make_cliente(db_session, tenant, "PDF01", numero_documento="20191308868")
     cotizacion = make_quote_via_crud(db_session, tenant, user, cliente)
+    private_ref = storage_service.build_private_storage_reference(
+        "cotizaciones/tenant_1/cotizacion.pdf"
+    )
 
     with patch(
         "services.pdf_storage_service.pdf_generator.generar_pdf_cotizacion",
@@ -282,11 +319,12 @@ def test_generate_and_upload_pdf_usa_renderer_de_cotizacion(db_session):
         return_value=BytesIO(b"doc-pdf"),
     ) as comprobante_renderer, patch(
         "services.pdf_storage_service.storage_service.upload_to_storage",
-        new=AsyncMock(return_value="https://storage.test/cotizacion.pdf"),
+        new=AsyncMock(return_value=private_ref),
     ):
         result = _run(pdf_storage_service.generate_and_upload_pdf(db_session, cotizacion))
 
-    assert result == "https://storage.test/cotizacion.pdf"
+    assert result == private_ref
+    assert cotizacion.sunat_pdf_url == private_ref
     assert quote_renderer.called is True
     assert comprobante_renderer.called is False
 
@@ -297,6 +335,9 @@ def test_generate_and_upload_pdf_usa_renderer_de_comprobante(db_session):
     cliente = make_cliente(db_session, tenant, "PDF02", numero_documento="20191308868")
     quote = make_quote_via_crud(db_session, tenant, user, cliente)
     fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+    private_ref = storage_service.build_private_storage_reference(
+        "cotizaciones/tenant_2/comprobante.pdf"
+    )
 
     with patch(
         "services.pdf_storage_service.pdf_generator.generar_pdf_cotizacion",
@@ -306,13 +347,125 @@ def test_generate_and_upload_pdf_usa_renderer_de_comprobante(db_session):
         return_value=BytesIO(b"doc-pdf"),
     ) as comprobante_renderer, patch(
         "services.pdf_storage_service.storage_service.upload_to_storage",
-        new=AsyncMock(return_value="https://storage.test/comprobante.pdf"),
+        new=AsyncMock(return_value=private_ref),
     ):
         result = _run(pdf_storage_service.generate_and_upload_pdf(db_session, fiscal))
 
-    assert result == "https://storage.test/comprobante.pdf"
+    assert result == private_ref
+    assert fiscal.sunat_pdf_url == private_ref
     assert quote_renderer.called is False
     assert comprobante_renderer.called is True
+
+
+def test_generate_and_upload_pdf_usa_renderer_de_comprobante_para_nota(db_session):
+    tenant = make_tenant(db_session, "PDF03")
+    user = make_user(db_session, tenant, email="pdf03@test.com")
+    cliente = make_cliente(db_session, tenant, "PDF03", numero_documento="20191308868")
+    quote = make_quote_via_crud(db_session, tenant, user, cliente)
+    fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+    fiscal.estado = "facturada"
+    db_session.commit()
+    nota = crud.crear_nota_credito_debito(
+        db_session,
+        fiscal,
+        user.id,
+        "credito",
+        "01",
+        "ANULACION DE LA OPERACION",
+    )
+
+    with patch(
+        "services.pdf_storage_service.pdf_generator.generar_pdf_cotizacion",
+        return_value=BytesIO(b"quote-pdf"),
+    ) as quote_renderer, patch(
+        "services.pdf_storage_service.pdf_generator.create_comprobante_pdf",
+        return_value=BytesIO(b"note-pdf"),
+    ) as comprobante_renderer, patch(
+        "services.pdf_storage_service.storage_service.upload_to_storage",
+        new=AsyncMock(return_value=storage_service.build_private_storage_reference("cotizaciones/tenant_3/nota.pdf")),
+    ):
+        _run(pdf_storage_service.generate_and_upload_pdf(db_session, nota))
+
+    assert quote_renderer.called is False
+    assert comprobante_renderer.called is True
+
+
+def test_cotizacion_response_serializa_pdf_privado_como_url_firmada(db_session):
+    tenant = make_tenant(db_session, "PDF04")
+    user = make_user(db_session, tenant, email="pdf04@test.com")
+    cliente = make_cliente(db_session, tenant, "PDF04", numero_documento="20191308868")
+    cotizacion = make_quote_via_crud(db_session, tenant, user, cliente)
+    cotizacion.sunat_pdf_url = storage_service.build_private_storage_reference(
+        f"cotizaciones/tenant_{tenant.id}/cotizacion.pdf"
+    )
+    db_session.commit()
+
+    with patch(
+        "services.storage_service.resolve_storage_download_url",
+        return_value="https://signed.test/cotizacion.pdf",
+    ):
+        payload = schemas.CotizacionResponse.model_validate(
+            cotizacion,
+            from_attributes=True,
+        ).model_dump(mode="json")
+
+    assert payload["sunat_pdf_url"] == "https://signed.test/cotizacion.pdf"
+
+
+def test_descargar_pdf_publico_redirige_a_url_firmada():
+    documento = SimpleNamespace(
+        sunat_pdf_url=storage_service.build_private_storage_reference(
+            "cotizaciones/tenant_1/publico.pdf"
+        )
+    )
+
+    with patch(
+        "routers.cotizaciones.crud.get_cotizacion_by_uuid",
+        return_value=documento,
+    ), patch(
+        "routers.cotizaciones.storage_service.resolve_storage_download_url",
+        return_value="https://signed.test/publico.pdf",
+    ):
+        response = _run(
+            cotizaciones_router.descargar_pdf_publico(
+                "uuid-demo",
+                None,
+                SimpleNamespace(),
+            )
+        )
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://signed.test/publico.pdf"
+
+
+def test_descargar_pdf_interno_devuelve_url_firmada_para_api():
+    documento = SimpleNamespace(
+        document_kind="quotation",
+        linked_fiscal_document=None,
+        sunat_pdf_url=storage_service.build_private_storage_reference(
+            "cotizaciones/tenant_1/interno.pdf"
+        ),
+    )
+    current_user = SimpleNamespace(tenant_id=1)
+
+    with patch(
+        "routers.cotizaciones.crud.get_cotizacion",
+        return_value=documento,
+    ), patch(
+        "routers.cotizaciones.storage_service.resolve_storage_download_url",
+        return_value="https://signed.test/interno.pdf",
+    ):
+        payload = _run(
+            cotizaciones_router.descargar_pdf_interno(
+                1,
+                BackgroundTasks(),
+                False,
+                SimpleNamespace(),
+                current_user,
+            )
+        )
+
+    assert payload == {"url": "https://signed.test/interno.pdf"}
 
 
 def _run(awaitable):

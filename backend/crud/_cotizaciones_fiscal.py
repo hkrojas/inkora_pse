@@ -20,12 +20,14 @@ from crud._cotizaciones_shared import (
     _resolve_fiscal_series,
 )
 from services.document_flow_service import (
+    DOCUMENT_KIND_CREDIT_NOTE,
     DOCUMENT_KIND_FISCAL_DOCUMENT,
     DOCUMENT_STATUS_ISSUED,
     DOCUMENT_STATUS_PENDING,
     DOCUMENT_STATUS_VOIDED,
     is_quote_document,
 )
+from services.fiscal_balance_service import ensure_credit_note_within_available_amount
 
 
 def create_fiscal_document_from_quote(
@@ -95,7 +97,6 @@ def guardar_respuesta_sunat(
         links = _extract_provider_links(data_sunat)
         if links:
             db_cot.sunat_xml_url = links.get("xml")
-            db_cot.sunat_pdf_url = links.get("pdf")
             db_cot.sunat_cdr_url = links.get("cdr")
 
         if data_sunat.get("xml"):
@@ -106,6 +107,25 @@ def guardar_respuesta_sunat(
             db_cot.sunat_qr_payload = data_sunat.get("qr_payload")
         if data_sunat.get("qr_svg"):
             db_cot.sunat_qr_svg = data_sunat.get("qr_svg")
+
+        if (
+            data_sunat.get("success")
+            and (
+                db_cot.document_kind == DOCUMENT_KIND_CREDIT_NOTE
+                or db_cot.tipo_comprobante == "07"
+            )
+        ):
+            try:
+                ensure_credit_note_within_available_amount(
+                    db,
+                    db_cot.tenant_id,
+                    db_cot.id,
+                )
+            except ValueError as exc:
+                db_cot.sunat_error = str(exc)
+                db.commit()
+                db.refresh(db_cot)
+                return db_cot
 
         if data_sunat.get("success"):
             db_cot.estado = DOCUMENT_STATUS_ISSUED
@@ -130,6 +150,19 @@ def guardar_respuesta_sunat(
             )
             if source_quote:
                 source_quote.estado = DOCUMENT_STATUS_ISSUED
+
+        if (
+            data_sunat.get("success")
+            and db_cot.document_kind == DOCUMENT_KIND_FISCAL_DOCUMENT
+        ):
+            from crud.pagos import apply_prefiscal_advances_to_fiscal_document
+
+            apply_prefiscal_advances_to_fiscal_document(
+                db,
+                db_cot.tenant_id,
+                db_cot.id,
+                commit=False,
+            )
 
         if (
             data_sunat.get("success")

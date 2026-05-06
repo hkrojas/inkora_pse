@@ -52,6 +52,22 @@ def get_password_hash(password):
     """Genera el hash de una contraseña."""
     return pwd_context.hash(password)
 
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _to_utc_datetime(value) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, timezone.utc)
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    return None
+
 # ==========================================
 # FUNCIONES DE TOKEN (JWT)
 # ==========================================
@@ -59,12 +75,13 @@ def get_password_hash(password):
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Crea un token JWT firmado."""
     to_encode = data.copy()
+    issued_at = _utc_now()
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = issued_at + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = issued_at + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "iat": issued_at, "iat_ms": issued_at.timestamp()})
     
     # Asegúrate de tener SECRET_KEY y ALGORITHM en tu config.py o .env
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
@@ -72,6 +89,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 def create_access_token_with_claims(user, expires_delta: Optional[timedelta] = None):
     """Crea un token JWT con claims adicionales para evitar queries a la BD."""
+    issued_at = _utc_now()
     to_encode = {
         "sub": user.email,
         "tenant_id": user.tenant_id,
@@ -80,11 +98,11 @@ def create_access_token_with_claims(user, expires_delta: Optional[timedelta] = N
         "must_change_password": bool(user.must_change_password),
     }
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = issued_at + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = issued_at + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "iat": issued_at, "iat_ms": issued_at.timestamp()})
     
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
@@ -132,5 +150,11 @@ def get_current_user(db: Session, token: str):
     user = get_user_by_email(db, email=email)
     if user is None:
         raise credentials_exception
+
+    password_changed_at = _to_utc_datetime(getattr(user, "password_changed_at", None))
+    if password_changed_at is not None:
+        issued_at = _to_utc_datetime(payload.get("iat_ms") or payload.get("iat"))
+        if issued_at is None or issued_at < password_changed_at:
+            raise credentials_exception
     
     return user

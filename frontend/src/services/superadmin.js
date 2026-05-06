@@ -1,13 +1,17 @@
 import { api } from '../lib/utils/api';
+import { buildQueryString } from '../lib/utils/queryParams';
 
 export const superadmin = {
   // Tenants
   tenants:              ()              => api.get('/superadmin/tenants'),
+  tenantsPage:          (params)        => api.get(`/superadmin/tenants-page${buildQueryString(params)}`),
   createTenant:         (data)          => api.post('/superadmin/tenants', data),
   updateTenant:         (id, data)      => api.patch(`/superadmin/tenants/${id}`, data),
   deleteTenant:         (id)            => api.delete(`/superadmin/tenants/${id}`),
   consultarDocumento:   (numero)        => api.get(`/consultar-documento/${numero}`),
   validateApisPeruToken:(data)          => api.post('/superadmin/validate/apisperu-token', data),
+  updateSmartPseGreCredentials: (tenantId, data) => api.put(`/superadmin/tenants/${tenantId}/smartpse/gre-credentials`, data),
+  checkSmartPseGreCredentials:  (tenantId)       => api.post(`/superadmin/tenants/${tenantId}/smartpse/gre-credentials/check`),
 
   // Usuarios
   createUser:           (tenantId, data) => api.post(`/superadmin/tenants/${tenantId}/users`, data),
@@ -27,6 +31,8 @@ export const superadmin = {
   tenantLimits:         (tenantId)      => api.get(`/superadmin/tenants/${tenantId}/limits`),
   upsertTenantLimits:   (tenantId, limits) => api.put(`/superadmin/tenants/${tenantId}/limits`, { limits }),
   deleteLimit:          (limitId)       => api.delete(`/superadmin/limits/${limitId}`),
+  fiscalFlags:          (tenantId)      => api.get(`/superadmin/tenants/${tenantId}/fiscal-flags`),
+  updateFiscalFlags:    (tenantId, flags) => api.put(`/superadmin/tenants/${tenantId}/fiscal-flags`, { flags }),
 
   // Suscripciones
   auditLogs:            ()              => api.get('/superadmin/audit-logs'),

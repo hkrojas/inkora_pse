@@ -63,9 +63,58 @@ def _make_user_with_apisperu(db_session, suffix: str):
     user = make_user(db_session, tenant, email=f"{suffix.lower()}@test.com")
     tenant.apisperu_token = "fake_token"
     tenant.apisperu_url = "https://facturacion.test/api/v1"
+    tenant.smartpse_company_id = "77"
+    tenant.smartpse_environment = "demo"
+    tenant.smartpse_usuario_secundaria = "AB3KPQR9"
+    tenant.smartpse_token_acceso = "MX7TNVQG"
     db_session.commit()
     db_session.refresh(tenant)
     return tenant, user
+
+
+def _smartpse_pending(ticket: str, *, tag: str = "VoidedDocuments"):
+    return {
+        "estado": 202,
+        "mensaje": "Pendiente",
+        "ticket": ticket,
+        "xml_firmado": f"<{tag} />",
+        "codigo_hash": "hash-ticket",
+    }
+
+
+def _smartpse_accepted(*, description: str = "Aceptado", tag: str = "VoidedDocuments"):
+    return {
+        "estado": 200,
+        "mensaje": description,
+        "xml_firmado": f"<{tag} />",
+        "codigo_hash": "hash-ticket",
+        "cdr": "<ApplicationResponse/>",
+        "rechazado": False,
+    }
+
+
+class _FakeSmartPSEClient:
+    def __init__(self, process_responses, consult_responses):
+        self.process_responses = list(process_responses)
+        self.consult_responses = list(consult_responses)
+        self.process_calls = []
+        self.consult_calls = []
+
+    def process_xml(self, tenant, nombre_archivo, xml_content, *, demo=False):
+        self.process_calls.append((tenant, nombre_archivo, xml_content, demo))
+        return self.process_responses.pop(0)
+
+    def consult_ticket(self, tenant, nombre_archivo):
+        self.consult_calls.append((tenant, nombre_archivo))
+        return self.consult_responses.pop(0)
+
+
+def _patch_smartpse(fake_client):
+    return patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client)
+
+
+def _filename_ruc(tenant) -> str:
+    return "".join(ch for ch in str(tenant.business_ruc) if ch.isdigit())
 
 
 def _make_fiscal_document(db_session, suffix: str, tipo_comprobante: str):
@@ -167,6 +216,46 @@ def test_factura_download_payload_contract_subset_is_stable(db_session):
     assert "tipDocAfectado" not in payload
 
 
+def test_factura_download_payload_exonerado_no_envia_igv(db_session):
+    _, user, _, fiscal = _make_fiscal_document(db_session, "PC01B", "01")
+    item = fiscal.items[0]
+    item.precio_unitario = Decimal("100.00")
+    item.tipo_afectacion_igv = "20"
+    db_session.commit()
+
+    payload = facturacion_service._build_download_payload(fiscal, user)
+
+    assert payload["mtoOperGravadas"] == Decimal("0.00")
+    assert payload["mtoOperExoneradas"] == Decimal("100.00")
+    assert payload["mtoOperInafectas"] == Decimal("0.00")
+    assert payload["mtoIGV"] == Decimal("0.00")
+    assert payload["valorVenta"] == Decimal("100.00")
+    assert payload["mtoImporteTotal"] == Decimal("100.00")
+    assert payload["details"][0]["tipAfeIgv"] == "20"
+    assert payload["details"][0]["porcentajeIgv"] == 0
+    assert payload["details"][0]["igv"] == Decimal("0.00")
+
+
+def test_factura_download_payload_usa_sku_real_en_cod_producto(db_session):
+    _, user, _, fiscal = _make_fiscal_document(db_session, "PC01C", "01")
+    fiscal.items[0].codigo_producto = "IMP-A4-FC"
+    db_session.commit()
+
+    payload = facturacion_service._build_download_payload(fiscal, user)
+
+    assert payload["details"][0]["codProducto"] == "IMP-A4-FC"
+
+
+def test_factura_download_payload_usa_fecha_emision_persistida(db_session):
+    _, user, _, fiscal = _make_fiscal_document(db_session, "PC01D", "01")
+    fiscal.fecha_emision = datetime(2026, 5, 1, 0, 0, tzinfo=timezone.utc)
+    db_session.commit()
+
+    payload = facturacion_service._build_download_payload(fiscal, user)
+
+    assert payload["fechaEmision"].startswith("2026-05-01")
+
+
 def test_nota_download_payload_contract_subset_is_stable(db_session):
     user, fiscal, nota = _make_nota_documento(db_session, "PC02", tipo_nota="credito")
 
@@ -191,28 +280,26 @@ def test_anular_factura_payload_contract_subset_is_stable(db_session):
     _, user, _, fiscal = _make_fiscal_document(db_session, "PC03", "01")
     fiscal.estado = "facturada"
     db_session.commit()
+    fake_client = _FakeSmartPSEClient(
+        [_smartpse_pending("voided-pc03")],
+        [_smartpse_accepted(description="Baja aceptada")],
+    )
 
-    with patch("requests.post", return_value=_mock_async_send_response("voided-pc03")) as post_mock, patch(
-        "requests.get",
-        return_value=_mock_async_status_response(description="Baja aceptada"),
-    ):
+    with _patch_smartpse(fake_client):
         result = facturacion_service.anular_comprobante(
             fiscal,
             "ERROR DE PRUEBA",
             user,
         )
 
-    sent_payload = json.loads(post_mock.call_args.kwargs["data"])
-    detail = sent_payload["details"][0]
+    _, filename, xml_content, _ = fake_client.process_calls[0]
+    xml_text = xml_content.decode("utf-8")
 
-    assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/voided/send"
-    assert sent_payload["company"]["ruc"] == fiscal.tenant.business_ruc
-    assert detail == {
-        "tipoDoc": "01",
-        "serie": fiscal.serie,
-        "correlativo": str(fiscal.correlativo).zfill(6),
-        "desMotivoBaja": "ERROR DE PRUEBA",
-    }
+    assert filename.startswith(f"{_filename_ruc(fiscal.tenant)}-RA-")
+    assert "DocumentTypeCode" in xml_text
+    assert fiscal.serie in xml_text
+    assert str(fiscal.correlativo).zfill(6) in xml_text
+    assert "ERROR DE PRUEBA" in xml_text
     assert result["success"] is True
     assert result["ticket"] == "voided-pc03"
 
@@ -221,23 +308,26 @@ def test_baja_boleta_payload_contract_subset_is_stable(db_session):
     _, user, _, boleta = _make_fiscal_document(db_session, "PC04", "03")
     boleta.estado = "facturada"
     db_session.commit()
+    fake_client = _FakeSmartPSEClient(
+        [_smartpse_pending("summary-pc04", tag="SummaryDocuments")],
+        [_smartpse_accepted(description="Resumen de baja aceptado", tag="SummaryDocuments")],
+    )
 
-    with patch("requests.post", return_value=_mock_async_send_response("summary-pc04")) as post_mock, patch(
-        "requests.get",
-        return_value=_mock_async_status_response(description="Resumen de baja aceptado"),
-    ):
+    with _patch_smartpse(fake_client):
         result = facturacion_service.anular_comprobante(
             boleta,
             "ANULACION DE PRUEBA",
             user,
         )
 
-    sent_payload = json.loads(post_mock.call_args.kwargs["data"])
-    detail = sent_payload["details"][0]
+    summary_payload = facturacion_service._build_summary_payload(boleta, "ANULACION DE PRUEBA", user)
+    detail = summary_payload["details"][0]
 
-    assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/summary/send"
-    assert sent_payload["company"]["ruc"] == boleta.tenant.business_ruc
-    assert sent_payload["moneda"] == "PEN"
+    _, filename, xml_content, _ = fake_client.process_calls[0]
+    assert filename.startswith(f"{_filename_ruc(boleta.tenant)}-RC-")
+    assert b"SummaryDocuments" in xml_content
+    assert summary_payload["company"]["ruc"] == boleta.tenant.business_ruc
+    assert summary_payload["moneda"] == "PEN"
     assert detail["tipoDoc"] == "03"
     assert detail["serieNro"] == f"{boleta.serie}-{boleta.correlativo}"
     assert detail["estado"] == "3"

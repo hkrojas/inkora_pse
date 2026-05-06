@@ -1,5 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 
+from fiscal_catalogs import tax_affectation_bucket
+
 # ==========================================
 # CONFIGURACIÓN MATEMÁTICA
 # ==========================================
@@ -33,10 +35,29 @@ def redondear_extendido(valor: Decimal) -> Decimal:
         valor = to_decimal(valor)
     return valor.quantize(EXTENDED_PRECISION, rounding=ROUND_HALF_UP)
 
-def calcular_item(cantidad: Decimal, precio_con_igv: Decimal):
-    """Calcula el desglose de un item a partir de su precio final."""
+def calcular_item(
+    cantidad: Decimal,
+    precio_con_igv: Decimal,
+    tipo_afectacion_igv: str = "10",
+):
+    """Calcula el desglose de un item segun su afectacion SUNAT."""
     qty = to_decimal(cantidad)
     precio_final = to_decimal(precio_con_igv)
+    bucket = tax_affectation_bucket(tipo_afectacion_igv)
+
+    if bucket != "gravada":
+        valor_unitario = redondear_extendido(precio_final)
+        total_base = redondear(precio_final * qty)
+        return {
+            "cantidad": qty,
+            "precio_unitario": precio_final,
+            "valor_unitario": valor_unitario,
+            "total_base_igv": total_base,
+            "total_igv": Decimal("0.00"),
+            "total_item": total_base,
+            "unidad_medida": "NIU",
+            "tipo_afectacion_igv": tipo_afectacion_igv,
+        }
 
     # 1. Valor Unitario (Base Imponible Unitaria)
     valor_unitario_preciso = precio_final / FACTOR_IGV
@@ -62,17 +83,26 @@ def calcular_item(cantidad: Decimal, precio_con_igv: Decimal):
         "total_igv": total_igv,
         "total_item": total_item,
         "unidad_medida": "NIU",
-        "tipo_afectacion_igv": "10" 
+        "tipo_afectacion_igv": tipo_afectacion_igv,
     }
 
 def sumarizar_cotizacion(items_procesados: list):
     """Suma totales para la cabecera de la cotización."""
     total_gravada = Decimal("0.00")
+    total_exonerada = Decimal("0.00")
+    total_inafecta = Decimal("0.00")
     total_igv = Decimal("0.00")
     total_venta = Decimal("0.00")
 
     for item in items_procesados:
-        total_gravada += to_decimal(item["total_base_igv"])
+        bucket = tax_affectation_bucket(item.get("tipo_afectacion_igv", "10"))
+        base = to_decimal(item["total_base_igv"])
+        if bucket == "exonerada":
+            total_exonerada += base
+        elif bucket == "inafecta":
+            total_inafecta += base
+        else:
+            total_gravada += base
         total_igv += to_decimal(item["total_igv"])
         total_venta += to_decimal(item["total_item"])
 
@@ -80,15 +110,15 @@ def sumarizar_cotizacion(items_procesados: list):
         "total_gravada": redondear(total_gravada),
         "total_igv": redondear(total_igv),
         "total_venta": redondear(total_venta),
-        "total_exonerada": Decimal("0.00"),
-        "total_inafecta": Decimal("0.00")
+        "total_exonerada": redondear(total_exonerada),
+        "total_inafecta": redondear(total_inafecta),
     }
 
 # --- FUNCIONES DE SOPORTE PARA PDF GENERATOR (V3) ---
 
-def get_line_totals_v3(cantidad, precio_unitario_con_igv):
+def get_line_totals_v3(cantidad, precio_unitario_con_igv, tipo_afectacion_igv: str = "10"):
     """Función de compatibilidad para el generador de PDF."""
-    calc = calcular_item(cantidad, precio_unitario_con_igv)
+    calc = calcular_item(cantidad, precio_unitario_con_igv, tipo_afectacion_igv)
     return {
         'mto_valor_unitario': calc['valor_unitario'],
         'mto_precio_unitario_con_igv': calc['precio_unitario'],
@@ -109,14 +139,17 @@ def calculate_cotizacion_totals_v3(items):
         if isinstance(item, dict):
             qty = item.get('unidades', 0)
             price = item.get('precio_unitario', 0)
+            tipo_afectacion = item.get('tipo_afectacion_igv', '10')
         else:
             qty = getattr(item, 'cantidad', 0)
             price = getattr(item, 'precio_unitario', 0)
+            tipo_afectacion = getattr(item, 'tipo_afectacion_igv', '10')
         
-        calc = get_line_totals_v3(qty, price)
+        calc = get_line_totals_v3(qty, price, tipo_afectacion)
         line_totals.append(calc)
         
-        total_gravada += calc['valor_venta_linea']
+        if tax_affectation_bucket(tipo_afectacion) == "gravada":
+            total_gravada += calc['valor_venta_linea']
         total_igv += calc['igv_linea']
         monto_total += calc['precio_total_linea']
 

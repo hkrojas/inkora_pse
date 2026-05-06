@@ -57,7 +57,7 @@ def register_user(
     db: Session = Depends(get_db),
     _: None = Depends(require_internal_provisioning_token),
 ):
-    if crud.get_user_by_email(db, user.email):
+    if crud.get_user_by_email_global(db, user.email):
         raise HTTPException(400, "Email registrado")
 
     tenant = crud.get_tenant(db, user.tenant_id)
@@ -66,12 +66,15 @@ def register_user(
     if not tenant.is_active:
         raise HTTPException(403, "No se puede registrar usuarios en una empresa inactiva.")
 
-    db_user, temp_password = crud.create_user(
-        db=db,
-        user=user,
-        forced_role="vendedor",
-        is_superadmin=False,
-    )
+    try:
+        db_user, temp_password = crud.create_user(
+            db=db,
+            user=user,
+            forced_role="vendedor",
+            is_superadmin=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     return schemas.CreateUserWithPasswordResponse(
         user=db_user,
         temp_password=temp_password,

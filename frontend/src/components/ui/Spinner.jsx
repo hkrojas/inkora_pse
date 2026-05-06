@@ -9,6 +9,8 @@ function SpinnerGlyph({ size = 'md', className = '' }) {
     ? {
         '--spinner-size': `${numericSize}px`,
         '--spinner-border': `${Math.max(2, Math.round(numericSize / 7))}px`,
+        width: `${numericSize}px`,
+        height: `${numericSize}px`,
       }
     : undefined;
 
@@ -17,47 +19,20 @@ function SpinnerGlyph({ size = 'md', className = '' }) {
 
 function SpinnerPanel({
   className = '',
-  label = 'Cargando módulo',
-  hint = 'Preparando datos...',
+  label = 'Cargando',
+  hint = 'Preparando datos.',
 }) {
   return (
     <div
-      className={className}
+      className={`spinner-panel-wrapper ${className}`.trim()}
       role="status"
       aria-live="polite"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '280px',
-        padding: '32px',
-      }}
     >
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '20px',
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 0,
-        padding: '32px 48px',
-        minWidth: '260px',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-      }}>
-        <SpinnerGlyph size={32} />
-        <div style={{ textAlign: 'center' }}>
-          <p style={{ margin: 0, fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)', letterSpacing: '0.01em' }}>{label}</p>
-          {hint && <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--text-tertiary)' }}>{hint}</p>}
-        </div>
-        <div style={{ width: '100%', height: '2px', background: 'var(--border-subtle)', borderRadius: 0, overflow: 'hidden' }}>
-          <div style={{
-            height: '100%',
-            width: '40%',
-            background: 'var(--brand-600)',
-            borderRadius: '2px',
-            animation: 'spinner-bar-slide 1.4s ease-in-out infinite',
-          }} />
+      <div className="spinner-panel">
+        <SpinnerGlyph size="lg" />
+        <div className="spinner-panel__copy">
+          <p className="spinner-panel__label">{label}</p>
+          {hint && <p className="spinner-panel__hint">{hint}</p>}
         </div>
       </div>
     </div>
@@ -79,7 +54,7 @@ export default function Spinner({
 
 export function FullPageSpinner() {
   return (
-    <div className="spinner-center" style={{ minHeight: '60vh' }}>
+    <div className="spinner-center">
       <Spinner
         size="lg"
         label="Cargando sesion"

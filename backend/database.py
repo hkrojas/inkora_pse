@@ -32,6 +32,7 @@ if not settings.DATABASE_URL.startswith("sqlite"):
 # Si la URL contiene "?pgbouncer=true", se asume modo transaccional.
 # PgBouncer en modo transaction no soporta prepared statements ni session vars.
 USES_PGBOUNCER = "pgbouncer" in settings.DATABASE_URL.lower()
+USES_SQLITE = settings.DATABASE_URL.startswith("sqlite")
 
 engine = create_engine(settings.DATABASE_URL, **engine_kwargs)
 
@@ -48,6 +49,7 @@ current_tenant_id: ContextVar[int | None] = ContextVar(
     "current_tenant_id",
     default=None,
 )
+SKIP_TENANT_FILTER_OPTION = "skip_tenant_filter"
 
 
 def activate_tenant_context(tenant_id: int | None) -> Token:
@@ -69,12 +71,17 @@ def apply_tenant_context(db: Session, tenant_id: int) -> Token:
     ya lo lee directamente).
     """
     token = activate_tenant_context(tenant_id)
-    if not USES_PGBOUNCER:
+    if not USES_PGBOUNCER and not USES_SQLITE:
         db.execute(
             text("SELECT set_config('app.current_tenant_id', :tid, true)"),
             {"tid": str(tenant_id)},
         )
     return token
+
+
+def without_tenant_filter(query):
+    """Devuelve un query/statement ORM sin inyeccion automatica de tenant."""
+    return query.execution_options(**{SKIP_TENANT_FILTER_OPTION: True})
 
 
 # ==========================================
@@ -85,6 +92,8 @@ def apply_tenant_context(db: Session, tenant_id: int) -> Token:
 def _add_tenant_filter(orm_execute_state):
     """Inyecta filtro WHERE tenant_id = X en todas las queries ORM."""
     if not orm_execute_state.is_select:
+        return
+    if orm_execute_state.execution_options.get(SKIP_TENANT_FILTER_OPTION):
         return
 
     tenant_id = current_tenant_id.get(None)

@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 import crud
@@ -16,8 +17,8 @@ router = APIRouter(tags=["productos"])
 
 @router.get("/productos/", response_model=List[schemas.ProductoResponse])
 def read_productos(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=200),
     q: Optional[str] = Query(default=None, description="Búsqueda por nombre, código o descripción"),
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
@@ -34,6 +35,70 @@ def count_productos(
 ):
     """Retorna el total de productos del tenant (para paginación)."""
     return {"total": crud.count_productos(db, current_user.tenant_id, q=q)}
+
+
+def _producto_search_filter(q: Optional[str]):
+    if not q or not q.strip():
+        return None
+    term = f"%{q.strip()}%"
+    return or_(
+        models.Producto.nombre.ilike(term),
+        models.Producto.codigo_interno.ilike(term),
+        models.Producto.descripcion.ilike(term),
+    )
+
+
+def _producto_segment_filter(segment: Optional[str]):
+    normalized = (segment or "all").strip().lower()
+    if normalized == "productos":
+        return models.Producto.unidad_medida != "ZZ"
+    if normalized == "servicios":
+        return models.Producto.unidad_medida == "ZZ"
+    if normalized == "con_sku":
+        return and_(
+            models.Producto.codigo_interno.isnot(None),
+            models.Producto.codigo_interno != "",
+        )
+    if normalized == "con_precio":
+        return models.Producto.precio_unitario > 0
+    return None
+
+
+@router.get("/productos/page", response_model=schemas.ProductoPageResponse)
+def read_productos_page(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=15, ge=1, le=100),
+    q: Optional[str] = Query(default=None, max_length=80),
+    segment: Optional[str] = Query(default="all", pattern="^(all|productos|servicios|con_sku|con_precio)$"),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    base = db.query(models.Producto).filter(models.Producto.tenant_id == current_user.tenant_id)
+    search_filter = _producto_search_filter(q)
+    if search_filter is not None:
+        base = base.filter(search_filter)
+
+    def count_for(filter_expr=None) -> int:
+        query = base.with_entities(func.count(models.Producto.id))
+        if filter_expr is not None:
+            query = query.filter(filter_expr)
+        return query.scalar() or 0
+
+    counts = {
+        "all": count_for(),
+        "productos": count_for(_producto_segment_filter("productos")),
+        "servicios": count_for(_producto_segment_filter("servicios")),
+        "con_sku": count_for(_producto_segment_filter("con_sku")),
+        "con_precio": count_for(_producto_segment_filter("con_precio")),
+    }
+
+    page_query = base
+    segment_filter = _producto_segment_filter(segment)
+    if segment_filter is not None:
+        page_query = page_query.filter(segment_filter)
+    total = page_query.with_entities(func.count(models.Producto.id)).scalar() or 0
+    items = page_query.order_by(models.Producto.nombre).offset(skip).limit(limit).all()
+    return {"items": items, "total": total, "skip": skip, "limit": limit, "counts": counts}
 
 
 # ============================================================
@@ -63,19 +128,19 @@ def descargar_plantilla_productos():
     Úsala como base para preparar tu archivo de importación masiva.
     """
     header = (
-        "nombre,precio_unitario,precio_incluye_igv,codigo_interno,descripcion,"
+        "nombre,precio_unitario,moneda,precio_incluye_igv,codigo_interno,descripcion,"
         "unidad_medida,tipo_afectacion_igv"
     )
     ejemplo1 = (
-        "Impresión A4 Full Color,5.90,true,IMP-A4-FC,"
+        "Impresión A4 Full Color,5.90,PEN,true,IMP-A4-FC,"
         "Impresión a color en papel A4 80gr,NIU,10"
     )
     ejemplo2 = (
-        "Plastificado Mate A4,2.12,false,PLAST-A4,"
+        "Plastificado Mate A4,2.12,PEN,false,PLAST-A4,"
         "Laminado mate tamaño A4,NIU,10"
     )
     ejemplo3 = (
-        "Diseño Gráfico por hora,80.00,true,DIS-HR,"
+        "Diseño Gráfico por hora,80.00,USD,true,DIS-HR,"
         "Servicio de diseño gráfico por hora,ZZ,10"
     )
     content = "\n".join([header, ejemplo1, ejemplo2, ejemplo3]) + "\n"
@@ -102,7 +167,7 @@ async def importar_productos(
     Importa productos masivamente desde un archivo CSV o Excel (.xlsx).
 
     Columnas requeridas: nombre, precio_unitario
-    Columnas opcionales: precio_incluye_igv, codigo_interno, descripcion, unidad_medida, tipo_afectacion_igv
+    Columnas opcionales: moneda, precio_incluye_igv, codigo_interno, descripcion, unidad_medida, tipo_afectacion_igv
 
     - Los productos con nombre duplicado en el tenant se omiten.
     - Los errores por fila se reportan sin interrumpir el resto.
@@ -135,6 +200,7 @@ async def importar_productos(
         producto_data = schemas.ProductoCreate(
             nombre=fila.nombre,
             precio_unitario=fila.precio_unitario,
+            moneda=fila.moneda,
             precio_incluye_igv=fila.precio_incluye_igv,
             codigo_interno=fila.codigo_interno,
             descripcion=fila.descripcion,
@@ -221,7 +287,10 @@ def delete_producto(
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
-    result = crud.delete_producto(db, producto_id, current_user.tenant_id)
+    try:
+        result = crud.delete_producto(db, producto_id, current_user.tenant_id)
+    except crud.ProductoEnUsoError as exc:
+        raise HTTPException(409, str(exc))
     if not result:
         raise HTTPException(404, "Producto no encontrado")
     return {"msg": "Eliminado"}

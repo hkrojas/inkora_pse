@@ -38,6 +38,34 @@ def test_cliente_create_normalizes_valid_mobile_fields():
     assert cliente.telefono == "987654321"
 
 
+def test_cliente_create_rejects_invalid_ruc_length():
+    with pytest.raises(ValidationError, match="11 digitos"):
+        ClienteCreate(
+            tipo_documento="6",
+            numero_documento="2010009999",
+            razon_social="Cliente Demo SAC",
+        )
+
+
+def test_cliente_create_rejects_invalid_dni_length():
+    with pytest.raises(ValidationError, match="8 digitos"):
+        ClienteCreate(
+            tipo_documento="1",
+            numero_documento="1234567",
+            razon_social="Cliente Demo DNI",
+        )
+
+
+def test_cliente_create_rejects_invalid_ubigeo_length():
+    with pytest.raises(ValidationError, match="Ubigeo"):
+        ClienteCreate(
+            tipo_documento="6",
+            numero_documento="20100099991",
+            razon_social="Cliente Demo SAC",
+            ubigeo="15010",
+        )
+
+
 def test_wallet_number_requires_valid_peruvian_mobile():
     with pytest.raises(ValueError, match="numero asociado"):
         validate_and_normalize_bank_accounts(

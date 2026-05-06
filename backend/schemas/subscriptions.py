@@ -1,9 +1,9 @@
 """schemas/subscriptions.py — Subscription SaaS, superadmin, beta schemas."""
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from schemas._base import StrictInputModel
 
@@ -21,6 +21,7 @@ class SubscriptionResponse(BaseModel):
     max_users: Optional[int] = None
     max_documents: Optional[int] = None
     documents_used: int = 0
+    beta_feature_flags: dict[str, bool] = Field(default_factory=dict)
     onboarding_status: str
     notes_internal: Optional[str] = None
     is_pilot: bool = False
@@ -28,6 +29,13 @@ class SubscriptionResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("beta_feature_flags", mode="before")
+    @classmethod
+    def normalize_beta_feature_flags(cls, value):
+        from services.beta_feature_flags import normalize_fiscal_feature_flags
+
+        return normalize_fiscal_feature_flags(value)
 
 
 class SubscriptionPaymentCreate(StrictInputModel):
@@ -88,6 +96,25 @@ class UpdateSubscriptionRequest(StrictInputModel):
     onboarding_status: Optional[str] = None
     notes_internal: Optional[str] = None
     is_pilot: Optional[bool] = None
+    beta_feature_flags: Optional[dict[str, bool]] = None
+
+
+class FiscalFeatureFlagDefinitionResponse(BaseModel):
+    key: str
+    label: str
+    category: str
+    default_enabled: bool
+    control: str
+
+
+class FiscalFeatureFlagsResponse(BaseModel):
+    tenant_id: int
+    flags: dict[str, bool]
+    definitions: list[FiscalFeatureFlagDefinitionResponse]
+
+
+class UpdateFiscalFeatureFlagsRequest(StrictInputModel):
+    flags: dict[str, Any]
 
 
 class SuperadminTenantDetailResponse(BaseModel):
@@ -141,9 +168,17 @@ class BetaTenantSummary(BaseModel):
     billing_due_at: Optional[datetime] = None
     documents_used: int = 0
     max_documents: Optional[int] = None
+    beta_feature_flags: dict[str, bool] = Field(default_factory=dict)
     clientes_count: int = 0
     productos_count: int = 0
     usuarios_count: int = 0
     ultimo_pago_saas_fecha: Optional[datetime] = None
     ultimo_pago_saas_monto: Optional[Decimal] = None
     notes_internal: Optional[str] = None
+
+    @field_validator("beta_feature_flags", mode="before")
+    @classmethod
+    def normalize_beta_feature_flags(cls, value):
+        from services.beta_feature_flags import normalize_fiscal_feature_flags
+
+        return normalize_fiscal_feature_flags(value)

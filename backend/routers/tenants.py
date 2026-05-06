@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 import crud
@@ -20,6 +20,7 @@ from api_dependencies import (
 from api_utils import raise_internal_server_error, read_validated_upload
 from config import settings
 from security import validate_password_strength
+from services.beta_feature_flags import normalize_fiscal_feature_flags
 from services import storage_service
 
 router = APIRouter(tags=["tenants"])
@@ -31,6 +32,7 @@ class SubscriptionStatusPublic(BaseModel):
     grace_until: Optional[datetime] = None
     emission_blocked: bool = False
     message: Optional[str] = None
+    fiscal_feature_flags: dict[str, bool] = Field(default_factory=dict)
 
 
 @router.get("/tenant/", response_model=schemas.TenantResponse)
@@ -51,14 +53,22 @@ def get_my_subscription_status(
 ):
     """Estado simplificado de suscripción para el tenant. Usado por el banner de la UI."""
     if current_user.is_superadmin:
-        return SubscriptionStatusPublic(status="active", emission_blocked=False)
+        return SubscriptionStatusPublic(
+            status="active",
+            emission_blocked=False,
+            fiscal_feature_flags=normalize_fiscal_feature_flags(None),
+        )
 
     sub = db.query(models.Subscription).filter(
         models.Subscription.tenant_id == current_user.tenant_id
     ).first()
 
     if not sub:
-        return SubscriptionStatusPublic(status="active", emission_blocked=False)
+        return SubscriptionStatusPublic(
+            status="active",
+            emission_blocked=False,
+            fiscal_feature_flags=normalize_fiscal_feature_flags(None),
+        )
 
     BLOCKED_STATUSES = ("payment_required", "suspended")
     emission_blocked = sub.status in BLOCKED_STATUSES
@@ -79,6 +89,7 @@ def get_my_subscription_status(
         grace_until=sub.grace_until,
         emission_blocked=emission_blocked,
         message=messages.get(sub.status),
+        fiscal_feature_flags=normalize_fiscal_feature_flags(sub.beta_feature_flags),
     )
 
 
@@ -89,8 +100,9 @@ def update_my_tenant(
     current_user: models.User = Depends(require_admin),
 ):
     """Actualiza campos operativos del tenant para admin local.
-    Incluye contacto seguro y preferencias de diseno del PDF.
-    Credenciales fiscales y datos maestros de empresa solo son editables por superadmin.
+    Incluye razon social, domicilio fiscal, contacto seguro y preferencias de PDF.
+    RUC y credenciales fiscales solo son editables por superadmin porque identifican
+    al emisor ante SUNAT/APISPeru.
     """
     tenant = crud.update_tenant(db, current_user.tenant_id, data)
     if not tenant:
@@ -174,8 +186,7 @@ def get_onboarding_estado(
     )
 
     apisperu_configurado = bool(
-        (tenant and tenant.apisperu_token)
-        or (current_user.apisperu_token)
+        tenant and tenant.apisperu_token
     )
 
     checklist = [
@@ -254,7 +265,7 @@ def create_tenant_user(
     if target_rank > requester_rank:
         raise HTTPException(403, f"No puedes crear usuarios con rol '{role}'.")
 
-    if crud.get_user_by_email(db, data.email):
+    if crud.get_user_by_email_global(db, data.email):
         raise HTTPException(400, "Ya existe un usuario con ese email.")
 
     user_req = schemas.UserRegisterRequest(
@@ -262,7 +273,10 @@ def create_tenant_user(
         nombre_completo=data.nombre_completo,
         tenant_id=current_user.tenant_id,
     )
-    db_user, temp_password = crud.create_user(db, user_req, forced_role=role)
+    try:
+        db_user, temp_password = crud.create_user(db, user_req, forced_role=role)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     return schemas.CreateUserWithPasswordResponse(
         user=db_user,
         temp_password=temp_password,
@@ -315,6 +329,7 @@ async def upload_logo(
             folder_name="logos",
             filename=unique_filename,
             content_type=file.content_type or "",
+            return_public_url=True,
         )
 
         tenant = crud.get_tenant(db, current_user.tenant_id)

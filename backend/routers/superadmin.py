@@ -1,19 +1,24 @@
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from access_control import normalize_role
+from access_control import ROLE_SUPERADMIN, normalize_role
 import crud
 import models
 import schemas
 from api_dependencies import get_db, get_superadmin
 from api_utils import raise_internal_server_error
-from security import get_password_hash
-from crud.auth import generate_temp_password
-from services import facturacion_service, subscription_service
+from services import (
+    beta_feature_flags,
+    facturacion_service,
+    secret_box,
+    smartpse_client,
+    smartpse_gre_credentials,
+    subscription_service,
+)
 
 router = APIRouter(tags=["superadmin"])
 
@@ -39,6 +44,98 @@ def _raise_token_validation_error(validation: dict) -> None:
     raise HTTPException(status_code=400, detail=detail)
 
 
+def _log_superadmin_action(
+    db: Session,
+    admin: models.User,
+    action: str,
+    *,
+    entity_type: str,
+    entity_id: int | None = None,
+    details: str | None = None,
+) -> None:
+    crud.create_audit_log(
+        db,
+        user_id=admin.id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        details=details,
+    )
+
+
+def _normalize_tenant_user_role(role: str | None) -> str:
+    normalized = normalize_role(role)
+    if normalized == ROLE_SUPERADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="No se pueden crear o actualizar usuarios tenant con rol superadmin.",
+        )
+    return normalized
+
+
+def _update_user_as_superadmin(
+    user_id: int,
+    updates: schemas.SuperadminTenantUserUpdate,
+    db: Session,
+    admin: models.User,
+):
+    user = crud.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    update_data = updates.model_dump(exclude_unset=True)
+    if "rol" in update_data and update_data["rol"] is not None:
+        update_data["rol"] = _normalize_tenant_user_role(update_data["rol"])
+
+    for key, value in update_data.items():
+        setattr(user, key, value)
+
+    db.commit()
+    db.refresh(user)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.user.updated",
+        entity_type="user",
+        entity_id=user.id,
+        details=f"fields={','.join(sorted(update_data.keys()))}; target_tenant_id={user.tenant_id}",
+    )
+    return user
+
+
+def _delete_user_as_superadmin(
+    user_id: int,
+    db: Session,
+    admin: models.User,
+):
+    user = crud.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    target_email = user.email
+    target_tenant_id = user.tenant_id
+    try:
+        db.delete(user)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise_internal_server_error(
+            "delete_user_endpoint",
+            "No se pudo eliminar el usuario.",
+            exc,
+        )
+
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.user.deleted",
+        entity_type="user",
+        entity_id=user_id,
+        details=f"email={target_email}; target_tenant_id={target_tenant_id}",
+    )
+    return {"message": "Usuario eliminado correctamente"}
+
+
 @router.post(
     "/superadmin/validate/apisperu-token",
     response_model=schemas.ApisPeruTokenValidationResponse,
@@ -59,6 +156,228 @@ def validate_apisperu_token_endpoint(
         api_url=data.api_url,
         business_ruc=data.business_ruc,
     )
+
+
+def _smartpse_environment(value: str | None) -> str:
+    normalized = (value or "demo").strip().lower()
+    if normalized not in {"demo", "produccion"}:
+        raise HTTPException(status_code=422, detail="environment debe ser 'demo' o 'produccion'.")
+    return normalized
+
+
+def _update_smartpse_status(
+    db: Session,
+    tenant_id: int,
+    *,
+    status: str,
+) -> models.Tenant:
+    return crud.update_tenant_saas(
+        db,
+        tenant_id,
+        {
+            "smartpse_status": status,
+            "smartpse_checked_at": datetime.now(),
+        },
+    )
+
+
+def _update_smartpse_gre_status(
+    db: Session,
+    tenant: models.Tenant,
+    *,
+    status: str,
+) -> models.Tenant:
+    tenant.smartpse_gre_status = status
+    tenant.smartpse_gre_checked_at = datetime.now()
+    db.commit()
+    db.refresh(tenant)
+    return tenant
+
+
+@router.post(
+    "/superadmin/validate/smartpse-credentials",
+    response_model=schemas.SmartPSECredentialsValidationResponse,
+    summary="Validar credenciales Smart PSE",
+)
+def validate_smartpse_credentials_endpoint(
+    data: schemas.SmartPSECredentialsValidationRequest,
+    admin: models.User = Depends(get_superadmin),
+):
+    tenant_stub = type(
+        "SmartPSETenantStub",
+        (),
+        {
+            "id": data.business_ruc or "validation",
+            "business_ruc": data.business_ruc,
+            "smartpse_usuario_secundaria": data.usuario_secundaria,
+            "smartpse_token_acceso": data.token_acceso,
+        },
+    )()
+    return smartpse_client.get_default_client().validate_tenant_credentials(tenant_stub)
+
+
+@router.post(
+    "/superadmin/tenants/{tenant_id}/smartpse/provision",
+    response_model=schemas.SuperadminTenantResponse,
+    summary="Aprovisionar empresa Smart PSE",
+)
+def provision_tenant_smartpse_endpoint(
+    tenant_id: int,
+    data: schemas.SmartPSEProvisionRequest,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+
+    environment = _smartpse_environment(data.environment)
+    try:
+        company = smartpse_client.get_default_client().provision_company(
+            ruc=tenant.business_ruc,
+            razon_social=tenant.business_name,
+            environment=environment,
+            start_date=data.start_date,
+            end_date=data.end_date,
+        )
+    except smartpse_client.SmartPSEException as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    credentials = company.get("credenciales_cpe") or {}
+    usuario_secundaria = credentials.get("usuario_secundaria")
+    token_acceso = credentials.get("token_acceso")
+    if not usuario_secundaria or not token_acceso:
+        raise HTTPException(
+            status_code=502,
+            detail="Smart PSE no devolvio credenciales CPE para la empresa.",
+        )
+
+    updated_tenant = crud.update_tenant_saas(
+        db,
+        tenant_id,
+        {
+            "smartpse_company_id": str(company.get("id") or ""),
+            "smartpse_environment": company.get("environment") or environment,
+            "smartpse_usuario_secundaria": usuario_secundaria,
+            "smartpse_token_acceso": token_acceso,
+            "smartpse_status": models.SMARTPSE_STATUS_OK,
+            "smartpse_checked_at": datetime.now(),
+        },
+    )
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.tenant.smartpse_provisioned",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"environment={environment}; company_id={company.get('id')}",
+    )
+    return updated_tenant
+
+
+@router.post(
+    "/superadmin/tenants/{tenant_id}/smartpse/check",
+    response_model=schemas.SmartPSECredentialsValidationResponse,
+    summary="Verificar credenciales Smart PSE del tenant",
+)
+def check_tenant_smartpse_endpoint(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+
+    result = smartpse_client.get_default_client().validate_tenant_credentials(tenant)
+    _update_smartpse_status(
+        db,
+        tenant_id,
+        status=models.SMARTPSE_STATUS_OK if result.get("valid") else models.SMARTPSE_STATUS_INVALID,
+    )
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.tenant.smartpse_checked",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"valid={result.get('valid')}",
+    )
+    return result
+
+
+@router.put(
+    "/superadmin/tenants/{tenant_id}/smartpse/gre-credentials",
+    response_model=schemas.SuperadminTenantResponse,
+    summary="Guardar credenciales SUNAT GRE para Smart PSE",
+)
+def update_tenant_smartpse_gre_credentials_endpoint(
+    tenant_id: int,
+    data: schemas.SmartPSEGreCredentialsUpdate,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+
+    try:
+        tenant.smartpse_gre_sol_username = smartpse_gre_credentials.normalize_sol_username(
+            data.sol_username
+        )
+        tenant.smartpse_gre_sol_password_enc = secret_box.encrypt_secret(data.sol_password)
+        tenant.smartpse_gre_client_id = data.client_id.strip()
+        tenant.smartpse_gre_client_secret_enc = secret_box.encrypt_secret(data.client_secret)
+        tenant.smartpse_gre_status = models.SMARTPSE_GRE_STATUS_UNCHECKED
+        tenant.smartpse_gre_checked_at = None
+        db.commit()
+        db.refresh(tenant)
+    except secret_box.SecretBoxError as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.tenant.smartpse_gre_credentials_updated",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details="fields=sol_username,sol_password,client_id,client_secret",
+    )
+    return tenant
+
+
+@router.post(
+    "/superadmin/tenants/{tenant_id}/smartpse/gre-credentials/check",
+    response_model=schemas.SmartPSEGreCredentialsValidationResponse,
+    summary="Verificar credenciales SUNAT GRE para Smart PSE",
+)
+def check_tenant_smartpse_gre_credentials_endpoint(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+
+    result = smartpse_gre_credentials.validate_tenant_gre_credentials(tenant)
+    _update_smartpse_gre_status(
+        db,
+        tenant,
+        status=models.SMARTPSE_GRE_STATUS_OK
+        if result.get("valid")
+        else models.SMARTPSE_GRE_STATUS_INVALID,
+    )
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.tenant.smartpse_gre_checked",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"valid={result.get('valid')}",
+    )
+    return result
 
 
 @router.post(
@@ -97,6 +416,14 @@ def create_tenant_endpoint(
             if data.apisperu_url:
                 extra["apisperu_url"] = data.apisperu_url
             tenant = crud.update_tenant_saas(db, tenant.id, extra)
+        _log_superadmin_action(
+            db,
+            admin,
+            "superadmin.tenant.created",
+            entity_type="tenant",
+            entity_id=tenant.id,
+            details=f"business_ruc={tenant.business_ruc}",
+        )
         return tenant
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -121,42 +448,72 @@ def create_tenant_user_endpoint(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant no encontrado.")
 
-    existing = db.query(models.User).filter(models.User.email == data.email).first()
+    existing = crud.get_user_by_email_global(db, data.email)
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe un usuario con ese email.")
 
-    rol = normalize_role(data.rol) if data.rol else "admin"
-    temp_password = generate_temp_password()
-    new_user = models.User(
-        email=data.email,
-        nombre_completo=data.nombre_completo,
-        hashed_password=get_password_hash(temp_password),
-        rol=rol,
-        tenant_id=tenant_id,
-        must_change_password=True,
-    )
+    rol = _normalize_tenant_user_role(data.rol) if data.rol else "admin"
     try:
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
+        user_req = schemas.UserRegisterRequest(
+            email=data.email,
+            nombre_completo=data.nombre_completo,
+            tenant_id=tenant_id,
+        )
+        new_user, temp_password = crud.create_user(
+            db,
+            user_req,
+            forced_role=rol,
+        )
+        _log_superadmin_action(
+            db,
+            admin,
+            "superadmin.user.created",
+            entity_type="user",
+            entity_id=new_user.id,
+            details=f"target_tenant_id={tenant_id}; role={rol}",
+        )
         return schemas.CreateUserWithPasswordResponse(
             user=new_user,
             temp_password=temp_password,
             message="Usuario creado. Comparte la contraseña temporal de forma segura — no se puede recuperar después.",
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        db.rollback()
         raise_internal_server_error("create_tenant_user_endpoint", "No se pudo crear el usuario.", exc)
 
 
 @router.get("/superadmin/tenants", response_model=List[schemas.SuperadminTenantResponse])
 def list_all_tenants_endpoint(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_superadmin),
 ):
     return crud.get_all_tenants(db, skip, limit)
+
+
+@router.get(
+    "/superadmin/tenants-page",
+    response_model=schemas.SuperadminTenantPageResponse,
+)
+def list_tenants_page_endpoint(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=100),
+    q: str | None = Query(default=None, max_length=100),
+    gre_status: str | None = Query(default=None),
+    active_status: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    return crud.get_tenants_page(
+        db,
+        skip=skip,
+        limit=limit,
+        q=q,
+        gre_status=gre_status,
+        active_status=active_status,
+    )
 
 
 @router.patch("/superadmin/tenants/{tenant_id}", response_model=schemas.SuperadminTenantResponse)
@@ -205,6 +562,14 @@ def update_tenant_saas_endpoint(
         tenant_id,
         updates.model_dump(exclude_unset=True),
     )
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.tenant.updated",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"fields={','.join(sorted(updates.model_dump(exclude_unset=True).keys()))}",
+    )
     return updated_tenant
 
 
@@ -218,6 +583,13 @@ def delete_tenant_endpoint(
         result = crud.delete_tenant(db, tenant_id)
         if not result:
             raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+        _log_superadmin_action(
+            db,
+            admin,
+            "superadmin.tenant.deleted",
+            entity_type="tenant",
+            entity_id=tenant_id,
+        )
         return {"message": "Tenant eliminado correctamente"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -241,53 +613,51 @@ def list_all_users_endpoint(
     return crud.get_all_users(db, skip, limit)
 
 
-@router.patch("/users/{user_id}", response_model=schemas.UserResponse)
-def update_user_endpoint(
+@router.patch("/superadmin/users/{user_id}", response_model=schemas.UserResponse)
+def update_superadmin_user_endpoint(
     user_id: int,
-    updates: schemas.UserAdminUpdate,
+    updates: schemas.SuperadminTenantUserUpdate,
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_superadmin),
 ):
-    user = crud.get_user_by_id(db, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
-    update_data = updates.model_dump(exclude_unset=True)
-    if "rol" in update_data and update_data["rol"] is not None:
-        update_data["rol"] = normalize_role(update_data["rol"])
-    if "tenant_id" in update_data and update_data["tenant_id"] is not None:
-        tenant = crud.get_tenant(db, update_data["tenant_id"])
-        if not tenant:
-            raise HTTPException(status_code=400, detail="Tenant destino no encontrado")
-    for key, value in update_data.items():
-        setattr(user, key, value)
-
-    db.commit()
-    db.refresh(user)
-    return user
+    return _update_user_as_superadmin(user_id, updates, db, admin)
 
 
-@router.delete("/users/{user_id}")
-def delete_user_endpoint(
+@router.patch(
+    "/users/{user_id}",
+    response_model=schemas.UserResponse,
+    deprecated=True,
+    include_in_schema=False,
+)
+def update_user_legacy_endpoint(
+    user_id: int,
+    updates: schemas.SuperadminTenantUserUpdate,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    return _update_user_as_superadmin(user_id, updates, db, admin)
+
+
+@router.delete("/superadmin/users/{user_id}")
+def delete_superadmin_user_endpoint(
     user_id: int,
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_superadmin),
 ):
-    user = crud.get_user_by_id(db, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return _delete_user_as_superadmin(user_id, db, admin)
 
-    try:
-        db.delete(user)
-        db.commit()
-        return {"message": "Usuario eliminado correctamente"}
-    except Exception as exc:
-        db.rollback()
-        raise_internal_server_error(
-            "delete_user_endpoint",
-            "No se pudo eliminar el usuario.",
-            exc,
-        )
+
+@router.delete(
+    "/users/{user_id}",
+    deprecated=True,
+    include_in_schema=False,
+)
+def delete_user_legacy_endpoint(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    return _delete_user_as_superadmin(user_id, db, admin)
 
 
 @router.get("/superadmin/audit-logs", response_model=List[AuditLogResponse])
@@ -337,7 +707,16 @@ def activate_tenant_endpoint(
     Activa el tenant: habilita acceso (is_active=True) y marca la suscripcion como active.
     Opcionalmente fija la fecha de vencimiento del ciclo de facturación.
     """
-    return subscription_service.activate_tenant(db, tenant_id, request, admin)
+    subscription = subscription_service.activate_tenant(db, tenant_id, request, admin)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.subscription.activated",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"status={subscription.status}",
+    )
+    return subscription
 
 
 @router.post(
@@ -355,7 +734,16 @@ def suspend_tenant_endpoint(
     Suspende el tenant: bloquea acceso (is_active=False) y marca suscripcion como suspended.
     Los usuarios del tenant recibirán 403 hasta que sea reactivado.
     """
-    return subscription_service.suspend_tenant(db, tenant_id, request, admin)
+    subscription = subscription_service.suspend_tenant(db, tenant_id, request, admin)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.subscription.suspended",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"status={subscription.status}",
+    )
+    return subscription
 
 
 @router.post(
@@ -373,7 +761,16 @@ def extend_access_endpoint(
     Extiende el acceso de un tenant fijando nueva fecha de vencimiento.
     Si el tenant estaba suspendido/expirado, se reactiva automáticamente.
     """
-    return subscription_service.extend_access(db, tenant_id, request, admin)
+    subscription = subscription_service.extend_access(db, tenant_id, request, admin)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.subscription.extended",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"billing_due_at={subscription.billing_due_at}",
+    )
+    return subscription
 
 
 @router.put(
@@ -391,7 +788,16 @@ def set_founder_pricing_endpoint(
     Fija el precio fundador de un tenant (early adopter price).
     El precio fundador queda registrado y no debe subir al aumentar el precio público.
     """
-    return subscription_service.set_founder_pricing(db, tenant_id, request, admin)
+    subscription = subscription_service.set_founder_pricing(db, tenant_id, request, admin)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.subscription.pricing_updated",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"founder_price={subscription.founder_price}; current_price={subscription.current_price}",
+    )
+    return subscription
 
 
 @router.patch(
@@ -406,7 +812,78 @@ def update_subscription_endpoint(
     admin: models.User = Depends(get_superadmin),
 ):
     """Actualización general de campos de suscripcion. Para uso admin avanzado."""
-    return subscription_service.update_subscription_general(db, tenant_id, request, admin)
+    subscription = subscription_service.update_subscription_general(db, tenant_id, request, admin)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.subscription.updated",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"fields={','.join(sorted(request.model_dump(exclude_unset=True).keys()))}",
+    )
+    return subscription
+
+
+@router.get(
+    "/superadmin/tenants/{tenant_id}/fiscal-flags",
+    response_model=schemas.FiscalFeatureFlagsResponse,
+    summary="Ver flags fiscales beta de un tenant",
+)
+def get_tenant_fiscal_flags_endpoint(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+    subscription = crud.get_or_create_subscription(db, tenant_id)
+    return schemas.FiscalFeatureFlagsResponse(
+        tenant_id=tenant_id,
+        flags=beta_feature_flags.subscription_feature_flags(subscription),
+        definitions=beta_feature_flags.feature_definitions_payload(),
+    )
+
+
+@router.put(
+    "/superadmin/tenants/{tenant_id}/fiscal-flags",
+    response_model=schemas.FiscalFeatureFlagsResponse,
+    summary="Actualizar flags fiscales beta de un tenant",
+)
+def update_tenant_fiscal_flags_endpoint(
+    tenant_id: int,
+    request: schemas.UpdateFiscalFeatureFlagsRequest,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+
+    try:
+        flags = beta_feature_flags.validate_fiscal_feature_flags(request.flags)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    subscription = crud.update_subscription_fields(
+        db,
+        tenant_id,
+        {"beta_feature_flags": flags},
+    )
+    enabled_keys = sorted(key for key, enabled in flags.items() if enabled)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.subscription.fiscal_flags_updated",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"enabled={','.join(enabled_keys) if enabled_keys else 'none'}",
+    )
+    return schemas.FiscalFeatureFlagsResponse(
+        tenant_id=tenant_id,
+        flags=beta_feature_flags.subscription_feature_flags(subscription),
+        definitions=beta_feature_flags.feature_definitions_payload(),
+    )
 
 
 @router.post(
@@ -427,7 +904,16 @@ def register_saas_payment_endpoint(
     DOMINIO: tenant → Inkora (SaaS). No es un cobro del tenant a sus clientes.
     Ver schemas.PagoCreate/PagoResponse para el dominio operativo del tenant.
     """
-    return subscription_service.register_saas_payment(db, tenant_id, data, admin)
+    payment = subscription_service.register_saas_payment(db, tenant_id, data, admin)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.subscription_payment.created",
+        entity_type="subscription_payment",
+        entity_id=payment.id,
+        details=f"tenant_id={tenant_id}; amount={payment.amount}",
+    )
+    return payment
 
 
 @router.get(
@@ -534,7 +1020,16 @@ def update_tenant_notas_endpoint(
         raise HTTPException(status_code=404, detail="Tenant no encontrado.")
 
     updates = request.model_dump(exclude_unset=True)
-    return crud.update_subscription_fields(db, tenant_id, updates)
+    subscription = crud.update_subscription_fields(db, tenant_id, updates)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.subscription.notes_updated",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"fields={','.join(sorted(updates.keys()))}",
+    )
+    return subscription
 
 
 # ============================================================
@@ -574,6 +1069,14 @@ def toggle_user_active_endpoint(
     user = crud.toggle_user_active(db, user_id, request.is_active)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.user.active_changed",
+        entity_type="user",
+        entity_id=user_id,
+        details=f"is_active={request.is_active}; target_tenant_id={user.tenant_id}",
+    )
     return user
 
 
@@ -591,10 +1094,13 @@ def reset_user_password_endpoint(
     result = crud.reset_user_password(db, user_id)
     if not result:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
-    crud.log_auth_event(
-        db, "user.password_reset",
-        user_id=admin.id, entity_id=user_id,
-        details=f"reset_by=superadmin:{admin.email}",
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.user.password_reset",
+        entity_type="user",
+        entity_id=user_id,
+        details=f"reset_by={admin.email}",
     )
     return result
 
@@ -707,6 +1213,14 @@ def upsert_tenant_limits_endpoint(
 
     items = [item.model_dump() for item in payload.limits]
     limits = crud.upsert_tenant_limits(db, tenant_id, items)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.usage_limits.upserted",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"count={len(items)}",
+    )
     return limits
 
 
@@ -722,4 +1236,63 @@ def delete_limit_endpoint(
     removed = crud.delete_limit(db, limit_id)
     if not removed:
         raise HTTPException(status_code=404, detail="Limite no encontrado.")
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.usage_limit.deleted",
+        entity_type="usage_limit",
+        entity_id=limit_id,
+    )
     return {"deleted": True, "limit_id": limit_id}
+
+
+@router.post(
+    "/superadmin/guias/{guia_id}/smartpse/reconcile",
+    response_model=schemas.GuiaRemisionResponse,
+    summary="Conciliar manualmente una guia Smart PSE",
+)
+def reconcile_smartpse_guia_endpoint(
+    guia_id: int,
+    request: schemas.SmartPSEGuideReconcileRequest,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    guia = db.query(models.GuiaRemision).filter(models.GuiaRemision.id == guia_id).first()
+    if not guia:
+        raise HTTPException(status_code=404, detail="Guia de remision no encontrada.")
+
+    if request.mark_as_emitida and not (request.cdr_url or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Para marcar la guia como emitida se requiere cdr_url.",
+        )
+
+    if request.sunat_hash is not None:
+        guia.sunat_hash = request.sunat_hash.strip() or None
+    if request.sunat_ticket is not None:
+        guia.sunat_ticket = request.sunat_ticket.strip() or None
+    if request.cdr_url is not None:
+        guia.sunat_cdr_url = request.cdr_url.strip() or None
+    if request.provider_response is not None:
+        guia.provider_response = request.provider_response
+
+    guia.sunat_status_checked_at = datetime.now()
+    if request.mark_as_emitida:
+        guia.estado = "emitida"
+    elif guia.estado != "emitida":
+        guia.estado = "pendiente_smartpse"
+
+    db.commit()
+    db.refresh(guia)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.guia.smartpse_reconciled",
+        entity_type="guia_remision",
+        entity_id=guia.id,
+        details=(
+            f"tenant_id={guia.tenant_id}; estado={guia.estado}; "
+            f"has_cdr={bool(guia.sunat_cdr_url)}"
+        ),
+    )
+    return guia

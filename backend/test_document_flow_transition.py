@@ -183,7 +183,8 @@ def test_payment_against_fiscal_document_keeps_quote_as_anchor(db_session):
 
     assert pago.cotizacion_id == quote.id
     assert pago.source_quote_id == quote.id
-    assert pago.fiscal_document_id == fiscal_document.id
+    assert pago.fiscal_document_id is None
+    assert pago.tipo == "adelanto"
     assert pago.internal_order_number == quote.internal_order_number
     assert quote.monto_pagado == Decimal("30.00")
 

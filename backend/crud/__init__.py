@@ -22,6 +22,7 @@ from crud._base import (
 
 from crud.auth import (
     get_user_by_email,
+    get_user_by_email_global,
     get_user_by_id,
     create_user,
     change_user_password,
@@ -35,6 +36,7 @@ from crud.tenants import (
     create_tenant,
     update_tenant,
     get_all_tenants,
+    get_tenants_page,
     update_tenant_saas,
     delete_tenant,
     get_all_users,
@@ -61,6 +63,7 @@ from crud.clientes import (
 )
 
 from crud.productos import (
+    ProductoEnUsoError,
     get_productos,
     count_productos,
     create_producto,
@@ -84,11 +87,38 @@ from crud.cotizaciones import (
 
 from crud.guias import (
     get_guias_remision,
+    get_guias_remision_page,
     get_guia_remision,
     create_guia_remision,
     guardar_respuesta_sunat_gre,
     guardar_error_sunat_gre,
 )
+
+from crud.resumenes import (
+    list_resumenes_diarios,
+    create_resumen_diario,
+    mark_resumen_diario_sent,
+    mark_resumen_diario_rejected,
+)
+from crud.reversiones import (
+    list_reversiones,
+    create_reversion,
+    mark_reversion_sent,
+    mark_reversion_rejected,
+)
+from crud.retenciones import (
+    list_retenciones,
+    create_retencion,
+    mark_retencion_sent,
+    mark_retencion_rejected,
+)
+from crud.percepciones import (
+    list_percepciones,
+    create_percepcion,
+    mark_percepcion_sent,
+    mark_percepcion_rejected,
+)
+
 from crud.emission_jobs import (
     get_emission_job,
     get_emission_jobs,
@@ -105,6 +135,7 @@ from crud.emission_jobs import (
 )
 
 from crud.pagos import (
+    apply_prefiscal_advances_to_fiscal_document,
     registrar_pago,
     get_pagos_cotizacion,
 )

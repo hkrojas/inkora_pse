@@ -87,6 +87,7 @@ def _clone_cotizacion_items(source_items):
         items_clonados.append(
             models.CotizacionItem(
                 producto_id=item.producto_id,
+                codigo_producto=item.codigo_producto,
                 descripcion=item.descripcion,
                 cantidad=item.cantidad,
                 precio_unitario=item.precio_unitario,

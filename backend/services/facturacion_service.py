@@ -9,8 +9,13 @@ from sqlalchemy.orm import Session
 
 import models
 from config import settings
+from fiscal_catalogs import tax_affectation_bucket
 from services import calculations
 from services import fiscal_xml_service
+from services import smartpse_client
+from services import smartpse_gre_credentials
+from services import smartpse_response
+from services import smartpse_ubl_service
 from services.quote_observation_service import observation_lines_to_plain_text
 from tenant_access import (
     get_apisperu_token as _get_apisperu_token,
@@ -124,6 +129,7 @@ def obtener_tipo_documento_codigo(tipo: str) -> str:
         return tipo_normalizado
 
     mapping = {
+        "A": "A",
         "DNI": "1",
         "DOC. TRIB. NO DOM. SIN RUC": "0",
         "RUC": "6",
@@ -162,11 +168,7 @@ def _extract_token_company_ruc(token: str) -> str | None:
 
 def _get_api_base_url(user) -> str:
     tenant = getattr(user, "tenant", None)
-    base_url = (
-        getattr(tenant, "apisperu_url", None)
-        or getattr(user, "apisperu_url", None)
-        or settings.API_URL
-    )
+    base_url = getattr(tenant, "apisperu_url", None) or settings.API_URL
     base_url = (base_url or "").strip().rstrip("/")
     if not base_url:
         raise FacturacionException("No hay URL de ApisPeru configurada.")
@@ -251,27 +253,7 @@ def _fetch_sale_qr_svg(user, xml_content: str | None) -> tuple[dict | None, str 
         for key in ("ruc", "tipo", "serie", "numero", "emision", "clienteTipo", "clienteNumero")
     ):
         return qr_payload, None
-
-    token = _get_apisperu_token(user)
-    if not token:
-        return qr_payload, None
-
-    url = f"{_get_api_base_url(user)}/sale/qr"
-    try:
-        response = requests.post(
-            url,
-            data=json.dumps(qr_payload, cls=SUNATDecimalEncoder),
-            headers=_provider_request_headers(token),
-            timeout=DEFAULT_TIMEOUT_SECONDS,
-        )
-    except requests.RequestException:
-        return qr_payload, None
-
-    content_type = (response.headers.get("Content-Type") or "").lower()
-    if response.status_code >= 400 or "svg" not in content_type:
-        return qr_payload, None
-
-    return qr_payload, response.text
+    return qr_payload, None
 
 
 def _attach_sale_artifacts(result: dict, user) -> dict:
@@ -366,14 +348,19 @@ def _document_number(documento) -> str:
 
 def _sync_invoice_totals(payload: dict) -> dict:
     total_gravada = calculations.redondear(payload.get("mtoOperGravadas", 0))
+    total_exonerada = calculations.redondear(payload.get("mtoOperExoneradas", 0))
+    total_inafecta = calculations.redondear(payload.get("mtoOperInafectas", 0))
     total_igv = calculations.redondear(payload.get("mtoIGV", payload.get("totalImpuestos", 0)))
     total_venta = calculations.redondear(
         payload.get("mtoImpVenta", payload.get("mtoImporteTotal", payload.get("subTotal", 0)))
     )
+    valor_venta = calculations.redondear(total_gravada + total_exonerada + total_inafecta)
 
     payload["mtoOperGravadas"] = total_gravada
+    payload["mtoOperExoneradas"] = total_exonerada
+    payload["mtoOperInafectas"] = total_inafecta
     payload["mtoIGV"] = total_igv
-    payload["valorVenta"] = total_gravada
+    payload["valorVenta"] = valor_venta
     payload["totalImpuestos"] = total_igv
     payload["subTotal"] = total_venta
     payload["mtoImpVenta"] = total_venta
@@ -385,21 +372,27 @@ def _construir_items_payload(items):
     items_payload = []
     totales = {
         "gravada": calculations.Decimal("0.00"),
+        "exonerada": calculations.Decimal("0.00"),
+        "inafecta": calculations.Decimal("0.00"),
         "igv": calculations.Decimal("0.00"),
         "venta": calculations.Decimal("0.00"),
     }
 
     for index, item in enumerate(items, start=1):
-        calc = calculations.calcular_item(item.cantidad, item.precio_unitario)
+        afectacion = getattr(item, "tipo_afectacion_igv", None) or "10"
+        calc = calculations.calcular_item(
+            item.cantidad,
+            item.precio_unitario,
+            tipo_afectacion_igv=afectacion,
+        )
         unidad = getattr(item, "unidad_medida", None) or calc["unidad_medida"]
-        afectacion = getattr(item, "tipo_afectacion_igv", None) or calc["tipo_afectacion_igv"]
-        codigo_producto = getattr(item, "codigo_producto", None) or getattr(item, "producto_id", None)
-        if codigo_producto:
-            codigo_producto = f"PROD-{codigo_producto}"
-        else:
-            codigo_producto = f"ITEM-{index:03d}"
+        codigo_producto = getattr(item, "codigo_producto", None)
+        if not codigo_producto:
+            producto_id = getattr(item, "producto_id", None)
+            codigo_producto = f"PROD-{producto_id}" if producto_id else f"ITEM-{index:03d}"
 
-        totales["gravada"] += calc["total_base_igv"]
+        bucket = tax_affectation_bucket(afectacion)
+        totales[bucket] += calc["total_base_igv"]
         totales["igv"] += calc["total_igv"]
         totales["venta"] += calc["total_item"]
 
@@ -412,7 +405,7 @@ def _construir_items_payload(items):
                 "mtoValorUnitario": calc["valor_unitario"],
                 "mtoValorVenta": calc["total_base_igv"],
                 "mtoBaseIgv": calc["total_base_igv"],
-                "porcentajeIgv": 18,
+                "porcentajeIgv": 18 if bucket == "gravada" else 0,
                 "igv": calc["total_igv"],
                 "tipAfeIgv": afectacion,
                 "totalImpuestos": calc["total_igv"],
@@ -429,6 +422,17 @@ def _resolve_tipo_operacion(tipo_doc_comprobante: str, tipo_operacion_override: 
     return "0101"
 
 
+def _parse_payment_date(value) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def _build_payment_terms(cotizacion, moneda: str, monto_total):
     condicion_pago = str(getattr(cotizacion, "condicion_pago", "") or "").strip().lower()
     if not condicion_pago or condicion_pago == "contado":
@@ -438,6 +442,7 @@ def _build_payment_terms(cotizacion, moneda: str, monto_total):
                 "tipo": "Contado",
             },
             "cuotas": None,
+            "fecha_vencimiento": None,
         }
 
     fecha_vencimiento = getattr(cotizacion, "fecha_vencimiento", None)
@@ -447,8 +452,23 @@ def _build_payment_terms(cotizacion, moneda: str, monto_total):
         "monto": calculations.redondear(monto_total),
     }
 
-    cuotas = None
-    if fecha_vencimiento:
+    cuotas = []
+    for cuota in getattr(cotizacion, "cuotas_pago", None) or []:
+        if not isinstance(cuota, dict):
+            continue
+        fecha_pago = _parse_payment_date(cuota.get("fecha_pago") or cuota.get("fechaPago"))
+        monto = calculations.redondear(cuota.get("monto", 0))
+        if not fecha_pago or monto <= 0:
+            continue
+        cuotas.append(
+            {
+                "moneda": moneda,
+                "monto": monto,
+                "fechaPago": _current_issue_datetime(fecha_pago),
+            }
+        )
+
+    if not cuotas and fecha_vencimiento:
         cuotas = [
             {
                 "moneda": moneda,
@@ -457,7 +477,18 @@ def _build_payment_terms(cotizacion, moneda: str, monto_total):
             }
         ]
 
-    return {"formaPago": forma_pago, "cuotas": cuotas}
+    resolved_due_date = None
+    if cuotas:
+        resolved_due_date = max(
+            (_parse_payment_date(cuota["fechaPago"]) for cuota in cuotas),
+            default=None,
+        )
+
+    return {
+        "formaPago": forma_pago,
+        "cuotas": cuotas or None,
+        "fecha_vencimiento": resolved_due_date or fecha_vencimiento,
+    }
 
 
 def _base_payload(cotizacion, user, tipo_doc_comprobante, *, tipo_operacion_override: str | None = None):
@@ -479,8 +510,12 @@ def _base_payload(cotizacion, user, tipo_doc_comprobante, *, tipo_operacion_over
         "company": _build_company_payload(user),
         "client": _build_client_payload(cliente),
         "mtoOperGravadas": totales["gravada"],
+        "mtoOperExoneradas": totales["exonerada"],
+        "mtoOperInafectas": totales["inafecta"],
         "mtoIGV": totales["igv"],
-        "valorVenta": totales["gravada"],
+        "valorVenta": calculations.redondear(
+            totales["gravada"] + totales["exonerada"] + totales["inafecta"]
+        ),
         "totalImpuestos": totales["igv"],
         "subTotal": totales["venta"],
         "mtoImpVenta": totales["venta"],
@@ -498,8 +533,8 @@ def _base_payload(cotizacion, user, tipo_doc_comprobante, *, tipo_operacion_over
         payload["formaPago"] = payment_terms["formaPago"]
         if payment_terms["cuotas"]:
             payload["cuotas"] = payment_terms["cuotas"]
-        if getattr(cotizacion, "fecha_vencimiento", None):
-            payload["fecVencimiento"] = _current_issue_datetime(cotizacion.fecha_vencimiento)
+        if payment_terms["fecha_vencimiento"]:
+            payload["fecVencimiento"] = _current_issue_datetime(payment_terms["fecha_vencimiento"])
         if getattr(cotizacion, "observaciones", None):
             payload["observacion"] = observation_lines_to_plain_text(cotizacion.observaciones)
 
@@ -536,6 +571,7 @@ def _aplicar_detraccion(payload, cotizacion, user, db: Session):
                 break
     cuenta_bn = cuenta_bn or ""
 
+    payload["tipoOperacion"] = "1001"
     payload["detraccion"] = {
         "codBienDetraccion": CODIGO_DETRACCION_IMPRENTA,
         "codMedioPago": "001",
@@ -788,6 +824,33 @@ def _build_status_result(
     }
 
 
+def _build_async_submission_result(payload: dict, endpoint: str, status_code: int, data: dict) -> dict:
+    sunat_response = data.get("sunatResponse") or {}
+    ticket = data.get("ticket") or sunat_response.get("ticket")
+    if not ticket:
+        return _build_immediate_result(payload, endpoint, status_code, data)
+
+    return {
+        "success": True,
+        "pending": True,
+        "serie": payload.get("serie"),
+        "correlativo": payload.get("correlativo"),
+        "hash": data.get("hash"),
+        "xml": data.get("xml"),
+        "ticket": ticket,
+        "links": _normalize_links(data),
+        "provider_status_code": status_code,
+        "provider_endpoint": endpoint,
+        "provider_response": data,
+        "sunat_response": {
+            "success": True,
+            "error": None,
+            "ticket": ticket,
+            "cdrResponse": sunat_response.get("cdrResponse") or {},
+        },
+    }
+
+
 def _poll_async_status(user, payload: dict, ticket: str, status_endpoint: str, *, xml=None, hash_value=None):
     token = _get_apisperu_token(user)
     if not token:
@@ -852,56 +915,161 @@ def _poll_async_status(user, payload: dict, ticket: str, status_endpoint: str, *
     )
 
 
-def _enviar_a_api(payload, user, endpoint, *, status_endpoint: str | None = None):
-    token = _get_apisperu_token(user)
-    if not token:
-        raise FacturacionException("Falta Token API.")
+def _smartpse_demo_mode(user) -> bool:
+    tenant = getattr(user, "tenant", None)
+    environment = str(getattr(tenant, "smartpse_environment", "") or "").strip().lower()
+    if environment:
+        return environment != "produccion"
+    return not settings.is_fiscal_production
 
-    base_url = _get_api_base_url(user)
-    url = f"{base_url}{endpoint}"
-    payload_str = json.dumps(payload, cls=SUNATDecimalEncoder)
+
+def _prepare_smartpse_payload(payload: dict, endpoint: str) -> dict:
+    prepared = dict(payload or {})
+    if endpoint == "/despatch/send":
+        prepared["tipoDoc"] = "09"
+    elif endpoint == "/summary/send":
+        prepared["tipoDoc"] = "RC"
+    elif endpoint == "/voided/send":
+        prepared["tipoDoc"] = "RA"
+    elif endpoint == "/reversion/send":
+        prepared["tipoDoc"] = "RR"
+    elif endpoint in {"/retention/send", "/perception/send"}:
+        raise FacturacionException(
+            "Smart PSE v1 no esta habilitado para retenciones/percepciones en Inkora."
+        )
+    return prepared
+
+
+def _build_smartpse_xml(payload: dict, endpoint: str) -> str:
+    if endpoint in {"/invoice/send", "/note/send"}:
+        return smartpse_ubl_service.build_sale_document_xml(payload)
+    if endpoint == "/despatch/send":
+        return smartpse_ubl_service.build_despatch_document_xml(payload)
+    if endpoint == "/summary/send":
+        return smartpse_ubl_service.build_summary_document_xml(payload)
+    if endpoint in {"/voided/send", "/reversion/send"}:
+        return smartpse_ubl_service.build_voided_document_xml(payload)
+    raise FacturacionException(f"Endpoint Smart PSE no soportado: {endpoint}")
+
+
+def _poll_smartpse_ticket(
+    client,
+    tenant,
+    payload: dict,
+    ticket: str,
+    consult_name: str,
+    xml: str | None,
+    hash_value: str | None,
+):
+    last_data = None
+    last_error = None
+    for attempt in range(1, ASYNC_STATUS_MAX_ATTEMPTS + 1):
+        try:
+            data = client.consult_ticket(tenant, consult_name)
+        except smartpse_client.SmartPSEException as exc:
+            last_error = exc
+            if attempt < ASYNC_STATUS_MAX_ATTEMPTS:
+                time.sleep(ASYNC_STATUS_RETRY_SECONDS)
+                continue
+            raise FacturacionException(str(exc)) from exc
+        last_data = data
+        if str(data.get("estado") or "").strip() == "202":
+            time.sleep(ASYNC_STATUS_RETRY_SECONDS)
+            continue
+        if xml and not data.get("xml_firmado"):
+            data = dict(data)
+            data["xml_firmado"] = xml
+        if hash_value and not data.get("codigo_hash"):
+            data = dict(data)
+            data["codigo_hash"] = hash_value
+        try:
+            return smartpse_response.build_smartpse_result(
+                payload,
+                data,
+                endpoint=f"/api/cpe/consultar/{consult_name}",
+                status_code=200,
+                ticket=ticket,
+            )
+        except smartpse_client.SmartPSEException as exc:
+            raise FacturacionException(str(exc)) from exc
+
+    raise FacturacionException(
+        f"El ticket Smart PSE {ticket} no quedo listo despues de {ASYNC_STATUS_MAX_ATTEMPTS} intentos: "
+        f"{_extract_provider_error_message(last_data or {}) if last_data else str(last_error or '')}"
+    )
+
+
+def _enviar_a_smartpse(
+    payload,
+    user,
+    endpoint,
+    *,
+    status_endpoint: str | None = None,
+    poll_async: bool = True,
+    extra_payload: dict | None = None,
+):
+    tenant = getattr(user, "tenant", None)
+    if not tenant:
+        raise FacturacionException("Usuario sin tenant para emitir con Smart PSE.")
+
+    provider_payload = _prepare_smartpse_payload(payload, endpoint)
+    nombre_archivo = smartpse_ubl_service.build_smartpse_filename(provider_payload)
+    xml_content = _build_smartpse_xml(provider_payload, endpoint)
+    client = smartpse_client.get_default_client()
+    demo = _smartpse_demo_mode(user)
+    provider_endpoint = "/api/cpe/procesar-demo" if demo else "/api/cpe/procesar"
 
     try:
-        response = requests.post(
-            url,
-            data=payload_str,
-            headers=_provider_request_headers(token),
-            timeout=DEFAULT_TIMEOUT_SECONDS,
+        process_kwargs = {"demo": demo}
+        if extra_payload is not None:
+            process_kwargs["extra_payload"] = extra_payload
+        data = client.process_xml(
+            tenant,
+            nombre_archivo,
+            xml_content.encode("utf-8"),
+            **process_kwargs,
         )
-    except requests.exceptions.Timeout as exc:
-        raise FacturacionException(f"Timeout enviando documento a {endpoint}.") from exc
-    except requests.exceptions.ConnectionError as exc:
-        raise FacturacionException(
-            f"No se pudo conectar con el servicio fiscal en {endpoint}."
-        ) from exc
-
-    data = _safe_json(response)
-    if response.status_code >= 400:
-        diagnostic = _probe_render_diagnostic(user, payload, endpoint)
-        _raise_for_provider_http_error(endpoint, response.status_code, data, diagnostic)
-
-    sunat_response = data.get("sunatResponse") or {}
-    if sunat_response.get("error"):
-        diagnostic = _diagnose_summary_provider_error(endpoint, data)
-        detail = _extract_provider_error_message(data)
-        if diagnostic:
-            detail = f"{detail}. {diagnostic}"
-        raise FacturacionException(
-            f"ApisPeru rechazo el envio en {endpoint}: {detail}"
+        result = smartpse_response.build_smartpse_result(
+            provider_payload,
+            data,
+            endpoint=provider_endpoint,
+            status_code=200,
         )
+    except smartpse_client.SmartPSEException as exc:
+        raise FacturacionException(str(exc)) from exc
 
-    ticket = sunat_response.get("ticket")
-    if status_endpoint and ticket:
-        return _poll_async_status(
-            user,
-            payload,
-            ticket,
-            status_endpoint,
-            xml=data.get("xml"),
-            hash_value=data.get("hash"),
+    if status_endpoint and result.get("pending") and result.get("ticket"):
+        if not poll_async:
+            return result
+        return _poll_smartpse_ticket(
+            client,
+            tenant,
+            provider_payload,
+            result["ticket"],
+            nombre_archivo,
+            result.get("xml"),
+            result.get("hash"),
         )
+    return result
 
-    return _build_immediate_result(payload, endpoint, response.status_code, data)
+
+def _enviar_a_api(
+    payload,
+    user,
+    endpoint,
+    *,
+    status_endpoint: str | None = None,
+    poll_async: bool = True,
+    extra_payload: dict | None = None,
+):
+    return _enviar_a_smartpse(
+        payload,
+        user,
+        endpoint,
+        status_endpoint=status_endpoint,
+        poll_async=poll_async,
+        extra_payload=extra_payload,
+    )
 
 
 def emitir_factura(
@@ -1032,6 +1200,7 @@ def anular_comprobante(comprobante: models.Cotizacion, motivo: str, user: models
             user,
             "/summary/send",
             status_endpoint="/summary/status",
+            poll_async=False,
         )
 
     return _enviar_a_api(
@@ -1039,15 +1208,22 @@ def anular_comprobante(comprobante: models.Cotizacion, motivo: str, user: models
         user,
         "/voided/send",
         status_endpoint="/voided/status",
+        poll_async=False,
     )
 
 
-def _resolve_guide_recipient(guia) -> dict:
+def _resolve_guide_recipient(guia, user=None) -> dict:
     cotizacion = getattr(guia, "cotizacion", None)
-    cliente = getattr(cotizacion, "cliente", None) if cotizacion else None
+    cliente = getattr(guia, "cliente", None) or (getattr(cotizacion, "cliente", None) if cotizacion else None)
+    if not cliente and getattr(guia, "motivo_traslado", None) == "04" and user is not None:
+        return {
+            "tipoDoc": "6",
+            "numDoc": _get_company_ruc(user),
+            "rznSocial": _get_company_name(user),
+        }
     if not cliente:
         raise FacturacionException(
-            "La guia requiere una cotizacion con cliente para construir el destinatario."
+            "La guia requiere un cliente destinatario o una cotizacion con cliente para construir el destinatario."
         )
     return {
         "tipoDoc": obtener_tipo_documento_codigo(cliente.tipo_documento),
@@ -1080,7 +1256,7 @@ def _build_company_payload_gre(user) -> dict:
 
 def _base_payload_gre(guia, user):
     cotizacion = getattr(guia, "cotizacion", None)
-    cliente = getattr(cotizacion, "cliente", None) if cotizacion else None
+    cliente = getattr(guia, "cliente", None) or (getattr(cotizacion, "cliente", None) if cotizacion else None)
     destinatario_ruc = str(cliente.numero_documento).strip() if cliente and cliente.numero_documento else None
     company_ruc = _get_company_ruc(user)
     llegada = {
@@ -1100,7 +1276,7 @@ def _base_payload_gre(guia, user):
         "fechaEmision": _current_issue_datetime(getattr(guia, "fecha_emision", None)),
         "observacion": guia.descripcion_motivo or "GUIA DE REMISION",
         "company": _build_company_payload_gre(user),
-        "destinatario": _resolve_guide_recipient(guia),
+        "destinatario": _resolve_guide_recipient(guia, user),
         "envio": {
             "codTraslado": guia.motivo_traslado,
             "desTraslado": (guia.descripcion_motivo or "VENTA").upper(),
@@ -1194,20 +1370,79 @@ def _base_payload_gre(guia, user):
 
 def emitir_guia_remision(guia, user):
     payload = _base_payload_gre(guia, user)
+    try:
+        extra_payload = smartpse_gre_credentials.build_smartpse_gre_extra_payload(
+            getattr(user, "tenant", None)
+        )
+    except (
+        smartpse_gre_credentials.SmartPSEGreCredentialsError,
+        smartpse_gre_credentials.secret_box.SecretBoxError,
+    ) as exc:
+        raise FacturacionException(str(exc)) from exc
     return _enviar_a_api(
         payload,
         user,
         "/despatch/send",
-        status_endpoint="/despatch/status",
+        status_endpoint=None,
+        poll_async=False,
+        extra_payload=extra_payload,
     )
 
 
-def emitir_resumen_diario(payload: dict, user):
+def _summary_datetime(value) -> str:
+    if isinstance(value, datetime):
+        return _current_issue_datetime(value)
+    text = str(value or "").strip()
+    if len(text) == 10 and text[4] == "-" and text[7] == "-":
+        return f"{text}T00:00:00-05:00"
+    return text
+
+
+def build_resumen_diario_payload(payload: dict, user) -> dict:
+    prepared = dict(payload or {})
+    prepared["company"] = _build_company_payload(user)
+    prepared["moneda"] = str(prepared.get("moneda") or "PEN").strip().upper()
+    prepared["fecGeneracion"] = _summary_datetime(prepared.get("fecGeneracion"))
+    prepared["fecResumen"] = _summary_datetime(prepared.get("fecResumen"))
+    correlativo = str(prepared.get("correlativo") or "").strip().upper()
+    prepared["correlativo"] = correlativo.split("-")[-1] if correlativo.startswith("RC-") else correlativo
+
+    normalized_details = []
+    for detail in prepared.get("details") or []:
+        normalized = dict(detail or {})
+        for key in (
+            "total",
+            "mtoOperGravadas",
+            "mtoOperInafectas",
+            "mtoOperExoneradas",
+            "mtoOperExportacion",
+            "mtoOperGratuitas",
+            "mtoOtrosCargos",
+            "mtoIGV",
+            "mtoIvap",
+            "mtoIcbper",
+            "mtoISC",
+            "mtoOtrosTributos",
+        ):
+            normalized[key] = calculations.redondear(normalized.get(key, 0))
+        normalized["tipoDoc"] = str(normalized.get("tipoDoc") or "03").zfill(2)
+        normalized["serieNro"] = str(normalized.get("serieNro") or "").strip().upper()
+        normalized["estado"] = str(normalized.get("estado") or "1").strip()
+        normalized["clienteTipo"] = str(normalized.get("clienteTipo") or "0").strip()
+        normalized["clienteNro"] = str(normalized.get("clienteNro") or "00000000").strip()
+        normalized_details.append(normalized)
+    prepared["details"] = normalized_details
+    return prepared
+
+
+def emitir_resumen_diario(payload: dict, user, *, prepared: bool = False):
+    provider_payload = payload if prepared else build_resumen_diario_payload(payload, user)
     return _enviar_a_api(
-        payload,
+        provider_payload,
         user,
         "/summary/send",
         status_endpoint="/summary/status",
+        poll_async=False,
     )
 
 
@@ -1217,23 +1452,240 @@ def emitir_comunicacion_baja(payload: dict, user):
         user,
         "/voided/send",
         status_endpoint="/voided/status",
+        poll_async=False,
     )
 
 
-def emitir_retencion(payload: dict, user):
-    return _enviar_a_api(payload, user, "/retention/send")
+def build_retencion_payload(payload: dict, user) -> dict:
+    prepared = dict(payload or {})
+    prepared["company"] = _build_company_payload(user)
+    prepared["serie"] = str(prepared.get("serie") or "R001").strip().upper()
+    prepared["correlativo"] = str(prepared.get("correlativo") or "").strip()
+    prepared["fechaEmision"] = _summary_datetime(prepared.get("fechaEmision"))
+    prepared["regimen"] = str(prepared.get("regimen") or prepared.get("regResolucion") or "01").strip().zfill(2)
+    prepared["tasa"] = calculations.redondear(prepared.get("tasa") or 3)
+
+    proveedor = dict(prepared.get("proveedor") or prepared.get("client") or {})
+    proveedor["tipoDoc"] = str(proveedor.get("tipoDoc") or "6").strip()
+    proveedor["numDoc"] = str(proveedor.get("numDoc") or "").strip()
+    proveedor["rznSocial"] = str(proveedor.get("rznSocial") or proveedor.get("razonSocial") or "").strip()
+    if "address" not in proveedor:
+        proveedor["address"] = _build_address_payload(proveedor.get("direccion"))
+    prepared["proveedor"] = proveedor
+    prepared.pop("client", None)
+    prepared.pop("regResolucion", None)
+
+    normalized_details = []
+    for detail in prepared.get("details") or []:
+        normalized = dict(detail or {})
+        serie_nro = str(normalized.pop("serieNro", "") or normalized.get("numDoc") or "").strip().upper()
+        normalized["tipoDoc"] = str(normalized.get("tipoDoc") or "01").strip().zfill(2)
+        normalized["numDoc"] = serie_nro
+        normalized["fechaEmision"] = _summary_datetime(normalized.get("fechaEmision"))
+        fecha_retencion = normalized.get("fechaRetencion") or normalized.get("fechaRet") or prepared.get("fechaEmision")
+        normalized["fechaRetencion"] = _summary_datetime(fecha_retencion)
+        normalized["moneda"] = str(normalized.get("moneda") or "PEN").strip().upper()
+
+        imp_retenido = normalized.get("impRetenido", normalized.get("mtoRetenido", 0))
+        imp_pagar = normalized.get("impPagar", normalized.get("impTotalPagado", 0))
+        imp_total = normalized.get("impTotal", normalized.get("mtoBaseRet", 0))
+        imp_retenido = calculations.redondear(imp_retenido)
+        imp_pagar = calculations.redondear(imp_pagar)
+        imp_total = calculations.redondear(imp_total or (imp_pagar + imp_retenido))
+
+        normalized["impTotal"] = imp_total
+        normalized["impRetenido"] = imp_retenido
+        normalized["impPagar"] = imp_pagar
+        normalized.pop("mtoRetenido", None)
+        normalized.pop("impTotalPagado", None)
+        normalized.pop("mtoBaseRet", None)
+        normalized.pop("fechaRet", None)
+
+        pagos = normalized.get("pagos") or [
+            {
+                "moneda": normalized["moneda"],
+                "importe": imp_pagar,
+                "fecha": normalized["fechaRetencion"],
+            }
+        ]
+        normalized["pagos"] = [
+            {
+                "moneda": str(pago.get("moneda") or normalized["moneda"]).strip().upper(),
+                "importe": calculations.redondear(pago.get("importe") or 0),
+                "fecha": _summary_datetime(pago.get("fecha") or normalized["fechaRetencion"]),
+            }
+            for pago in pagos
+        ]
+
+        if "tipoCambio" in normalized and isinstance(normalized.get("tipoCambio"), dict):
+            normalized["tipoCambio"] = {
+                "fecha": _summary_datetime(normalized["tipoCambio"].get("fecha") or normalized["fechaRetencion"]),
+                "factor": calculations.redondear(normalized["tipoCambio"].get("factor") or 1),
+                "monedaObj": str(normalized["tipoCambio"].get("monedaObj") or normalized["moneda"]).strip().upper(),
+                "monedaRef": str(normalized["tipoCambio"].get("monedaRef") or normalized["moneda"]).strip().upper(),
+            }
+        else:
+            normalized["tipoCambio"] = {
+                "fecha": normalized["fechaRetencion"],
+                "factor": 1,
+                "monedaObj": normalized["moneda"],
+                "monedaRef": normalized["moneda"],
+            }
+        normalized_details.append(normalized)
+
+    prepared["details"] = normalized_details
+    if not prepared.get("impRetenido"):
+        prepared["impRetenido"] = sum((item["impRetenido"] for item in normalized_details), calculations.Decimal("0.00"))
+    if not prepared.get("impPagado"):
+        prepared["impPagado"] = sum((item["impPagar"] for item in normalized_details), calculations.Decimal("0.00"))
+    prepared["impRetenido"] = calculations.redondear(prepared.get("impRetenido") or 0)
+    prepared["impPagado"] = calculations.redondear(prepared.get("impPagado") or 0)
+    if not prepared.get("observacion"):
+        prepared["observacion"] = "COMPROBANTE DE RETENCION"
+    return prepared
 
 
-def emitir_percepcion(payload: dict, user):
-    return _enviar_a_api(payload, user, "/perception/send")
+def emitir_retencion(payload: dict, user, *, prepared: bool = False):
+    provider_payload = payload if prepared else build_retencion_payload(payload, user)
+    return _enviar_a_api(provider_payload, user, "/retention/send")
 
 
-def emitir_reversion(payload: dict, user):
+def build_percepcion_payload(payload: dict, user) -> dict:
+    prepared = dict(payload or {})
+    prepared["company"] = _build_company_payload(user)
+    prepared["serie"] = str(prepared.get("serie") or "P001").strip().upper()
+    prepared["correlativo"] = str(prepared.get("correlativo") or "").strip()
+    prepared["fechaEmision"] = _summary_datetime(prepared.get("fechaEmision"))
+    prepared["regimen"] = str(prepared.get("regimen") or prepared.get("regPercepcion") or "01").strip().zfill(2)
+    prepared["tasa"] = calculations.redondear(prepared.get("tasa") or prepared.get("tasaPercepcion") or 2)
+
+    cliente = dict(prepared.get("proveedor") or prepared.get("client") or prepared.get("cliente") or {})
+    cliente["tipoDoc"] = str(cliente.get("tipoDoc") or "6").strip()
+    cliente["numDoc"] = str(cliente.get("numDoc") or "").strip()
+    cliente["rznSocial"] = str(cliente.get("rznSocial") or cliente.get("razonSocial") or "").strip()
+    if "address" not in cliente:
+        cliente["address"] = _build_address_payload(cliente.get("direccion"))
+    prepared["proveedor"] = cliente
+    prepared.pop("client", None)
+    prepared.pop("cliente", None)
+    prepared.pop("regPercepcion", None)
+    prepared.pop("tasaPercepcion", None)
+    prepared.pop("impTotalPercibido", None)
+
+    normalized_details = []
+    for detail in prepared.get("details") or []:
+        normalized = dict(detail or {})
+        serie_nro = str(normalized.pop("serieNro", "") or normalized.get("numDoc") or "").strip().upper()
+        normalized["tipoDoc"] = str(normalized.get("tipoDoc") or "01").strip().zfill(2)
+        normalized["numDoc"] = serie_nro
+        normalized["fechaEmision"] = _summary_datetime(normalized.get("fechaEmision"))
+        fecha_percepcion = (
+            normalized.get("fechaPercepcion")
+            or normalized.get("fechaPerc")
+            or normalized.get("fechaCobro")
+            or prepared.get("fechaEmision")
+        )
+        normalized["fechaPercepcion"] = _summary_datetime(fecha_percepcion)
+        normalized["moneda"] = str(normalized.get("moneda") or "PEN").strip().upper()
+
+        imp_percibido = normalized.get("impPercibido", normalized.get("impPercepcion", 0))
+        imp_cobrar = normalized.get("impCobrar", normalized.get("impConPercepcion", 0))
+        imp_total = normalized.get("impTotal", normalized.get("impSinPercepcion", 0))
+        imp_percibido = calculations.redondear(imp_percibido)
+        imp_cobrar = calculations.redondear(imp_cobrar)
+        imp_total = calculations.redondear(imp_total or max(imp_cobrar - imp_percibido, calculations.Decimal("0.00")))
+
+        normalized["impTotal"] = imp_total
+        normalized["impPercibido"] = imp_percibido
+        normalized["impCobrar"] = imp_cobrar or calculations.redondear(imp_total + imp_percibido)
+        normalized.pop("impSinPercepcion", None)
+        normalized.pop("impPercepcion", None)
+        normalized.pop("impConPercepcion", None)
+        normalized.pop("fechaPerc", None)
+        normalized.pop("fechaCobro", None)
+
+        cobros = normalized.get("cobros") or [
+            {
+                "moneda": normalized["moneda"],
+                "importe": normalized["impCobrar"],
+                "fecha": normalized["fechaPercepcion"],
+            }
+        ]
+        normalized["cobros"] = [
+            {
+                "moneda": str(cobro.get("moneda") or normalized["moneda"]).strip().upper(),
+                "importe": calculations.redondear(cobro.get("importe") or 0),
+                "fecha": _summary_datetime(cobro.get("fecha") or normalized["fechaPercepcion"]),
+            }
+            for cobro in cobros
+        ]
+
+        if "tipoCambio" in normalized and isinstance(normalized.get("tipoCambio"), dict):
+            normalized["tipoCambio"] = {
+                "fecha": _summary_datetime(normalized["tipoCambio"].get("fecha") or normalized["fechaPercepcion"]),
+                "factor": calculations.redondear(normalized["tipoCambio"].get("factor") or 1),
+                "monedaObj": str(normalized["tipoCambio"].get("monedaObj") or normalized["moneda"]).strip().upper(),
+                "monedaRef": str(normalized["tipoCambio"].get("monedaRef") or normalized["moneda"]).strip().upper(),
+            }
+        else:
+            normalized["tipoCambio"] = {
+                "fecha": normalized["fechaPercepcion"],
+                "factor": 1,
+                "monedaObj": normalized["moneda"],
+                "monedaRef": normalized["moneda"],
+            }
+        normalized_details.append(normalized)
+
+    prepared["details"] = normalized_details
+    if not prepared.get("impPercibido"):
+        prepared["impPercibido"] = sum((item["impPercibido"] for item in normalized_details), calculations.Decimal("0.00"))
+    if not prepared.get("impCobrado"):
+        prepared["impCobrado"] = sum((item["impCobrar"] for item in normalized_details), calculations.Decimal("0.00"))
+    prepared["impPercibido"] = calculations.redondear(prepared.get("impPercibido") or 0)
+    prepared["impCobrado"] = calculations.redondear(prepared.get("impCobrado") or 0)
+    if not prepared.get("observacion"):
+        prepared["observacion"] = "COMPROBANTE DE PERCEPCION"
+    return prepared
+
+
+def emitir_percepcion(payload: dict, user, *, prepared: bool = False):
+    provider_payload = payload if prepared else build_percepcion_payload(payload, user)
+    return _enviar_a_api(provider_payload, user, "/perception/send")
+
+
+def build_reversion_payload(payload: dict, user) -> dict:
+    prepared = dict(payload or {})
+    prepared["company"] = _build_company_payload(user)
+    prepared["fecGeneracion"] = _summary_datetime(prepared.get("fecGeneracion"))
+    prepared["fecComunicacion"] = _summary_datetime(prepared.get("fecComunicacion"))
+    correlativo = str(prepared.get("correlativo") or "").strip().upper()
+    prepared["correlativo"] = correlativo.split("-")[-1] if correlativo.startswith("RR-") else correlativo
+
+    normalized_details = []
+    for detail in prepared.get("details") or []:
+        normalized = dict(detail or {})
+        serie_nro = str(normalized.pop("serieNro", "") or "").strip().upper()
+        if serie_nro and "-" in serie_nro and not normalized.get("serie"):
+            serie, corr = serie_nro.split("-", 1)
+            normalized["serie"] = serie
+            normalized["correlativo"] = corr
+        normalized["tipoDoc"] = str(normalized.get("tipoDoc") or "").strip().zfill(2)
+        normalized["serie"] = str(normalized.get("serie") or "").strip().upper()
+        normalized["correlativo"] = str(normalized.get("correlativo") or "").strip()
+        normalized["desMotivoBaja"] = str(normalized.get("desMotivoBaja") or "").strip().upper()
+        normalized_details.append(normalized)
+    prepared["details"] = normalized_details
+    return prepared
+
+
+def emitir_reversion(payload: dict, user, *, prepared: bool = False, poll_async: bool = True):
+    provider_payload = payload if prepared else build_reversion_payload(payload, user)
     return _enviar_a_api(
-        payload,
+        provider_payload,
         user,
         "/reversion/send",
         status_endpoint="/reversion/status",
+        poll_async=poll_async,
     )
 
 
@@ -1294,50 +1746,23 @@ def _build_download_payload(comprobante, user) -> dict:
 
 
 def descargar_archivo(tipo_archivo: str, comprobante: models.Cotizacion, user: models.User):
+    if tipo_archivo == "xml":
+        xml_content = getattr(comprobante, "sunat_xml_content", None)
+        if isinstance(xml_content, str) and xml_content.strip():
+            return xml_content.encode("utf-8")
+        raise FacturacionException(
+            f"No hay XML Smart PSE almacenado para {_document_number(comprobante)}."
+        )
+
     if tipo_archivo == "cdr":
         raise FacturacionException(
-            "ApisPeru no expone un endpoint generico de descarga CDR para este flujo. "
-            "Use el CDR devuelto al momento de la emision."
+            "Smart PSE no tiene un CDR local persistido para este flujo. "
+            "Use el CDR devuelto al momento de la emision o agregue almacenamiento de CDR."
         )
 
-    token = _get_apisperu_token(user)
-    if not token:
-        raise FacturacionException("Falta Token API.")
-
-    base_url = _get_api_base_url(user)
-    prefix = "/note" if comprobante.tipo_comprobante in {"07", "08"} else "/invoice"
-    url = f"{base_url}{prefix}/{tipo_archivo}"
-    payload = _build_download_payload(comprobante, user)
-
-    try:
-        response = requests.post(
-            url,
-            data=json.dumps(payload, cls=SUNATDecimalEncoder),
-            headers=_provider_request_headers(token),
-            timeout=DEFAULT_TIMEOUT_SECONDS,
-            stream=True,
-        )
-    except requests.exceptions.Timeout as exc:
-        raise FacturacionException(
-            f"Timeout descargando {tipo_archivo.upper()} del proveedor fiscal."
-        ) from exc
-    except requests.exceptions.ConnectionError as exc:
-        raise FacturacionException(
-            f"No se pudo conectar con ApisPeru para descargar {tipo_archivo.upper()}."
-        ) from exc
-
-    if response.status_code >= 400:
-        _raise_for_provider_http_error(f"{prefix}/{tipo_archivo}", response.status_code, _safe_json(response))
-
-    content_type = (response.headers.get("Content-Type") or "").lower()
-    if "application/json" in content_type:
-        data = _safe_json(response)
-        raise FacturacionException(
-            f"ApisPeru no entrego {tipo_archivo.upper()} para {_document_number(comprobante)}: "
-            f"{_extract_provider_error_message(data)}"
-        )
-
-    return response.content
+    raise FacturacionException(
+        f"Smart PSE no entrega {tipo_archivo.upper()} renderizado en este flujo backend."
+    )
 
 
 def validate_apisperu_token(

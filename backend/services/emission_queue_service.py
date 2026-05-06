@@ -11,19 +11,33 @@ from sqlalchemy.orm import Session, joinedload
 
 import crud
 import models
+from access_control import DOCUMENT_EMITTER_ROLES, get_effective_role
 from config import settings
 from database import SessionLocal, apply_tenant_context, reset_tenant_context
 from logging_utils import get_logger
-from services import facturacion_service, pdf_storage_service
+from services import beta_feature_flags, facturacion_service, fiscal_provider_service, pdf_storage_service
 from services.facturacion_background_service import process_direct_sunat_emission_bg
+from services.fiscal_balance_service import ensure_credit_note_within_available_amount
 
 logger = get_logger(__name__)
 
 EMISSION_MODE_SYNC = "sync"
 EMISSION_MODE_ASYNC = "async"
+EMISSION_ALLOWED_SUBSCRIPTION_STATUSES = {
+    models.SUBSCRIPTION_STATUS_ACTIVE,
+    models.SUBSCRIPTION_STATUS_TRIAL,
+    "grace",
+}
+EMISSION_BLOCKED_NO_ACTIVE_SUBSCRIPTION_MESSAGE = (
+    "El tenant no tiene una suscripción activa para emitir."
+)
 
 # Graceful shutdown flag
 _shutdown_requested = threading.Event()
+
+
+class NonRetryableEmissionValidationError(RuntimeError):
+    """Validation failure that must finish the job without retries."""
 
 
 def request_worker_shutdown() -> None:
@@ -104,11 +118,7 @@ def enqueue_fiscal_document_job(
 ):
     idempotency_key = f"emit:fiscal:{fiscal_document.id}"
     existing = crud.get_emission_job_by_key(db, fiscal_document.tenant_id, idempotency_key)
-    provider = (
-        "sunat_direct"
-        if user.tenant and user.tenant.sunat_usuario_sol and user.tenant.sunat_cert_url
-        else "apisperu"
-    )
+    provider = "smartpse"
     if existing:
         if existing.status in {
             models.EMISSION_JOB_STATUS_QUEUED,
@@ -168,7 +178,7 @@ def enqueue_note_job(
                 "cod_motivo": cod_motivo,
                 "descripcion_motivo": descripcion_motivo,
             },
-            provider="apisperu",
+            provider="smartpse",
             reset_attempts=True,
         )
         return existing, False
@@ -180,7 +190,7 @@ def enqueue_note_job(
         resource_type=models.EMISSION_JOB_RESOURCE_COTIZACION,
         resource_id=nota.id,
         action=models.EMISSION_JOB_ACTION_EMIT_NOTE,
-        provider="apisperu",
+        provider="smartpse",
         idempotency_key=idempotency_key,
         payload_snapshot={
             "tipo_nota": tipo_nota,
@@ -213,7 +223,7 @@ def enqueue_void_document_job(
             db,
             existing.id,
             payload_snapshot={"motivo": motivo},
-            provider="apisperu",
+            provider="smartpse",
             reset_attempts=True,
         )
         return existing, False
@@ -225,7 +235,7 @@ def enqueue_void_document_job(
         resource_type=models.EMISSION_JOB_RESOURCE_COTIZACION,
         resource_id=comprobante.id,
         action=models.EMISSION_JOB_ACTION_VOID_FISCAL,
-        provider="apisperu",
+        provider="smartpse",
         idempotency_key=idempotency_key,
         payload_snapshot={"motivo": motivo},
         max_attempts=settings.EMISSION_MAX_ATTEMPTS,
@@ -251,7 +261,7 @@ def enqueue_guide_job(
         existing = crud.requeue_emission_job(
             db,
             existing.id,
-            provider="apisperu",
+            provider="smartpse",
             reset_attempts=True,
         )
         return existing, False
@@ -263,7 +273,7 @@ def enqueue_guide_job(
         resource_type=models.EMISSION_JOB_RESOURCE_GUIA,
         resource_id=guia.id,
         action=models.EMISSION_JOB_ACTION_EMIT_GUIDE,
-        provider="apisperu",
+        provider="smartpse",
         idempotency_key=idempotency_key,
         payload_snapshot=None,
         max_attempts=settings.EMISSION_MAX_ATTEMPTS,
@@ -338,6 +348,201 @@ def _load_job_user(db: Session, job: models.DocumentEmissionJob):
     ).order_by(models.User.id.asc()).first()
 
 
+def _raise_non_retryable_validation(message: str) -> None:
+    raise NonRetryableEmissionValidationError(
+        f"Validacion previa de emision fallida: {message}"
+    )
+
+
+def _resolve_job_tenant(db: Session, job: models.DocumentEmissionJob, user: models.User):
+    tenant = getattr(user, "tenant", None)
+    if tenant and tenant.id == job.tenant_id:
+        return tenant
+    return (
+        db.query(models.Tenant)
+        .options(joinedload(models.Tenant.subscription))
+        .filter(models.Tenant.id == job.tenant_id)
+        .first()
+    )
+
+
+def _ensure_user_can_run_emission_job(job: models.DocumentEmissionJob, user: models.User) -> None:
+    if user.tenant_id != job.tenant_id:
+        _raise_non_retryable_validation(
+            "El usuario creador del job no pertenece al tenant del job."
+        )
+    if not getattr(user, "is_active", True):
+        _raise_non_retryable_validation(
+            "El usuario creador del job esta inactivo o bloqueado."
+        )
+    try:
+        effective_role = get_effective_role(user)
+    except Exception:
+        _raise_non_retryable_validation(
+            "El usuario creador del job tiene un rol invalido para emision."
+        )
+    if effective_role not in DOCUMENT_EMITTER_ROLES:
+        _raise_non_retryable_validation(
+            "El usuario creador del job no tiene rol emisor valido."
+        )
+
+
+def _ensure_tenant_can_run_emission_job(db: Session, tenant: models.Tenant | None) -> None:
+    if not tenant:
+        _raise_non_retryable_validation("Tenant del job no encontrado.")
+    if not getattr(tenant, "is_active", False):
+        _raise_non_retryable_validation("Tenant inactivo o suspendido.")
+
+    subscription = getattr(tenant, "subscription", None) or crud.get_subscription_by_tenant(
+        db,
+        tenant.id,
+    )
+    subscription_status = str(getattr(subscription, "status", "") or "").strip().lower()
+    if subscription_status in EMISSION_ALLOWED_SUBSCRIPTION_STATUSES:
+        return
+
+    _raise_non_retryable_validation(
+        EMISSION_BLOCKED_NO_ACTIVE_SUBSCRIPTION_MESSAGE
+    )
+
+
+def _ensure_provider_available_for_job(job: models.DocumentEmissionJob, tenant: models.Tenant) -> None:
+    if fiscal_provider_service.has_smartpse_credentials(tenant):
+        return
+    reason = fiscal_provider_service.smartpse_block_reason(tenant)
+    _raise_non_retryable_validation(
+        f"Proveedor fiscal Smart PSE no disponible: {reason or 'credenciales incompletas.'}"
+    )
+
+
+def _resolve_job_feature_key(db: Session, job: models.DocumentEmissionJob) -> str | None:
+    if job.action == models.EMISSION_JOB_ACTION_EMIT_NOTE:
+        note = _get_tenant_cotizacion(db, job.tenant_id, job.resource_id)
+        if not note:
+            _raise_non_retryable_validation("Nota fiscal del job no encontrada.")
+        payload_snapshot = job.payload_snapshot or {}
+        tipo_nota = (
+            payload_snapshot.get("tipo_nota")
+            or getattr(note, "tipo_comprobante", None)
+            or getattr(note, "document_kind", None)
+        )
+        try:
+            return beta_feature_flags.feature_for_note_type(tipo_nota)
+        except ValueError:
+            document_kind = str(getattr(note, "document_kind", "") or "").lower()
+            if document_kind == "credit_note":
+                return beta_feature_flags.FISCAL_FEATURE_CREDIT_NOTES
+            if document_kind == "debit_note":
+                return beta_feature_flags.FISCAL_FEATURE_DEBIT_NOTES
+            _raise_non_retryable_validation(
+                "Tipo de nota no soportado para feature flags fiscales."
+            )
+    if job.action == models.EMISSION_JOB_ACTION_EMIT_GUIDE:
+        return beta_feature_flags.FISCAL_FEATURE_GUIDES
+    if job.action == models.EMISSION_JOB_ACTION_VOID_FISCAL:
+        return beta_feature_flags.FISCAL_FEATURE_VOIDING
+    return None
+
+
+def _ensure_feature_flag_available_for_job(
+    db: Session,
+    job: models.DocumentEmissionJob,
+    tenant: models.Tenant,
+) -> None:
+    feature_key = _resolve_job_feature_key(db, job)
+    if not feature_key:
+        return
+    if beta_feature_flags.is_feature_enabled_for_tenant(tenant, feature_key):
+        return
+    _raise_non_retryable_validation(
+        (
+            "Funcion fiscal disponible en beta controlada pero no activada "
+            f"para este tenant: {feature_key}."
+        )
+    )
+
+
+def _resolve_fiscal_document_limit_kind(db: Session, job: models.DocumentEmissionJob) -> str:
+    fiscal_document = _get_tenant_cotizacion(db, job.tenant_id, job.resource_id)
+    if not fiscal_document:
+        _raise_non_retryable_validation("Documento fiscal del job no encontrado.")
+
+    payload_snapshot = job.payload_snapshot or {}
+    tipo_comprobante = payload_snapshot.get("tipo_comprobante") or fiscal_document.tipo_comprobante
+    serie = str(getattr(fiscal_document, "serie", "") or "").upper()
+    if tipo_comprobante == "01" or serie.startswith("F"):
+        return models.USAGE_LIMIT_KIND_FACTURA
+    if tipo_comprobante == "03" or serie.startswith("B"):
+        return models.USAGE_LIMIT_KIND_BOLETA
+    _raise_non_retryable_validation(
+        f"Tipo de comprobante no soportado para limites de emision: {tipo_comprobante}."
+    )
+
+
+def _resolve_note_limit_kind(db: Session, job: models.DocumentEmissionJob) -> str:
+    note = _get_tenant_cotizacion(db, job.tenant_id, job.resource_id)
+    if not note:
+        _raise_non_retryable_validation("Nota fiscal del job no encontrada.")
+
+    payload_snapshot = job.payload_snapshot or {}
+    tipo_nota = str(payload_snapshot.get("tipo_nota") or "").strip().lower()
+    tipo_comprobante = str(getattr(note, "tipo_comprobante", "") or "").strip()
+    document_kind = str(getattr(note, "document_kind", "") or "").strip().lower()
+    if tipo_comprobante == "07" or tipo_nota in {"07", "credito", "credit", "nc"} or document_kind == "credit_note":
+        return models.USAGE_LIMIT_KIND_NOTA_CREDITO
+    if tipo_comprobante == "08" or tipo_nota in {"08", "debito", "debit", "nd"} or document_kind == "debit_note":
+        return models.USAGE_LIMIT_KIND_NOTA_DEBITO
+    _raise_non_retryable_validation(
+        "Tipo de nota no soportado para limites de emision."
+    )
+
+
+def _resolve_job_limit_kind(db: Session, job: models.DocumentEmissionJob) -> str | None:
+    if job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL:
+        return _resolve_fiscal_document_limit_kind(db, job)
+    if job.action == models.EMISSION_JOB_ACTION_EMIT_NOTE:
+        return _resolve_note_limit_kind(db, job)
+    if job.action == models.EMISSION_JOB_ACTION_EMIT_GUIDE:
+        return models.USAGE_LIMIT_KIND_GUIA
+    return None
+
+
+def _ensure_limits_available_for_job(
+    db: Session,
+    job: models.DocumentEmissionJob,
+    user: models.User,
+) -> None:
+    try:
+        if job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL:
+            crud.check_document_limit(db, job.tenant_id)
+
+        limit_kind = _resolve_job_limit_kind(db, job)
+        if limit_kind:
+            crud.check_emission_quota(
+                db,
+                job.tenant_id,
+                user.id,
+                limit_kind,
+            )
+    except crud.QuotaExceededError as exc:
+        _raise_non_retryable_validation(f"Limite de emision agotado: {exc}")
+    except ValueError as exc:
+        _raise_non_retryable_validation(str(exc))
+
+
+def _validate_job_execution_context(
+    db: Session,
+    job: models.DocumentEmissionJob,
+    user: models.User,
+) -> None:
+    _ensure_user_can_run_emission_job(job, user)
+    tenant = _resolve_job_tenant(db, job, user)
+    _ensure_tenant_can_run_emission_job(db, tenant)
+    _ensure_feature_flag_available_for_job(db, job, tenant)
+    _ensure_provider_available_for_job(job, tenant)
+    _ensure_limits_available_for_job(db, job, user)
+
+
 def _get_tenant_cotizacion(db: Session, tenant_id: int, cotizacion_id: int):
     return db.query(models.Cotizacion).options(
         joinedload(models.Cotizacion.cliente),
@@ -371,22 +576,14 @@ def _process_emit_fiscal_job(
     if not fiscal_document:
         raise RuntimeError("No se encontró el documento fiscal a emitir.")
 
-    tenant = user.tenant
-    if tenant and tenant.sunat_usuario_sol and tenant.sunat_cert_url:
-        result = process_direct_sunat_emission_bg(
-            fiscal_document.id,
-            job.tenant_id,
-            raise_on_error=True,
-        )
-    else:
-        payload_snapshot = job.payload_snapshot or {}
-        result = facturacion_service.emitir_factura(
-            fiscal_document,
-            db,
-            user,
-            tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
-        )
-        crud.guardar_respuesta_sunat(db, fiscal_document.id, result, tenant_id=job.tenant_id)
+    payload_snapshot = job.payload_snapshot or {}
+    result = facturacion_service.emitir_factura(
+        fiscal_document,
+        db,
+        user,
+        tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
+    )
+    crud.guardar_respuesta_sunat(db, fiscal_document.id, result, tenant_id=job.tenant_id)
 
     # PDF generation is a side-effect; failure should not mark the fiscal job as failed.
     try:
@@ -416,6 +613,12 @@ def _process_emit_note_job(
         raise RuntimeError("La nota no tiene documento afectado referenciado.")
 
     payload_snapshot = job.payload_snapshot or {}
+    try:
+        ensure_credit_note_within_available_amount(db, job.tenant_id, nota.id)
+    except ValueError as exc:
+        crud.guardar_error_sunat(db, nota.id, str(exc), tenant_id=job.tenant_id)
+        _raise_non_retryable_validation(str(exc))
+
     result = facturacion_service.emitir_nota(
         nota=nota,
         doc_afectado=doc_afectado,
@@ -424,7 +627,15 @@ def _process_emit_note_job(
         descripcion=payload_snapshot.get("descripcion_motivo"),
         tipo_nota=payload_snapshot.get("tipo_nota"),
     )
-    crud.guardar_respuesta_sunat(db, nota.id, result, tenant_id=job.tenant_id)
+    updated_note = crud.guardar_respuesta_sunat(db, nota.id, result, tenant_id=job.tenant_id)
+    if (
+        result.get("success")
+        and updated_note
+        and updated_note.estado != "facturada"
+    ):
+        _raise_non_retryable_validation(
+            updated_note.sunat_error or "La nota no pudo marcarse como aceptada."
+        )
     # PDF generation is a side-effect; failure should not mark the job as failed.
     try:
         _run_async_syncsafe(pdf_storage_service.process_pdf_background(nota.id, job.tenant_id))
@@ -493,6 +704,7 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
         crud.mark_emission_job_attempt_started(db, job.id)
         db.expire(job)
         job = crud.get_emission_job(db, job.id)
+        _validate_job_execution_context(db, job, user)
 
         if job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL:
             result = _process_emit_fiscal_job(db, job, user)
@@ -517,6 +729,19 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
             extra={"event": "emission_job_succeeded", "context": f"job_id={job.id} action={job.action}"},
         )
         return True
+    except NonRetryableEmissionValidationError as exc:
+        message = str(exc)
+        job = crud.get_emission_job(db, job_id)
+        if job:
+            crud.mark_emission_job_failed(db, job.id, error_message=message)
+            logger.warning(
+                "emission_job_validation_failed",
+                extra={
+                    "event": "emission_job_validation_failed",
+                    "context": f"job_id={job.id}",
+                },
+            )
+        return False
     except Exception as exc:
         message = str(exc)
         job = crud.get_emission_job(db, job_id)

@@ -1,5 +1,5 @@
 """crud/tenants.py — Tenants, suscripciones SaaS, superadmin, beta."""
-from sqlalchemy import delete
+from sqlalchemy import and_, delete, func, not_, or_
 from sqlalchemy.orm import Session, joinedload
 
 import models
@@ -48,6 +48,109 @@ def update_tenant(db: Session, tenant_id: int, data: schemas.TenantUpdate):
 
 def get_all_tenants(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Tenant).order_by(models.Tenant.id.desc()).offset(skip).limit(limit).all()
+
+
+def _smartpse_gre_credentials_clause():
+    return and_(
+        models.Tenant.smartpse_gre_sol_username.isnot(None),
+        models.Tenant.smartpse_gre_sol_username != "",
+        models.Tenant.smartpse_gre_sol_password_enc.isnot(None),
+        models.Tenant.smartpse_gre_sol_password_enc != "",
+        models.Tenant.smartpse_gre_client_id.isnot(None),
+        models.Tenant.smartpse_gre_client_id != "",
+        models.Tenant.smartpse_gre_client_secret_enc.isnot(None),
+        models.Tenant.smartpse_gre_client_secret_enc != "",
+    )
+
+
+def _apply_tenant_page_filters(
+    query,
+    *,
+    q: str | None = None,
+    gre_status: str | None = None,
+    active_status: str | None = None,
+):
+    if q:
+        term = f"%{q.strip().lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(models.Tenant.business_name).like(term),
+                func.lower(models.Tenant.business_ruc).like(term),
+                func.lower(models.Tenant.business_address).like(term),
+                func.lower(models.Tenant.plan_type).like(term),
+                func.lower(models.Tenant.smartpse_gre_status).like(term),
+            )
+        )
+
+    normalized_active = (active_status or "all").strip().lower()
+    if normalized_active == "active":
+        query = query.filter(models.Tenant.is_active.is_(True))
+    elif normalized_active == "inactive":
+        query = query.filter(models.Tenant.is_active.is_(False))
+
+    credentials_clause = _smartpse_gre_credentials_clause()
+    normalized_gre = (gre_status or "all").strip().lower()
+    if normalized_gre == "configured":
+        query = query.filter(credentials_clause)
+    elif normalized_gre in {"missing", "pending"}:
+        query = query.filter(not_(credentials_clause))
+    elif normalized_gre in {
+        models.SMARTPSE_GRE_STATUS_OK,
+        models.SMARTPSE_GRE_STATUS_INVALID,
+        models.SMARTPSE_GRE_STATUS_UNCHECKED,
+    }:
+        query = query.filter(models.Tenant.smartpse_gre_status == normalized_gre)
+
+    return query
+
+
+def get_tenants_page(
+    db: Session,
+    *,
+    skip: int = 0,
+    limit: int = 25,
+    q: str | None = None,
+    gre_status: str | None = None,
+    active_status: str | None = None,
+) -> dict:
+    base_query = db.query(models.Tenant)
+    filtered_query = _apply_tenant_page_filters(
+        base_query,
+        q=q,
+        gre_status=gre_status,
+        active_status=active_status,
+    )
+    total = filtered_query.order_by(None).count()
+    items = (
+        filtered_query
+        .order_by(models.Tenant.id.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    credentials_clause = _smartpse_gre_credentials_clause()
+    metrics_total = db.query(func.count(models.Tenant.id)).scalar() or 0
+    metrics_active = (
+        db.query(func.count(models.Tenant.id))
+        .filter(models.Tenant.is_active.is_(True))
+        .scalar()
+        or 0
+    )
+    metrics_gre = db.query(func.count(models.Tenant.id)).filter(credentials_clause).scalar() or 0
+
+    return {
+        "items": items,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "metrics": {
+            "total": metrics_total,
+            "active": metrics_active,
+            "smartpse_gre": metrics_gre,
+            "smartpse_gre_pending": max(metrics_total - metrics_gre, 0),
+        },
+    }
 
 
 def update_tenant_saas(db: Session, tenant_id: int, updates: dict):
@@ -355,6 +458,7 @@ def get_beta_resumen_data(db: Session) -> list[dict]:
             "billing_due_at": getattr(sub, "billing_due_at", None),
             "documents_used": getattr(sub, "documents_used", 0),
             "max_documents": getattr(sub, "max_documents", None),
+            "beta_feature_flags": getattr(sub, "beta_feature_flags", None),
             "clientes_count": clientes_count,
             "productos_count": productos_count,
             "usuarios_count": usuarios_count,

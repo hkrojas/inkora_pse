@@ -1,7 +1,7 @@
 import { api } from '../lib/utils/api';
 
 export const cotizaciones = {
-  list:    (params = '') => api.get(`/cotizaciones/${params}`),
+  list:    (params = '?limit=15') => api.get(`/cotizaciones/${params}`),
   get:     (id)          => api.get(`/cotizaciones/${id}`),
   create:  (data)        => api.post('/cotizaciones/', data),
   duplicar:(id)          => api.post(`/cotizaciones/${id}/duplicar`, {}),

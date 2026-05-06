@@ -1,40 +1,31 @@
 /**
- * ClientCombobox v5: inline client search, all fields always visible.
- *
- * Behaviour:
- *  - Typing in Numero or Razon Social searches local DB in real time.
- *  - Selecting fills all fields and locks identity.
- *  - Contact fields remain editable.
- *  - Editing contact fields on a locked client sets isDirty=true.
- *  - Typing a new client without selecting a match marks isNew=true.
- *  - Email and telefono are optional.
- *  - onFormChange(formData, { isDirty, isNew, id }) fires on every change.
+ * Inline client search/edit for quote flows.
+ * Keeps fiscal identity fields strict because this data later feeds invoices/receipts.
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X, Loader2 } from 'lucide-react';
 import { clientes as cliSvc } from '../../services/clientes';
 import CustomSelect from './CustomSelect';
-import { normalizePeruMobileInput, validatePeruMobilePhone } from '../../lib/utils/peruPhoneValidation';
-
-const DOC_TYPES = [
-  { value: '6', label: 'RUC' },
-  { value: '1', label: 'DNI' },
-  { value: '4', label: 'CE' },
-  { value: '7', label: 'PAS' },
-];
-
-function docLabel(tipo) {
-  return DOC_TYPES.find((d) => d.value === tipo)?.label || 'DOC';
-}
+import {
+  FISCAL_DOC_TYPE_OPTIONS,
+  buildFiscalClientErrors,
+  getFiscalDocLabel,
+  getFiscalDocMeta,
+  normalizeFiscalClientForm,
+  normalizeFiscalDocumentNumber,
+  normalizeFiscalUbigeo,
+} from '../../lib/utils/fiscalClientValidation';
 
 const EMPTY = {
   tipo_documento: '6',
   numero_documento: '',
   razon_social: '',
+  nombre_comercial: '',
   email: '',
   telefono: '',
   direccion: '',
+  ubigeo: '',
 };
 
 export default function ClientCombobox({
@@ -65,33 +56,19 @@ export default function ClientCombobox({
 
   useEffect(() => {
     if (!value) return;
-    const found = clients.find((c) => String(c.id) === String(value));
-    if (found) {
-      const nextForm = {
-        tipo_documento: found.tipo_documento || '6',
-        numero_documento: found.numero_documento || '',
-        razon_social: found.razon_social || '',
-        email: found.email || '',
-        telefono: normalizePeruMobileInput(found.telefono || found.whatsapp || ''),
-        direccion: found.direccion || '',
-      };
-      setForm(nextForm);
-      setLocked(true);
-      setIsDirty(false);
-      setIsNew(false);
-      notify(nextForm, true, false, false);
-    }
-  }, [value, clients]); // eslint-disable-line react-hooks/exhaustive-deps
+    const found = clients.find((client) => String(client.id) === String(value));
+    if (!found) return;
+    const nextForm = normalizeFiscalClientForm(found);
+    setForm(nextForm);
+    setLocked(true);
+    setIsDirty(false);
+    setIsNew(false);
+    setErrors({});
+    notify(nextForm, true, false, false);
+  }, [value, clients, notify]);
 
-  function fillFromClient(client) {
-    const nextForm = {
-      tipo_documento: client.tipo_documento || '6',
-      numero_documento: client.numero_documento || '',
-      razon_social: client.razon_social || '',
-      email: client.email || '',
-      telefono: normalizePeruMobileInput(client.telefono || client.whatsapp || ''),
-      direccion: client.direccion || '',
-    };
+  const fillFromClient = useCallback((client) => {
+    const nextForm = normalizeFiscalClientForm(client);
     setForm(nextForm);
     setLocked(true);
     setIsDirty(false);
@@ -99,16 +76,16 @@ export default function ClientCombobox({
     setActiveField(null);
     setErrors({});
     notify(nextForm, true, false, false);
-  }
+  }, [notify]);
 
   const matchedClients = useCallback((field, query) => {
     if (!query.trim()) return [];
     const low = query.toLowerCase();
-    return clients.filter((client) =>
+    return clients.filter((client) => (
       field === 'numero'
-        ? (client.numero_documento || '').toLowerCase().includes(low)
-        : (client.razon_social || '').toLowerCase().includes(low),
-    ).slice(0, 12);
+        ? String(client.numero_documento || '').toLowerCase().includes(low)
+        : String(client.razon_social || '').toLowerCase().includes(low)
+    )).slice(0, 12);
   }, [clients]);
 
   const dropdownList = activeField
@@ -128,7 +105,7 @@ export default function ClientCombobox({
   };
 
   useEffect(() => {
-    if (!activeField) return;
+    if (!activeField) return undefined;
     const handle = (event) => {
       if (!containerRef.current?.contains(event.target) && !dropdownRef.current?.contains(event.target)) {
         setActiveField(null);
@@ -142,25 +119,42 @@ export default function ClientCombobox({
     return () => document.removeEventListener('mousedown', handle);
   }, [activeField, locked, form, notify]);
 
-  const setField = (key, rawValue) => {
-    const nextValue = key === 'telefono' ? normalizePeruMobileInput(rawValue) : rawValue;
-    const nextForm = { ...form, [key]: nextValue };
-    setForm(nextForm);
-    setErrors((current) => {
-      const nextErrors = { ...current, [key]: undefined };
-      if (key === 'telefono') {
-        nextErrors.telefono = validatePeruMobilePhone(nextValue, 'Telefono / WhatsApp') || undefined;
-      }
-      return nextErrors;
-    });
+  const validate = useCallback((nextForm = form) => {
+    const nextErrors = buildFiscalClientErrors(nextForm);
+    setErrors(nextErrors);
+    return Object.values(nextErrors).every((error) => !error);
+  }, [form]);
 
-    const contactFields = ['email', 'telefono', 'direccion'];
-    if (locked && contactFields.includes(key)) {
+  const setField = (key, rawValue) => {
+    const nextValue = key === 'telefono'
+      ? rawValue.replace(/\D/g, '').slice(0, 9)
+      : key === 'numero_documento'
+        ? normalizeFiscalDocumentNumber(form.tipo_documento, rawValue)
+        : key === 'ubigeo'
+          ? normalizeFiscalUbigeo(rawValue)
+          : rawValue;
+
+    const nextForm = { ...form, [key]: nextValue };
+    if (key === 'tipo_documento') {
+      nextForm.numero_documento = normalizeFiscalDocumentNumber(nextValue, form.numero_documento);
+    }
+
+    setForm(nextForm);
+    setErrors((current) => ({
+      ...current,
+      [key]: undefined,
+      ...(key === 'tipo_documento'
+        ? { numero_documento: undefined, direccion: undefined, ubigeo: undefined }
+        : {}),
+    }));
+
+    const editableFields = ['email', 'telefono', 'direccion', 'ubigeo'];
+    if (locked && editableFields.includes(key)) {
       setIsDirty(true);
       notify(nextForm, true, true, false);
-    } else {
-      notify(nextForm, locked, isDirty, isNew);
+      return;
     }
+    notify(nextForm, locked, isDirty, isNew);
   };
 
   const handleNumeroChange = (event) => {
@@ -203,78 +197,80 @@ export default function ClientCombobox({
   };
 
   const handleLookup = async () => {
-    const num = form.numero_documento.trim();
-    if (!num) return;
-    const found = clients.find((client) => client.numero_documento === num);
+    const numero = form.numero_documento.trim();
+    if (!numero) {
+      validate({ ...form, numero_documento: '' });
+      return;
+    }
+
+    const found = clients.find((client) => String(client.numero_documento || '').trim() === numero);
     if (found) {
       handleSelectClient(found);
       return;
     }
+
     setLookingUp(true);
     try {
-      const data = await cliSvc.lookupDocument(num);
+      const data = await cliSvc.lookupDocument(numero);
       const nextForm = {
         ...form,
+        tipo_documento: data.tipo === 'DNI' ? '1' : data.tipo === 'RUC' ? '6' : form.tipo_documento,
         razon_social: data.razon_social || data.nombre || form.razon_social,
-        direccion: data.direccion || form.direccion,
+        nombre_comercial: data.nombre_comercial || form.nombre_comercial,
+        direccion: data.direccion && data.direccion !== '-' ? data.direccion : form.direccion,
+        ubigeo: normalizeFiscalUbigeo(data.ubigeo || form.ubigeo),
       };
       setForm(nextForm);
+      validate(nextForm);
       notify(nextForm, locked, isDirty, isNew);
     } catch {
-      // silent
+      // keep the form editable; backend already exposes lookup detail elsewhere
     } finally {
       setLookingUp(false);
     }
   };
 
-  const validate = () => {
-    const nextErrors = {};
-    if (!form.numero_documento.trim()) nextErrors.numero_documento = 'Requerido';
-    if (!form.razon_social.trim()) nextErrors.razon_social = 'Requerido';
-    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-      nextErrors.email = 'Formato invalido';
-    }
-    const phoneError = validatePeruMobilePhone(form.telefono, 'Telefono / WhatsApp');
-    if (phoneError) nextErrors.telefono = phoneError;
-    setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  };
-
-  const canLookup = form.tipo_documento === '6' || form.tipo_documento === '1';
+  const canLookup = getFiscalDocMeta(form.tipo_documento).lookupEnabled;
   const hasNewData = !locked && (form.numero_documento.trim() || form.razon_social.trim());
 
   return (
     <div ref={containerRef}>
-      <div className="mb-2 grid items-start gap-2 md:grid-cols-[130px_minmax(0,1fr)_minmax(0,1fr)]">
-        <div>
+      <div className="form-grid">
+        <div className="field span-3">
           <label className={locked ? 'label client-combobox-label-muted' : 'label'}>Tipo doc.</label>
           {locked ? (
-            <input readOnly className="input client-combobox-input client-combobox-input--locked" value={docLabel(form.tipo_documento)} />
+            <input
+              readOnly
+              className="input client-combobox-input client-combobox-input--locked"
+              value={getFiscalDocLabel(form.tipo_documento)}
+            />
           ) : (
             <CustomSelect
               compact
               value={form.tipo_documento}
               onChange={(nextValue) => setField('tipo_documento', nextValue)}
-              options={DOC_TYPES}
+              options={FISCAL_DOC_TYPE_OPTIONS}
             />
           )}
         </div>
 
-        <div>
+        <div className="field span-4">
           <label className={locked ? 'label client-combobox-label-muted' : 'label'}>
-            Numero doc. {!locked && <span className="text-[var(--color-error)]">*</span>}
+            Numero doc. {!locked && <span className="req">*</span>}
           </label>
-          <div className="client-combobox-field-row">
-            <div className="client-combobox-input-wrap">
+          <div className="control-with-button">
+            <div className="control" style={{ flex: 1, position: 'relative' }}>
               <input
                 ref={numeroRef}
                 readOnly={locked}
                 className={`input client-combobox-input ${locked ? 'client-combobox-input--locked pr-8 font-mono' : ''}`}
                 value={form.numero_documento}
                 onChange={handleNumeroChange}
+                onBlur={() => validate()}
                 onFocus={() => { if (!locked) openFor('numero'); }}
-                placeholder={!locked ? (form.tipo_documento === '6' ? '20xxxxxxxxx' : '8 digitos') : ''}
-                maxLength={form.tipo_documento === '6' ? 11 : form.tipo_documento === '1' ? 8 : 20}
+                placeholder={!locked ? getFiscalDocMeta(form.tipo_documento).placeholder : ''}
+                inputMode={getFiscalDocMeta(form.tipo_documento).inputMode}
+                maxLength={getFiscalDocMeta(form.tipo_documento).maxLength}
               />
               {locked && (
                 <button type="button" onClick={handleClear} title="Cambiar cliente" className="client-combobox-clear-btn">
@@ -288,90 +284,126 @@ export default function ClientCombobox({
                 onClick={handleLookup}
                 disabled={lookingUp || !form.numero_documento.trim()}
                 title="Buscar en SUNAT / BD"
-                className="client-combobox-lookup-btn"
+                className="inline-btn"
               >
                 {lookingUp ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Search size={13} />}
+                Consultar
               </button>
             )}
           </div>
           {errors.numero_documento && <p className="client-combobox-error">{errors.numero_documento}</p>}
         </div>
 
-        <div>
+        <div className="field span-5">
           <label className={locked ? 'label client-combobox-label-muted' : 'label'}>
-            Razon social / Nombre {!locked && <span className="text-[var(--color-error)]">*</span>}
+            Razon social / Nombre {!locked && <span className="req">*</span>}
           </label>
-          <input
-            ref={nombreRef}
-            readOnly={locked}
-            className={`input client-combobox-input ${locked ? 'client-combobox-input--locked' : ''}`}
-            value={form.razon_social}
-            onChange={handleNombreChange}
-            onFocus={() => { if (!locked) openFor('nombre'); }}
-            placeholder={!locked ? 'Escribe para buscar...' : ''}
-          />
+          <div className="control">
+            <input
+              ref={nombreRef}
+              readOnly={locked}
+              className={`input client-combobox-input ${locked ? 'client-combobox-input--locked' : ''}`}
+              value={form.razon_social}
+              onChange={handleNombreChange}
+              onBlur={() => validate()}
+              onFocus={() => { if (!locked) openFor('nombre'); }}
+              placeholder={!locked ? 'Escribe para buscar...' : ''}
+            />
+          </div>
           {errors.razon_social && <p className="client-combobox-error">{errors.razon_social}</p>}
         </div>
-      </div>
 
-      <div className="mb-2 grid items-start gap-2 md:grid-cols-2">
-        <div>
+        <div className="field span-6">
           <label className="label">
             Correo electronico
             <span className="client-combobox-label-note">(opcional)</span>
             {locked && isDirty && <span className="client-combobox-label-edit">EDITADO</span>}
           </label>
-          <input
-            type="email"
-            className="input client-combobox-input"
-            value={form.email}
-            onChange={(event) => setField('email', event.target.value)}
-            placeholder="cliente@empresa.com"
-          />
+          <div className="control">
+            <input
+              type="email"
+              className="input client-combobox-input"
+              value={form.email}
+              onChange={(event) => setField('email', event.target.value)}
+              onBlur={() => validate()}
+              placeholder="cliente@empresa.com"
+            />
+          </div>
           {errors.email && <p className="client-combobox-error">{errors.email}</p>}
           {locked && !form.email && <p className="client-combobox-status client-combobox-status--warning">Sin correo registrado</p>}
         </div>
 
-        <div>
+        <div className="field span-6">
           <label className="label">
             Telefono / WhatsApp
             <span className="client-combobox-label-note">(opcional)</span>
             {locked && isDirty && <span className="client-combobox-label-edit">EDITADO</span>}
           </label>
-          <input
-            type="tel"
-            className="input client-combobox-input"
-            value={form.telefono}
-            onChange={(event) => setField('telefono', event.target.value)}
-            placeholder="9xxxxxxxx"
-          />
+          <div className="control">
+            <input
+              type="tel"
+              className="input client-combobox-input"
+              value={form.telefono}
+              onChange={(event) => setField('telefono', event.target.value)}
+              onBlur={() => validate()}
+              placeholder="9xxxxxxxx"
+            />
+          </div>
           {errors.telefono && <p className="client-combobox-error">{errors.telefono}</p>}
           {locked && !form.telefono && <p className="client-combobox-status client-combobox-status--warning">Sin telefono registrado</p>}
         </div>
-      </div>
 
-      <div className="mb-2">
-        <label className="label">
-          Direccion
-          <span className="client-combobox-label-note">(opcional)</span>
-          {locked && isDirty && <span className="client-combobox-label-edit">EDITADO</span>}
-        </label>
-        <input
-          className="input client-combobox-input"
-          value={form.direccion}
-          onChange={(event) => setField('direccion', event.target.value)}
-          placeholder="Av. ..."
-        />
+        <div className="field span-8">
+          <label className="label">
+            Direccion fiscal
+            <span className="client-combobox-label-note">
+              {form.tipo_documento === '6' ? '(obligatoria para factura)' : '(opcional)'}
+            </span>
+            {locked && isDirty && <span className="client-combobox-label-edit">EDITADO</span>}
+          </label>
+          <div className="control">
+            <input
+              className="input client-combobox-input"
+              value={form.direccion}
+              onChange={(event) => setField('direccion', event.target.value)}
+              onBlur={() => validate()}
+              placeholder="Av. ..."
+            />
+          </div>
+          {errors.direccion && <p className="client-combobox-error">{errors.direccion}</p>}
+        </div>
+
+        <div className="field span-4">
+          <label className="label">
+            Ubigeo
+            <span className="client-combobox-label-note">
+              {form.tipo_documento === '6' ? '(obligatorio)' : '(opcional)'}
+            </span>
+            {locked && isDirty && <span className="client-combobox-label-edit">EDITADO</span>}
+          </label>
+          <div className="control">
+            <input
+              className="input client-combobox-input"
+              value={form.ubigeo}
+              onChange={(event) => setField('ubigeo', event.target.value)}
+              onBlur={() => validate()}
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="150101"
+            />
+          </div>
+          {errors.ubigeo && <p className="client-combobox-error">{errors.ubigeo}</p>}
+        </div>
       </div>
 
       {locked && isDirty && (
-        <p className="client-combobox-status client-combobox-status--dirty">
-          Los cambios en correo, telefono o direccion <strong>actualizaran al cliente</strong> en el catalogo al guardar.
+        <p className="client-combobox-status client-combobox-status--dirty" style={{ marginTop: '10px' }}>
+          Los cambios en correo, telefono, direccion o ubigeo <strong>actualizaran al cliente</strong> en el catalogo al guardar.
         </p>
       )}
       {hasNewData && !locked && (
-        <p className="client-combobox-status client-combobox-status--new">
-          Nuevo cliente - <span className="font-semibold text-[var(--ink-primary)]">se registrara al guardar la cotizacion</span>.
+        <p className="client-combobox-status client-combobox-status--new" style={{ marginTop: '10px' }}>
+          Nuevo cliente - <span className="font-semibold text-[var(--color-primary)]">se registrara al guardar la cotizacion</span>.
         </p>
       )}
 
@@ -380,7 +412,7 @@ export default function ClientCombobox({
       {activeField && dropdownList.length > 0 && createPortal(
         <div
           ref={dropdownRef}
-          className="ink-combobox-menu"
+          className="ink-combobox-menu dropdown-enter"
           style={{
             top: dropdownPos.top,
             left: dropdownPos.left,
@@ -400,7 +432,7 @@ export default function ClientCombobox({
                 <div className="ink-combobox-option-copy">
                   <p className="ink-combobox-option-title">{client.razon_social}</p>
                   <p className="ink-combobox-option-meta">
-                    {docLabel(client.tipo_documento)} {client.numero_documento}{client.email ? ` · ${client.email}` : ''}
+                    {getFiscalDocLabel(client.tipo_documento)} {client.numero_documento}{client.email ? ` · ${client.email}` : ''}
                   </p>
                 </div>
                 {(isRecent || isFreq) && (

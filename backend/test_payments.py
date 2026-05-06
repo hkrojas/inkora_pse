@@ -37,6 +37,60 @@ import crud
 import models
 import schemas
 from access_control import ROLE_ADMIN
+from services.document_flow_service import (
+    DOCUMENT_KIND_CREDIT_NOTE,
+    DOCUMENT_KIND_DEBIT_NOTE,
+    DOCUMENT_STATUS_ISSUED,
+)
+from services.fiscal_balance_service import get_fiscal_document_balance
+
+
+def _make_issued_fiscal_document(db_session, quote, user, tipo_comprobante: str = "01"):
+    fiscal = crud.create_fiscal_document_from_quote(
+        db_session,
+        quote,
+        user.id,
+        tipo_comprobante,
+    )
+    fiscal.estado = DOCUMENT_STATUS_ISSUED
+    db_session.commit()
+    db_session.refresh(fiscal)
+    return fiscal
+
+
+def _make_accepted_note(
+    db_session,
+    fiscal_document,
+    user,
+    *,
+    document_kind: str,
+    tipo_comprobante: str,
+    total: str,
+    serie: str,
+    correlativo: int,
+):
+    note = models.Cotizacion(
+        tenant_id=fiscal_document.tenant_id,
+        cliente_id=fiscal_document.cliente_id,
+        usuario_id=user.id,
+        serie=serie,
+        correlativo=correlativo,
+        fecha_emision=datetime.now(timezone.utc),
+        document_kind=document_kind,
+        tipo_comprobante=tipo_comprobante,
+        estado=DOCUMENT_STATUS_ISSUED,
+        source_quote_id=fiscal_document.source_quote_id,
+        nota_referencia_id=fiscal_document.id,
+        total_gravada=Decimal(total),
+        total_exonerada=Decimal("0.00"),
+        total_inafecta=Decimal("0.00"),
+        total_igv=Decimal("0.00"),
+        total_venta=Decimal(total),
+    )
+    db_session.add(note)
+    db_session.commit()
+    db_session.refresh(note)
+    return note
 
 
 # ============================================================================
@@ -97,6 +151,9 @@ class TestPagoParcial:
         assert len(pagos) == 1
         assert pagos[0].monto_pagado == Decimal("30.00")
         assert pagos[0].tenant_id == tenant.id
+        assert pagos[0].tipo == "adelanto"
+        assert pagos[0].fiscal_document_id is None
+        assert pagos[0].source_quote_id == quote.id
 
 
 # ============================================================================
@@ -116,7 +173,7 @@ class TestPagoCompleto:
         crud.registrar_pago(
             db_session,
             quote.id,
-            schemas.PagoCreate(monto_pagado=total, metodo_pago="Yape", tipo="pago"),
+            schemas.PagoCreate(monto_pagado=total, metodo_pago="Yape", tipo="adelanto"),
             tenant.id,
         )
 
@@ -134,7 +191,7 @@ class TestPagoCompleto:
         crud.registrar_pago(
             db_session,
             quote.id,
-            schemas.PagoCreate(monto_pagado=total, metodo_pago="BCP", tipo="pago"),
+            schemas.PagoCreate(monto_pagado=total, metodo_pago="BCP", tipo="adelanto"),
             tenant.id,
         )
 
@@ -159,7 +216,7 @@ class TestPagoCompleto:
         )
         crud.registrar_pago(
             db_session, quote.id,
-            schemas.PagoCreate(monto_pagado=Decimal("100.00"), metodo_pago="Yape", tipo="pago"),
+            schemas.PagoCreate(monto_pagado=Decimal("100.00"), metodo_pago="Yape", tipo="adelanto"),
             tenant.id,
         )
 
@@ -188,7 +245,7 @@ class TestSobrepago:
             crud.registrar_pago(
                 db_session,
                 quote.id,
-                schemas.PagoCreate(monto_pagado=Decimal("200.00"), metodo_pago="Yape", tipo="pago"),
+                schemas.PagoCreate(monto_pagado=Decimal("200.00"), metodo_pago="Yape", tipo="adelanto"),
                 tenant.id,
             )
 
@@ -202,7 +259,7 @@ class TestSobrepago:
         try:
             crud.registrar_pago(
                 db_session, quote.id,
-                schemas.PagoCreate(monto_pagado=Decimal("999.00"), metodo_pago="X", tipo="pago"),
+                schemas.PagoCreate(monto_pagado=Decimal("999.00"), metodo_pago="X", tipo="adelanto"),
                 tenant.id,
             )
         except ValueError:
@@ -228,9 +285,333 @@ class TestSobrepago:
         with pytest.raises(ValueError, match="excede el saldo"):
             crud.registrar_pago(
                 db_session, quote.id,
-                schemas.PagoCreate(monto_pagado=Decimal("50.00"), metodo_pago="Yape", tipo="pago"),
+                schemas.PagoCreate(monto_pagado=Decimal("50.00"), metodo_pago="Yape", tipo="adelanto"),
                 tenant.id,
             )
+
+
+# ============================================================================
+# PAGO FISCAL NETO: factura/boleta - NC + ND - pagos
+# ============================================================================
+
+class TestPagoFiscalNeto:
+
+    def test_pago_no_puede_exceder_saldo_fiscal_neto(self, db_session):
+        tenant = make_tenant(db_session, "PF01")
+        user = make_user(db_session, tenant, email="pf01@test.com")
+        cliente = make_cliente(db_session, tenant, "PF01")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente, precio="500.00")
+        fiscal = _make_issued_fiscal_document(db_session, quote, user)
+        _make_accepted_note(
+            db_session,
+            fiscal,
+            user,
+            document_kind=DOCUMENT_KIND_CREDIT_NOTE,
+            tipo_comprobante="07",
+            total="300.00",
+            serie="NC01",
+            correlativo=1,
+        )
+
+        with pytest.raises(ValueError, match="excede el saldo"):
+            crud.registrar_pago(
+                db_session,
+                quote.id,
+                schemas.PagoCreate(monto_pagado=Decimal("250.00"), metodo_pago="Yape", tipo="pago"),
+                tenant.id,
+            )
+
+    def test_pago_desde_cotizacion_se_registra_con_fiscal_document_id(self, db_session):
+        tenant = make_tenant(db_session, "PF02")
+        user = make_user(db_session, tenant, email="pf02@test.com")
+        cliente = make_cliente(db_session, tenant, "PF02")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente, precio="118.00")
+        fiscal = _make_issued_fiscal_document(db_session, quote, user)
+
+        pago = crud.registrar_pago(
+            db_session,
+            quote.id,
+            schemas.PagoCreate(monto_pagado=Decimal("50.00"), metodo_pago="BCP", tipo="pago"),
+            tenant.id,
+        )
+
+        db_session.refresh(quote)
+        assert pago.fiscal_document_id == fiscal.id
+        assert pago.tipo == "pago"
+        assert pago.source_quote_id == quote.id
+        assert quote.monto_pagado == Decimal("50.00")
+        assert quote.saldo_pendiente == Decimal("68.00")
+
+    def test_pago_desde_cotizacion_se_bloquea_si_fiscal_asociado_esta_anulado(self, db_session):
+        tenant = make_tenant(db_session, "PF03")
+        user = make_user(db_session, tenant, email="pf03@test.com")
+        cliente = make_cliente(db_session, tenant, "PF03")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente, precio="118.00")
+        fiscal = _make_issued_fiscal_document(db_session, quote, user)
+        fiscal.estado = "anulada"
+        db_session.commit()
+
+        with pytest.raises(ValueError, match="anulados"):
+            crud.registrar_pago(
+                db_session,
+                quote.id,
+                schemas.PagoCreate(monto_pagado=Decimal("10.00"), metodo_pago="Yape", tipo="adelanto"),
+                tenant.id,
+            )
+
+    def test_pago_descuenta_saldo_neto_con_nota_credito_aceptada(self, db_session):
+        tenant = make_tenant(db_session, "PF04")
+        user = make_user(db_session, tenant, email="pf04@test.com")
+        cliente = make_cliente(db_session, tenant, "PF04")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente, precio="500.00")
+        fiscal = _make_issued_fiscal_document(db_session, quote, user)
+        _make_accepted_note(
+            db_session,
+            fiscal,
+            user,
+            document_kind=DOCUMENT_KIND_CREDIT_NOTE,
+            tipo_comprobante="07",
+            total="200.00",
+            serie="NC04",
+            correlativo=1,
+        )
+
+        pago = crud.registrar_pago(
+            db_session,
+            quote.id,
+            schemas.PagoCreate(monto_pagado=Decimal("300.00"), metodo_pago="Yape", tipo="pago"),
+            tenant.id,
+        )
+
+        db_session.refresh(quote)
+        assert pago.fiscal_document_id == fiscal.id
+        assert pago.tipo == "pago"
+        assert quote.saldo_pendiente == Decimal("0.00")
+        with pytest.raises(ValueError, match="excede el saldo"):
+            crud.registrar_pago(
+                db_session,
+                quote.id,
+                schemas.PagoCreate(monto_pagado=Decimal("1.00"), metodo_pago="Yape", tipo="pago"),
+                tenant.id,
+            )
+
+    def test_pago_permite_cobrar_mas_si_hay_nota_debito_aceptada(self, db_session):
+        tenant = make_tenant(db_session, "PF05")
+        user = make_user(db_session, tenant, email="pf05@test.com")
+        cliente = make_cliente(db_session, tenant, "PF05")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente, precio="500.00")
+        fiscal = _make_issued_fiscal_document(db_session, quote, user)
+        _make_accepted_note(
+            db_session,
+            fiscal,
+            user,
+            document_kind=DOCUMENT_KIND_DEBIT_NOTE,
+            tipo_comprobante="08",
+            total="100.00",
+            serie="ND05",
+            correlativo=1,
+        )
+
+        pago = crud.registrar_pago(
+            db_session,
+            quote.id,
+            schemas.PagoCreate(monto_pagado=Decimal("600.00"), metodo_pago="BCP", tipo="pago"),
+            tenant.id,
+        )
+
+        db_session.refresh(quote)
+        assert pago.fiscal_document_id == fiscal.id
+        assert pago.tipo == "pago"
+        assert quote.monto_pagado == Decimal("600.00")
+        assert quote.saldo_pendiente == Decimal("0.00")
+
+    def test_pago_legacy_source_quote_no_duplica_si_fiscal_document_id_existe(self, db_session):
+        tenant = make_tenant(db_session, "PF06")
+        user = make_user(db_session, tenant, email="pf06@test.com")
+        cliente = make_cliente(db_session, tenant, "PF06")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente, precio="100.00")
+        fiscal = _make_issued_fiscal_document(db_session, quote, user)
+        existing_payment = models.Pago(
+            tenant_id=tenant.id,
+            cotizacion_id=quote.id,
+            source_quote_id=quote.id,
+            fiscal_document_id=fiscal.id,
+            monto_pagado=Decimal("80.00"),
+            metodo_pago="Yape",
+            fecha_pago=datetime.now(timezone.utc),
+            tipo="pago",
+        )
+        db_session.add(existing_payment)
+        quote.monto_pagado = Decimal("80.00")
+        quote.saldo_pendiente = Decimal("20.00")
+        db_session.commit()
+
+        pago = crud.registrar_pago(
+            db_session,
+            quote.id,
+            schemas.PagoCreate(monto_pagado=Decimal("20.00"), metodo_pago="Yape", tipo="pago"),
+            tenant.id,
+        )
+
+        db_session.refresh(quote)
+        assert pago.fiscal_document_id == fiscal.id
+        assert pago.tipo == "pago"
+        assert quote.monto_pagado == Decimal("100.00")
+        assert quote.saldo_pendiente == Decimal("0.00")
+
+    def test_pago_contra_fiscal_pendiente_queda_como_adelanto_prefiscal(self, db_session):
+        tenant = make_tenant(db_session, "PF07")
+        user = make_user(db_session, tenant, email="pf07@test.com")
+        cliente = make_cliente(db_session, tenant, "PF07")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente, precio="118.00")
+        fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+
+        pago = crud.registrar_pago(
+            db_session,
+            fiscal.id,
+            schemas.PagoCreate(monto_pagado=Decimal("30.00"), metodo_pago="Yape", tipo="pago"),
+            tenant.id,
+        )
+
+        assert pago.tipo == "adelanto"
+        assert pago.fiscal_document_id is None
+        assert pago.source_quote_id == quote.id
+        assert pago.cotizacion_id == quote.id
+
+    def test_aceptar_fiscal_aplica_adelanto_prefiscal(self, db_session):
+        tenant = make_tenant(db_session, "PF08")
+        user = make_user(db_session, tenant, email="pf08@test.com")
+        cliente = make_cliente(db_session, tenant, "PF08")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente, precio="118.00")
+        fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+        pago = crud.registrar_pago(
+            db_session,
+            fiscal.id,
+            schemas.PagoCreate(monto_pagado=Decimal("30.00"), metodo_pago="Yape", tipo="adelanto"),
+            tenant.id,
+        )
+
+        crud.guardar_respuesta_sunat(
+            db_session,
+            fiscal.id,
+            {"success": True, "xml": "<xml/>"},
+            tenant_id=tenant.id,
+        )
+
+        db_session.refresh(pago)
+        assert pago.fiscal_document_id == fiscal.id
+        assert pago.tipo == "pago"
+        balance = get_fiscal_document_balance(db_session, tenant.id, fiscal.id)
+        assert balance.payments_total == Decimal("30.00")
+        assert balance.saldo_pendiente == Decimal("88.00")
+
+    def test_fiscal_rechazado_o_anulado_no_aplica_adelanto_prefiscal(self, db_session):
+        tenant = make_tenant(db_session, "PF09")
+        user = make_user(db_session, tenant, email="pf09@test.com")
+        cliente = make_cliente(db_session, tenant, "PF09")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente, precio="118.00")
+        fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+        pago = crud.registrar_pago(
+            db_session,
+            fiscal.id,
+            schemas.PagoCreate(monto_pagado=Decimal("30.00"), metodo_pago="Yape", tipo="adelanto"),
+            tenant.id,
+        )
+
+        crud.guardar_respuesta_sunat(
+            db_session,
+            fiscal.id,
+            {"success": False, "message": "Rechazado"},
+            tenant_id=tenant.id,
+        )
+        db_session.refresh(pago)
+        assert pago.fiscal_document_id is None
+        assert pago.tipo == "adelanto"
+
+        fiscal.estado = "anulada"
+        db_session.commit()
+        with pytest.raises(ValueError, match="anulados"):
+            crud.apply_prefiscal_advances_to_fiscal_document(db_session, tenant.id, fiscal.id)
+        db_session.refresh(pago)
+        assert pago.fiscal_document_id is None
+        assert pago.tipo == "adelanto"
+
+    def test_nuevo_fiscal_aceptado_aplica_adelanto_una_sola_vez(self, db_session):
+        tenant = make_tenant(db_session, "PF10")
+        user = make_user(db_session, tenant, email="pf10@test.com")
+        cliente = make_cliente(db_session, tenant, "PF10")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente, precio="118.00")
+        old_fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+        pago = crud.registrar_pago(
+            db_session,
+            old_fiscal.id,
+            schemas.PagoCreate(monto_pagado=Decimal("30.00"), metodo_pago="Yape", tipo="adelanto"),
+            tenant.id,
+        )
+        old_fiscal.estado = "anulada"
+        db_session.commit()
+        new_fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+
+        crud.guardar_respuesta_sunat(
+            db_session,
+            new_fiscal.id,
+            {"success": True, "xml": "<xml/>"},
+            tenant_id=tenant.id,
+        )
+        applied_again = crud.apply_prefiscal_advances_to_fiscal_document(
+            db_session,
+            tenant.id,
+            new_fiscal.id,
+        )
+
+        db_session.refresh(pago)
+        assert pago.fiscal_document_id == new_fiscal.id
+        assert pago.tipo == "pago"
+        assert applied_again == []
+        balance = get_fiscal_document_balance(db_session, tenant.id, new_fiscal.id)
+        assert balance.payments_total == Decimal("30.00")
+
+    def test_apply_prefiscal_advances_respeta_tenant_id(self, db_session):
+        tenant = make_tenant(db_session, "PF11")
+        other_tenant = make_tenant(db_session, "PF12")
+        user = make_user(db_session, tenant, email="pf11@test.com")
+        other_user = make_user(db_session, other_tenant, email="pf12@test.com")
+        cliente = make_cliente(db_session, tenant, "PF11")
+        other_cliente = make_cliente(db_session, other_tenant, "PF12")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente, precio="118.00")
+        other_quote = make_quote_via_crud(db_session, other_tenant, other_user, other_cliente, precio="118.00")
+        fiscal = _make_issued_fiscal_document(db_session, quote, user)
+        own_advance = models.Pago(
+            tenant_id=tenant.id,
+            cotizacion_id=quote.id,
+            source_quote_id=quote.id,
+            fiscal_document_id=None,
+            monto_pagado=Decimal("10.00"),
+            metodo_pago="Yape",
+            fecha_pago=datetime.now(timezone.utc),
+            tipo="adelanto",
+        )
+        other_advance = models.Pago(
+            tenant_id=other_tenant.id,
+            cotizacion_id=other_quote.id,
+            source_quote_id=quote.id,
+            fiscal_document_id=None,
+            monto_pagado=Decimal("70.00"),
+            metodo_pago="Yape",
+            fecha_pago=datetime.now(timezone.utc),
+            tipo="adelanto",
+        )
+        db_session.add_all([own_advance, other_advance])
+        db_session.commit()
+
+        crud.apply_prefiscal_advances_to_fiscal_document(db_session, tenant.id, fiscal.id)
+
+        db_session.refresh(own_advance)
+        db_session.refresh(other_advance)
+        assert own_advance.fiscal_document_id == fiscal.id
+        assert own_advance.tipo == "pago"
+        assert other_advance.fiscal_document_id is None
+        assert other_advance.tipo == "adelanto"
 
 
 # ============================================================================
@@ -306,12 +687,12 @@ class TestPagosTenantIsolation:
 
         crud.registrar_pago(
             db_session, quote_a.id,
-            schemas.PagoCreate(monto_pagado=Decimal("20.00"), metodo_pago="Yape", tipo="pago"),
+            schemas.PagoCreate(monto_pagado=Decimal("20.00"), metodo_pago="Yape", tipo="adelanto"),
             tenant_a.id,
         )
         crud.registrar_pago(
             db_session, quote_b.id,
-            schemas.PagoCreate(monto_pagado=Decimal("30.00"), metodo_pago="BCP", tipo="pago"),
+            schemas.PagoCreate(monto_pagado=Decimal("30.00"), metodo_pago="BCP", tipo="adelanto"),
             tenant_b.id,
         )
 
@@ -332,7 +713,7 @@ class TestPagosTenantIsolation:
         with pytest.raises(ValueError, match="Cotizacion no encontrada"):
             crud.registrar_pago(
                 db_session, quote_a.id,
-                schemas.PagoCreate(monto_pagado=Decimal("10.00"), metodo_pago="Yape", tipo="pago"),
+                schemas.PagoCreate(monto_pagado=Decimal("10.00"), metodo_pago="Yape", tipo="adelanto"),
                 tenant_b.id,  # ← tenant incorrecto
             )
 

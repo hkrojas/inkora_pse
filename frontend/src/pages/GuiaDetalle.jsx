@@ -3,8 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, MapPin, Package, Truck } from 'lucide-react';
 import { guias as svc } from '../services/guias';
 import Spinner from '../components/ui/Spinner';
-import Badge, { statusBadge } from '../components/ui/Badge';
+import Badge from '../components/ui/Badge';
 import { useToast } from '../components/ui/Toast';
+import { getGuideStatusMeta } from '../lib/utils/fiscalStatus';
 
 const MOTIVO_LABEL = {
   '01': 'Venta',
@@ -57,6 +58,7 @@ export default function GuiaDetalle() {
       : `#${guia.id}`;
 
   const fmt = (value) => (value ? new Date(value).toLocaleDateString('es-PE') : '--');
+  const statusMeta = getGuideStatusMeta(guia);
 
   return (
     <div className="page-shell max-w-5xl">
@@ -74,9 +76,58 @@ export default function GuiaDetalle() {
         </div>
 
         <div className="page-actions">
-          <Badge variant={statusBadge(guia.estado)}>{guia.estado || 'pendiente'}</Badge>
+          <Badge variant={statusMeta.badgeVariant}>{statusMeta.label}</Badge>
         </div>
       </div>
+
+      {statusMeta.provider === 'smartpse' && (
+        <div className="ink-card p-5 smartpse-evidence-card">
+          <div className="smartpse-evidence-head">
+            <div>
+              <h3 className="ink-card-title flex items-center gap-2">
+                <Truck className="h-4 w-4 text-[var(--text-brand)]" />
+                Smart PSE
+              </h3>
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                XML firmado por Smart PSE; CDR pendiente.
+              </p>
+            </div>
+            <Badge variant={guia.sunat_cdr_url ? 'success' : 'warning'}>
+              {guia.sunat_cdr_url ? 'CDR disponible' : 'CDR pendiente'}
+            </Badge>
+          </div>
+
+          <div className="smartpse-evidence-grid">
+            <div className="smartpse-evidence-item">
+              <p className="label">Hash</p>
+              <p className="smartpse-evidence-value" title={guia.sunat_hash || ''}>
+                {guia.sunat_hash || '--'}
+              </p>
+            </div>
+            <div className="smartpse-evidence-item">
+              <p className="label">Ticket</p>
+              <p className="smartpse-evidence-value" title={guia.sunat_ticket || ''}>
+                {guia.sunat_ticket || '--'}
+              </p>
+            </div>
+            <div className="smartpse-evidence-item">
+              <p className="label">CDR</p>
+              {guia.sunat_cdr_url ? (
+                <a
+                  href={guia.sunat_cdr_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="smartpse-evidence-link"
+                >
+                  Descargar CDR
+                </a>
+              ) : (
+                <p className="smartpse-evidence-state">CDR pendiente</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="ink-card p-5">

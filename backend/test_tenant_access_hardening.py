@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
@@ -251,6 +252,7 @@ def test_require_admin_y_roles_sensibles(db_session):
 
     with pytest.raises(HTTPException):
         require_payment_manager(vendedor)
+
     assert require_payment_manager(admin) == admin
     assert require_payment_manager(operador) == operador
 
@@ -258,6 +260,22 @@ def test_require_admin_y_roles_sensibles(db_session):
     assert ROLE_OPERADOR in DOCUMENT_EMITTER_ROLES
     assert ROLE_ADMIN in PAYMENT_MANAGER_ROLES
     assert ROLE_OPERADOR in PAYMENT_MANAGER_ROLES
+
+
+def test_tenant_admin_update_permite_identidad_visible_y_bloquea_ruc():
+    payload = schemas.TenantAdminUpdate(
+        business_name="  Imprenta Demo SAC  ",
+        business_address="  Av. Demo 456, Lima  ",
+    )
+
+    assert payload.business_name == "Imprenta Demo SAC"
+    assert payload.business_address == "Av. Demo 456, Lima"
+
+    with pytest.raises(ValidationError):
+        schemas.TenantAdminUpdate(business_ruc="20600000000")
+
+    with pytest.raises(ValidationError):
+        schemas.TenantAdminUpdate(business_name=" ", business_address="Av")
 
 
 def test_usuario_inactivo_queda_bloqueado_para_roles_sensibles(db_session):
@@ -348,3 +366,42 @@ def test_document_lookup_token_usa_token_empresa_si_no_hay_dniruc(monkeypatch):
     token = tenant_access.get_document_lookup_token(user)
 
     assert token == "tenant-token"
+
+
+def test_company_bank_accounts_usa_solo_datos_del_tenant():
+    tenant = type("TenantStub", (), {"bank_accounts": []})()
+    user = type(
+        "UserStub",
+        (),
+        {
+            "tenant": tenant,
+            "bank_accounts": [
+                {
+                    "banco": "Banco Legacy",
+                    "cuenta": "123456",
+                }
+            ],
+        },
+    )()
+
+    accounts = tenant_access.get_company_bank_accounts(user)
+
+    assert accounts == []
+
+
+def test_apisperu_token_ignora_fallback_legacy_de_usuario(monkeypatch):
+    tenant = type("TenantStub", (), {"apisperu_token": None})()
+    user = type(
+        "UserStub",
+        (),
+        {
+            "tenant": tenant,
+            "apisperu_token": "legacy-user-token",
+        },
+    )()
+
+    monkeypatch.setattr(tenant_access.settings, "API_TOKEN", "")
+
+    token = tenant_access.get_apisperu_token(user)
+
+    assert token is None

@@ -1,7 +1,7 @@
 """models/guias.py — GuiaRemision, GuiaRemisionItem."""
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -16,6 +16,8 @@ class GuiaRemision(Base):
             "correlativo",
             name="uq_guias_remision_tenant_serie_correlativo",
         ),
+        Index("ix_guias_remision_tenant_estado_fecha", "tenant_id", "estado", "fecha_emision"),
+        Index("ix_guias_remision_tenant_sunat_ticket", "tenant_id", "sunat_ticket"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -30,6 +32,8 @@ class GuiaRemision(Base):
 
     cotizacion_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
     cotizacion = relationship("Cotizacion", foreign_keys=[cotizacion_id])
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
+    cliente = relationship("Cliente", foreign_keys=[cliente_id])
     source_quote_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
     fiscal_document_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
     internal_order_number = Column(String, nullable=True, index=True)
@@ -71,9 +75,33 @@ class GuiaRemision(Base):
     sunat_xml_url = Column(String, nullable=True)
     sunat_pdf_url = Column(String, nullable=True)
     sunat_cdr_url = Column(String, nullable=True)
+    sunat_xml_content = Column(Text, nullable=True)
+    sunat_hash = Column(String, nullable=True)
+    sunat_ticket = Column(String, nullable=True)
+    provider_response = Column(JSON, nullable=True)
+    provider_endpoint = Column(String, nullable=True)
+    provider_status_code = Column(Integer, nullable=True)
+    sunat_status_checked_at = Column(DateTime, nullable=True)
     sunat_error = Column(Text, nullable=True)
 
     items = relationship("GuiaRemisionItem", back_populates="guia", cascade="all, delete-orphan")
+
+    @property
+    def cliente_nombre(self):
+        if self.cliente:
+            return self.cliente.razon_social or self.cliente.nombre or None
+        if self.cotizacion and self.cotizacion.cliente:
+            c = self.cotizacion.cliente
+            return c.razon_social or c.nombre or None
+        return None
+
+    @property
+    def cliente_documento(self):
+        if self.cliente:
+            return self.cliente.numero_documento or None
+        if self.cotizacion and self.cotizacion.cliente:
+            return self.cotizacion.cliente.numero_documento or None
+        return None
 
 
 class GuiaRemisionItem(Base):

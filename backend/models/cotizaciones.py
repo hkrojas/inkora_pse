@@ -84,6 +84,7 @@ class Cotizacion(Base):
 
     observaciones = Column(Text, nullable=True)
     condicion_pago = Column(String, nullable=True)
+    cuotas_pago = Column(JSON, nullable=True)
 
     monto_pagado = Column(Numeric(12, 2), default=0.0)
     saldo_pendiente = Column(Numeric(12, 2), default=0.0)
@@ -93,6 +94,10 @@ class Cotizacion(Base):
         foreign_keys="Pago.cotizacion_id",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def sunat_accepted(self):
+        return bool((self.sunat_xml_url or self.sunat_xml_content) and not self.sunat_error)
 
     @property
     def linked_fiscal_document(self):
@@ -156,6 +161,7 @@ class CotizacionItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     cotizacion_id = Column(Integer, ForeignKey("cotizaciones.id"))
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=True)
+    codigo_producto = Column(String, nullable=True)
 
     descripcion = Column(String)
     cantidad = Column(Numeric(12, 2))

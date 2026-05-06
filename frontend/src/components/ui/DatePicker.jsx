@@ -156,7 +156,7 @@ export default function DatePicker({
         </span>
         <Calendar
           size={compact ? 13 : 15}
-          className={`shrink-0 ${open ? 'text-[var(--ink-primary)]' : 'text-[var(--text-tertiary)]'}`}
+          className={`shrink-0 ${open ? 'text-[var(--color-primary)]' : 'text-[var(--text-tertiary)]'}`}
         />
       </button>
 

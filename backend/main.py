@@ -3,6 +3,7 @@ import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,
@@ -101,8 +103,9 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(sunat.router)
 
-    # Compatibilidad temporal: endpoints congelados aislados fuera del launch scope.
-    app.include_router(legacy_frozen.router)
+    # Compatibilidad temporal local: endpoints congelados fuera del launch scope.
+    if settings.is_local:
+        app.include_router(legacy_frozen.router)
 
     @app.get("/health", tags=["ops"])
     def health_check():

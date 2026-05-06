@@ -10,13 +10,16 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 
 CRITICAL_TEST_FILES = [
     "backend/test_auth.py",
+    "backend/test_user_creation.py",
     "backend/test_tenant_access_hardening.py",
     "backend/test_cotizaciones.py",
+    "backend/test_reportes.py",
     "backend/test_payments.py",
     "backend/test_document_flow_transition.py",
     "backend/test_facturacion_guards.py",
     "backend/test_facturacion_fiscal.py",
     "backend/test_facturacion_comprobante_builder.py",
+    "backend/test_emission_queue.py",
     "backend/test_apisperu_documentos_matrix.py",
     "backend/test_apisperu_payload_contracts.py",
     "backend/test_guias.py",

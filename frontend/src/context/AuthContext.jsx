@@ -71,7 +71,7 @@ export function AuthProvider({ children }) {
     }
     const { access_token } = await res.json();
     storeToken(access_token, Boolean(options.remember));
-    await fetchMe(access_token);
+    return fetchMe(access_token);
   };
 
   const logout = () => {

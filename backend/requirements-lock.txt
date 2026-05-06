@@ -11,6 +11,7 @@ python-multipart==0.0.20
 
 # ── ORM / Base de datos ───────────────────────────────────────────────────────
 SQLAlchemy==2.0.42
+alembic==1.18.4
 psycopg2-binary==2.9.10
 greenlet==3.2.3
 

@@ -3,9 +3,10 @@ from datetime import datetime
 import crud
 from services import facturacion_service
 import models
+from config import settings
 from database import SessionLocal, apply_tenant_context, reset_tenant_context
 from logging_utils import get_logger
-from services import sunat_service
+from services import fiscal_provider_service, sunat_service
 
 logger = get_logger(__name__)
 
@@ -32,12 +33,23 @@ def process_direct_sunat_emission_bg(
         )
         tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
 
-        if (
-            not cotizacion
-            or not tenant
-            or not tenant.sunat_usuario_sol
-            or not tenant.sunat_cert_url
-        ):
+        if settings.is_fiscal_beta:
+            detail = "La emision SUNAT directa esta deshabilitada en FISCAL_ENV=beta."
+            if cotizacion:
+                crud.guardar_error_sunat(db, cotizacion_id, detail, tenant_id=tenant_id)
+            logger.error(
+                "sunat_direct_beta_blocked",
+                extra={
+                    "event": "sunat_direct_beta_blocked",
+                    "tenant_id": tenant_id,
+                    "cotizacion_id": cotizacion_id,
+                },
+            )
+            if raise_on_error:
+                raise RuntimeError(detail)
+            return {"success": False, "message": detail}
+
+        if not cotizacion or not tenant or not fiscal_provider_service.has_complete_direct_sunat_credentials(tenant):
             detail = "Faltan credenciales SUNAT directas del tenant."
             if cotizacion:
                 crud.guardar_error_sunat(db, cotizacion_id, detail, tenant_id=tenant_id)
@@ -73,6 +85,7 @@ def process_direct_sunat_emission_bg(
             calc = facturacion_service.calculations.calcular_item(
                 item.cantidad,
                 item.precio_unitario,
+                tipo_afectacion_igv=getattr(item, "tipo_afectacion_igv", "10"),
             )
             items_data.append(
                 {

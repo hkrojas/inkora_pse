@@ -1,6 +1,7 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from services import comunicacion_service
@@ -9,15 +10,31 @@ import models
 import schemas
 from api_dependencies import get_current_user, get_db, get_db_tenant
 from config import settings
-from services import pdf_storage_service
+from services import pdf_storage_service, storage_service
 
 router = APIRouter(tags=["cotizaciones"])
 
 
-@router.get("/cotizaciones/", response_model=List[schemas.CotizacionResponse])
+def _resolve_pdf_download_url(documento_pdf) -> str:
+    try:
+        resolved_url = storage_service.resolve_storage_download_url(
+            getattr(documento_pdf, "sunat_pdf_url", None)
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"No se pudo preparar la descarga del PDF: {exc}")
+
+    if not resolved_url:
+        raise HTTPException(
+            202,
+            "El documento se esta generando en la nube, por favor intente en unos segundos.",
+        )
+    return resolved_url
+
+
+@router.get("/cotizaciones/", response_model=List[schemas.CotizacionListResponse])
 def read_cotizaciones(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=15, ge=1, le=50),
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -116,18 +133,14 @@ async def descargar_pdf_publico(
     cotizacion = crud.get_cotizacion_by_uuid(db, uuid_publico)
     if not cotizacion:
         raise HTTPException(404, "Enlace no valido o expirado.")
-    if cotizacion.sunat_pdf_url:
-        return {"url": cotizacion.sunat_pdf_url}
-    raise HTTPException(
-        202,
-        "El documento se esta generando en la nube, por favor intente en unos segundos.",
-    )
+    return RedirectResponse(url=_resolve_pdf_download_url(cotizacion), status_code=307)
 
 
 @router.get("/cotizaciones/{cotizacion_id}/pdf")
 async def descargar_pdf_interno(
     cotizacion_id: int,
     background_tasks: BackgroundTasks,
+    redirect: bool = Query(default=False),
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -140,7 +153,10 @@ async def descargar_pdf_interno(
         documento_pdf = cotizacion.linked_fiscal_document
 
     if documento_pdf.sunat_pdf_url:
-        return {"url": documento_pdf.sunat_pdf_url}
+        resolved_url = _resolve_pdf_download_url(documento_pdf)
+        if redirect:
+            return RedirectResponse(url=resolved_url, status_code=307)
+        return {"url": resolved_url}
 
     background_tasks.add_task(
         pdf_storage_service.process_pdf_background,

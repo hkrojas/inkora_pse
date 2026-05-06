@@ -18,6 +18,10 @@ from config import settings
 from database import apply_tenant_context, get_db, reset_tenant_context
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+EMISSION_ALLOWED_SUBSCRIPTION_STATUSES = {"active", "trial", "grace"}
+EMISSION_BLOCKED_NO_ACTIVE_SUBSCRIPTION_MESSAGE = (
+    "El tenant no tiene una suscripción activa para emitir."
+)
 
 
 async def get_current_user(
@@ -138,37 +142,23 @@ def require_emission_allowed(
     if current_user.is_superadmin:
         return current_user
 
-    from models.tenants import SUBSCRIPTION_STATUS_ACTIVE, SUBSCRIPTION_STATUS_TRIAL
     sub = db.query(models.Subscription).filter(
         models.Subscription.tenant_id == current_user.tenant_id
     ).first()
+    subscription_status = (
+        str(getattr(sub, "status", "") or "").strip().lower()
+        if sub
+        else None
+    )
 
-    if sub is None:
-        return current_user  # sin suscripción configurada, no bloqueamos
-
-    if sub.status in (SUBSCRIPTION_STATUS_ACTIVE, SUBSCRIPTION_STATUS_TRIAL, "grace"):
+    if subscription_status in EMISSION_ALLOWED_SUBSCRIPTION_STATUSES:
         return current_user
-
-    if sub.status == "payment_required":
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "code": "EMISSION_BLOCKED_PAYMENT_REQUIRED",
-                "message": "La emisión de documentos fiscales está bloqueada por pago pendiente. Las cotizaciones siguen disponibles.",
-                "subscription_status": sub.status,
-                "contact": "contacto@inkora.pe",
-            },
-        )
-
-    if sub.status == "suspended":
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "code": "EMISSION_BLOCKED_SUSPENDED",
-                "message": "Cuenta suspendida. Contacta a soporte para reactivar.",
-                "subscription_status": sub.status,
-                "contact": "contacto@inkora.pe",
-            },
-        )
-
-    return current_user
+    raise HTTPException(
+        status_code=402,
+        detail={
+            "code": "EMISSION_BLOCKED_NO_ACTIVE_SUBSCRIPTION",
+            "message": EMISSION_BLOCKED_NO_ACTIVE_SUBSCRIPTION_MESSAGE,
+            "subscription_status": subscription_status,
+            "contact": "contacto@inkora.pe",
+        },
+    )

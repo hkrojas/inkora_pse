@@ -16,7 +16,7 @@ Columnas CSV/Excel para clientes:
 Columnas CSV/Excel para productos:
   Requeridas : nombre, precio_unitario
   Opcionales : codigo_interno, descripcion, unidad_medida, tipo_afectacion_igv,
-               precio_incluye_igv
+               precio_incluye_igv, moneda
 """
 
 import csv
@@ -24,6 +24,12 @@ import io
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import List, Optional
+
+from fiscal_catalogs import (
+    normalize_internal_product_code,
+    normalize_sunat_unit_code,
+    normalize_tax_affectation_code,
+)
 
 try:
     import openpyxl
@@ -58,6 +64,7 @@ class FilaProductoParseada:
     precio_unitario: Decimal
     codigo_interno: Optional[str] = None
     descripcion: Optional[str] = None
+    moneda: str = "PEN"
     unidad_medida: str = "NIU"
     tipo_afectacion_igv: str = "10"
     precio_incluye_igv: bool = True
@@ -247,13 +254,30 @@ def parse_productos(
             })
             continue
 
+        codigo_interno = _get_field(row, "codigo_interno", "código_interno", "codigo", "sku") or None
+        unidad_medida = _get_field(row, "unidad_medida") or "NIU"
+        tipo_afectacion_igv = _get_field(row, "tipo_afectacion_igv") or "10"
+
+        try:
+            codigo_interno = normalize_internal_product_code(codigo_interno)
+            unidad_medida = normalize_sunat_unit_code(unidad_medida)
+            tipo_afectacion_igv = normalize_tax_affectation_code(tipo_afectacion_igv)
+        except ValueError as exc:
+            errores.append({
+                "fila": i,
+                "campo": "datos_sunat",
+                "mensaje": str(exc),
+            })
+            continue
+
         validas.append(FilaProductoParseada(
             nombre=nombre,
             precio_unitario=precio,
-            codigo_interno=_get_field(row, "codigo_interno", "código_interno", "codigo", "sku") or None,
+            codigo_interno=codigo_interno,
             descripcion=_get_field(row, "descripcion", "descripción", "detalle") or None,
-            unidad_medida=_get_field(row, "unidad_medida") or "NIU",
-            tipo_afectacion_igv=_get_field(row, "tipo_afectacion_igv") or "10",
+            moneda=(_get_field(row, "moneda") or "PEN").upper(),
+            unidad_medida=unidad_medida,
+            tipo_afectacion_igv=tipo_afectacion_igv,
             precio_incluye_igv=_parse_bool(
                 _get_field(row, "precio_incluye_igv", "precio_con_igv", "incluye_igv"),
                 default=True,

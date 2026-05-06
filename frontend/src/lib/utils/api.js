@@ -15,11 +15,20 @@ function getApiErrorMessage(detail, fallback) {
   return fallback;
 }
 
+function buildApiError(message, { status = null, path = '', isTimeout = false } = {}) {
+  const error = new Error(message);
+  error.status = status;
+  error.path = path;
+  error.isTimeout = isTimeout;
+  return error;
+}
+
 async function request(path, options = {}) {
+  const { timeoutMs = 12000, ...fetchOptions } = options;
   const token = getStoredToken();
-  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const isFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
   const headers = {
-    ...options.headers
+    ...fetchOptions.headers,
   };
 
   if (!isFormData) {
@@ -27,17 +36,34 @@ async function request(path, options = {}) {
   }
 
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort('timeout'), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      ...fetchOptions,
+      headers,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw buildApiError('La solicitud tardó demasiado. Revisa el backend e inténtalo nuevamente.', {
+        path,
+        isTimeout: true,
+      });
+    }
+    throw buildApiError(error?.message || 'No se pudo conectar con el backend.', { path });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: 'Error desconocido' }));
-    const message = getApiErrorMessage(errorData.detail, 'Error en la peticion');
+    const message = getApiErrorMessage(errorData.detail, 'Error en la petición');
     const normalizedMessage = message.toLowerCase();
     const shouldEndSession = response.status === 401 || (
       response.status === 403
@@ -54,15 +80,65 @@ async function request(path, options = {}) {
       }
     }
 
-    throw new Error(message);
+    throw buildApiError(message, { status: response.status, path });
   }
 
   return response.json();
 }
 
+async function requestBlob(path, options = {}) {
+  const { timeoutMs = 30000, ...fetchOptions } = options;
+  const token = getStoredToken();
+  const headers = {
+    ...fetchOptions.headers,
+    'Content-Type': 'application/json',
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort('timeout'), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      ...fetchOptions,
+      headers,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw buildApiError('La descarga tardó demasiado. Inténtalo nuevamente.', {
+        path,
+        isTimeout: true,
+      });
+    }
+    throw buildApiError(error?.message || 'No se pudo conectar con el backend.', { path });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: 'Error descargando archivo' }));
+    throw buildApiError(getApiErrorMessage(errorData.detail, 'Error descargando archivo'), {
+      status: response.status,
+      path,
+    });
+  }
+
+  return {
+    blob: await response.blob(),
+    contentType: response.headers.get('Content-Type') || 'application/octet-stream',
+    disposition: response.headers.get('Content-Disposition') || '',
+  };
+}
+
 export const api = {
   get: (path, options) => request(path, { ...options, method: 'GET' }),
   post: (path, body, options) => request(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
+  blob: (path, body, options) => requestBlob(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
   postForm: (path, formData, options) => request(path, { ...options, method: 'POST', body: formData }),
   put: (path, body, options) => request(path, { ...options, method: 'PUT', body: JSON.stringify(body) }),
   patch: (path, body, options) => request(path, { ...options, method: 'PATCH', body: JSON.stringify(body) }),

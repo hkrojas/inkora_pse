@@ -3,6 +3,7 @@ import os
 import traceback
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, getcontext
+from types import SimpleNamespace
 
 import models
 import qrcode
@@ -10,11 +11,12 @@ import requests
 from dateutil.relativedelta import relativedelta
 from num2words import num2words
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import inch
-from reportlab.platypus import Flowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.units import cm, inch
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.platypus import Flowable, Image, KeepInFrame, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from services import fiscal_xml_service
 from services.calculations import TOTAL_PRECISION, calculate_cotizacion_totals_v3, to_decimal
@@ -56,6 +58,7 @@ def obtener_etiqueta_tipo_doc(codigo):
         "4": "C.E.",
         "7": "PASAPORTE",
         "0": "DOC.TRIB.NO.DOM.",
+        "A": "CED. DIPLOMATICA",
     }
     return mapeo.get(str(codigo), "DOC")
 
@@ -337,6 +340,250 @@ class _RoundedHeaderBox(Flowable):
         canvas.restoreState()
 
 
+class _RoundedDocumentBox(Flowable):
+    def __init__(
+        self,
+        width,
+        height,
+        stroke_color,
+        title_paragraph,
+        number_paragraph,
+        footer_paragraph,
+        radius=8,
+        stroke_width=1.5,
+        band_fill=None,
+    ):
+        super().__init__()
+        self.width = width
+        self.height = height
+        self.stroke_color = stroke_color
+        self.title_paragraph = title_paragraph
+        self.number_paragraph = number_paragraph
+        self.footer_paragraph = footer_paragraph
+        self.radius = radius
+        self.stroke_width = stroke_width
+        self.band_fill = band_fill or stroke_color
+
+    def wrap(self, availWidth, availHeight):
+        return self.width, self.height
+
+    def draw(self):
+        canvas = self.canv
+        canvas.saveState()
+        canvas.setStrokeColor(self.stroke_color)
+        canvas.setLineWidth(self.stroke_width)
+        canvas.roundRect(0, 0, self.width, self.height, self.radius, stroke=1, fill=0)
+
+        band_h = self.height * 0.28
+        title_h = (self.height - band_h) / 2
+        footer_h = title_h
+
+        band_y = footer_h
+        title_y = footer_h + band_h
+
+        canvas.setFillColor(self.band_fill)
+        band_inset_x = 0.15 * cm
+        band_width = max(self.width - (band_inset_x * 2), 0)
+        band_radius = max(min(self.radius - 1, (band_h / 2) - 1), 2)
+        canvas.roundRect(band_inset_x, band_y, band_width, band_h, band_radius, stroke=0, fill=1)
+
+        title_w = self.width - 12
+        number_w = band_width - 10
+        footer_w = self.width - 12
+
+        _, title_ph = self.title_paragraph.wrap(title_w, title_h)
+        _, number_ph = self.number_paragraph.wrap(number_w, band_h)
+        _, footer_ph = self.footer_paragraph.wrap(footer_w, footer_h)
+
+        self.title_paragraph.drawOn(
+            canvas,
+            (self.width - title_w) / 2,
+            title_y + ((title_h - title_ph) / 2),
+        )
+        self.number_paragraph.drawOn(
+            canvas,
+            band_inset_x + ((band_width - number_w) / 2),
+            band_y + ((band_h - number_ph) / 2),
+        )
+        self.footer_paragraph.drawOn(
+            canvas,
+            (self.width - footer_w) / 2,
+            ((footer_h - footer_ph) / 2),
+        )
+        canvas.restoreState()
+
+
+class _RoundedContainerBox(Flowable):
+    def __init__(
+        self,
+        child,
+        width,
+        height,
+        stroke_color,
+        radius=8,
+        stroke_width=1,
+        padding=0,
+    ):
+        super().__init__()
+        self.child = child
+        self.width = width
+        self.height = height
+        self.stroke_color = stroke_color
+        self.radius = radius
+        self.stroke_width = stroke_width
+        self.padding = padding
+        self._child_width = 0
+        self._child_height = 0
+        self.hAlign = "LEFT"
+
+    def wrap(self, availWidth, availHeight):
+        inner_width = max(self.width - (self.padding * 2), 0)
+        inner_height = max(self.height - (self.padding * 2), 0)
+        self._child_width, self._child_height = self.child.wrap(inner_width, inner_height)
+        return self.width, self.height
+
+    def draw(self):
+        canvas = self.canv
+        canvas.saveState()
+        canvas.setStrokeColor(self.stroke_color)
+        canvas.setLineWidth(self.stroke_width)
+        canvas.roundRect(0, 0, self.width, self.height, self.radius, stroke=1, fill=0)
+        child_x = self.padding + max((self.width - (self.padding * 2) - self._child_width) / 2, 0)
+        child_y = self.padding + max((self.height - (self.padding * 2) - self._child_height) / 2, 0)
+        self.child.drawOn(canvas, child_x, child_y)
+        canvas.restoreState()
+
+
+class _AutoRoundedContainerBox(Flowable):
+    def __init__(
+        self,
+        child,
+        width,
+        stroke_color,
+        radius=8,
+        stroke_width=1,
+        padding=0,
+    ):
+        super().__init__()
+        self.child = child
+        self.width = width
+        self.stroke_color = stroke_color
+        self.radius = radius
+        self.stroke_width = stroke_width
+        self.padding = padding
+        self.height = 0
+        self._child_width = 0
+        self._child_height = 0
+        self.hAlign = "LEFT"
+
+    def wrap(self, availWidth, availHeight):
+        inner_width = max(self.width - (self.padding * 2), 0)
+        self._child_width, self._child_height = self.child.wrap(inner_width, availHeight)
+        self.height = self._child_height + (self.padding * 2)
+        return self.width, self.height
+
+    def draw(self):
+        canvas = self.canv
+        canvas.saveState()
+        clip_path = canvas.beginPath()
+        clip_path.roundRect(0, 0, self.width, self.height, self.radius)
+        canvas.clipPath(clip_path, stroke=0, fill=0)
+        child_x = self.padding
+        child_y = self.padding + max((self.height - (self.padding * 2) - self._child_height) / 2, 0)
+        self.child.drawOn(canvas, child_x, child_y)
+        canvas.restoreState()
+        canvas.saveState()
+        canvas.setStrokeColor(self.stroke_color)
+        canvas.setLineWidth(self.stroke_width)
+        canvas.roundRect(0, 0, self.width, self.height, self.radius, stroke=1, fill=0)
+        canvas.restoreState()
+
+
+class _HeaderDividerBox(Flowable):
+    def __init__(self, child, width, height, divider_positions, divider_color, divider_height=4 * cm, stroke_width=1):
+        super().__init__()
+        self.child = child
+        self.width = width
+        self.height = height
+        self.divider_positions = divider_positions
+        self.divider_color = divider_color
+        self.divider_height = divider_height
+        self.stroke_width = stroke_width
+        self._child_width = 0
+        self._child_height = 0
+        self.hAlign = "LEFT"
+
+    def wrap(self, availWidth, availHeight):
+        self._child_width, self._child_height = self.child.wrap(self.width, self.height)
+        return self.width, self.height
+
+    def draw(self):
+        canvas = self.canv
+        self.child.drawOn(canvas, 0, 0)
+        canvas.saveState()
+        canvas.setStrokeColor(self.divider_color)
+        canvas.setLineWidth(self.stroke_width)
+        y1 = max((self.height - self.divider_height) / 2, 0)
+        y2 = min(y1 + self.divider_height, self.height)
+        for x in self.divider_positions:
+            canvas.line(x, y1, x, y2)
+        canvas.restoreState()
+
+
+class _InsetHorizontalRule(Flowable):
+    def __init__(self, width, color, inset=0.3 * cm, stroke_width=1):
+        super().__init__()
+        self.width = width
+        self.color = color
+        self.inset = inset
+        self.stroke_width = stroke_width
+        self.height = stroke_width
+        self.hAlign = "LEFT"
+
+    def wrap(self, availWidth, availHeight):
+        return self.width, self.height
+
+    def draw(self):
+        canvas = self.canv
+        canvas.saveState()
+        canvas.setStrokeColor(self.color)
+        canvas.setLineWidth(self.stroke_width)
+        canvas.line(self.inset, self.height / 2, self.width - self.inset, self.height / 2)
+        canvas.restoreState()
+
+
+class _AutoVerticalDividerBox(Flowable):
+    def __init__(self, child, width, divider_positions, divider_color, inset_y=0.3 * cm, stroke_width=1):
+        super().__init__()
+        self.child = child
+        self.width = width
+        self.divider_positions = divider_positions
+        self.divider_color = divider_color
+        self.inset_y = inset_y
+        self.stroke_width = stroke_width
+        self.height = 0
+        self._child_width = 0
+        self._child_height = 0
+        self.hAlign = "LEFT"
+
+    def wrap(self, availWidth, availHeight):
+        self._child_width, self._child_height = self.child.wrap(self.width, availHeight)
+        self.height = self._child_height
+        return self.width, self.height
+
+    def draw(self):
+        canvas = self.canv
+        self.child.drawOn(canvas, 0, 0)
+        canvas.saveState()
+        canvas.setStrokeColor(self.divider_color)
+        canvas.setLineWidth(self.stroke_width)
+        y1 = self.inset_y
+        y2 = max(y1, self.height - self.inset_y)
+        for x in self.divider_positions:
+            canvas.line(x, y1, x, y2)
+        canvas.restoreState()
+
+
 def _build_local_line_context(document_data):
     productos_fuente_dict = []
     items = getattr(document_data, "items", [])
@@ -345,16 +592,34 @@ def _build_local_line_context(document_data):
             descripcion = item.get("descripcion", "")
             cantidad = item.get("unidades", 0) or item.get("cantidad", 0)
             precio_unitario = item.get("precio_unitario", 0)
+            codigo = item.get("codigo") or item.get("code") or item.get("sku") or item.get("item_code")
+            codigo = codigo or item.get("codigo_producto") or item.get("codProducto")
+            unidad = item.get("unidad") or item.get("unidad_medida") or item.get("unit_code") or "UND"
         else:
             descripcion = getattr(item, "descripcion", "")
             cantidad = getattr(item, "cantidad", 0)
             precio_unitario = getattr(item, "precio_unitario", 0)
+            codigo = (
+                getattr(item, "codigo", None)
+                or getattr(item, "code", None)
+                or getattr(item, "sku", None)
+                or getattr(item, "item_code", None)
+                or getattr(item, "codigo_producto", None)
+            )
+            unidad = (
+                getattr(item, "unidad", None)
+                or getattr(item, "unidad_medida", None)
+                or getattr(item, "unit_code", None)
+                or "UND"
+            )
 
         productos_fuente_dict.append(
             {
                 "unidades": cantidad,
                 "precio_unitario": precio_unitario,
                 "descripcion": descripcion,
+                "codigo": codigo,
+                "unidad": unidad,
             }
         )
 
@@ -364,10 +629,15 @@ def _build_local_line_context(document_data):
         line_totals = totals_v3["line_totals"][idx]
         productos_para_tabla_data.append(
             {
+                "indice": idx + 1,
+                "codigo": item_dict.get("codigo") or f"ITEM-{str(idx + 1).zfill(3)}",
                 "descripcion": str(item_dict["descripcion"]).replace("\n", "<br/>"),
                 "cantidad": to_decimal(item_dict["unidades"]),
+                "unidad": str(item_dict.get("unidad") or "UND"),
+                "valor_unitario": line_totals["mto_valor_unitario"],
                 "p_unit_con_igv": line_totals["mto_precio_unitario_con_igv"],
                 "igv_item": line_totals["igv_linea"],
+                "subtotal_item": line_totals["precio_total_linea"] - line_totals["igv_linea"],
                 "precio_total_item": line_totals["precio_total_linea"],
             }
         )
@@ -384,14 +654,24 @@ def _build_xml_line_context(parsed_xml: dict):
     totals_xml = parsed_xml.get("totals") or {}
     productos_para_tabla_data = []
 
-    for line in parsed_xml.get("lines") or []:
+    for idx, line in enumerate(parsed_xml.get("lines") or [], start=1):
+        cantidad = to_decimal(line.get("quantity") or 0)
+        line_extension_amount = to_decimal(line.get("line_extension_amount") or 0)
         precio_total_item = to_decimal(line.get("line_extension_amount") or 0) + to_decimal(line.get("tax_amount") or 0)
+        valor_unitario = Decimal("0.00")
+        if cantidad > 0:
+            valor_unitario = (line_extension_amount / cantidad).quantize(TOTAL_PRECISION, rounding=ROUND_HALF_UP)
         productos_para_tabla_data.append(
             {
+                "indice": idx,
+                "codigo": str(line.get("code") or f"ITEM-{str(idx).zfill(3)}"),
                 "descripcion": str(line.get("description") or "").replace("\n", "<br/>"),
-                "cantidad": to_decimal(line.get("quantity") or 0),
+                "cantidad": cantidad,
+                "unidad": str(line.get("unit_code") or "UND"),
+                "valor_unitario": valor_unitario,
                 "p_unit_con_igv": to_decimal(line.get("price_amount") or 0),
                 "igv_item": to_decimal(line.get("tax_amount") or 0),
+                "subtotal_item": line_extension_amount,
                 "precio_total_item": precio_total_item,
             }
         )
@@ -409,35 +689,20 @@ def _build_xml_line_context(parsed_xml: dict):
 
 
 def _build_quote_document_number(document_data) -> str:
+    serie = _value_from_obj(document_data, "serie", "COT") or "COT"
     correlativo = _value_from_obj(document_data, "correlativo", None)
     if correlativo in (None, "", 0):
         correlativo = _value_from_obj(document_data, "id", 0)
-    return f"N° {str(correlativo or 0).zfill(4)}"
+    return f"{serie}-{str(correlativo or 0).zfill(6)}"
 
 
 def _resolve_quote_company_data(document_data, tenant: models.Tenant) -> dict:
     user = getattr(document_data, "usuario", None)
 
-    company_name = (
-        getattr(tenant, "business_name", None)
-        or getattr(user, "business_name", None)
-        or "Nombre del Negocio"
-    )
-    company_ruc = (
-        getattr(tenant, "business_ruc", None)
-        or getattr(user, "business_ruc", None)
-        or ""
-    )
-    company_address = (
-        getattr(tenant, "business_address", None)
-        or getattr(user, "business_address", None)
-        or "Direccion no especificada"
-    )
-    company_phone = (
-        getattr(tenant, "business_phone", None)
-        or getattr(user, "business_phone", None)
-        or ""
-    )
+    company_name = getattr(tenant, "business_name", None) or "Nombre del Negocio"
+    company_ruc = getattr(tenant, "business_ruc", None) or ""
+    company_address = getattr(tenant, "business_address", None) or "Direccion no especificada"
+    company_phone = getattr(tenant, "business_phone", None) or ""
     company_email = (
         getattr(tenant, "business_email", None)
         or getattr(user, "business_email", None)
@@ -462,6 +727,163 @@ def _resolve_quote_company_data(document_data, tenant: models.Tenant) -> dict:
         "bank_accounts": bank_accounts,
         "logo_source": logo_source,
     }
+
+
+def _format_money(symbol: str, amount: Decimal | int | float | str) -> str:
+    return f"{symbol} {to_decimal(amount):,.2f}"
+
+
+def _format_detail_money(symbol: str, amount: Decimal | int | float | str) -> str:
+    max_amount = Decimal("999999.00")
+    value = to_decimal(amount)
+    if value > max_amount:
+        value = max_amount
+    elif value < -max_amount:
+        value = -max_amount
+    return f"{symbol} {value:,.2f}"
+
+
+def _format_money_inline(symbol: str, amount: Decimal | int | float | str) -> str:
+    return _format_money(symbol, amount).replace(" ", "&nbsp;", 1)
+
+
+def _measure_flowable_height(flowable, width: float) -> float:
+    _, height = flowable.wrap(width, 10_000)
+    return float(height)
+
+
+def _display_unit_code(unit_code: str | None) -> str:
+    normalized = str(unit_code or "UND").strip().upper()
+    if normalized == "NIU":
+        return "UND"
+    return normalized or "UND"
+
+
+def _resolve_company_data(document_data, tenant: models.Tenant, parsed_xml: dict | None) -> dict:
+    user = getattr(document_data, "usuario", None)
+    supplier = (parsed_xml or {}).get("supplier") or {}
+
+    company_name = supplier.get("name") or getattr(tenant, "business_name", None) or "Nombre del Negocio"
+    company_ruc = supplier.get("doc_number") or getattr(tenant, "business_ruc", None) or ""
+    company_address = supplier.get("address") or getattr(tenant, "business_address", None) or "Direccion no especificada"
+    company_phone = getattr(tenant, "business_phone", None) or getattr(user, "business_phone", None) or ""
+    company_email = (
+        getattr(tenant, "business_email", None)
+        or getattr(user, "business_email", None)
+        or getattr(user, "email", None)
+        or ""
+    )
+
+    bank_accounts = getattr(tenant, "bank_accounts", None) or []
+    logo_source = tenant if getattr(tenant, "logo_filename", None) else user
+
+    return {
+        "name": str(company_name or "").strip(),
+        "ruc": str(company_ruc or "").strip(),
+        "address": str(company_address or "").strip(),
+        "phone": str(company_phone or "").strip(),
+        "email": str(company_email or "").strip(),
+        "bank_accounts": bank_accounts,
+        "logo_source": logo_source or tenant,
+    }
+
+
+def _pick_wallet_payment_method(payment_methods) -> dict | None:
+    for method in _normalize_payment_methods(payment_methods):
+        if method.get("tipo") == "wallet":
+            return method
+    return None
+
+
+def _build_quote_wallet_qr_content(payment_methods, beneficiary_name: str) -> tuple[str, dict | None]:
+    wallet = _pick_wallet_payment_method(payment_methods)
+    if wallet:
+        qr_parts = [
+            wallet.get("proveedor") or "Billetera digital",
+            wallet.get("titular") or beneficiary_name,
+            wallet.get("numero") or "",
+            wallet.get("nota") or "",
+        ]
+        return "|".join(str(part).strip() for part in qr_parts if str(part or "").strip()), wallet
+
+    normalized = _normalize_payment_methods(payment_methods)
+    if normalized:
+        first = normalized[0]
+        if first.get("tipo") == "bank":
+            qr_parts = [
+                beneficiary_name,
+                first.get("banco") or "",
+                first.get("cuenta") or "",
+                first.get("cci") or "",
+            ]
+            return "|".join(str(part).strip() for part in qr_parts if str(part or "").strip()), None
+
+    return beneficiary_name or "PAGO DIGITAL", None
+
+
+def _build_generated_qr_flowable(qr_content: str, target_size: float, col_width: float):
+    qr_img = qrcode.make(qr_content or "QR")
+    qr_buffer = io.BytesIO()
+    qr_img.save(qr_buffer, format="PNG")
+    qr_buffer.seek(0)
+    qr_image_obj = Image(qr_buffer, width=target_size, height=target_size)
+    qr_table = Table([[qr_image_obj]], colWidths=[col_width])
+    qr_table.setStyle(
+        TableStyle(
+            [
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    return qr_table
+
+
+def _build_logo_block(company_data: dict, color_principal, width: float, name_style: ParagraphStyle):
+    logo = _load_logo(company_data["logo_source"])
+    if logo:
+        return logo
+
+    fallback_name = company_data["name"].upper() or "INKORA"
+    return Paragraph(fallback_name.replace(" Y ", "<br/>"), name_style)
+
+
+def _build_observation_paragraphs(document_data, tenant, base_style: ParagraphStyle) -> list:
+    footer_notes = []
+    observation_lines = parse_quote_observations(getattr(document_data, "observaciones", None))
+    if not observation_lines:
+        observation_lines = build_default_observation_lines(
+            note_1_text=getattr(tenant, "pdf_note_1", None),
+            note_1_color=getattr(tenant, "pdf_note_1_color", None),
+            note_2_text=getattr(tenant, "pdf_note_2", None),
+        )
+
+    for index, note_line in enumerate(observation_lines):
+        try:
+            note_color = colors.HexColor(note_line["color"])
+        except Exception:
+            note_color = colors.HexColor("#111111")
+        note_style = ParagraphStyle(
+            name=f"ModernObservation{index}",
+            parent=base_style,
+            textColor=note_color,
+            fontName="Helvetica-Bold" if note_line.get("bold") else "Helvetica",
+        )
+        footer_notes.append(Paragraph(note_line["text"].replace("\n", "<br/>"), note_style))
+    return footer_notes
+
+
+def _build_footer_contact_text(company_data: dict) -> str:
+    parts = []
+    if company_data.get("phone"):
+        parts.append(company_data["phone"])
+    if company_data.get("email"):
+        parts.append(company_data["email"])
+    return "  |  ".join(parts)
 
 
 def _build_quote_pdf_buffer(document_data, tenant: models.Tenant):
@@ -1162,6 +1584,833 @@ def create_pdf_buffer(document_data, tenant: models.Tenant, document_type: str):
 
     buffer.seek(0)
     return buffer
+
+
+def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobante: bool):
+    buffer = io.BytesIO()
+    parsed_xml = None
+    if is_comprobante:
+        parsed_xml = fiscal_xml_service.parse_sale_document_xml(
+            getattr(document_data, "sunat_xml_content", None)
+        )
+
+    margin_lr = 0.7 * cm
+    margin_tb = 0.5 * cm
+    header_height = 5.3 * cm
+    ancho_total = A4[0] - (margin_lr * 2)
+    color_principal = colors.HexColor(getattr(tenant, "primary_color", None) or "#2563EB")
+    color_borde = colors.HexColor("#C9D4E5")
+    color_texto = colors.HexColor("#1F2937")
+    color_suave = colors.HexColor("#F8FAFF")
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=margin_lr,
+        rightMargin=margin_lr,
+        topMargin=margin_tb,
+        bottomMargin=margin_tb,
+    )
+
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle(
+        name="ModernBodyFinal",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=10.4,
+        leading=13,
+        textColor=color_texto,
+    )
+    body_small = ParagraphStyle(name="ModernBodySmallFinal", parent=body, fontSize=9.4, leading=12)
+    body_center = ParagraphStyle(name="ModernBodyCenterFinal", parent=body, alignment=TA_CENTER)
+    body_right = ParagraphStyle(name="ModernBodyRightFinal", parent=body, alignment=TA_RIGHT)
+    body_bold = ParagraphStyle(name="ModernBodyBoldFinal", parent=body, fontName="Helvetica-Bold")
+    body_bold_blue = ParagraphStyle(name="ModernBodyBoldBlueFinal", parent=body_bold, textColor=color_principal)
+    body_bold_center = ParagraphStyle(name="ModernBodyBoldCenterFinal", parent=body_bold, alignment=TA_CENTER)
+    body_bold_blue_nobreak = ParagraphStyle(
+        name="ModernBodyBoldBlueNoBreakFinal",
+        parent=body_bold_blue,
+        splitLongWords=0,
+        wordWrap="LTR",
+    )
+    section_title = ParagraphStyle(name="ModernSectionTitleFinal", parent=body_bold, textColor=color_principal, fontSize=13, leading=16)
+    company_name_style = ParagraphStyle(name="ModernCompanyNameFinal", parent=body_bold, fontSize=11.6, leading=13.2)
+    company_logo_fallback_style = ParagraphStyle(
+        name="ModernLogoFallbackFinal",
+        parent=body_bold_blue,
+        fontSize=15,
+        leading=17.2,
+        alignment=TA_CENTER,
+    )
+    document_title_style = ParagraphStyle(
+        name="ModernDocumentTitleFinal",
+        parent=body_bold_center,
+        fontSize=11.8,
+        leading=14.2,
+        textColor=color_principal,
+    )
+    document_number_style = ParagraphStyle(
+        name="ModernDocumentNumberFinal",
+        parent=body_bold_center,
+        fontSize=15.5,
+        leading=18,
+        textColor=colors.white,
+    )
+    strip_label_style = ParagraphStyle(name="ModernStripLabelFinal", parent=body_bold_blue, fontSize=9.8, leading=12)
+    strip_value_style = ParagraphStyle(name="ModernStripValueFinal", parent=body, fontSize=10.8, leading=12)
+    table_header_style = ParagraphStyle(
+        name="ModernTableHeaderFinal",
+        parent=body_bold_center,
+        textColor=colors.white,
+        fontSize=7.45,
+        leading=8.91,
+    )
+    detail_money_style = ParagraphStyle(
+        name="ModernDetailMoneyFinal",
+        parent=body_center,
+        fontSize=8.1,
+        leading=9.8,
+    )
+    amount_big_style = ParagraphStyle(
+        name="ModernAmountBigFinal",
+        parent=body_bold_blue,
+        alignment=TA_RIGHT,
+        fontSize=16.2,
+        leading=15.84,
+        splitLongWords=0,
+        wordWrap="LTR",
+    )
+    totals_value_style = ParagraphStyle(
+        name="ModernTotalsValueFinal",
+        parent=body_right,
+        fontSize=8.1,
+        leading=8.28,
+        splitLongWords=0,
+        wordWrap="LTR",
+    )
+    totals_label_style = ParagraphStyle(
+        name="ModernTotalsLabelFinal",
+        parent=body,
+        fontSize=8.1,
+        leading=8.28,
+    )
+    totals_label_highlight_style = ParagraphStyle(
+        name="ModernTotalsLabelHighlightFinal",
+        parent=body_bold_blue_nobreak,
+        fontSize=8.1,
+        leading=8.28,
+    )
+    total_bar_text_style = ParagraphStyle(
+        name="ModernTotalBarTextFinal",
+        parent=body_bold_center,
+        fontSize=8.1,
+        leading=10.8,
+    )
+    footer_title_style = ParagraphStyle(name="ModernFooterTitleFinal", parent=body_bold_blue, fontSize=10.5, leading=14)
+
+    moneda_codigo = (parsed_xml or {}).get("currency") or _value_from_obj(document_data, "moneda", "PEN")
+    simbolo = "S/" if moneda_codigo == "PEN" else "$"
+    moneda_texto = "SOLES" if moneda_codigo == "PEN" else "DOLARES"
+
+    tipo_doc_sunat = (parsed_xml or {}).get("tipo_comprobante") or _value_from_obj(document_data, "tipo_comprobante", "03")
+    doc_title_str = _resolver_titulo_documento(tipo_doc_sunat, is_comprobante)
+    serie = _value_from_obj(document_data, "serie", "COT")
+    correlativo = _value_from_obj(document_data, "correlativo", 0)
+    doc_number_str = f"{serie}-{str(correlativo).zfill(6)}" if is_comprobante else _build_quote_document_number(document_data)
+    if parsed_xml and parsed_xml.get("document_id"):
+        doc_number_str = parsed_xml["document_id"]
+
+    raw_fecha = (
+        (parsed_xml or {}).get("issue_date")
+        or _value_from_obj(document_data, "fecha_emision", None)
+        or _value_from_obj(document_data, "created_at", datetime.now())
+    )
+    fecha_emision = _format_date_ddmmyyyy(raw_fecha, default=datetime.now().strftime("%d/%m/%Y"))
+
+    customer = (parsed_xml or {}).get("customer") or {}
+    if parsed_xml:
+        nombre_cliente = customer.get("name") or "Cliente General"
+        tipo_doc_cliente = obtener_etiqueta_tipo_doc(customer.get("doc_type") or "0")
+        nro_doc_cliente = str(customer.get("doc_number") or "")
+        direccion_cliente = str(customer.get("address") or "-").replace("\n", "<br/>")
+        line_context = _build_xml_line_context(parsed_xml)
+        monto_en_letras_str = parsed_xml.get("amount_in_words") or ""
+    else:
+        cliente = getattr(document_data, "cliente", None)
+        if cliente:
+            nombre_cliente = getattr(cliente, "razon_social", "") or "Cliente General"
+            tipo_doc_cliente = obtener_etiqueta_tipo_doc(getattr(cliente, "tipo_documento", "1"))
+            nro_doc_cliente = str(getattr(cliente, "numero_documento", "") or "")
+            direccion_cliente = str(getattr(cliente, "direccion", "") or "-").replace("\n", "<br/>")
+        else:
+            nombre_cliente = "Cliente General"
+            tipo_doc_cliente = "DOC"
+            nro_doc_cliente = ""
+            direccion_cliente = "-"
+        line_context = _build_local_line_context(document_data)
+        monto_en_letras_str = ""
+
+    company_data = _resolve_company_data(document_data, tenant, parsed_xml)
+    total_gravado_d = to_decimal(line_context["total_gravado"])
+    total_igv_d = to_decimal(line_context["total_igv"])
+    monto_total_d = to_decimal(line_context["monto_total"])
+    if not monto_en_letras_str:
+        monto_en_letras_str = monto_a_letras(monto_total_d, simbolo)
+
+    header_col_1 = 8.0 * cm
+    header_col_2 = 6.0 * cm
+    header_col_3 = ancho_total - header_col_1 - header_col_2
+
+    logo_block = _build_logo_block(company_data, color_principal, header_col_1, company_logo_fallback_style)
+    company_name_style.fontSize = 11.8
+    company_name_style.leading = 14
+    body.fontSize = 9.0
+    body.leading = 10.8
+    body_small.fontSize = 8.0
+    body_small.leading = 9.4
+    body_center.fontSize = body.fontSize
+    body_center.leading = body.leading
+
+    contact_lines = []
+    if company_data["phone"]:
+        contact_lines.append(f"Teléfono: {company_data['phone']}")
+    if company_data["email"]:
+        contact_lines.append(f"Email: {company_data['email']}")
+
+    company_rows = [
+        [Paragraph(company_data["name"].upper() or "NOMBRE DEL NEGOCIO", company_name_style)],
+        [""],
+        [Paragraph(f"RUC {company_data['ruc']}", body)],
+        [""],
+        [Paragraph(company_data["address"].replace("\n", "<br/>"), body_small)],
+    ]
+    company_row_heights = [None, 0.4 * cm, None, 0.4 * cm, None]
+    if contact_lines:
+        company_rows.extend([[""], [Paragraph("<br/>".join(contact_lines), body_small)]])
+        company_row_heights.extend([0.4 * cm, None])
+
+    company_table = Table(
+        company_rows,
+        colWidths=[header_col_2 - 0.4 * cm],
+        rowHeights=company_row_heights,
+    )
+    company_table.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    company_box = KeepInFrame(
+        header_col_2 - 0.4 * cm,
+        header_height - 18,
+        [company_table],
+        mode="shrink",
+        hAlign="CENTER",
+        vAlign="TOP",
+    )
+
+    doc_box_width = 4.9 * cm
+    doc_box_height = 4.0 * cm
+    doc_box = _RoundedDocumentBox(
+        width=doc_box_width,
+        height=doc_box_height,
+        stroke_color=color_principal,
+        title_paragraph=Paragraph(
+            doc_title_str.replace(" ELECTRONICA", "<br/>ELECTRONICA"),
+            document_title_style,
+        ),
+        number_paragraph=Paragraph(doc_number_str, document_number_style),
+        footer_paragraph=Paragraph(f"RUC: {company_data['ruc']}", body_bold_center),
+        radius=4.5,
+        stroke_width=1.5,
+        band_fill=color_principal,
+    )
+
+    logo_box = KeepInFrame(
+        header_col_1 - 0.4 * cm,
+        header_height - 18,
+        [logo_block],
+        mode="shrink",
+        hAlign="CENTER",
+        vAlign="MIDDLE",
+    )
+
+    header_inner = Table(
+        [[logo_box, company_box, doc_box]],
+        colWidths=[header_col_1, header_col_2, header_col_3],
+        rowHeights=[header_height],
+    )
+    header_inner.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    header_inner = _HeaderDividerBox(
+        child=header_inner,
+        width=ancho_total,
+        height=header_height,
+        divider_positions=[header_col_1, header_col_1 + header_col_2],
+        divider_color=color_borde,
+        divider_height=4 * cm,
+        stroke_width=1,
+    )
+    header_container = _RoundedContainerBox(
+        child=header_inner,
+        width=ancho_total,
+        height=header_height,
+        stroke_color=color_borde,
+        radius=4.5,
+        stroke_width=1,
+        padding=0,
+    )
+    header_container.hAlign = "LEFT"
+
+    color_strip = colors.HexColor("#1747C8")
+    strip_label_style.textColor = color_strip
+    strip = Table(
+        [[
+            Paragraph("Fecha de emisión:", strip_label_style),
+            Paragraph(fecha_emision, strip_value_style),
+            "",
+            Paragraph("Moneda:", strip_label_style),
+            Paragraph(moneda_texto, strip_value_style),
+        ]],
+        colWidths=[
+            ancho_total * 0.19,
+            ancho_total * 0.18,
+            ancho_total * 0.36,
+            ancho_total * 0.12,
+            ancho_total * 0.15,
+        ],
+    )
+    strip.setStyle(
+        TableStyle(
+            [
+                ("LINEABOVE", (0, 0), (-1, -1), 1.6, color_strip),
+                ("LINEBELOW", (0, 0), (-1, -1), 1.6, color_strip),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0.22 * cm),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0.22 * cm),
+                ("ALIGN", (0, 0), (1, 0), "LEFT"),
+                ("ALIGN", (3, 0), (4, 0), "LEFT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+
+    client_title = "DATOS DEL RECEPTOR" if is_comprobante else "DATOS DEL CLIENTE"
+    client_card = Table(
+        [
+            [Paragraph(client_title, section_title), ""],
+            [Paragraph("<b>Señores:</b>", body_bold), Paragraph(nombre_cliente, body)],
+            [Paragraph(f"<b>{tipo_doc_cliente}:</b>", body_bold), Paragraph(nro_doc_cliente or "-", body)],
+            [Paragraph("<b>Dirección:</b>", body_bold), Paragraph(direccion_cliente, body)],
+        ],
+        colWidths=[ancho_total * 0.12, ancho_total * 0.88],
+    )
+    client_card.setStyle(
+        TableStyle(
+            [
+                ("SPAN", (0, 0), (1, 0)),
+                ("BOX", (0, 0), (-1, -1), 1, color_borde),
+                ("BACKGROUND", (0, 0), (-1, 0), color_suave),
+                ("LEFTPADDING", (0, 0), (-1, -1), 14),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LINEBELOW", (0, 0), (-1, 0), 1, color_borde),
+                ("TOPPADDING", (0, 1), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 1), (-1, -1), 10),
+            ]
+        )
+    )
+
+    client_label_style = ParagraphStyle(
+        "PdfClientLabel",
+        parent=body_bold,
+        fontSize=8.64,
+        leading=7.38,
+        textColor=colors.HexColor("#1F2633"),
+    )
+    client_value_style = ParagraphStyle(
+        "PdfClientValue",
+        parent=body,
+        fontSize=8.73,
+        leading=7.65,
+        textColor=colors.HexColor("#202A39"),
+    )
+    detail_text_style = ParagraphStyle(
+        "PdfDetailText",
+        parent=body,
+        fontSize=7.86,
+        leading=9.56,
+        textColor=colors.HexColor("#202A39"),
+    )
+    detail_center_style = ParagraphStyle(
+        "PdfDetailCenter",
+        parent=detail_text_style,
+        alignment=TA_CENTER,
+    )
+    detail_money_style = ParagraphStyle(
+        "PdfDetailMoney",
+        parent=detail_text_style,
+        alignment=TA_CENTER,
+    )
+    client_body = Table(
+        [
+            [
+                Paragraph("<b>Se&#241;ores:</b>", client_label_style),
+                Paragraph(nombre_cliente, client_value_style),
+                Paragraph("<b>Emisi&#243;n:</b>", client_label_style),
+                Paragraph(fecha_emision, client_value_style),
+            ],
+            [
+                Paragraph(f"<b>{tipo_doc_cliente}:</b>", client_label_style),
+                Paragraph(nro_doc_cliente or "-", client_value_style),
+                Paragraph("<b>Moneda:</b>", client_label_style),
+                Paragraph(moneda_texto, client_value_style),
+            ],
+            [
+                Paragraph("<b>Direcci&#243;n:</b>", client_label_style),
+                Paragraph(direccion_cliente, client_value_style),
+                "",
+                "",
+            ],
+        ],
+        colWidths=[2.4 * cm, 8.1 * cm, 2.5 * cm, ancho_total - (2.4 * cm) - (8.1 * cm) - (2.5 * cm)],
+    )
+    client_body.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("LEFTPADDING", (0, 0), (0, -1), 6),
+                ("RIGHTPADDING", (0, 0), (0, -1), 8),
+                ("LEFTPADDING", (1, 0), (1, -1), 6),
+                ("RIGHTPADDING", (1, 0), (1, -1), 8),
+                ("LEFTPADDING", (2, 0), (2, 1), 12),
+                ("RIGHTPADDING", (2, 0), (2, 1), 6),
+                ("LEFTPADDING", (3, 0), (3, 1), 6),
+                ("RIGHTPADDING", (3, 0), (3, 1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                ("ALIGN", (2, 0), (2, 1), "LEFT"),
+                ("LINEABOVE", (0, 0), (-1, 0), 1.6, color_strip),
+                ("LINEBELOW", (0, 2), (-1, 2), 1.6, color_strip),
+            ]
+        )
+    )
+    client_card = Table([[client_body]], colWidths=[ancho_total])
+    client_card.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    client_card.hAlign = "LEFT"
+
+    detail_rows = [[
+        Paragraph("N°", table_header_style),
+        Paragraph("DESCRIPCIÓN", table_header_style),
+        Paragraph("UNIDAD", table_header_style),
+        Paragraph("CANTIDAD", table_header_style),
+        Paragraph("V. UNITARIO<br/>(S/ sin IGV)", table_header_style),
+        Paragraph("IGV<br/>(18%)", table_header_style),
+        Paragraph("IMPORTE<br/>(S/ con IGV)", table_header_style),
+    ]]
+    for item_data in line_context["lines"]:
+        detail_rows.append(
+            [
+                Paragraph(str(item_data.get("indice") or ""), body_center),
+                Paragraph(item_data["descripcion"], body),
+                Paragraph(_display_unit_code(item_data.get("unidad")), body_center),
+                Paragraph(_format_quantity(item_data["cantidad"]), body_center),
+                Paragraph(_format_money(simbolo, item_data.get("valor_unitario") or 0), body_center),
+                Paragraph(_format_money(simbolo, item_data["igv_item"]), body_center),
+                Paragraph(_format_money(simbolo, item_data["precio_total_item"]), body_center),
+            ]
+        )
+
+    detail_table = Table(
+        detail_rows,
+        colWidths=[
+            ancho_total * 0.065,
+            ancho_total * 0.32,
+            ancho_total * 0.10,
+            ancho_total * 0.115,
+            ancho_total * 0.135,
+            ancho_total * 0.115,
+            ancho_total * 0.15,
+        ],
+        repeatRows=1,
+    )
+    detail_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), color_principal),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.8, color_borde),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (0, -1), "CENTER"),
+                ("ALIGN", (2, 1), (-1, -1), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+
+    detail_rows = [[
+        Paragraph("N°", table_header_style),
+        Paragraph("CANTIDAD", table_header_style),
+        Paragraph("CÓDIGO", table_header_style),
+        Paragraph("DESCRIPCIÓN", table_header_style),
+        Paragraph("V/U", table_header_style),
+        Paragraph("P/U", table_header_style),
+        Paragraph("SUBTOTAL", table_header_style),
+        Paragraph("TOTAL", table_header_style),
+    ]]
+    for item_data in line_context["lines"]:
+        detail_rows.append(
+            [
+                Paragraph(str(item_data.get("indice") or ""), detail_center_style),
+                Paragraph(f"{_format_quantity(item_data['cantidad'])} {_display_unit_code(item_data.get('unidad'))}", detail_center_style),
+                Paragraph(str(item_data.get("codigo") or "-"), detail_center_style),
+                Paragraph(item_data["descripcion"], detail_text_style),
+                Paragraph(_format_detail_money(simbolo, item_data.get("valor_unitario") or 0), detail_money_style),
+                Paragraph(_format_detail_money(simbolo, item_data.get("p_unit_con_igv") or 0), detail_money_style),
+                Paragraph(_format_detail_money(simbolo, item_data.get("subtotal_item") or 0), detail_money_style),
+                Paragraph(_format_detail_money(simbolo, item_data["precio_total_item"]), detail_money_style),
+            ]
+        )
+
+    detail_table = Table(
+        detail_rows,
+        colWidths=[
+            ancho_total * 0.04,
+            ancho_total * 0.105,
+            ancho_total * 0.09,
+            ancho_total * 0.275,
+            ancho_total * 0.105,
+            ancho_total * 0.105,
+            ancho_total * 0.14,
+            ancho_total * 0.14,
+        ],
+        repeatRows=1,
+    )
+    detail_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), color_principal),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("INNERGRID", (0, 0), (-1, -1), 0.8, color_borde),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.8, color_borde),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (2, -1), "CENTER"),
+                ("ALIGN", (4, 0), (-1, -1), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    detail_table = _AutoRoundedContainerBox(
+        child=detail_table,
+        width=ancho_total,
+        stroke_color=color_borde,
+        radius=4.5,
+        stroke_width=1,
+        padding=0,
+    )
+    detail_table.hAlign = "LEFT"
+
+    totals_label_1 = "<nobr>OP. GRAVADAS:</nobr>"
+    totals_label_2 = "<nobr>IGV (18%):</nobr>"
+    totals_label_3 = "IMPORTE&nbsp;TOTAL:"
+    totals_value_1 = _format_money_inline(simbolo, total_gravado_d)
+    totals_value_2 = _format_money_inline(simbolo, total_igv_d)
+    totals_value_3 = _format_money_inline(simbolo, monto_total_d)
+
+    label_width_px = max(
+        stringWidth("OP. GRAVADAS:", body.fontName, body.fontSize),
+        stringWidth("IGV (18%):", body.fontName, body.fontSize),
+        stringWidth("IMPORTE TOTAL:", body_bold_blue.fontName, body_bold_blue.fontSize),
+    )
+    value_width_px = max(
+        stringWidth(totals_value_1.replace("&nbsp;", " "), totals_value_style.fontName, totals_value_style.fontSize),
+        stringWidth(totals_value_2.replace("&nbsp;", " "), totals_value_style.fontName, totals_value_style.fontSize),
+        stringWidth(totals_value_3.replace("&nbsp;", " "), amount_big_style.fontName, amount_big_style.fontSize),
+    )
+    # Account for cell padding so the label/value widths remain truly usable.
+    totals_label_width = label_width_px + 28
+    totals_value_width = value_width_px + 28
+    totals_box_width = min(totals_label_width + totals_value_width + 24, ancho_total * 0.74)
+    totals_value_col_width = totals_box_width - totals_label_width
+
+    totals_divider = _InsetHorizontalRule(totals_box_width, color_borde, inset=0.3 * cm, stroke_width=1)
+    totals_box = Table(
+        [
+            [Paragraph(totals_label_1, totals_label_style), Paragraph(totals_value_1, totals_value_style)],
+            [Paragraph(totals_label_2, totals_label_style), Paragraph(totals_value_2, totals_value_style)],
+            [totals_divider, ""],
+            [Paragraph(totals_label_3, totals_label_highlight_style), Paragraph(totals_value_3, amount_big_style)],
+        ],
+        colWidths=[totals_label_width, totals_value_col_width],
+    )
+    totals_box.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("SPAN", (0, 2), (1, 2)),
+                ("LEFTPADDING", (0, 0), (0, -1), 12),
+                ("RIGHTPADDING", (0, 0), (0, -1), 8),
+                ("LEFTPADDING", (1, 0), (1, -1), 8),
+                ("RIGHTPADDING", (1, 0), (1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                ("LEFTPADDING", (0, 2), (1, 2), 0),
+                ("RIGHTPADDING", (0, 2), (1, 2), 0),
+                ("TOPPADDING", (0, 2), (1, 2), 4),
+                ("BOTTOMPADDING", (0, 2), (1, 2), 4),
+                ("TOPPADDING", (0, 3), (1, 3), 3),
+                ("BOTTOMPADDING", (0, 3), (1, 3), 11),
+            ]
+        )
+    )
+    totals_box = _AutoRoundedContainerBox(
+        child=totals_box,
+        width=totals_box_width,
+        stroke_color=color_borde,
+        radius=4.5,
+        stroke_width=1,
+        padding=0,
+    )
+    totals_row = Table([["", totals_box]], colWidths=[ancho_total - totals_box_width, totals_box_width])
+    totals_row.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ("VALIGN", (1, 0), (1, 0), "TOP"),
+            ]
+        )
+    )
+
+    total_bar = Table(
+        [
+            [Paragraph(monto_en_letras_str, total_bar_text_style)],
+        ],
+        colWidths=[ancho_total],
+    )
+    total_bar.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), color_suave),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ]
+        )
+    )
+    total_bar = _AutoRoundedContainerBox(
+        child=total_bar,
+        width=ancho_total,
+        stroke_color=color_borde,
+        radius=4.5,
+        stroke_width=1,
+        padding=0,
+    )
+
+    quote_notes_elements = []
+    payment_methods_text = _build_payment_methods_text(
+        company_data["bank_accounts"],
+        beneficiary_name=company_data["name"],
+    )
+    if not is_comprobante:
+        quote_notes_elements.extend(_build_observation_paragraphs(document_data, tenant, body))
+        if payment_methods_text:
+            quote_notes_elements.append(Paragraph(payment_methods_text, body))
+
+    qr_col_width = ancho_total * 0.22
+    if is_comprobante:
+        qr_content = _build_qr_content(
+            document_data,
+            f"{company_data['ruc']}|{tipo_doc_sunat}|{serie}|{correlativo}|{total_igv_d}|{monto_total_d}|{fecha_emision}|{tipo_doc_cliente}|{nro_doc_cliente}",
+        )
+        qr_flowable = _build_qr_flowable(document_data, qr_content, qr_col_width)
+        qr_title = Paragraph(
+            f"Representación impresa de la {doc_title_str}.",
+            footer_title_style,
+        )
+        qr_body = Paragraph(
+            "El usuario puede consultar su validez en SUNAT Virtual:",
+            body,
+        )
+        qr_link = Paragraph("www.sunat.gob.pe", body_bold_blue)
+        bottom_left_text = "Puedes descargar el XML, CDR y representación impresa desde nuestro portal."
+    else:
+        qr_content, wallet = _build_quote_wallet_qr_content(company_data["bank_accounts"], company_data["name"])
+        qr_flowable = _build_generated_qr_flowable(qr_content, 1.75 * inch, qr_col_width)
+        provider = (wallet or {}).get("proveedor") or "billetera digital"
+        qr_title = Paragraph(
+            f"Escanea para pagar con {provider}.",
+            footer_title_style,
+        )
+        qr_lines = []
+        if wallet and wallet.get("titular"):
+            qr_lines.append(f"Titular: {wallet['titular']}")
+        if wallet and wallet.get("numero"):
+            qr_lines.append(f"Número: {wallet['numero']}")
+        if wallet and wallet.get("nota"):
+            qr_lines.append(wallet["nota"])
+        qr_body = Paragraph("<br/>".join(qr_lines) if qr_lines else "Usa la billetera digital configurada por el emisor.", body)
+        qr_link = Paragraph("", body)
+        bottom_left_text = "Condiciones sujetas a confirmación comercial."
+
+    qr_right_rows = [[qr_title], [qr_body]]
+    if is_comprobante:
+        qr_right_rows.append([qr_link])
+    else:
+        if qr_link.getPlainText().strip():
+            qr_right_rows.append([qr_link])
+        for paragraph in quote_notes_elements:
+            qr_right_rows.append([paragraph])
+
+    qr_right = Table(
+        qr_right_rows,
+        colWidths=[ancho_total * 0.58],
+    )
+    qr_right.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 14),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+
+    qr_block = Table(
+        [[qr_flowable, "", qr_right]],
+        colWidths=[qr_col_width, ancho_total * 0.03, ancho_total * 0.75],
+    )
+    qr_block.setStyle(
+        TableStyle(
+            [
+                ("LINEABOVE", (0, 0), (-1, -1), 1.5, color_principal),
+                ("LINEBELOW", (0, 0), (-1, -1), 1.5, color_principal),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 12),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ]
+        )
+    )
+    qr_block = _AutoVerticalDividerBox(
+        child=qr_block,
+        width=ancho_total,
+        divider_positions=[qr_col_width],
+        divider_color=color_borde,
+        inset_y=0.3 * cm,
+        stroke_width=1,
+    )
+
+    footer_contact = _build_footer_contact_text(company_data)
+    footer_table = Table(
+        [[Paragraph(bottom_left_text, body_small), Paragraph(footer_contact, body_small)]],
+        colWidths=[ancho_total * 0.62, ancho_total * 0.38],
+    )
+    footer_table.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+            ]
+        )
+    )
+
+    footer_block = Table(
+        [[qr_block], [footer_table]],
+        colWidths=[ancho_total],
+        splitByRow=0,
+    )
+    footer_block.setStyle(
+        TableStyle(
+            [
+                ("NOSPLIT", (0, 0), (-1, -1)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+
+    elementos = [
+        header_container,
+        Spacer(1, 14),
+        client_card,
+        Spacer(1, 14),
+        detail_table,
+        Spacer(1, 14),
+        totals_row,
+        Spacer(1, 14),
+        total_bar,
+    ]
+
+    usable_height = A4[1] - doc.topMargin - doc.bottomMargin
+    consumed_height = sum(_measure_flowable_height(flowable, ancho_total) for flowable in elementos)
+    footer_height = _measure_flowable_height(footer_block, ancho_total)
+    remaining_height = max(0, usable_height - consumed_height - footer_height - 28)
+
+    elementos += [Spacer(1, remaining_height), footer_block]
+
+    try:
+        doc.build(elementos)
+    except Exception as build_err:
+        print(f"ERROR: Fallo la construccion del PDF moderno: {build_err}")
+        traceback.print_exc()
+        raise
+
+    buffer.seek(0)
+    return buffer
+
+
+def create_pdf_buffer(document_data, tenant: models.Tenant, document_type: str):
+    return _build_modern_pdf_buffer(document_data, tenant, is_comprobante=(document_type == "comprobante"))
 
 
 def generar_pdf_cotizacion(cotizacion: models.Cotizacion, tenant: models.Tenant):

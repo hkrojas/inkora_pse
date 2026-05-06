@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 _LOCAL_ENVIRONMENTS = {"local", "development", "dev", "test"}
+_VALID_FISCAL_ENVIRONMENTS = {"beta", "production"}
 _DEFAULT_LOCAL_CORS_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:5174",
@@ -27,6 +28,7 @@ class Settings(BaseSettings):
 
     # Seguridad
     SECRET_KEY: str = ""
+    FIELD_ENCRYPTION_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 720  # 12 horas
     LOG_LEVEL: str = "INFO"
@@ -37,15 +39,22 @@ class Settings(BaseSettings):
     # Facturación y APIs externas
     API_URL: str = "https://facturacion.apisperu.com/api/v1"
     API_TOKEN: str = ""
+    SMARTPSE_BASE_URL: str = "https://panel.smartpse.pe"
+    SMARTPSE_API_TOKEN: str = ""
+    SMARTPSE_TIMEOUT_SECONDS: int = 30
     DNIRUC_API_URL: str = "https://dniruc.apisperu.com/api/v1"
     DNIRUC_TOKEN: str = ""
     GEMINI_API_KEY: str = ""
-    EMISSION_MODE_DEFAULT: str = "sync"
+    EMISSION_MODE_DEFAULT: str = "async"
     EMISSION_WORKER_POLL_SECONDS: int = 2
     EMISSION_MAX_ATTEMPTS: int = 5
     EMISSION_RETRY_BASE_SECONDS: int = 15
     EMISSION_PROCESSING_TIMEOUT_SECONDS: int = 300
     EMISSION_WORKER_CONCURRENCY: int = 3
+    FISCAL_ENV: str = Field(
+        default="",
+        validation_alias=AliasChoices("FISCAL_ENV", "FISCAL_ENVIRONMENT"),
+    )
 
     # Storage / assets
     SUPABASE_URL: str = ""
@@ -86,6 +95,16 @@ class Settings(BaseSettings):
             raise ValueError("EMISSION_MODE_DEFAULT debe ser 'sync' o 'async'.")
         return normalized
 
+    @field_validator("FISCAL_ENV")
+    @classmethod
+    def normalize_fiscal_env(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            return ""
+        if normalized not in _VALID_FISCAL_ENVIRONMENTS:
+            raise ValueError("FISCAL_ENV debe ser 'beta' o 'production'.")
+        return normalized
+
     def model_post_init(self, __context) -> None:
         if not self.DATABASE_URL.strip():
             raise ValueError("DATABASE_URL es obligatoria.")
@@ -100,8 +119,25 @@ class Settings(BaseSettings):
                 self.INTERNAL_REGISTRATION_TOKEN,
             )
 
+        if not self.FISCAL_ENV:
+            object.__setattr__(
+                self,
+                "FISCAL_ENV",
+                "production" if self.is_production else "beta",
+            )
+
         if self.is_production and self.INIT_DB_ON_STARTUP:
             raise ValueError("INIT_DB_ON_STARTUP no está permitido en producción.")
+
+        if self.is_production and self.FISCAL_ENV != "production":
+            raise ValueError(
+                "FISCAL_ENV debe ser 'production' cuando ENVIRONMENT es production."
+            )
+
+        if not self.is_production and self.FISCAL_ENV == "production":
+            raise ValueError(
+                "FISCAL_ENV='production' solo está permitido cuando ENVIRONMENT es production."
+            )
 
         if self.is_non_local and self.BACKEND_URL.startswith(
             ("http://localhost", "http://127.0.0.1")
@@ -138,6 +174,14 @@ class Settings(BaseSettings):
     @property
     def has_supabase_storage(self) -> bool:
         return bool(self.SUPABASE_URL.strip() and self.SUPABASE_KEY.strip())
+
+    @property
+    def is_fiscal_beta(self) -> bool:
+        return self.FISCAL_ENV == "beta"
+
+    @property
+    def is_fiscal_production(self) -> bool:
+        return self.FISCAL_ENV == "production"
 
     @property
     def cors_allow_origins(self) -> list[str]:

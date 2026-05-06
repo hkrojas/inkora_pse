@@ -1,59 +1,76 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/ui/Toast';
 import AppLayout from './layouts/AppLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import ClientesPage from './pages/ClientesPage';
-import ProductosPage from './pages/ProductosPage';
-import CotizacionesPage from './pages/CotizacionesPage';
-import CotizacionDetalle from './pages/CotizacionDetalle';
-import CobranzaPage from './pages/CobranzaPage';
-import GuiasPage from './pages/GuiasPage';
-import GuiaDetalle from './pages/GuiaDetalle';
-import ConfiguracionPage from './pages/ConfiguracionPage';
-import PdfDesignerPage from './pages/PdfDesignerPage';
-import SuperadminPage from './pages/SuperadminPage';
-import NotasPage from './pages/NotasPage';
-import RetencionesPage from './pages/RetencionesPage';
-import PercepcionesPage from './pages/PercepcionesPage';
-import ResumenDiarioPage from './pages/ResumenDiarioPage';
-import BajasPage from './pages/BajasPage';
-import ReversionesPage from './pages/ReversionesPage';
-import FacturasPage from './pages/FacturasPage';
-import BoletasPage from './pages/BoletasPage';
-import ComprobanteNuevoPage from './pages/ComprobanteNuevoPage';
-import ChangePasswordPage from './pages/ChangePasswordPage';
+
+const AccessRequestPage = lazy(() => import('./pages/AccessRequestPage'));
+const PasswordRecoveryPage = lazy(() => import('./pages/PasswordRecoveryPage'));
+const ClientesPage = lazy(() => import('./pages/ClientesPage'));
+const ProductosPage = lazy(() => import('./pages/ProductosPage'));
+const CotizacionesPage = lazy(() => import('./pages/CotizacionesPage'));
+const CotizacionDetalle = lazy(() => import('./pages/CotizacionDetalle'));
+const CobranzaPage = lazy(() => import('./pages/CobranzaPage'));
+const GuiasPage = lazy(() => import('./pages/GuiasPage'));
+const GuiaDetalle = lazy(() => import('./pages/GuiaDetalle'));
+const ConfiguracionPage = lazy(() => import('./pages/ConfiguracionPage'));
+const PdfDesignerPage = lazy(() => import('./pages/PdfDesignerPage'));
+const SuperadminPage = lazy(() => import('./pages/SuperadminPage'));
+const NotasPage = lazy(() => import('./pages/NotasPage'));
+const RetencionesPage = lazy(() => import('./pages/RetencionesPage'));
+const PercepcionesPage = lazy(() => import('./pages/PercepcionesPage'));
+const ResumenDiarioPage = lazy(() => import('./pages/ResumenDiarioPage'));
+const BajasPage = lazy(() => import('./pages/BajasPage'));
+const ReversionesPage = lazy(() => import('./pages/ReversionesPage'));
+const FacturasPage = lazy(() => import('./pages/FacturasPage'));
+const BoletasPage = lazy(() => import('./pages/BoletasPage'));
+const ComprobanteNuevoPage = lazy(() => import('./pages/ComprobanteNuevoPage'));
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[280px] items-center justify-center px-4 text-sm text-[var(--color-text-muted)]">
+      Cargando...
+    </div>
+  );
+}
+
+function LazyRoute({ children }) {
+  return <Suspense fallback={<RouteFallback />}>{children}</Suspense>;
+}
 
 export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/recuperar-password" element={<LazyRoute><PasswordRecoveryPage /></LazyRoute>} />
+            <Route path="/solicitar-acceso" element={<LazyRoute><AccessRequestPage /></LazyRoute>} />
             <Route element={<AppLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/clientes" element={<ClientesPage />} />
-              <Route path="/productos" element={<ProductosPage />} />
-              <Route path="/cotizaciones" element={<CotizacionesPage />} />
-              <Route path="/cotizaciones/:id" element={<CotizacionDetalle />} />
-              <Route path="/cobranza" element={<CobranzaPage />} />
-              <Route path="/guias" element={<GuiasPage />} />
-              <Route path="/guias/:id" element={<GuiaDetalle />} />
-              <Route path="/configuracion" element={<ConfiguracionPage />} />
-              <Route path="/cambiar-password" element={<ChangePasswordPage />} />
-              <Route path="/diseno-pdf" element={<PdfDesignerPage />} />
-              <Route path="/superadmin" element={<SuperadminPage />} />
-              <Route path="/comprobantes/nuevo" element={<ComprobanteNuevoPage />} />
-              <Route path="/facturas" element={<FacturasPage />} />
-              <Route path="/boletas" element={<BoletasPage />} />
-              <Route path="/notas" element={<NotasPage />} />
-              <Route path="/retenciones" element={<RetencionesPage />} />
-              <Route path="/percepciones" element={<PercepcionesPage />} />
-              <Route path="/resumen-diario" element={<ResumenDiarioPage />} />
-              <Route path="/bajas" element={<BajasPage />} />
-              <Route path="/reversiones" element={<ReversionesPage />} />
+              <Route path="/clientes" element={<LazyRoute><ClientesPage /></LazyRoute>} />
+              <Route path="/productos" element={<LazyRoute><ProductosPage /></LazyRoute>} />
+              <Route path="/cotizaciones" element={<LazyRoute><CotizacionesPage /></LazyRoute>} />
+              <Route path="/cotizaciones/:id" element={<LazyRoute><CotizacionDetalle /></LazyRoute>} />
+              <Route path="/cobranza" element={<LazyRoute><CobranzaPage /></LazyRoute>} />
+              <Route path="/guias" element={<LazyRoute><GuiasPage /></LazyRoute>} />
+              <Route path="/guias/:id" element={<LazyRoute><GuiaDetalle /></LazyRoute>} />
+              <Route path="/configuracion" element={<LazyRoute><ConfiguracionPage /></LazyRoute>} />
+              <Route path="/cambiar-password" element={<Navigate to="/configuracion?tab=seguridad" replace />} />
+              <Route path="/diseno-pdf" element={<LazyRoute><PdfDesignerPage /></LazyRoute>} />
+              <Route path="/superadmin" element={<LazyRoute><SuperadminPage /></LazyRoute>} />
+              <Route path="/comprobantes/nuevo" element={<LazyRoute><ComprobanteNuevoPage /></LazyRoute>} />
+              <Route path="/facturas" element={<LazyRoute><FacturasPage /></LazyRoute>} />
+              <Route path="/boletas" element={<LazyRoute><BoletasPage /></LazyRoute>} />
+              <Route path="/notas" element={<LazyRoute><NotasPage /></LazyRoute>} />
+              <Route path="/retenciones" element={<LazyRoute><RetencionesPage /></LazyRoute>} />
+              <Route path="/percepciones" element={<LazyRoute><PercepcionesPage /></LazyRoute>} />
+              <Route path="/resumen-diario" element={<LazyRoute><ResumenDiarioPage /></LazyRoute>} />
+              <Route path="/bajas" element={<LazyRoute><BajasPage /></LazyRoute>} />
+              <Route path="/reversiones" element={<LazyRoute><ReversionesPage /></LazyRoute>} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

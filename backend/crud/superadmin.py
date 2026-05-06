@@ -11,6 +11,7 @@ import models
 from models.emission_jobs import EMISSION_JOB_STATUS_FAILED
 from models.tenants import APISPERU_TOKEN_STATUS_OK, APISPERU_TOKEN_STATUS_INVALID, APISPERU_TOKEN_STATUS_UNCHECKED
 from security import get_password_hash
+from crud.auth import utc_now_naive
 
 
 def _current_month_start() -> datetime:
@@ -195,7 +196,7 @@ def reset_user_password(db: Session, user_id: int) -> Optional[dict]:
     temp_password = generate_temp_password()
     user.hashed_password = get_password_hash(temp_password)
     user.must_change_password = True
-    user.password_changed_at = None
+    user.password_changed_at = utc_now_naive()
     db.commit()
     return {
         "user_id": user.id,
@@ -209,6 +210,8 @@ def toggle_user_active(db: Session, user_id: int, is_active: bool) -> Optional[m
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         return None
+    if user.is_active and not is_active:
+        user.password_changed_at = utc_now_naive()
     user.is_active = is_active
     db.commit()
     db.refresh(user)

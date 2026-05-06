@@ -31,12 +31,13 @@ Ejecutar:
 import sys
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -49,19 +50,34 @@ from conftest import (
 import crud
 import models
 import schemas
+from api_dependencies import (
+    get_current_user,
+    get_db,
+    get_db_tenant,
+    require_emission_allowed,
+)
 from access_control import ROLE_ADMIN
+from routers import facturacion as facturacion_router
 from routers.facturacion import (
+    _ensure_emission_credentials,
     _ensure_document_can_be_voided,
     _ensure_note_target_is_facturada,
+    _get_tenant_emission_capabilities,
     _raise_value_error_as_http,
     _validar_pre_emision,
 )
-from services import facturacion_service
+from services import facturacion_service, smartpse_client
 
 
 # ============================================================================
 # HELPERS
 # ============================================================================
+
+def _enable_smartpse_for_test(tenant):
+    tenant.smartpse_company_id = "77"
+    tenant.smartpse_environment = "demo"
+    tenant.smartpse_usuario_secundaria = "AB3KPQR9"
+    tenant.smartpse_token_acceso = "MX7TNVQG"
 
 def _make_mock_quote(
     *,
@@ -76,7 +92,21 @@ def _make_mock_quote(
     quote.estado = estado
     quote.tipo_comprobante = tipo_comprobante
     quote.total_venta = total_venta
-    quote.items = [MagicMock()] if items else []
+    quote.fecha_emision = datetime.now(timezone.utc)
+    quote.fecha_vencimiento = None
+    quote.condicion_pago = "contado"
+    quote.cuotas_pago = []
+    if items:
+        item = MagicMock()
+        item.descripcion = "Servicio de impresion"
+        item.cantidad = Decimal("1")
+        item.precio_unitario = Decimal("118.00")
+        item.unidad_medida = "NIU"
+        item.tipo_afectacion_igv = "10"
+        item.codigo_producto = "SERV-001"
+        quote.items = [item]
+    else:
+        quote.items = []
 
     if cliente is None:
         c = MagicMock()
@@ -94,6 +124,103 @@ def _make_mock_cliente(*, tipo="6", numero="20100100100"):
     c.tipo_documento = tipo
     c.numero_documento = numero
     return c
+
+
+def _set_subscription(db_session, tenant, status: str):
+    subscription = crud.get_subscription_by_tenant(db_session, tenant.id)
+    if subscription is None:
+        subscription = models.Subscription(tenant_id=tenant.id)
+        db_session.add(subscription)
+    subscription.status = status
+    db_session.commit()
+    db_session.refresh(subscription)
+    return subscription
+
+
+# ============================================================================
+# EMISION: suscripcion explicita requerida
+# ============================================================================
+
+class TestEmissionSubscriptionGuard:
+
+    def test_tenant_sin_subscription_no_puede_emitir_por_endpoint_normal(self, db_session):
+        tenant = make_tenant(db_session, "SUB00")
+        user = make_user(db_session, tenant, email="sub00@test.com")
+        cliente = make_cliente(db_session, tenant, "SUB00")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+
+        app = FastAPI()
+        app.include_router(facturacion_router.router)
+
+        def override_db():
+            yield db_session
+
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_db] = override_db
+        app.dependency_overrides[get_db_tenant] = override_db
+
+        with patch("routers.facturacion.facturacion_service.emitir_factura") as provider_call:
+            response = TestClient(app).post(
+                f"/cotizaciones/{quote.id}/facturar",
+                json={"tipo_comprobante": "01"},
+            )
+
+        assert response.status_code == 402
+        assert (
+            response.json()["detail"]["message"]
+            == "El tenant no tiene una suscripción activa para emitir."
+        )
+        provider_call.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            models.SUBSCRIPTION_STATUS_ACTIVE,
+            models.SUBSCRIPTION_STATUS_TRIAL,
+            "grace",
+        ],
+    )
+    def test_tenant_con_subscription_permitida_pasa_guard_de_emision(
+        self,
+        db_session,
+        status,
+    ):
+        tenant = make_tenant(db_session, f"SUBOK{status[:1]}")
+        user = make_user(db_session, tenant, email=f"subok-{status}@test.com")
+        _set_subscription(db_session, tenant, status)
+
+        assert require_emission_allowed(user, db_session) == user
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            None,
+            models.SUBSCRIPTION_STATUS_SUSPENDED,
+            "payment_required",
+            models.SUBSCRIPTION_STATUS_CANCELLED,
+            models.SUBSCRIPTION_STATUS_EXPIRED,
+            "desconocido",
+        ],
+    )
+    def test_tenant_sin_subscription_activa_bloquea_guard_de_emision(
+        self,
+        db_session,
+        status,
+    ):
+        suffix = "SUBMISS" if status is None else f"SUB{str(status)[:3]}"
+        tenant = make_tenant(db_session, suffix)
+        user = make_user(db_session, tenant, email=f"{suffix.lower()}@test.com")
+        if status is not None:
+            _set_subscription(db_session, tenant, status)
+
+        with pytest.raises(HTTPException) as exc:
+            require_emission_allowed(user, db_session)
+
+        assert exc.value.status_code == 402
+        assert (
+            exc.value.detail["message"]
+            == "El tenant no tiene una suscripción activa para emitir."
+        )
 
 
 # ============================================================================
@@ -213,6 +340,51 @@ class TestPreValidacion:
 
     # ── check 7: no anulada ───────────────────────────────────────────────
 
+    def test_fecha_emision_futura_lanza_400(self):
+        quote = _make_mock_quote()
+        quote.fecha_emision = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        with pytest.raises(HTTPException) as exc:
+            _validar_pre_emision(quote, "01")
+        assert exc.value.status_code == 400
+        assert "fecha" in exc.value.detail.lower()
+
+    def test_unidad_sunat_invalida_lanza_400(self):
+        quote = _make_mock_quote()
+        quote.items[0].unidad_medida = "BAD"
+        with pytest.raises(HTTPException) as exc:
+            _validar_pre_emision(quote, "01")
+        assert exc.value.status_code == 400
+        assert "unidad" in exc.value.detail.lower()
+
+    def test_credito_con_cuotas_validas_pasa(self):
+        quote = _make_mock_quote()
+        quote.condicion_pago = "credito_30"
+        quote.cuotas_pago = [
+            {
+                "fecha_pago": (quote.fecha_emision + timedelta(days=15)).isoformat(),
+                "monto": "59.00",
+            },
+            {
+                "fecha_pago": (quote.fecha_emision + timedelta(days=30)).isoformat(),
+                "monto": "59.00",
+            },
+        ]
+        _validar_pre_emision(quote, "01")
+
+    def test_credito_con_suma_de_cuotas_incorrecta_lanza_400(self):
+        quote = _make_mock_quote()
+        quote.condicion_pago = "credito_30"
+        quote.cuotas_pago = [
+            {
+                "fecha_pago": (quote.fecha_emision + timedelta(days=30)).isoformat(),
+                "monto": "100.00",
+            }
+        ]
+        with pytest.raises(HTTPException) as exc:
+            _validar_pre_emision(quote, "01")
+        assert exc.value.status_code == 400
+        assert "suma de cuotas" in exc.value.detail.lower()
+
     def test_cotizacion_anulada_lanza_400(self):
         quote = _make_mock_quote(estado="anulada")
         with pytest.raises(HTTPException) as exc:
@@ -295,6 +467,28 @@ class TestFacturacionRouterHelpers:
 
         assert exc.value.status_code == 400
         assert "no requiere anulacion" in exc.value.detail.lower()
+
+    def test_ensure_document_can_be_voided_rechaza_facturada_sin_aceptacion_sunat(self):
+        comprobante = MagicMock()
+        comprobante.estado = "facturada"
+        comprobante.sunat_error = None
+        comprobante.sunat_xml_url = None
+        comprobante.sunat_xml_content = None
+
+        with pytest.raises(HTTPException) as exc:
+            _ensure_document_can_be_voided(comprobante)
+
+        assert exc.value.status_code == 400
+        assert "aceptados por sunat" in exc.value.detail.lower()
+
+    def test_ensure_document_can_be_voided_acepta_facturada_con_xml_sunat(self):
+        comprobante = MagicMock()
+        comprobante.estado = "facturada"
+        comprobante.sunat_error = None
+        comprobante.sunat_xml_url = "https://storage.test/f001-1.xml"
+        comprobante.sunat_xml_content = None
+
+        _ensure_document_can_be_voided(comprobante)
 
 
 class TestConteoDocumental:
@@ -485,58 +679,50 @@ class TestFalloApiExterna:
         return fiscal, user, db_session
 
     def test_api_timeout_lanza_facturacion_exception(self, db_session):
-        import requests
-
         fiscal, user, db = self._make_mock_cotizacion_for_service(db_session)
+        _enable_smartpse_for_test(user.tenant)
+        fake_client = MagicMock()
+        fake_client.process_xml.side_effect = smartpse_client.SmartPSEException(
+            "Timeout enviando documento Smart PSE"
+        )
 
-        # Mockear el token para que no falle por credenciales
-        user.apisperu_token = "fake_token"
-        if hasattr(user, "tenant") and user.tenant:
-            user.tenant.apisperu_token = "fake_token"
-
-        with patch("requests.post", side_effect=requests.exceptions.Timeout("timeout")):
+        with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
             with pytest.raises(facturacion_service.FacturacionException, match="[Ee]rror|[Tt]imeout|comunicaci"):
                 facturacion_service.emitir_factura(fiscal, db, user, tipo_doc_override="01")
 
     def test_api_connection_error_lanza_facturacion_exception(self, db_session):
-        import requests
-
         fiscal, user, db = self._make_mock_cotizacion_for_service(db_session)
-        user.apisperu_token = "fake_token"
-        if hasattr(user, "tenant") and user.tenant:
-            user.tenant.apisperu_token = "fake_token"
+        _enable_smartpse_for_test(user.tenant)
+        fake_client = MagicMock()
+        fake_client.process_xml.side_effect = smartpse_client.SmartPSEException(
+            "No se pudo conectar con Smart PSE"
+        )
 
-        with patch("requests.post", side_effect=requests.exceptions.ConnectionError("conn refused")):
+        with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
             with pytest.raises(facturacion_service.FacturacionException):
                 facturacion_service.emitir_factura(fiscal, db, user, tipo_doc_override="01")
 
     def test_sin_token_lanza_facturacion_exception(self, db_session):
-        """Si el tenant no tiene token API configurado, debe lanzar FacturacionException."""
+        """Si el tenant no tiene credenciales Smart PSE, debe lanzar FacturacionException."""
         tenant = make_tenant(db_session, "NT01")
         user = make_user(db_session, tenant, email="nt01@test.com")
         cliente = make_cliente(db_session, tenant, "NT01")
         quote = make_quote_via_crud(db_session, tenant, user, cliente)
         fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
 
-        # Parchear _get_apisperu_token para que retorne None sin importar el fallback global
-        with patch("services.facturacion_service._get_apisperu_token", return_value=None):
-            with pytest.raises(facturacion_service.FacturacionException, match="[Ff]alta|[Tt]oken|[Aa]PI"):
-                facturacion_service.emitir_factura(fiscal, db_session, user, tipo_doc_override="01")
+        with pytest.raises(facturacion_service.FacturacionException, match="Smart PSE|credenciales"):
+            facturacion_service.emitir_factura(fiscal, db_session, user, tipo_doc_override="01")
 
     def test_api_422_lanza_facturacion_exception(self, db_session):
         """Respuesta 422 de la API debe propagarse como FacturacionException."""
         fiscal, user, db = self._make_mock_cotizacion_for_service(db_session)
-        user.apisperu_token = "fake_token"
-        if hasattr(user, "tenant") and user.tenant:
-            user.tenant.apisperu_token = "fake_token"
+        _enable_smartpse_for_test(user.tenant)
+        fake_client = MagicMock()
+        fake_client.process_xml.side_effect = smartpse_client.SmartPSEException(
+            "Campo requerido faltante"
+        )
 
-        mock_response = MagicMock()
-        mock_response.status_code = 422
-        mock_response.json.return_value = {
-            "errors": [{"code": "1234", "description": "Campo requerido faltante"}]
-        }
-
-        with patch("requests.post", return_value=mock_response):
+        with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
             with pytest.raises(facturacion_service.FacturacionException):
                 facturacion_service.emitir_factura(fiscal, db, user, tipo_doc_override="01")
 
@@ -549,11 +735,11 @@ class TestFalloApiExterna:
         cliente = make_cliente(db_session, tenant, "EX50")
         quote = make_quote_via_crud(db_session, tenant, user, cliente)
         fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
-        user.apisperu_token = "fake_token"
-        if hasattr(user, "tenant") and user.tenant:
-            user.tenant.apisperu_token = "fake_token"
+        _enable_smartpse_for_test(user.tenant)
+        fake_client = MagicMock()
+        fake_client.process_xml.side_effect = smartpse_client.SmartPSEException("Timeout Smart PSE")
 
-        with patch("requests.post", side_effect=requests.exceptions.Timeout()):
+        with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
             try:
                 facturacion_service.emitir_factura(fiscal, db_session, user, tipo_doc_override="01")
             except facturacion_service.FacturacionException:
@@ -566,16 +752,17 @@ class TestFalloApiExterna:
         )
 
 
-class TestServicioApisPeruIntegrado:
+class TestServicioSmartPSEIntegrado:
     def test_obtener_tipo_documento_codigo_preserva_codigos_numericos(self):
         assert facturacion_service.obtener_tipo_documento_codigo("6") == "6"
         assert facturacion_service.obtener_tipo_documento_codigo("1") == "1"
+        assert facturacion_service.obtener_tipo_documento_codigo("A") == "A"
 
-    def test_emitir_factura_construye_payload_alineado_a_apisperu(self, db_session):
+    def test_emitir_factura_construye_xml_alineado_a_smartpse(self, db_session):
         tenant = make_tenant(db_session, "AP01")
+        tenant.business_ruc = "20123456789"
         user = make_user(db_session, tenant, email="ap01@test.com")
-        tenant.apisperu_token = "fake_token"
-        tenant.apisperu_url = "https://facturacion.test/api/v1"
+        _enable_smartpse_for_test(tenant)
         db_session.commit()
 
         cliente = make_cliente(
@@ -588,23 +775,17 @@ class TestServicioApisPeruIntegrado:
         quote = make_quote_via_crud(db_session, tenant, user, cliente)
         fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
 
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "hash": "abc123",
-            "xml": "<xml />",
-            "sunatResponse": {
-                "success": True,
-                "cdrZip": "zip64",
-                "cdrResponse": {
-                    "code": "0",
-                    "description": "Aceptado",
-                    "notes": [],
-                },
-            },
+        fake_client = MagicMock()
+        fake_client.process_xml.return_value = {
+            "estado": 200,
+            "mensaje": "Aceptado",
+            "xml_firmado": "<Invoice />",
+            "codigo_hash": "abc123",
+            "cdr": "<ApplicationResponse/>",
+            "rechazado": False,
         }
 
-        with patch("requests.post", return_value=mock_response) as post_mock:
+        with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
             result = facturacion_service.emitir_factura(
                 fiscal,
                 db_session,
@@ -612,21 +793,22 @@ class TestServicioApisPeruIntegrado:
                 tipo_doc_override="01",
             )
 
-        sent_payload = json.loads(post_mock.call_args.kwargs["data"])
-        assert sent_payload["tipoDoc"] == "01"
-        assert sent_payload["tipoOperacion"] == "0101"
-        assert sent_payload["client"]["tipoDoc"] == "6"
-        assert sent_payload["mtoImpVenta"] == 118.0
-        assert sent_payload["subTotal"] == 118.0
-        assert sent_payload["formaPago"]["tipo"] == "Contado"
+        called_tenant, filename, xml_content = fake_client.process_xml.call_args.args
+        assert called_tenant.id == tenant.id
+        filename_parts = filename.split("-")
+        assert len(filename_parts) == 4
+        assert filename_parts[0].isdigit()
+        assert len(filename_parts[0]) == 11
+        assert filename_parts[1] == "01"
+        assert b"Invoice" in xml_content
+        assert b"InvoiceTypeCode" in xml_content
         assert result["success"] is True
-        assert result["sunat_response"]["cdrResponse"]["code"] == "0"
+        assert result["hash"] == "abc123"
 
     def test_anular_factura_usa_ticket_y_status_real(self, db_session):
         tenant = make_tenant(db_session, "AP02")
         user = make_user(db_session, tenant, email="ap02@test.com")
-        tenant.apisperu_token = "fake_token"
-        tenant.apisperu_url = "https://facturacion.test/api/v1"
+        _enable_smartpse_for_test(tenant)
         db_session.commit()
 
         cliente = make_cliente(db_session, tenant, "AP02")
@@ -635,48 +817,92 @@ class TestServicioApisPeruIntegrado:
         fiscal.estado = "facturada"
         db_session.commit()
 
-        send_response = MagicMock()
-        send_response.status_code = 200
-        send_response.json.return_value = {
-            "hash": "hash-ra",
-            "xml": "<voided />",
-            "sunatResponse": {
-                "success": True,
-                "ticket": "ticket-123",
-            },
+        fake_client = MagicMock()
+        fake_client.process_xml.return_value = {
+            "estado": 200,
+            "mensaje": "Resumen enviado, consulte el ticket",
+            "ticket": "ticket-123",
+            "rechazado": False,
         }
-        status_response = MagicMock()
-        status_response.status_code = 200
-        status_response.json.return_value = {
-            "success": True,
-            "code": "0",
-            "cdrZip": "zip64",
-            "cdrResponse": {
-                "code": "0",
-                "description": "Aceptado",
-                "notes": [],
-            },
+        fake_client.consult_ticket.return_value = {
+            "estado": 200,
+            "mensaje": "Aceptado",
+            "cdr": "<ApplicationResponse/>",
+            "rechazado": False,
         }
 
-        with patch("requests.post", return_value=send_response) as post_mock, patch(
-            "requests.get", return_value=status_response
-        ) as get_mock:
+        with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
             result = facturacion_service.anular_comprobante(
                 fiscal,
                 "ERROR EN CALCULOS",
                 user,
-            )
+        )
 
-        sent_payload = json.loads(post_mock.call_args.kwargs["data"])
-        assert sent_payload["details"][0]["desMotivoBaja"] == "ERROR EN CALCULOS"
-        assert get_mock.call_args.kwargs["params"]["ticket"] == "ticket-123"
+        assert "-RA-" in fake_client.process_xml.call_args.args[1]
+        fake_client.consult_ticket.assert_not_called()
         assert result["success"] is True
+        assert result["pending"] is True
         assert result["ticket"] == "ticket-123"
 
 
 # ============================================================================
 # EJECUCIÓN DIRECTA
 # ============================================================================
+
+class TestEmissionCapabilities:
+    def test_direct_sunat_requires_complete_credentials(self, db_session):
+        tenant = make_tenant(db_session, "CAP01")
+        tenant.sunat_usuario_sol = "MODDATOS"
+        tenant.sunat_cert_url = "https://storage.test/cert.p12"
+        tenant.sunat_clave_sol = None
+        tenant.sunat_cert_password = None
+        db_session.commit()
+
+        _, has_direct_sunat, has_apisperu = _get_tenant_emission_capabilities(
+            db_session,
+            tenant.id,
+        )
+
+        assert has_direct_sunat is False
+        assert has_apisperu is False
+
+    def test_beta_env_requires_smartpse_even_with_complete_direct_sunat_credentials(self, db_session):
+        tenant = make_tenant(db_session, "CAP01B")
+        tenant.sunat_usuario_sol = "MODDATOS"
+        tenant.sunat_clave_sol = "moddatos"
+        tenant.sunat_cert_password = "secret"
+        tenant.sunat_cert_url = "https://storage.test/cert.p12"
+        db_session.commit()
+
+        _, has_direct_sunat, has_smartpse = _get_tenant_emission_capabilities(
+            db_session,
+            tenant.id,
+        )
+
+        assert has_direct_sunat is False
+        assert has_smartpse is False
+
+        with pytest.raises(HTTPException) as exc:
+            _ensure_emission_credentials(db_session, tenant.id)
+
+        assert exc.value.status_code == 400
+        assert "Smart PSE" in exc.value.detail
+
+    def test_emission_credentials_accept_smartpse_when_direct_is_incomplete(self, db_session):
+        tenant = make_tenant(db_session, "CAP02")
+        tenant.sunat_usuario_sol = "MODDATOS"
+        tenant.sunat_cert_url = "https://storage.test/cert.p12"
+        _enable_smartpse_for_test(tenant)
+        db_session.commit()
+
+        _, has_direct_sunat, has_smartpse = _ensure_emission_credentials(
+            db_session,
+            tenant.id,
+        )
+
+        assert has_direct_sunat is False
+        assert has_smartpse is True
+
 
 if __name__ == "__main__":
     import pytest as _pytest

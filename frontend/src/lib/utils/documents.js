@@ -1,5 +1,11 @@
 // Shared helpers for document emission module
 
+import {
+  SUNAT_TAX_AFFECTATION_OPTIONS,
+  SUNAT_UNIT_OPTIONS,
+  isTaxedAffectation,
+} from './sunatCatalogs';
+
 export const IGV_FACTOR = 1.18;
 
 export const PAYMENT_OPTIONS = [
@@ -21,28 +27,11 @@ export const MEDIO_PAGO_OPTIONS = [
 
 export const OPERATION_OPTIONS = [
   { value: '0101', label: 'Venta interna' },
-  { value: '0200', label: 'Exportación' },
-  { value: '1001', label: 'Op. sujeta a detracción' },
 ];
 
-export const UNIT_OPTIONS = [
-  { value: 'NIU', label: 'NIU – Unidad' },
-  { value: 'ZZ',  label: 'ZZ – Servicio' },
-  { value: 'KGM', label: 'KGM – Kilogramo' },
-  { value: 'MTR', label: 'MTR – Metro' },
-  { value: 'MIL', label: 'MIL – Millar' },
-  { value: 'H87', label: 'H87 – Pieza' },
-  { value: 'BG',  label: 'BG – Bolsa' },
-  { value: 'BX',  label: 'BX – Caja' },
-  { value: 'RM',  label: 'RM – Resma' },
-];
+export const UNIT_OPTIONS = SUNAT_UNIT_OPTIONS;
 
-export const AFECTACION_IGV_OPTIONS = [
-  { value: '10', label: '10 – Gravado' },
-  { value: '20', label: '20 – Exonerado' },
-  { value: '30', label: '30 – Inafecto' },
-  { value: '40', label: '40 – Exportación' },
-];
+export const AFECTACION_IGV_OPTIONS = SUNAT_TAX_AFFECTATION_OPTIONS;
 
 export const MOTIVOS_NC = [
   { value: '01', label: '01 – Anulación de la operación' },
@@ -114,11 +103,12 @@ export function deriveSeries(tipoComprobante, modoEmision) {
 export function computeLine(item, incluyeIgv) {
   const cantidad = Number(item.cantidad || 0);
   const precioIngresado = Number(item.precio_unitario || 0);
-  const unitBase  = incluyeIgv ? precioIngresado / IGV_FACTOR : precioIngresado;
-  const unitFinal = incluyeIgv ? precioIngresado : precioIngresado * IGV_FACTOR;
+  const isGravado = isTaxedAffectation(item.tipo_afectacion_igv);
+  const unitBase  = isGravado && incluyeIgv ? precioIngresado / IGV_FACTOR : precioIngresado;
+  const unitFinal = isGravado && !incluyeIgv ? precioIngresado * IGV_FACTOR : precioIngresado;
   const subtotal  = unitBase * cantidad;
   const total     = unitFinal * cantidad;
-  const igv       = total - subtotal;
+  const igv       = isGravado ? total - subtotal : 0;
   return { cantidad, precioIngresado, unitBase, unitFinal, subtotal, igv, total };
 }
 
@@ -138,7 +128,7 @@ export function computeDocumentTotals(items, incluyeIgv) {
 export function getSunatStatus(item) {
   if (item.estado === 'anulada')           return { label: 'ANULADO',   variant: 'danger',  kind: 'voided' };
   if (item.sunat_error)                    return { label: 'RECHAZADO', variant: 'danger',  kind: 'error', tooltip: item.sunat_error };
-  if (item.sunat_xml_url)                  return { label: 'ACEPTADO',  variant: 'success', kind: 'ok' };
+  if (item.sunat_accepted || item.sunat_xml_url) return { label: 'ACEPTADO',  variant: 'success', kind: 'ok' };
   if (item.document_kind !== 'quotation')  return { label: 'PENDIENTE', variant: 'warning', kind: 'pending' };
   return null;
 }

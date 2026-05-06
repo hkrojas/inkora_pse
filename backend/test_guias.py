@@ -107,6 +107,39 @@ class TestCrearGuia:
 
         assert len(guia.items) == 2
 
+    def test_guia_guarda_cliente_destinatario_directo(self, db_session):
+        tenant = make_tenant(db_session, "G03B")
+        user = make_user(db_session, tenant, email="g03b@test.com")
+        cliente = make_cliente(db_session, tenant, "G03B")
+
+        data = _guia_data()
+        data["cliente_id"] = cliente.id
+        guia = crud.create_guia_remision(db_session, data, user.id, tenant.id)
+
+        assert guia.cliente_id == cliente.id
+        assert guia.cliente_nombre == cliente.razon_social
+        assert guia.cliente_documento == cliente.numero_documento
+
+    def test_guia_guarda_datos_de_transportista_y_vehiculo(self, db_session):
+        tenant = make_tenant(db_session, "G03C")
+        user = make_user(db_session, tenant, email="g03c@test.com")
+
+        data = _guia_data()
+        data.update(
+            {
+                "transportista_ruc": "20123456789",
+                "transportista_razon_social": "Transporte Demo SAC",
+                "vehiculo_placa": "ABC123",
+                "conductor_licencia": "Q12345678",
+            }
+        )
+        guia = crud.create_guia_remision(db_session, data, user.id, tenant.id)
+
+        assert guia.transportista_ruc == "20123456789"
+        assert guia.transportista_razon_social == "Transporte Demo SAC"
+        assert guia.vehiculo_placa == "ABC123"
+        assert guia.conductor_licencia == "Q12345678"
+
     def test_guia_con_cotizacion_hereda_traceabilidad(self, db_session):
         tenant = make_tenant(db_session, "G04")
         user = make_user(db_session, tenant, email="g04@test.com")

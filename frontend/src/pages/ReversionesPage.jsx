@@ -1,198 +1,639 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  Clock3,
+  Download,
+  Plus,
+  RotateCcw,
+  Search,
+  Trash2,
+  XCircle,
+  XOctagon,
+} from 'lucide-react';
 import { api } from '../lib/utils/api';
 import { useToast } from '../components/ui/Toast';
 import CustomSelect from '../components/ui/CustomSelect';
-import Modal from '../components/ui/Modal';
+import DatePicker from '../components/ui/DatePicker';
+import Drawer from '../components/ui/Drawer';
 import Spinner from '../components/ui/Spinner';
+import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
-import { Plus, Trash2 } from 'lucide-react';
-
-const ESTADO_OPTS = [
-  { value: '1', label: '1 – Aceptada por SUNAT' },
-  { value: '2', label: '2 – Rechazada' },
-  { value: '3', label: '3 – Baja solicitada' },
-];
 
 const TIPO_DOC_OPTS = [
-  { value: '01', label: '01 – Factura' },
-  { value: '03', label: '03 – Boleta de venta' },
-  { value: '07', label: '07 – Nota de crédito' },
-  { value: '08', label: '08 – Nota de débito' },
+  { value: '20', label: '20 - Retencion' },
+  { value: '40', label: '40 - Percepcion' },
 ];
 
-const EMPTY_DETALLE = { tipoDoc: '01', serieNro: '', estado: '1' };
+const MOTIVO_OPTS = [
+  { value: 'ERROR DE SISTEMA', label: 'Error de sistema' },
+  { value: 'ERROR DE RUC', label: 'Error de RUC' },
+  { value: 'ERROR EN DOCUMENTO', label: 'Error en documento' },
+  { value: 'OPERACION NO REALIZADA', label: 'Operacion no realizada' },
+];
+
+const EMPTY_DETALLE = {
+  tipoDoc: '20',
+  serie: 'R001',
+  correlativo: '',
+  desMotivoBaja: 'ERROR DE SISTEMA',
+};
+
+const PER_PAGE = 15;
+
+const TAB_DEFS = [
+  { key: 'all', label: 'Todos' },
+  { key: 'sent', label: 'Enviados' },
+  { key: 'pending', label: 'Pendientes' },
+  { key: 'rejected', label: 'Rechazados' },
+];
 
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function buildCorrelativo(fecha) {
-  const d = (fecha || today()).replace(/-/g, '');
-  return `RR-${d}-${String(Math.floor(Math.random() * 90000) + 10000)}`;
+function addDays(dateString, days) {
+  const [year, month, day] = String(dateString || today()).split('-').map(Number);
+  const value = new Date(year, month - 1, day);
+  value.setDate(value.getDate() + days);
+  return [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, '0'),
+    String(value.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function buildCorrelativo() {
+  const now = new Date();
+  const secondsOfDay = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  return String(secondsOfDay).padStart(5, '0');
+}
+
+function toApiDate(dateString) {
+  return dateString ? `${dateString}T00:00:00-05:00` : null;
+}
+
+function onlyDate(value) {
+  return value ? String(value).slice(0, 10) : '';
+}
+
+function formatDate(value) {
+  if (!value) return '-';
+  return new Date(value).toLocaleDateString('es-PE');
+}
+
+function formatDateTime(value) {
+  if (!value) return '-';
+  return new Date(value).toLocaleString('es-PE');
+}
+
+function getVisibleRange(page, pageSize, total) {
+  if (!total) return '0';
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
+  return `${start}-${end}`;
+}
+
+function reversionTicket(reversion) {
+  return reversion.ticket || reversion.sunatResponse?.ticket || reversion.sunat_response?.ticket || '';
+}
+
+function reversionDisplayNumber(reversion) {
+  const fecha = onlyDate(reversion.fec_comunicacion || reversion._fecha).replace(/-/g, '');
+  const correlativo = reversion.correlativo || reversion._corr || '';
+  if (fecha && correlativo) return `RR-${fecha}-${correlativo}`;
+  return correlativo || '-';
+}
+
+function getReversionStatus(reversion) {
+  if (reversion.status) return reversion.status;
+  if (reversion.sunatResponse?.success === false || reversion.sunat_response?.success === false) return 'rejected';
+  if (reversion.sunatResponse?.ticket || reversion.sunat_response?.ticket) return 'pending';
+  return 'sent';
+}
+
+function getReversionBadge(reversion) {
+  const status = getReversionStatus(reversion);
+  if (status === 'rejected') return <Badge variant="error">Rechazado</Badge>;
+  if (status === 'pending') return <Badge variant="warning">Ticket pendiente</Badge>;
+  return <Badge variant="success">Enviado</Badge>;
+}
+
+function defaultSerieForTipo(tipoDoc) {
+  return tipoDoc === '40' ? 'P001' : 'R001';
 }
 
 export default function ReversionesPage() {
+  const toast = useToast();
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ fechaEmision: today(), correlativo: buildCorrelativo(), detalles: [{ ...EMPTY_DETALLE }] });
+  const [form, setForm] = useState({
+    fecGeneracion: today(),
+    fecComunicacion: addDays(today(), 1),
+    correlativo: buildCorrelativo(),
+    detalles: [{ ...EMPTY_DETALLE }],
+  });
   const [submitting, setSubmitting] = useState(false);
   const [resultados, setResultados] = useState([]);
-  const { addToast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState({ desde: '', hasta: '' });
+  const [page, setPage] = useState(1);
+  const [activeTab, setActiveTab] = useState('all');
 
-  const setInput = (key) => (e) => setForm((c) => ({ ...c, [key]: e.target.value }));
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/reversiones/?limit=${PER_PAGE}`);
+      setResultados(Array.isArray(res) ? res : []);
+    } catch {
+      toast('No se pudo cargar reversiones. Revisa tu conexion e intentalo nuevamente.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const setDetalle = (i, key) => (e) =>
-    setForm((c) => { const ds = [...c.detalles]; ds[i] = { ...ds[i], [key]: e.target.value }; return { ...c, detalles: ds }; });
+  useEffect(() => { load(); }, []);
 
-  const setDetalleSelect = (i, key) => (val) =>
-    setForm((c) => { const ds = [...c.detalles]; ds[i] = { ...ds[i], [key]: val }; return { ...c, detalles: ds }; });
+  useEffect(() => {
+    setPage(1);
+  }, [search, filters, activeTab]);
 
-  const addDetalle = () => setForm((c) => ({ ...c, detalles: [...c.detalles, { ...EMPTY_DETALLE }] }));
-  const removeDetalle = (i) => setForm((c) => ({ ...c, detalles: c.detalles.filter((_, idx) => idx !== i) }));
+  const setInput = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
+  const setDetalle = (index, key) => (event) =>
+    setForm((current) => {
+      const detalles = [...current.detalles];
+      detalles[index] = { ...detalles[index], [key]: event.target.value };
+      return { ...current, detalles };
+    });
+  const setDetalleSelect = (index, key) => (value) =>
+    setForm((current) => {
+      const detalles = [...current.detalles];
+      detalles[index] = {
+        ...detalles[index],
+        [key]: value,
+        ...(key === 'tipoDoc' ? { serie: defaultSerieForTipo(value) } : {}),
+      };
+      return { ...current, detalles };
+    });
+  const addDetalle = () => setForm((current) => ({ ...current, detalles: [...current.detalles, { ...EMPTY_DETALLE }] }));
+  const removeDetalle = (index) => setForm((current) => ({ ...current, detalles: current.detalles.filter((_, i) => i !== index) }));
+
+  const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
+
+  const clearFilters = () => {
+    setSearch('');
+    setFilters({ desde: '', hasta: '' });
+  };
+
+  const hasActiveFilters = search || filters.desde || filters.hasta;
 
   const handleOpen = () => {
-    const t = today();
-    setForm({ fechaEmision: t, correlativo: buildCorrelativo(t), detalles: [{ ...EMPTY_DETALLE }] });
+    const fecha = today();
+    setForm({
+      fecGeneracion: fecha,
+      fecComunicacion: addDays(fecha, 1),
+      correlativo: buildCorrelativo(),
+      detalles: [{ ...EMPTY_DETALLE }],
+    });
     setModalOpen(true);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setSubmitting(true);
     try {
       const payload = {
-        fechaEmision: form.fechaEmision,
+        fecGeneracion: toApiDate(form.fecGeneracion),
+        fecComunicacion: toApiDate(form.fecComunicacion),
         correlativo: form.correlativo.trim(),
-        details: form.detalles.map((d) => ({
-          tipoDoc: d.tipoDoc,
-          serieNro: d.serieNro.trim(),
-          estado: d.estado,
+        details: form.detalles.map((detalle) => ({
+          tipoDoc: detalle.tipoDoc,
+          serie: detalle.serie.trim().toUpperCase(),
+          correlativo: detalle.correlativo.trim(),
+          desMotivoBaja: detalle.desMotivoBaja.trim().toUpperCase(),
         })),
       };
       const res = await api.post('/reversiones/enviar', payload);
-      setResultados((prev) => [{ ...res, _corr: form.correlativo, _fecha: form.fechaEmision, _ts: new Date().toLocaleString() }, ...prev]);
-      addToast(
-        res.sunatResponse?.ticket ? `Ticket: ${res.sunatResponse.ticket}` : 'Reversión enviada',
-        'success',
-      );
+      setResultados((prev) => [res, ...prev].slice(0, PER_PAGE));
+      toast(res.ticket ? `Ticket: ${res.ticket}` : 'Reversion enviada correctamente', 'success');
       setModalOpen(false);
     } catch (err) {
-      addToast(err?.message || 'No se pudo enviar la reversión. Revisa los datos e inténtalo nuevamente.', 'error');
+      toast(err?.message || 'No se pudo enviar la reversion. Revisa los datos e intentalo nuevamente.', 'error');
+      load();
     } finally {
       setSubmitting(false);
     }
   };
 
+  const constrained = useMemo(
+    () =>
+      resultados.filter((reversion) => {
+        const q = search.trim().toLowerCase();
+        const fecha = onlyDate(reversion.fec_comunicacion || reversion._fecha);
+        const correlativo = reversionDisplayNumber(reversion).toLowerCase();
+        const ticket = reversionTicket(reversion).toLowerCase();
+        const error = String(reversion.sunat_error || '').toLowerCase();
+        const matchSearch = !q || correlativo.includes(q) || fecha.includes(q) || ticket.includes(q) || error.includes(q);
+        const matchDesde = !filters.desde || fecha >= filters.desde;
+        const matchHasta = !filters.hasta || fecha <= filters.hasta;
+        return matchSearch && matchDesde && matchHasta;
+      }),
+    [resultados, search, filters],
+  );
+
+  const tabCounts = useMemo(() => {
+    const base = { all: constrained.length, sent: 0, pending: 0, rejected: 0 };
+    constrained.forEach((reversion) => {
+      const key = getReversionStatus(reversion);
+      if (base[key] !== undefined) base[key] += 1;
+    });
+    return base;
+  }, [constrained]);
+
+  const filtered = useMemo(
+    () => constrained.filter((reversion) => activeTab === 'all' || getReversionStatus(reversion) === activeTab),
+    [constrained, activeTab],
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const pageItems = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+
+  const heroCards = [
+    {
+      key: 'all',
+      value: constrained.length,
+      label: 'Reversiones',
+      text: `${constrained.length} registradas en esta vista`,
+      link: 'Ver todos',
+      icon: <RotateCcw size={16} />,
+    },
+    {
+      key: 'sent',
+      value: tabCounts.sent,
+      label: 'Enviados',
+      text: tabCounts.sent ? 'Procesados correctamente' : 'Sin envios completados',
+      link: 'Ver enviados',
+      icon: <CheckCircle2 size={16} />,
+    },
+    {
+      key: 'pending',
+      value: tabCounts.pending,
+      label: 'Pendientes',
+      text: tabCounts.pending ? 'Requieren consulta SUNAT' : 'Sin tickets pendientes',
+      link: 'Revisar pendientes',
+      icon: <Clock3 size={16} />,
+    },
+    {
+      key: 'rejected',
+      value: tabCounts.rejected,
+      label: 'Rechazados',
+      text: tabCounts.rejected ? 'Necesitan correccion' : 'Sin rechazos registrados',
+      link: 'Ver rechazados',
+      icon: <XOctagon size={16} />,
+    },
+  ];
+
   return (
-    <div className="page-shell">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Reversiones</h1>
-          <p className="page-subtitle">Resumen de reversiones ante SUNAT · /reversion/send · Asíncrono con ticket</p>
+    <div className="page-shell page-shell--dense reversiones-page">
+      <div className="page-head ink-enter-1">
+        <div className="page-actions document-list-page-actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => toast('La exportacion esta en desarrollo.', 'info')}
+          >
+            <Download size={15} />
+            Exportar
+          </button>
+          <button className="btn-primary" onClick={handleOpen}>
+            <Plus size={15} />
+            Nueva reversion
+          </button>
         </div>
-        <button className="btn-primary" onClick={handleOpen}>
-          <Plus size={15} /> Nueva Reversión
-        </button>
       </div>
 
-      <div className="ink-inline-alert" style={{ marginBottom: 16 }}>
-        <strong>Flujo asíncrono:</strong> El envío devuelve un <strong>ticket</strong>. Consultar con <code>/reversion/status?ticket=...&amp;ruc=...</code>
-      </div>
-
-      {resultados.length === 0 ? (
-        <EmptyState title="Sin reversiones enviadas" description="Los resúmenes de reversiones enviados aparecerán aquí." />
-      ) : (
-        <div className="ink-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <table className="ink-table">
-            <thead>
-              <tr>
-                <th>Correlativo</th>
-                <th>Fecha</th>
-                <th>Ticket SUNAT</th>
-                <th>Enviado</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {resultados.map((r, i) => (
-                <tr key={i}>
-                  <td data-label="Correlativo"><span className="font-mono-label">{r._corr}</span></td>
-                  <td data-label="Fecha">{r._fecha}</td>
-                  <td data-label="Ticket SUNAT"><span className="font-mono-label" style={{ fontSize: 11 }}>{r.sunatResponse?.ticket || '—'}</span></td>
-                  <td data-label="Enviado" style={{ fontSize: 11 }}>{r._ts}</td>
-                  <td data-label="Estado">
-                    {r.sunatResponse?.success === false
-                      ? <span style={{ color: 'var(--color-error)', fontWeight: 700, fontSize: 12 }}>RECHAZADO</span>
-                      : r.sunatResponse?.ticket
-                        ? <span style={{ color: 'var(--color-warning)', fontWeight: 700, fontSize: 12 }}>TICKET PENDIENTE</span>
-                        : <span style={{ color: 'var(--color-success)', fontWeight: 700, fontSize: 12 }}>ENVIADO</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nueva Reversión" size="md">
-        <form onSubmit={handleSubmit} className="space-y-4">
-
-          <div className="responsive-form-grid-1-2">
-            <div>
-              <label className="label">Fecha emisión <span style={{ color: 'var(--color-error)' }}>*</span></label>
-              <input className="input" type="date" value={form.fechaEmision} onChange={setInput('fechaEmision')} required />
-            </div>
-            <div>
-              <label className="label">Correlativo <span style={{ color: 'var(--color-error)' }}>*</span></label>
-              <input className="input" value={form.correlativo} onChange={setInput('correlativo')} placeholder="RR-20260415-10001" required />
-              <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>Formato: RR-YYYYMMDD-NNNNN</p>
+      <section className="attention document-list-hero ink-enter-2">
+        <div className="attention-title document-list-hero-title">
+          <div className="document-list-hero-head">
+            <div className="attention-title-badge">
+              <RotateCcw size={15} />
             </div>
           </div>
 
-          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 12 }}>
-            <div className="responsive-form-section-header">
-              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
-                Documentos a revertir
-              </p>
-              <button type="button" className="btn-ghost" onClick={addDetalle}>
+          <div className="document-list-hero-pagecopy">
+            <h2>Reversiones</h2>
+            <p>Resumen de reversiones de retenciones y percepciones ante SUNAT.</p>
+          </div>
+
+          <div className="document-list-hero-kicker">
+            Flujo asincrono - {tabCounts.pending ? `${tabCounts.pending} tickets por consultar` : 'Sin pendientes'}
+          </div>
+        </div>
+
+        {heroCards.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={`attention-card document-list-hero-card${activeTab === item.key ? ' is-active' : ''}`}
+            onClick={() => setActiveTab(item.key)}
+          >
+            <div className="document-list-hero-card-icon">{item.icon}</div>
+            <strong>{item.value}</strong>
+            <div className="attention-card-text">
+              {item.label}
+              <span>{item.text}</span>
+            </div>
+            <span className="attention-card-link">
+              {item.link}
+              <ArrowRight size={13} />
+            </span>
+          </button>
+        ))}
+      </section>
+
+      <article className="panel document-list-panel ink-enter-3">
+        <div className="toolbar">
+          <label className="search-box">
+            <Search size={16} />
+            <input
+              placeholder="Buscar por correlativo, fecha o ticket..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+
+          <div className="toolbar-actions">
+            {hasActiveFilters && (
+              <button type="button" className="btn-ghost" onClick={clearFilters}>
+                <XCircle size={15} />
+                Limpiar filtros
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="document-list-filters">
+          <div className="document-list-filter">
+            <span>Desde</span>
+            <DatePicker compact value={filters.desde} onChange={(value) => setFilter('desde', value)} />
+          </div>
+          <div className="document-list-filter">
+            <span>Hasta</span>
+            <DatePicker compact value={filters.hasta} onChange={(value) => setFilter('hasta', value)} />
+          </div>
+        </div>
+
+        <div className="segments-row">
+          <div className="segments">
+            {TAB_DEFS.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                className={`segment ${activeTab === key ? 'active' : ''}`}
+                onClick={() => setActiveTab(key)}
+              >
+                {label}
+                <span className="document-list-segment-count">{tabCounts[key] || 0}</span>
+              </button>
+            ))}
+          </div>
+          <div className="sort-text">
+            Mostrando <strong>{getVisibleRange(page, PER_PAGE, filtered.length)}</strong> de <strong>{filtered.length}</strong> reversiones
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="document-list-loading">
+            <Spinner size="lg" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="document-list-empty">
+            <EmptyState
+              icon={<RotateCcw size={22} />}
+              title={
+                hasActiveFilters
+                  ? 'Sin resultados para estos filtros'
+                  : activeTab !== 'all'
+                    ? `No hay reversiones ${activeTab === 'sent' ? 'enviadas' : activeTab === 'pending' ? 'pendientes' : 'rechazadas'} en esta vista.`
+                    : 'Aun no tienes reversiones enviadas'
+              }
+              description={
+                hasActiveFilters
+                  ? 'Ajusta las fechas para recuperar resultados.'
+                  : activeTab === 'all'
+                    ? 'Envia tu primera reversion para corregir retenciones o percepciones procesadas ante SUNAT.'
+                    : 'Cuando existan reversiones en este estado apareceran aqui.'
+              }
+              action={
+                hasActiveFilters ? (
+                  <button className="btn-secondary" onClick={clearFilters}>
+                    Limpiar filtros
+                  </button>
+                ) : (
+                  <button className="btn-primary" onClick={handleOpen}>
+                    <Plus size={15} />
+                    Nueva reversion
+                  </button>
+                )
+              }
+            />
+          </div>
+        ) : (
+          <div className="ink-table-card document-list-table">
+            <div className="ink-table-header">
+              <div className="ink-table-title">
+                <strong>Reversiones enviadas</strong>
+                <span>{filtered.length} visibles en esta vista</span>
+              </div>
+
+              <div className="document-list-table-meta">
+                <span className="document-list-table-pill">
+                  <CheckCircle2 size={13} />
+                  {tabCounts.sent} enviados
+                </span>
+                <span className="document-list-table-pill">
+                  <Clock3 size={13} />
+                  {tabCounts.pending} pendientes
+                </span>
+                <span className="document-list-table-pill">
+                  <XOctagon size={13} />
+                  {tabCounts.rejected} rechazados
+                </span>
+              </div>
+            </div>
+
+            <div className="ink-table-scroll">
+              <table className="ink-table ink-reversion-table">
+                <thead>
+                  <tr>
+                    <th>Correlativo</th>
+                    <th>Comunicacion</th>
+                    <th>Ticket SUNAT</th>
+                    <th>Enviado</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageItems.map((reversion) => {
+                    const status = getReversionStatus(reversion);
+                    const rowClass =
+                      status === 'sent'
+                        ? 'ink-table-row--accepted'
+                        : status === 'pending'
+                          ? 'ink-table-row--active'
+                          : '';
+
+                    return (
+                      <tr key={reversion.id || reversionDisplayNumber(reversion)} className={rowClass}>
+                        <td data-label="Correlativo">
+                          <div className="ink-table-cell__primary document-list-folio">{reversionDisplayNumber(reversion)}</div>
+                          <div className="ink-table-cell__meta">{reversion.details_count || 0} documentos</div>
+                        </td>
+                        <td data-label="Comunicacion">
+                          <div className="ink-table-cell__primary">{formatDate(reversion.fec_comunicacion || reversion._fecha)}</div>
+                          <div className="ink-table-cell__meta">Reversion</div>
+                        </td>
+                        <td data-label="Ticket SUNAT">
+                          <div className="ink-table-cell__primary" style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
+                            {reversionTicket(reversion) || '-'}
+                          </div>
+                          {reversion.sunat_error && (
+                            <div className="ink-table-cell__meta">{reversion.sunat_error}</div>
+                          )}
+                        </td>
+                        <td data-label="Enviado">
+                          <div className="ink-table-cell__meta">{formatDateTime(reversion.created_at || reversion._ts)}</div>
+                        </td>
+                        <td data-label="Estado">
+                          {getReversionBadge(reversion)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="ink-table-footer">
+              <span className="ink-table-count">
+                Pag. <strong>{page}</strong> de <strong>{totalPages}</strong>
+              </span>
+              <div className="pagination">
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  &#8249;
+                </button>
+                <button type="button" className="page-btn active">
+                  {page}
+                </button>
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                >
+                  &#8250;
+                </button>
+              </div>
+              <span className="ink-table-count">{PER_PAGE} por pagina</span>
+            </div>
+          </div>
+        )}
+      </article>
+
+      <Drawer
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="Nueva reversion"
+        subtitle="Corrige retenciones o percepciones y envia la solicitud a SUNAT."
+        icon={<RotateCcw size={22} />}
+        footer={(
+          <>
+            <button type="button" className="btn-ghost" onClick={() => setModalOpen(false)}>Cancelar</button>
+            <button type="submit" form="reversion-form" className="btn-primary" disabled={submitting}>
+              {submitting && <Spinner size={14} />}
+              Enviar reversion
+            </button>
+          </>
+        )}
+      >
+        <form id="reversion-form" onSubmit={handleSubmit} className="drawer-editor-form">
+          <div className="drawer-editor-section">
+            <div className="drawer-editor-section-header">
+              <p>Cabecera de envio</p>
+            </div>
+            <p className="drawer-editor-section-intro">
+              APISPeru espera correlativo numerico, fecha de generacion y fecha de comunicacion.
+            </p>
+            <div className="responsive-form-grid-1-1-2">
+              <div>
+                <label className="label">Fecha generacion <span style={{ color: 'var(--color-error)' }}>*</span></label>
+                <input className="input" type="date" value={form.fecGeneracion} onChange={setInput('fecGeneracion')} required />
+              </div>
+              <div>
+                <label className="label">Fecha comunicacion <span style={{ color: 'var(--color-error)' }}>*</span></label>
+                <input className="input" type="date" value={form.fecComunicacion} onChange={setInput('fecComunicacion')} required />
+              </div>
+              <div>
+                <label className="label">Correlativo <span style={{ color: 'var(--color-error)' }}>*</span></label>
+                <input className="input" value={form.correlativo} onChange={setInput('correlativo')} placeholder="00001" required />
+                <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                  Ingresa solo el numero. APISPeru arma el prefijo RR.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="drawer-editor-section">
+            <div className="drawer-editor-section-header responsive-form-section-header">
+              <p>Documentos a revertir</p>
+              <button type="button" className="btn-ghost drawer-editor-add" onClick={addDetalle}>
                 <Plus size={12} /> Agregar
               </button>
             </div>
-            {form.detalles.map((d, i) => (
-              <div key={i} className="responsive-form-grid-120-1-120-auto" style={{ border: '1px solid var(--border-subtle)', padding: 12, marginBottom: 8, background: 'var(--bg-surface-low)' }}>
-                <div>
-                  <label className="label" style={{ fontSize: 10 }}>Tipo doc</label>
-                  <CustomSelect compact value={d.tipoDoc} onChange={setDetalleSelect(i, 'tipoDoc')} options={TIPO_DOC_OPTS} />
+            <p className="drawer-editor-section-intro">
+              Reversion aplica a retenciones tipo 20 y percepciones tipo 40, no a facturas ni boletas.
+            </p>
+            <div className="drawer-editor-list">
+              {form.detalles.map((detalle, index) => (
+                <div key={`${index}-${detalle.serie}`} className="drawer-editor-item">
+                  <div className="responsive-form-grid-120-1-1-120-auto">
+                    <div>
+                      <label className="label" style={{ fontSize: 10 }}>Tipo doc</label>
+                      <CustomSelect compact value={detalle.tipoDoc} onChange={setDetalleSelect(index, 'tipoDoc')} options={TIPO_DOC_OPTS} />
+                    </div>
+                    <div>
+                      <label className="label" style={{ fontSize: 10 }}>Serie</label>
+                      <input className="input" value={detalle.serie} onChange={setDetalle(index, 'serie')} placeholder="R001" />
+                    </div>
+                    <div>
+                      <label className="label" style={{ fontSize: 10 }}>Correlativo doc.</label>
+                      <input className="input" value={detalle.correlativo} onChange={setDetalle(index, 'correlativo')} placeholder="122" />
+                    </div>
+                    <div>
+                      <label className="label" style={{ fontSize: 10 }}>Motivo</label>
+                      <CustomSelect compact value={detalle.desMotivoBaja} onChange={setDetalleSelect(index, 'desMotivoBaja')} options={MOTIVO_OPTS} />
+                    </div>
+                    {form.detalles.length > 1 && (
+                      <button type="button" className="drawer-editor-remove" onClick={() => removeDetalle(index)}>
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="label" style={{ fontSize: 10 }}>Serie-Correlativo</label>
-                  <input className="input" value={d.serieNro} onChange={setDetalle(i, 'serieNro')} placeholder="F001-000001" />
-                </div>
-                <div>
-                  <label className="label" style={{ fontSize: 10 }}>Estado</label>
-                  <CustomSelect compact value={d.estado} onChange={setDetalleSelect(i, 'estado')} options={ESTADO_OPTS} />
-                </div>
-                {form.detalles.length > 1 && (
-                  <button type="button" onClick={() => removeDetalle(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-error)', padding: '8px 4px', alignSelf: 'flex-end' }}>
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
-          <div className="ink-inline-alert" style={{ fontSize: 12 }}>
-            <strong>Endpoint:</strong> POST /reversion/send — Requiere consulta posterior con ticket + RUC emisor.
-          </div>
-
-          <div className="responsive-form-actions">
-            <button type="button" className="btn-ghost" onClick={() => setModalOpen(false)}>Cancelar</button>
-            <button type="submit" className="btn-primary" disabled={submitting}>
-              {submitting && <Spinner size={14} />}
-              Enviar Reversión
-            </button>
+          <div className="proto-alert info drawer-editor-note" style={{ fontSize: 12 }}>
+            <strong>Contrato fiscal:</strong> POST /reversion/send con tipos 20/40, serie, correlativo y motivo de baja.
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 }

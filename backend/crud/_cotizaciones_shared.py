@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import desc
@@ -69,7 +70,7 @@ def _resolve_quote_item_context(
     db: Session,
     item: schemas.CotizacionItemCreate,
     tenant_id: int,
-) -> tuple[models.Producto | None, str, str]:
+) -> tuple[models.Producto | None, str, str, str | None]:
     db_producto = None
     if item.producto_id is not None:
         db_producto = get_producto_for_tenant(db, item.producto_id, tenant_id)
@@ -88,7 +89,12 @@ def _resolve_quote_item_context(
         or (db_producto.tipo_afectacion_igv if db_producto else None)
         or "10"
     )
-    return db_producto, unidad_medida, tipo_afectacion_igv
+    codigo_producto = (
+        item.codigo_producto
+        or (db_producto.codigo_interno if db_producto else None)
+        or None
+    )
+    return db_producto, unidad_medida, tipo_afectacion_igv, codigo_producto
 
 
 def _build_quote_item(
@@ -96,7 +102,7 @@ def _build_quote_item(
     item: schemas.CotizacionItemCreate,
     tenant_id: int,
 ):
-    _db_producto, unidad_medida, tipo_afectacion_igv = _resolve_quote_item_context(
+    _db_producto, unidad_medida, tipo_afectacion_igv, codigo_producto = _resolve_quote_item_context(
         db,
         item,
         tenant_id,
@@ -104,9 +110,11 @@ def _build_quote_item(
     calculo = calculations.calcular_item(
         cantidad=item.cantidad,
         precio_con_igv=item.precio_unitario,
+        tipo_afectacion_igv=tipo_afectacion_igv,
     )
     db_item = models.CotizacionItem(
         producto_id=item.producto_id,
+        codigo_producto=codigo_producto,
         descripcion=item.descripcion,
         cantidad=calculo["cantidad"],
         precio_unitario=calculo["precio_unitario"],
@@ -228,6 +236,7 @@ def _build_fiscal_document(
         cliente_id=quote.cliente_id,
         usuario_id=usuario_id,
         tenant_id=quote.tenant_id,
+        fecha_emision=quote.fecha_emision or datetime.now(),
         fecha_vencimiento=quote.fecha_vencimiento,
         moneda=quote.moneda,
         tipo_comprobante=tipo_comprobante,
@@ -237,6 +246,7 @@ def _build_fiscal_document(
         internal_order_number=quote.internal_order_number,
         observaciones=quote.observaciones,
         condicion_pago=quote.condicion_pago,
+        cuotas_pago=quote.cuotas_pago,
         total_gravada=quote.total_gravada,
         total_exonerada=quote.total_exonerada,
         total_inafecta=quote.total_inafecta,
@@ -297,8 +307,18 @@ def _build_note_document(
     descripcion_motivo: str,
     serie_nota: str,
     nuevo_correlativo: int,
+    items: list[models.CotizacionItem] | None = None,
+    totales: dict | None = None,
 ):
     tipo_comprobante = "07" if tipo_nota == "credito" else "08"
+    note_items = items if items is not None else _clone_cotizacion_items(doc_afectado.items)
+    note_totals = totales or {
+        "total_gravada": doc_afectado.total_gravada,
+        "total_exonerada": doc_afectado.total_exonerada,
+        "total_inafecta": doc_afectado.total_inafecta,
+        "total_igv": doc_afectado.total_igv,
+        "total_venta": doc_afectado.total_venta,
+    }
     return models.Cotizacion(
         serie=serie_nota,
         correlativo=nuevo_correlativo,
@@ -311,13 +331,13 @@ def _build_note_document(
         document_kind=get_document_kind_for_note(tipo_nota),
         source_quote_id=resolve_source_quote_id(doc_afectado),
         internal_order_number=doc_afectado.internal_order_number,
-        total_gravada=doc_afectado.total_gravada,
-        total_exonerada=doc_afectado.total_exonerada,
-        total_inafecta=doc_afectado.total_inafecta,
-        total_igv=doc_afectado.total_igv,
-        total_venta=doc_afectado.total_venta,
+        total_gravada=note_totals["total_gravada"],
+        total_exonerada=note_totals["total_exonerada"],
+        total_inafecta=note_totals["total_inafecta"],
+        total_igv=note_totals["total_igv"],
+        total_venta=note_totals["total_venta"],
         nota_referencia_id=doc_afectado.id,
         nota_motivo_codigo=cod_motivo,
         nota_motivo_descripcion=descripcion_motivo,
-        items=_clone_cotizacion_items(doc_afectado.items),
+        items=note_items,
     )

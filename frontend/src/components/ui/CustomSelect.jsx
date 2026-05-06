@@ -157,6 +157,8 @@ export default function CustomSelect({
         type="button"
         disabled={disabled}
         onClick={open ? () => setOpen(false) : openDropdown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         className={`ink-select-trigger ${compact ? 'ink-select-trigger--compact' : ''} ${open ? 'is-open' : ''}`}
       >
         <div className={`ink-select-value ${selected ? '' : 'text-[var(--text-tertiary)]'}`}>
@@ -174,7 +176,8 @@ export default function CustomSelect({
       {open && createPortal(
         <div
           ref={dropdownRef}
-          className="ink-select-dropdown"
+          className="ink-select-dropdown dropdown-enter"
+          role="listbox"
           style={{
             top: dropPos.top,
             left: dropPos.left,
@@ -202,6 +205,8 @@ export default function CustomSelect({
                 key={opt.value}
                 onMouseDown={(e) => { e.preventDefault(); handleSelect(opt.value); }}
                 className={`ink-select-option ${isActive ? 'is-active' : ''}`}
+                role="option"
+                aria-selected={isActive}
               >
                 {renderOption ? (
                   renderOption(opt, { isActive, query: normalizedQuery })

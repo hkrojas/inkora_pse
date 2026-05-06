@@ -8,6 +8,10 @@ from services import calculations
 from crud._base import get_producto_for_tenant
 
 
+class ProductoEnUsoError(Exception):
+    """Se usa cuando el catalogo ya esta referenciado por documentos."""
+
+
 def count_productos(
     db: Session,
     tenant_id: int | None = None,
@@ -118,6 +122,20 @@ def update_producto(db: Session, producto_id: int, producto_data: schemas.Produc
 def delete_producto(db: Session, producto_id: int, tenant_id: int):
     db_producto = get_producto_for_tenant(db, producto_id, tenant_id)
     if db_producto:
+        usado_en_documentos = (
+            db.query(models.CotizacionItem.id)
+            .join(models.Cotizacion, models.CotizacionItem.cotizacion_id == models.Cotizacion.id)
+            .filter(
+                models.CotizacionItem.producto_id == producto_id,
+                models.Cotizacion.tenant_id == tenant_id,
+            )
+            .first()
+        )
+        if usado_en_documentos:
+            raise ProductoEnUsoError(
+                "No se puede eliminar un producto usado en cotizaciones o comprobantes. "
+                "Mantenerlo preserva el historial comercial."
+            )
         db.delete(db_producto)
         db.commit()
     return db_producto

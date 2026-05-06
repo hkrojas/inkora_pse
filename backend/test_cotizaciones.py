@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -65,6 +66,147 @@ def test_eliminar_cotizacion_permitido_si_esta_pendiente_y_sin_fiscal(db_session
     assert crud.get_cotizacion(db_session, quote.id, user) is None
 
 
+def test_cotizacion_exonerada_no_genera_igv(db_session):
+    tenant = make_tenant(db_session, "COT02B")
+    user = make_user(db_session, tenant, email="cot02b@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02B")
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            moneda="PEN",
+            tipo_comprobante="00",
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Servicio exonerado",
+                    cantidad=Decimal("2"),
+                    precio_unitario=Decimal("100.00"),
+                    unidad_medida="ZZ",
+                    tipo_afectacion_igv="20",
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    assert quote.total_gravada == Decimal("0.00")
+    assert quote.total_exonerada == Decimal("200.00")
+    assert quote.total_inafecta == Decimal("0.00")
+    assert quote.total_igv == Decimal("0.00")
+    assert quote.total_venta == Decimal("200.00")
+
+
+def test_cotizacion_con_producto_persiste_sku_fiscal(db_session):
+    tenant = make_tenant(db_session, "COT02C")
+    user = make_user(db_session, tenant, email="cot02c@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02C")
+    producto = make_producto(db_session, tenant, "COT02C")
+    producto.codigo_interno = "IMP-A4-FC"
+    db_session.commit()
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            moneda="PEN",
+            tipo_comprobante="00",
+            items=[
+                schemas.CotizacionItemCreate(
+                    producto_id=producto.id,
+                    descripcion=producto.nombre,
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    assert quote.items[0].codigo_producto == "IMP-A4-FC"
+
+
+def test_documento_fiscal_conserva_fecha_emision_de_la_cotizacion(db_session):
+    tenant = make_tenant(db_session, "COT02D")
+    user = make_user(db_session, tenant, email="cot02d@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02D")
+    fecha_emision = datetime(2026, 5, 1, 0, 0, tzinfo=timezone.utc)
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            fecha_emision=fecha_emision,
+            moneda="PEN",
+            tipo_comprobante="00",
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Servicio con fecha fiscal seleccionada",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                    unidad_medida="NIU",
+                    tipo_afectacion_igv="10",
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+
+    assert quote.fecha_emision.date() == fecha_emision.date()
+    assert fiscal.fecha_emision.date() == fecha_emision.date()
+
+
+def test_documento_fiscal_conserva_cuotas_pago_de_la_cotizacion(db_session):
+    tenant = make_tenant(db_session, "COT02E")
+    user = make_user(db_session, tenant, email="cot02e@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02E")
+    fecha_emision = datetime(2026, 5, 1, 0, 0, tzinfo=timezone.utc)
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            fecha_emision=fecha_emision,
+            fecha_vencimiento=fecha_emision + timedelta(days=30),
+            moneda="PEN",
+            tipo_comprobante="00",
+            condicion_pago="credito_30",
+            cuotas_pago=[
+                schemas.CuotaPagoCreate(
+                    fecha_pago=fecha_emision + timedelta(days=15),
+                    monto=Decimal("59.00"),
+                ),
+                schemas.CuotaPagoCreate(
+                    fecha_pago=fecha_emision + timedelta(days=30),
+                    monto=Decimal("59.00"),
+                ),
+            ],
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Servicio con cuotas",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                    unidad_medida="NIU",
+                    tipo_afectacion_igv="10",
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+
+    assert quote.cuotas_pago[0]["monto"] == "59.00"
+    assert len(fiscal.cuotas_pago) == 2
+    assert fiscal.cuotas_pago[1]["monto"] == "59.00"
+
+
 def test_eliminar_cotizacion_rechaza_estado_no_pendiente(db_session):
     tenant = make_tenant(db_session, "COT03")
     user = make_user(db_session, tenant, email="cot03@test.com")
@@ -130,3 +272,50 @@ def test_documento_fiscal_conserva_contexto_comercial_de_la_cotizacion(db_sessio
     assert fiscal.items[0].descripcion == quote.items[0].descripcion
     assert fiscal.items[0].cantidad == quote.items[0].cantidad
     assert fiscal.items[0].precio_unitario == quote.items[0].precio_unitario
+
+
+def test_cotizacion_response_tolera_usuario_historico_faltante(db_session):
+    tenant = make_tenant(db_session, "COT06")
+    user = make_user(db_session, tenant, email="cot06@test.com")
+    cliente = make_cliente(
+        db_session,
+        tenant,
+        "COT06",
+        numero_documento="20123456789",
+    )
+    quote = make_quote_via_crud(db_session, tenant, user, cliente)
+
+    quote.usuario_id = None
+    db_session.commit()
+    db_session.refresh(quote)
+
+    loaded = crud.get_cotizacion(db_session, quote.id, user)
+    payload = schemas.CotizacionResponse.model_validate(loaded).model_dump()
+
+    assert payload["usuario"] is None
+    assert payload["cliente"]["id"] == cliente.id
+
+
+def test_cotizacion_list_response_no_carga_detalle_pesado(db_session):
+    tenant = make_tenant(db_session, "COT07")
+    user = make_user(db_session, tenant, email="cot07@test.com")
+    cliente = make_cliente(
+        db_session,
+        tenant,
+        "COT07",
+        numero_documento="20123456780",
+    )
+    make_quote_via_crud(db_session, tenant, user, cliente)
+
+    rows = crud.get_cotizaciones(db_session, user)
+    db_session.expunge_all()
+
+    payload = [
+        schemas.CotizacionListResponse.model_validate(row).model_dump()
+        for row in rows
+    ]
+
+    assert len(payload) == 1
+    assert payload[0]["cliente"]["id"] == cliente.id
+    assert "items" not in payload[0]
+    assert "pagos" not in payload[0]

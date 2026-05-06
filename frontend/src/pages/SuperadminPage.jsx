@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   Building2,
@@ -7,9 +7,12 @@ import {
   PencilLine,
   Plus,
   RefreshCw,
+  Search,
   ShieldCheck,
   ShieldOff,
+  SlidersHorizontal,
   Trash2,
+  Truck,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -22,6 +25,29 @@ import EmptyState from '../components/ui/EmptyState';
 import { useToast } from '../components/ui/Toast';
 import CustomSelect from '../components/ui/CustomSelect';
 import { useAuth } from '../context/AuthContext';
+import { getSmartPseGreStatusMeta } from '../lib/utils/fiscalStatus';
+import { getPageCount } from '../lib/utils/queryParams';
+
+const SUPERADMIN_PAGE_SIZE = 25;
+const DEFAULT_TENANT_METRICS = {
+  total: 0,
+  active: 0,
+  smartpse_gre: 0,
+  smartpse_gre_pending: 0,
+};
+const TENANT_GRE_FILTER_OPTIONS = [
+  { value: 'all', label: 'Todos' },
+  { value: 'configured', label: 'GRE configurado' },
+  { value: 'missing', label: 'GRE pendiente' },
+  { value: 'ok', label: 'GRE ok' },
+  { value: 'invalid', label: 'GRE invalido' },
+  { value: 'unchecked', label: 'GRE sin verificar' },
+];
+const TENANT_ACTIVE_FILTER_OPTIONS = [
+  { value: 'all', label: 'Todos' },
+  { value: 'active', label: 'Activos' },
+  { value: 'inactive', label: 'Inactivos' },
+];
 
 function sanitizeRuc(value) {
   return value.replace(/\D/g, '').slice(0, 11);
@@ -606,6 +632,200 @@ function CreateTenantModal({ onClose, onCreated }) {
   );
 }
 
+function TenantGreCredentialsModal({ tenant, onClose, onSaved }) {
+  const toast = useToast();
+  const [localTenant, setLocalTenant] = useState(tenant);
+  const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [validationResult, setValidationResult] = useState(null);
+  const [form, setForm] = useState({
+    sol_username: '',
+    sol_password: '',
+    client_id: '',
+    client_secret: '',
+  });
+
+  const greMeta = getSmartPseGreStatusMeta(localTenant);
+  const canSave = Object.values(form).every((value) => value.trim());
+
+  const setField = (key) => (event) => {
+    const value = key === 'sol_username' ? event.target.value.toUpperCase() : event.target.value;
+    setValidationResult(null);
+    setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleSave = async (event) => {
+    event.preventDefault();
+
+    if (!canSave) {
+      toast('Completa usuario SOL, clave SOL, client ID y client secret.', 'error');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const updated = await svc.updateSmartPseGreCredentials(tenant.id, {
+        sol_username: form.sol_username.trim(),
+        sol_password: form.sol_password.trim(),
+        client_id: form.client_id.trim(),
+        client_secret: form.client_secret.trim(),
+      });
+      setLocalTenant(updated);
+      onSaved(updated);
+      setForm({
+        sol_username: '',
+        sol_password: '',
+        client_id: '',
+        client_secret: '',
+      });
+      toast('Credenciales GRE guardadas');
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCheck = async () => {
+    if (!greMeta.canCheck) {
+      toast('Primero guarda las credenciales GRE.', 'error');
+      return;
+    }
+
+    setChecking(true);
+    try {
+      const result = await svc.checkSmartPseGreCredentials(tenant.id);
+      const updated = {
+        ...localTenant,
+        has_smartpse_gre_credentials: true,
+        smartpse_gre_status: result.valid ? 'ok' : 'invalid',
+        smartpse_gre_checked_at: new Date().toISOString(),
+      };
+      setLocalTenant(updated);
+      onSaved(updated);
+      setValidationResult(result);
+      toast(result.valid ? 'Credenciales GRE validas' : result.message, result.valid ? 'success' : 'error');
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <Modal open={Boolean(tenant)} onClose={onClose} title={`Smart PSE GRE / ${tenant.business_name}`} size="lg">
+      <div className="space-y-6">
+        <section className="card-raw" data-label="smart-pse-gre">
+          <SectionHeader
+            kicker="Smart PSE GRE"
+            title="Credenciales SUNAT para guias"
+            copy="El backend las guarda cifradas y solo expone estado operativo en esta pantalla."
+          />
+
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="ink-inline-alert ink-inline-alert-warning">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">Estado actual</p>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">{greMeta.description}</p>
+              <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+                Ultima validacion: {formatDateTime(localTenant.smartpse_gre_checked_at)}
+              </p>
+            </div>
+
+            <div className="flex flex-col items-start justify-center gap-2 border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-4">
+              <StatusDot ok={localTenant.has_smartpse_gre_credentials} />
+              <Badge variant={greMeta.badgeVariant}>{greMeta.label}</Badge>
+              <button
+                type="button"
+                className="btn-secondary mt-1 flex items-center gap-2 whitespace-nowrap"
+                onClick={handleCheck}
+                disabled={checking || !greMeta.canCheck}
+              >
+                {checking ? <Spinner size="sm" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Validar
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <form onSubmit={handleSave} className="ink-card p-6">
+          <SectionHeader
+            kicker="Rotacion"
+            title="Guardar nuevas credenciales"
+            copy="Los campos no se precargan para no exponer secretos ya guardados."
+          />
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="label">Usuario SOL corto</label>
+              <input
+                className="input font-mono text-xs"
+                value={form.sol_username}
+                onChange={setField('sol_username')}
+                placeholder="USUARIO"
+                aria-label="Usuario SOL corto"
+                autoComplete="off"
+              />
+              <p className="mt-2 text-xs text-[var(--text-secondary)]">Sin RUC; el backend construye RUC + usuario.</p>
+            </div>
+
+            <div>
+              <label className="label">Clave SOL</label>
+              <input
+                type="password"
+                className="input font-mono text-xs"
+                value={form.sol_password}
+                onChange={setField('sol_password')}
+                placeholder="••••••••"
+                aria-label="Clave SOL"
+                autoComplete="new-password"
+              />
+            </div>
+
+            <div>
+              <label className="label">Client ID SUNAT</label>
+              <input
+                className="input font-mono text-xs"
+                value={form.client_id}
+                onChange={setField('client_id')}
+                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                aria-label="Client ID SUNAT"
+                autoComplete="off"
+              />
+            </div>
+
+            <div>
+              <label className="label">Client secret SUNAT</label>
+              <input
+                type="password"
+                className="input font-mono text-xs"
+                value={form.client_secret}
+                onChange={setField('client_secret')}
+                placeholder="••••••••"
+                aria-label="Client secret SUNAT"
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <ValidationNotice result={validationResult} />
+          </div>
+
+          <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-[var(--border-subtle)] pt-4">
+            <button type="button" onClick={onClose} className="btn-secondary" disabled={saving || checking}>
+              Cerrar
+            </button>
+            <button type="submit" className="btn-primary flex items-center gap-2" disabled={saving || !canSave}>
+              {saving ? <Spinner size="sm" /> : <KeyRound className="h-4 w-4" />}
+              Guardar cifrado
+            </button>
+          </div>
+        </form>
+      </div>
+    </Modal>
+  );
+}
+
 function CreateUserModal({ tenant, onClose, onCreated }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
@@ -905,6 +1125,7 @@ function TenantUsersModal({ tenant, onClose }) {
               ))}
             </tbody>
           </table>
+
         </div>
       )}
 
@@ -1261,11 +1482,125 @@ function TenantLimitsModal({ tenant, onClose }) {
               })}
             </tbody>
           </table>
+
         </div>
       )}
 
       <div className="mt-5 flex justify-end border-t border-[var(--border-subtle)] pt-4">
         <button type="button" onClick={onClose} className="btn-secondary">Cerrar</button>
+      </div>
+    </Modal>
+  );
+}
+
+function formatDateTime(value) {
+  if (!value) return 'Sin validar';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Sin validar';
+  return date.toLocaleString('es-PE', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
+function TenantFiscalFlagsModal({ tenant, onClose }) {
+  const toast = useToast();
+  const [flags, setFlags] = useState({});
+  const [definitions, setDefinitions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const loadFlags = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await svc.fiscalFlags(tenant.id);
+      setFlags(data.flags || {});
+      setDefinitions(data.definitions || []);
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [tenant.id, toast]);
+
+  useEffect(() => { loadFlags(); }, [loadFlags]);
+
+  const handleToggle = (key) => {
+    setFlags((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const data = await svc.updateFiscalFlags(tenant.id, flags);
+      setFlags(data.flags || {});
+      setDefinitions(data.definitions || definitions);
+      toast('Flags fiscales actualizados.');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={true} onClose={onClose} title={`Flags fiscales beta · ${tenant.business_name}`} size="xl">
+      <div className="ink-inline-alert ink-inline-alert-warning mb-5">
+        <p className="text-xs">
+          Estos controles habilitan funciones fiscales sensibles por tenant. Facturas y boletas siguen controladas por suscripcion,
+          token ApisPeru y limites de emision; estos flags son para notas, guias y operaciones con mayor riesgo fiscal.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-10">
+          <Spinner size="lg" label="Cargando flags fiscales" />
+        </div>
+      ) : definitions.length === 0 ? (
+        <EmptyState title="Sin flags fiscales" description="El backend no devolvio definiciones de flags para este tenant." />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {definitions.map((definition) => {
+            const enabled = Boolean(flags[definition.key]);
+            return (
+              <label
+                key={definition.key}
+                className="ink-card flex cursor-pointer items-start gap-3 p-4"
+              >
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  onChange={() => handleToggle(definition.key)}
+                  className="mt-1"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-sm text-[var(--text-primary)]">
+                      {definition.label}
+                    </span>
+                    <Badge variant={enabled ? 'success' : 'default'}>
+                      {enabled ? 'activo' : 'bloqueado'}
+                    </Badge>
+                  </span>
+                  <span className="mt-1 block text-xs text-[var(--text-secondary)]">
+                    {definition.control}
+                  </span>
+                  <span className="mt-1 block font-mono text-[10px] text-[var(--text-tertiary)]">
+                    {definition.key} · {definition.category}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="mt-5 flex justify-end gap-2 border-t border-[var(--border-subtle)] pt-4">
+        <button type="button" onClick={onClose} className="btn-secondary">Cerrar</button>
+        <button type="button" onClick={handleSave} disabled={saving || loading} className="btn-primary">
+          <SlidersHorizontal className="h-4 w-4" />
+          {saving ? 'Guardando...' : 'Guardar flags'}
+        </button>
       </div>
     </Modal>
   );
@@ -1340,29 +1675,90 @@ export default function SuperadminPage() {
   const [viewingUsersOf, setViewingUsersOf] = useState(null);
   const [viewingErrorsOf, setViewingErrorsOf] = useState(null);
   const [viewingLimitsOf, setViewingLimitsOf] = useState(null);
+  const [viewingFiscalFlagsOf, setViewingFiscalFlagsOf] = useState(null);
   const [checkingTokenId, setCheckingTokenId] = useState(null);
+  const [editingGreOf, setEditingGreOf] = useState(null);
+  const [checkingGreId, setCheckingGreId] = useState(null);
+  const [tenantSearch, setTenantSearch] = useState('');
+  const [debouncedTenantSearch, setDebouncedTenantSearch] = useState('');
+  const [tenantGreFilter, setTenantGreFilter] = useState('all');
+  const [tenantActiveFilter, setTenantActiveFilter] = useState('all');
+  const [tenantPage, setTenantPage] = useState(1);
+  const [tenantTotal, setTenantTotal] = useState(0);
+  const [tenantMetrics, setTenantMetrics] = useState(DEFAULT_TENANT_METRICS);
+  const [tenantReloadKey, setTenantReloadKey] = useState(0);
 
   useEffect(() => {
-    svc.tenants()
-      .then(setTenants)
+    if (!user?.is_superadmin) {
+      setLoading(false);
+      return;
+    }
+    svc.tenantsPage({
+      skip: (tenantPage - 1) * SUPERADMIN_PAGE_SIZE,
+      limit: SUPERADMIN_PAGE_SIZE,
+      q: debouncedTenantSearch || undefined,
+      gre_status: tenantGreFilter === 'all' ? undefined : tenantGreFilter,
+      active_status: tenantActiveFilter === 'all' ? undefined : tenantActiveFilter,
+    })
+      .then((data) => {
+        setTenants(Array.isArray(data.items) ? data.items : []);
+        setTenantTotal(Number(data.total || 0));
+        setTenantMetrics({ ...DEFAULT_TENANT_METRICS, ...(data.metrics || {}) });
+      })
       .catch(() => toast('No se pudo cargar la lista de tenants. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
-  }, [toast]);
+  }, [
+    debouncedTenantSearch,
+    tenantActiveFilter,
+    tenantGreFilter,
+    tenantPage,
+    tenantReloadKey,
+    toast,
+    user?.is_superadmin,
+  ]);
 
-  if (user?.rol !== 'superadmin' && !user?.is_superadmin) {
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setTenantPage(1);
+      setDebouncedTenantSearch(tenantSearch.trim());
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [tenantSearch]);
+
+  useEffect(() => {
+    setTenantPage(1);
+  }, [tenantActiveFilter, tenantGreFilter]);
+
+  const tenantPageCount = getPageCount(tenantTotal, SUPERADMIN_PAGE_SIZE);
+  const boundedTenantPage = Math.min(tenantPage, tenantPageCount);
+  const visibleTenants = tenants;
+
+  useEffect(() => {
+    if (tenantPage > tenantPageCount) setTenantPage(tenantPageCount);
+  }, [tenantPage, tenantPageCount]);
+
+  if (!user?.is_superadmin) {
     return <Navigate to="/dashboard" replace />;
   }
 
+  const refreshTenantPage = () => setTenantReloadKey((key) => key + 1);
+
   const handleSaved = (updated) => {
     setTenants((current) => current.map((tenant) => (tenant.id === updated.id ? updated : tenant)));
+    setEditing((current) => (current?.id === updated.id ? updated : current));
+    setEditingGreOf((current) => (current?.id === updated.id ? updated : current));
+    refreshTenantPage();
   };
 
   const handleCreated = (newTenant) => {
     setTenants((current) => [newTenant, ...current]);
+    setTenantPage(1);
+    refreshTenantPage();
   };
 
   const handleDeleted = (tenantId) => {
     setTenants((current) => current.filter((tenant) => tenant.id !== tenantId));
+    refreshTenantPage();
   };
 
   const handleCheckTokenHealth = async (tenant) => {
@@ -1383,36 +1779,69 @@ export default function SuperadminPage() {
     } catch (err) {
       toast(err.message, 'error');
     } finally {
+      refreshTenantPage();
       setCheckingTokenId(null);
+    }
+  };
+
+  const handleCheckGreCredentials = async (tenant) => {
+    const greMeta = getSmartPseGreStatusMeta(tenant);
+    if (!greMeta.canCheck) {
+      toast('Primero guarda las credenciales GRE de Smart PSE.', 'error');
+      return;
+    }
+
+    setCheckingGreId(tenant.id);
+    try {
+      const result = await svc.checkSmartPseGreCredentials(tenant.id);
+      setTenants((current) =>
+        current.map((t) =>
+          t.id === tenant.id
+            ? {
+                ...t,
+                has_smartpse_gre_credentials: true,
+                smartpse_gre_status: result.valid ? 'ok' : 'invalid',
+                smartpse_gre_checked_at: new Date().toISOString(),
+              }
+            : t,
+        ),
+      );
+      toast(result.valid ? 'Credenciales GRE validas' : result.message, result.valid ? 'success' : 'error');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      refreshTenantPage();
+      setCheckingGreId(null);
     }
   };
 
   const metrics = [
     {
       label: 'Tenants totales',
-      value: tenants.length,
+      value: tenantMetrics.total,
       note: 'Base total registrada en la plataforma.',
       icon: Building2,
     },
     {
       label: 'Tenants activos',
-      value: tenants.filter((tenant) => tenant.is_active).length,
+      value: tenantMetrics.active,
       note: 'Empresas habilitadas para operar.',
       icon: ShieldCheck,
     },
     {
-      label: 'Token ApisPeru',
-      value: tenants.filter((tenant) => tenant.has_apisperu_token).length,
-      note: 'Tenants con integracion fiscal ya configurada.',
-      icon: KeyRound,
+      label: 'Smart PSE GRE',
+      value: tenantMetrics.smartpse_gre,
+      note: 'Tenants listos para guias con credenciales cifradas.',
+      icon: Truck,
     },
     {
-      label: 'Pendientes de token',
-      value: tenants.filter((tenant) => !tenant.has_apisperu_token).length,
-      note: 'Tenants que aun requieren integracion fiscal.',
-      icon: Users,
+      label: 'GRE pendientes',
+      value: tenantMetrics.smartpse_gre_pending,
+      note: 'Empresas que aun requieren configuracion SUNAT GRE.',
+      icon: KeyRound,
     },
   ];
+  const showMetricSkeleton = loading && tenantTotal === 0 && tenants.length === 0;
 
   return (
     <div className="page-shell page-shell--dense superadmin-shell">
@@ -1421,7 +1850,7 @@ export default function SuperadminPage() {
           <p className="page-kicker">Control interno</p>
           <h2 className="page-title">Superadmin</h2>
           <p className="page-subtitle">
-            Gestion de tenants, validacion de tokens y alta de usuarios operativos sin salir del panel interno.
+            Gestion de tenants, credenciales GRE Smart PSE y alta de usuarios operativos sin salir del panel interno.
           </p>
         </div>
 
@@ -1454,8 +1883,8 @@ export default function SuperadminPage() {
           <div className="ink-card p-4">
             <p className="label">Observacion</p>
             <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
-              La validacion de token ya esta conectada al backend. Si el token no corresponde al RUC del tenant, el
-              guardado se bloquea antes de persistir el cambio.
+              Las credenciales GRE se guardan cifradas desde backend. El tenant solo ve estados, nunca usuario SOL,
+              clave ni secretos SUNAT.
             </p>
           </div>
         </div>
@@ -1470,7 +1899,13 @@ export default function SuperadminPage() {
                 <span className="ink-metric-label">{metric.label}</span>
                 <Icon className="h-4 w-4 text-[var(--text-brand)]" />
               </div>
-              <div className="ink-metric-value">{metric.value}</div>
+              <div className="ink-metric-value">
+                {showMetricSkeleton ? (
+                  <span className="ink-metric-skeleton" aria-label="Cargando metrica" />
+                ) : (
+                  metric.value
+                )}
+              </div>
               <p className="ink-metric-note">{metric.note}</p>
             </div>
           );
@@ -1481,7 +1916,7 @@ export default function SuperadminPage() {
         <div className="flex justify-center py-20">
           <Spinner size="lg" />
         </div>
-      ) : tenants.length === 0 ? (
+      ) : tenantTotal === 0 ? (
         <EmptyState
           title="Sin tenants registrados"
           description="Crea el primer tenant para iniciar la operacion multiempresa."
@@ -1491,12 +1926,47 @@ export default function SuperadminPage() {
           <div className="ink-card-header">
             <div>
               <h3 className="ink-card-title">Tenants registrados</h3>
-              <p className="ink-card-subtitle">{tenants.length} empresa{tenants.length !== 1 ? 's' : ''} · Alta, edición fiscal y gestión de usuarios.</p>
+              <p className="ink-card-subtitle">{tenantTotal} empresa{tenantTotal !== 1 ? 's' : ''} · Alta, edición fiscal y gestión de usuarios.</p>
             </div>
             <button onClick={() => setCreating(true)} className="btn-secondary flex items-center gap-1.5">
               <Plus className="h-3.5 w-3.5" />
               Nuevo tenant
             </button>
+          </div>
+
+          <div className="toolbar px-4 pb-4">
+            <label className="search-box">
+              <Search size={16} />
+              <input
+                placeholder="Buscar empresa, RUC, plan o estado GRE..."
+                value={tenantSearch}
+                onChange={(event) => setTenantSearch(event.target.value)}
+              />
+            </label>
+
+            <div className="document-list-filter">
+              <span>GRE</span>
+              <CustomSelect
+                compact
+                value={tenantGreFilter}
+                onChange={setTenantGreFilter}
+                options={TENANT_GRE_FILTER_OPTIONS}
+              />
+            </div>
+
+            <div className="document-list-filter">
+              <span>Estado</span>
+              <CustomSelect
+                compact
+                value={tenantActiveFilter}
+                onChange={setTenantActiveFilter}
+                options={TENANT_ACTIVE_FILTER_OPTIONS}
+              />
+            </div>
+
+            <div className="sort-text">
+              Mostrando <strong>{visibleTenants.length}</strong> de <strong>{tenantTotal}</strong>
+            </div>
           </div>
 
           <table className="ink-table">
@@ -1506,15 +1976,17 @@ export default function SuperadminPage() {
                 <th>RUC</th>
                 <th>Plan</th>
                 <th>ApisPeru</th>
+                <th>Smart PSE GRE</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {tenants.map((tenant) => {
+              {visibleTenants.map((tenant) => {
                 const tokenStatus = tenant.apisperu_token_status;
                 const tokenStatusVariant = tokenStatus === 'ok' ? 'success' : tokenStatus === 'invalid' ? 'danger' : 'default';
                 const tokenStatusLabel = tokenStatus === 'ok' ? 'ok' : tokenStatus === 'invalid' ? 'inválido' : 'sin verificar';
+                const greMeta = getSmartPseGreStatusMeta(tenant);
                 const initials = tenant.business_name
                   .split(' ')
                   .slice(0, 2)
@@ -1556,14 +2028,41 @@ export default function SuperadminPage() {
                             <button
                               type="button"
                               title="Verificar token ahora"
+                              aria-label={`Verificar token ApisPeru de ${tenant.business_name}`}
+                              aria-busy={checkingTokenId === tenant.id}
                               disabled={checkingTokenId === tenant.id}
                               onClick={() => handleCheckTokenHealth(tenant)}
                               className="superadmin-token-check"
                             >
-                              <RefreshCw className="h-3 w-3" />
+                              <RefreshCw className="h-3 w-3 superadmin-token-check-icon" />
                             </button>
                           </div>
                         )}
+                      </div>
+                    </td>
+
+                    <td data-label="Smart PSE GRE">
+                      <div className="flex flex-col gap-1.5">
+                        <StatusDot ok={tenant.has_smartpse_gre_credentials} />
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant={greMeta.badgeVariant}>{greMeta.label}</Badge>
+                          {greMeta.canCheck && (
+                            <button
+                              type="button"
+                              title="Validar GRE desde Smart PSE"
+                              aria-label={`Validar credenciales GRE de ${tenant.business_name}`}
+                              aria-busy={checkingGreId === tenant.id}
+                              disabled={checkingGreId === tenant.id}
+                              onClick={() => handleCheckGreCredentials(tenant)}
+                              className="superadmin-token-check"
+                            >
+                              <RefreshCw className="h-3 w-3 superadmin-token-check-icon" />
+                            </button>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-[var(--text-tertiary)]">
+                          {formatDateTime(tenant.smartpse_gre_checked_at)}
+                        </span>
                       </div>
                     </td>
 
@@ -1574,7 +2073,7 @@ export default function SuperadminPage() {
                     </td>
 
                     <td data-label="Acciones">
-                      <div className="flex flex-wrap gap-1">
+                      <div className="superadmin-row-actions">
                         <button
                           type="button"
                           onClick={() => setEditing(tenant)}
@@ -1604,11 +2103,28 @@ export default function SuperadminPage() {
 
                         <button
                           type="button"
+                          onClick={() => setEditingGreOf(tenant)}
+                          className="superadmin-toolbar-btn superadmin-toolbar-btn--accent"
+                        >
+                          <Truck className="h-3 w-3" />
+                          GRE
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => setViewingLimitsOf(tenant)}
                           className="superadmin-toolbar-btn superadmin-toolbar-btn--accent"
                         >
                           <Gauge className="h-3 w-3" />
                           Límites
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setViewingFiscalFlagsOf(tenant)}
+                          className="superadmin-toolbar-btn"
+                        >
+                          <SlidersHorizontal className="h-3 w-3" />
+                          Flags
                         </button>
                       </div>
                     </td>
@@ -1617,6 +2133,30 @@ export default function SuperadminPage() {
               })}
             </tbody>
           </table>
+
+          {tenantPageCount > 1 && (
+            <div className="ink-table-footer">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setTenantPage((page) => Math.max(1, page - 1))}
+                disabled={boundedTenantPage <= 1}
+              >
+                Anterior
+              </button>
+              <span className="ink-table-count">
+                Pagina {boundedTenantPage} de {tenantPageCount}
+              </span>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setTenantPage((page) => Math.min(tenantPageCount, page + 1))}
+                disabled={boundedTenantPage >= tenantPageCount}
+              >
+                Siguiente
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1633,6 +2173,14 @@ export default function SuperadminPage() {
         <CreateTenantModal
           onClose={() => setCreating(false)}
           onCreated={handleCreated}
+        />
+      ) : null}
+
+      {editingGreOf ? (
+        <TenantGreCredentialsModal
+          tenant={editingGreOf}
+          onClose={() => setEditingGreOf(null)}
+          onSaved={handleSaved}
         />
       ) : null}
 
@@ -1662,6 +2210,13 @@ export default function SuperadminPage() {
         <TenantLimitsModal
           tenant={viewingLimitsOf}
           onClose={() => setViewingLimitsOf(null)}
+        />
+      ) : null}
+
+      {viewingFiscalFlagsOf ? (
+        <TenantFiscalFlagsModal
+          tenant={viewingFiscalFlagsOf}
+          onClose={() => setViewingFiscalFlagsOf(null)}
         />
       ) : null}
     </div>

@@ -6,6 +6,15 @@
 import { clientes as clientesSvc } from '../../services/clientes';
 import { productos as productosSvc } from '../../services/productos';
 import { normalizePeruMobileInput } from './peruPhoneValidation';
+import {
+  getFiscalClientErrorMessage,
+  normalizeFiscalDocumentNumber,
+  normalizeFiscalUbigeo,
+} from './fiscalClientValidation';
+import {
+  normalizeInternalProductCode,
+  normalizeSunatUnitCode,
+} from './sunatCatalogs';
 
 /**
  * Create or update a client.
@@ -13,21 +22,33 @@ import { normalizePeruMobileInput } from './peruPhoneValidation';
  * @returns {Promise<number>} resolved cliente_id
  */
 export async function upsertCliente({ id, isNew, isDirty, form }) {
-  // Existing client, no edits — nothing to do
   if (!isNew && !isDirty) {
     if (!id) throw new Error('No hay cliente seleccionado');
     return Number(id);
   }
 
+  const normalizedForm = {
+    ...form,
+    numero_documento: normalizeFiscalDocumentNumber(form.tipo_documento, form.numero_documento),
+    ubigeo: normalizeFiscalUbigeo(form.ubigeo || ''),
+    telefono: normalizePeruMobileInput(form.telefono || ''),
+  };
+  const clientError = getFiscalClientErrorMessage(normalizedForm);
+  if (clientError) {
+    throw new Error(clientError);
+  }
+
   const payload = {
-    tipo_documento:   form.tipo_documento,
-    numero_documento: String(form.numero_documento || '').trim(),
-    razon_social:     String(form.razon_social || '').trim(),
-    direccion:        String(form.direccion || '').trim(),
-    email:            String(form.email || '').trim(),
-    telefono:         normalizePeruMobileInput(form.telefono || ''),
-    whatsapp:         normalizePeruMobileInput(form.telefono || ''),
-    contacto:         '',
+    tipo_documento: normalizedForm.tipo_documento,
+    numero_documento: String(normalizedForm.numero_documento || '').trim(),
+    razon_social: String(normalizedForm.razon_social || '').trim(),
+    nombre_comercial: String(normalizedForm.nombre_comercial || '').trim(),
+    direccion: String(normalizedForm.direccion || '').trim(),
+    ubigeo: String(normalizedForm.ubigeo || '').trim(),
+    email: String(normalizedForm.email || '').trim(),
+    telefono: normalizedForm.telefono,
+    whatsapp: normalizedForm.telefono,
+    contacto: '',
   };
 
   if (isNew) {
@@ -35,7 +56,6 @@ export async function upsertCliente({ id, isNew, isDirty, form }) {
     return created.id;
   }
 
-  // Update existing client (email/telefono/dirección changed)
   const updated = await clientesSvc.update(Number(id), payload);
   return updated.id;
 }
@@ -52,16 +72,16 @@ export async function upsertProductos(items) {
       if (!item._isNew) return item;
 
       const nombre = String(item.descripcion || '').trim();
-      if (!nombre) return item; // skip blank lines
+      if (!nombre) return item;
 
       const created = await productosSvc.create({
         nombre,
-        codigo_interno:      item.codigo?.trim() || undefined,
-        precio_unitario:     Number(item.precio_unitario) || 1,
-        precio_incluye_igv:  true,
-        unidad_medida:       item.unidad_medida || 'NIU',
+        codigo_interno: normalizeInternalProductCode(item.codigo) || undefined,
+        precio_unitario: Number(item.precio_unitario) || 1,
+        precio_incluye_igv: true,
+        unidad_medida: normalizeSunatUnitCode(item.unidad_medida),
         tipo_afectacion_igv: item.tipo_afectacion_igv || '10',
-        descripcion:         nombre,
+        descripcion: nombre,
       });
 
       return { ...item, producto_id: String(created.id), _isNew: false };

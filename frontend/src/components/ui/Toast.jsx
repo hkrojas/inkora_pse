@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useRef, useState, useEffect } from 'react';
 import { AlertTriangle, CheckCircle, Info, X, XCircle } from 'lucide-react';
 
 const ToastContext = createContext(null);
@@ -12,17 +12,24 @@ const ICON_MAP = {
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  const nextIdRef = useRef(0);
 
   const push = useCallback((message, type = 'success') => {
-    const id = Date.now();
-    setToasts((prev) => [...prev, { id, message, type }]);
+    const id = `${Date.now()}-${nextIdRef.current++}`;
+    setToasts((prev) => [...prev, { id, message, type, exiting: false }]);
     setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+      setToasts((prev) => prev.map((t) => t.id === id ? { ...t, exiting: true } : t));
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 300);
+    }, 3700);
   }, []);
 
   const remove = useCallback((id) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev) => prev.map((t) => t.id === id ? { ...t, exiting: true } : t));
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 300);
   }, []);
 
   return (
@@ -32,7 +39,8 @@ export function ToastProvider({ children }) {
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`toast-item toast-item--${toast.type}`}
+            className={`toast-item toast-item--${toast.type} ${toast.exiting ? 'anim-slide-out' : ''}`}
+            style={toast.exiting ? { animation: 'slide-out-right 300ms ease-in both' } : undefined}
           >
             {ICON_MAP[toast.type]}
             <span className="flex-1">{toast.message}</span>

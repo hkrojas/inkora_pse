@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Eye, Plus, Search, Trash2, PlusCircle, Send, FileText,
+  Eye, Search, Trash2, Send, FileText,
   Download, CheckCircle2, Clock, AlertCircle, XCircle,
-  ChevronDown, ChevronUp, Receipt, SlidersHorizontal,
+  Receipt, SlidersHorizontal, Save,
   History, Copy, Share2, MessageCircle, Mail, MoreHorizontal,
 } from 'lucide-react';
 import { cotizaciones as svc } from '../services/cotizaciones';
@@ -11,6 +11,7 @@ import { clientes as cliSvc } from '../services/clientes';
 import { productos as prodSvc } from '../services/productos';
 import { tenant as tenantSvc } from '../services/tenant';
 import Spinner from '../components/ui/Spinner';
+import { SkeletonForm } from '../components/ui/Skeleton';
 import ColorPickerField from '../components/ui/ColorPickerField';
 import EmptyState from '../components/ui/EmptyState';
 import Badge, { statusBadge } from '../components/ui/Badge';
@@ -24,33 +25,34 @@ import { useToast } from '../components/ui/Toast';
 import { getPaymentMethodPreview, normalizePaymentMethods } from '../lib/utils/paymentMethods';
 import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/peruPhoneValidation';
 import {
+  FISCAL_DOC_TYPE_OPTIONS,
+  buildFiscalClientErrors,
+  getFiscalDocLabel,
+  getFiscalDocMeta,
+  normalizeFiscalClientForm,
+  normalizeFiscalDocumentNumber,
+  normalizeFiscalUbigeo,
+} from '../lib/utils/fiscalClientValidation';
+import {
   DEFAULT_NOTE_1_COLOR,
   DEFAULT_NOTE_1_TEXT,
   DEFAULT_NOTE_2_COLOR,
   DEFAULT_NOTE_2_TEXT,
   parseTenantObservationDefaults,
 } from '../lib/utils/pdfObservationDefaults';
+import {
+  SUNAT_TAX_AFFECTATION_OPTIONS,
+  SUNAT_UNIT_OPTIONS,
+  normalizeInternalProductCode,
+} from '../lib/utils/sunatCatalogs';
 import { upsertCliente, upsertProductos } from '../lib/utils/upsert';
 import { useAuth } from '../context/AuthContext';
 
 // ─── Constantes de dominio ────────────────────────────────────────────────────
 
-const UNIDADES_MEDIDA = [
-  { value: 'NIU', label: 'NIU – Unidad' },
-  { value: 'ZZ',  label: 'ZZ – Servicio' },
-  { value: 'KGM', label: 'KGM – Kilogramo' },
-  { value: 'H87', label: 'H87 – Pieza' },
-  { value: 'BG',  label: 'BG – Bolsa' },
-  { value: 'BX',  label: 'BX – Caja' },
-  { value: 'RM',  label: 'RM – Resma' },
-];
+const UNIDADES_MEDIDA = SUNAT_UNIT_OPTIONS;
 
-const AFECTACION_IGV = [
-  { value: '10', label: '10 – Gravado' },
-  { value: '20', label: '20 – Exonerado' },
-  { value: '30', label: '30 – Inafecto' },
-  { value: '40', label: '40 – Exportación' },
-];
+const AFECTACION_IGV = SUNAT_TAX_AFFECTATION_OPTIONS;
 
 const CONDICIONES_PAGO = [
   { value: 'contado',    label: 'Contado' },
@@ -161,6 +163,15 @@ function docVariant(tipo) {
   return m[tipo] || 'default';
 }
 
+function fiscalTone(item) {
+  const status = getSunatStatus(item);
+  if (!status) return 'neutral';
+  if (status.variant === 'success') return 'ok';
+  if (status.variant === 'danger') return 'bad';
+  if (status.variant === 'warning') return 'warn';
+  return 'neutral';
+}
+
 const fmt = (v) => Number(v || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 });
 
 function normalizeObservationLine(line, fallback = {}) {
@@ -268,14 +279,7 @@ function getCondicionPagoLabel(value) {
 }
 
 function getTipoDocumentoClienteLabel(value) {
-  const map = {
-    '6': 'RUC',
-    '1': 'DNI',
-    '4': 'CE',
-    '7': 'PASAPORTE',
-    '0': 'DOC',
-  };
-  return map[String(value || '')] || 'DOC';
+  return getFiscalDocLabel(value);
 }
 
 function getMonedaTexto(moneda) {
@@ -384,6 +388,7 @@ function getPreviewClientData(clienteId, clienteForm, clientes) {
     tipo_documento: clienteForm?.tipo_documento || selectedClient?.tipo_documento || '0',
     numero_documento: (clienteForm?.numero_documento || selectedClient?.numero_documento || '').trim(),
     direccion: (clienteForm?.direccion || selectedClient?.direccion || '-').trim() || '-',
+    ubigeo: (clienteForm?.ubigeo || selectedClient?.ubigeo || '').trim(),
   };
 }
 
@@ -576,46 +581,66 @@ function NuevoClienteModal({ onClose, onCreated, initialName = '' }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [lookup, setLookup] = useState(false);
-  const [phoneError, setPhoneError] = useState(null);
-  const [form, setForm] = useState({
-    tipo_documento: '1',
-    numero_documento: '',
-    razon_social: '',
-    direccion: '',
-    telefono: '',
-    email: '',
-  });
-  const set = (k) => (v) => {
-    const rawValue = typeof v === 'string' ? v : v.target.value;
-    const nextValue = k === 'telefono' ? normalizePeruMobileInput(rawValue) : rawValue;
-    setForm((f) => ({ ...f, [k]: nextValue }));
-    if (k === 'telefono') {
-      setPhoneError(validatePeruMobilePhone(nextValue, 'Telefono / WhatsApp'));
+  const [errors, setErrors] = useState({});
+  const [form, setForm] = useState(() => normalizeFiscalClientForm({
+    tipo_documento: '6',
+    razon_social: initialName,
+  }));
+  const set = (key) => (valueOrEvent) => {
+    const rawValue = typeof valueOrEvent === 'string' ? valueOrEvent : valueOrEvent.target.value;
+    const nextValue = key === 'telefono'
+      ? normalizePeruMobileInput(rawValue)
+      : key === 'numero_documento'
+        ? normalizeFiscalDocumentNumber(form.tipo_documento, rawValue)
+        : key === 'ubigeo'
+          ? normalizeFiscalUbigeo(rawValue)
+          : rawValue;
+    const nextForm = { ...form, [key]: nextValue };
+    if (key === 'tipo_documento') {
+      nextForm.numero_documento = normalizeFiscalDocumentNumber(nextValue, form.numero_documento);
     }
+    setForm(nextForm);
+    setErrors((current) => ({
+      ...current,
+      [key]: undefined,
+      ...(key === 'tipo_documento'
+        ? { numero_documento: undefined, direccion: undefined, ubigeo: undefined }
+        : {}),
+    }));
   };
 
   useEffect(() => {
-    setForm({
-      tipo_documento: '1',
-      numero_documento: '',
-      razon_social: initialName || '',
-      direccion: '',
-      telefono: '',
-      email: '',
-    });
-    setPhoneError(null);
+    setForm(normalizeFiscalClientForm({
+      tipo_documento: '6',
+      razon_social: initialName,
+    }));
+    setErrors({});
   }, [initialName]);
 
+  const validateForm = (nextForm = form) => {
+    const nextErrors = buildFiscalClientErrors(nextForm);
+    setErrors(nextErrors);
+    return Object.values(nextErrors).every((value) => !value);
+  };
+
   const handleLookup = async () => {
-    if (!form.numero_documento) return;
+    if (!form.numero_documento) {
+      validateForm({ ...form, numero_documento: '' });
+      return;
+    }
     setLookup(true);
     try {
       const data = await cliSvc.lookupDocument(form.numero_documento);
-      setForm((f) => ({
-        ...f,
-        razon_social: data.razon_social || data.nombre || f.razon_social,
-        direccion:    data.direccion || f.direccion,
-      }));
+      const nextForm = {
+        ...form,
+        tipo_documento: data.tipo === 'DNI' ? '1' : data.tipo === 'RUC' ? '6' : form.tipo_documento,
+        razon_social: data.razon_social || data.nombre || form.razon_social,
+        nombre_comercial: data.nombre_comercial || form.nombre_comercial,
+        direccion: data.direccion && data.direccion !== '-' ? data.direccion : form.direccion,
+        ubigeo: normalizeFiscalUbigeo(data.ubigeo || form.ubigeo),
+      };
+      setForm(nextForm);
+      validateForm(nextForm);
     } catch {
       toast('No se encontró el documento en SUNAT/RENIEC', 'error');
     } finally {
@@ -625,9 +650,7 @@ function NuevoClienteModal({ onClose, onCreated, initialName = '' }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const nextPhoneError = validatePeruMobilePhone(form.telefono, 'Telefono / WhatsApp');
-    setPhoneError(nextPhoneError);
-    if (nextPhoneError) return;
+    if (!validateForm()) return;
     setSaving(true);
     try {
       const created = await cliSvc.create(form);
@@ -648,12 +671,7 @@ function NuevoClienteModal({ onClose, onCreated, initialName = '' }) {
           <CustomSelect
             value={form.tipo_documento}
             onChange={set('tipo_documento')}
-            options={[
-              { value: '1', label: 'DNI' },
-              { value: '6', label: 'RUC' },
-              { value: '4', label: 'Carnet extranjería' },
-              { value: '7', label: 'Pasaporte' },
-            ]}
+            options={FISCAL_DOC_TYPE_OPTIONS}
           />
         </div>
         <div>
@@ -665,38 +683,52 @@ function NuevoClienteModal({ onClose, onCreated, initialName = '' }) {
               style={{ flex: 1 }}
               value={form.numero_documento}
               onChange={set('numero_documento')}
-              placeholder={form.tipo_documento === '6' ? '20XXXXXXXXX' : '7XXXXXXX'}
+              onBlur={() => validateForm()}
+              placeholder={getFiscalDocMeta(form.tipo_documento).placeholder}
+              inputMode={getFiscalDocMeta(form.tipo_documento).inputMode}
+              maxLength={getFiscalDocMeta(form.tipo_documento).maxLength}
             />
             <button
               type="button"
               onClick={handleLookup}
-              disabled={lookup}
+              disabled={lookup || !getFiscalDocMeta(form.tipo_documento).lookupEnabled}
               className="btn-secondary"
               style={{ whiteSpace: 'nowrap', padding: '0 12px' }}
             >
               {lookup ? <Spinner size="sm" /> : 'Consultar'}
             </button>
           </div>
+          <FieldError message={errors.numero_documento} />
         </div>
       </div>
       <div>
         <label className="label">Razón social / Nombre</label>
-        <input required className="input" value={form.razon_social} onChange={set('razon_social')} />
+        <input required className="input" value={form.razon_social} onChange={set('razon_social')} onBlur={() => validateForm()} />
+        <FieldError message={errors.razon_social} />
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <label className="label">Teléfono / WhatsApp</label>
-          <input className="input" value={form.telefono} onChange={set('telefono')} inputMode="numeric" placeholder="999999999" />
-          <FieldError message={phoneError} />
+          <input className="input" value={form.telefono} onChange={set('telefono')} onBlur={() => validateForm()} inputMode="numeric" placeholder="999999999" />
+          <FieldError message={errors.telefono} />
         </div>
         <div>
           <label className="label">Email</label>
-          <input className="input" type="email" value={form.email} onChange={set('email')} />
+          <input className="input" type="email" value={form.email} onChange={set('email')} onBlur={() => validateForm()} />
+          <FieldError message={errors.email} />
         </div>
       </div>
-      <div>
-        <label className="label">Dirección</label>
-        <input className="input" value={form.direccion} onChange={set('direccion')} />
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <label className="label">Dirección fiscal</label>
+          <input className="input" value={form.direccion} onChange={set('direccion')} onBlur={() => validateForm()} />
+          <FieldError message={errors.direccion} />
+        </div>
+        <div>
+          <label className="label">Ubigeo</label>
+          <input className="input" value={form.ubigeo} onChange={set('ubigeo')} onBlur={() => validateForm()} inputMode="numeric" maxLength={6} placeholder="150101" />
+          <FieldError message={errors.ubigeo} />
+        </div>
       </div>
       <div className="flex justify-end gap-3 pt-2">
         <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
@@ -1072,6 +1104,22 @@ function NuevaCotizacionForm({
     }
     if (!clienteId && !clienteIsNew && !clienteForm?.razon_social) return;
 
+    const validItems = items
+      .filter((it) => it.descripcion?.trim() && Number(it.cantidad) > 0 && Number(it.precio_unitario) > 0)
+      .map((it) => ({
+        producto_id: it.producto_id ? Number(it.producto_id) : undefined,
+        codigo_producto: normalizeInternalProductCode(it.codigo) || undefined,
+        descripcion: it.descripcion,
+        cantidad: Number(it.cantidad),
+        precio_unitario: Number(it.precio_unitario),
+        unidad_medida: it.unidad_medida || 'NIU',
+        tipo_afectacion_igv: it.tipo_afectacion_igv || '10',
+      }));
+    if (validItems.length === 0) {
+      toast('Agrega al menos una linea valida antes de guardar la cotizacion.', 'error');
+      return;
+    }
+
     try {
       // 1. Upsert client if needed
       const resolvedClienteId = await upsertCliente({
@@ -1097,12 +1145,13 @@ function NuevaCotizacionForm({
         items: resolvedItems
           .filter((it) => it.descripcion?.trim() && Number(it.cantidad) > 0 && Number(it.precio_unitario) > 0)
           .map((it) => ({
-            producto_id:         it.producto_id ? Number(it.producto_id) : undefined,
-            descripcion:         it.descripcion,
-            cantidad:            Number(it.cantidad),
-            precio_unitario:     Number(it.precio_unitario),
-            unidad_medida:       it.unidad_medida,
-            tipo_afectacion_igv: it.tipo_afectacion_igv,
+            producto_id: it.producto_id ? Number(it.producto_id) : undefined,
+            codigo_producto: normalizeInternalProductCode(it.codigo) || undefined,
+            descripcion: it.descripcion,
+            cantidad: Number(it.cantidad),
+            precio_unitario: Number(it.precio_unitario),
+            unidad_medida: it.unidad_medida || 'NIU',
+            tipo_afectacion_igv: it.tipo_afectacion_igv || '10',
           })),
       });
     } catch (err) {
@@ -1144,326 +1193,203 @@ function NuevaCotizacionForm({
   const previewClient = getPreviewClientData(clienteId, clienteForm, clientes);
   const hasObservationLines = observationLines.some((line) => line.text?.trim());
 
-  return (
+return (
     <>
-      <form onSubmit={handleSubmit} className="view-embedded-form cotizaciones-form-surface">
-
-      {/* Sección: Cliente, moneda, condición */}
-      <div className="cotizacion-form-section cotizacion-form-section--entry">
-        <div className="cotizacion-entry-layout">
-          <div className="cotizacion-entry-main">
-            <label className="label" style={{ marginBottom: '6px' }}>Cliente</label>
-            <ClientCombobox
-              value={clienteId}
-              onChange={setClienteId}
-              clients={clientes}
-              onFormChange={handleClientFormChange}
-              quoteCountByClient={quoteCountByClient}
-              recentClientIds={recentClientIds}
-            />
-          </div>
-          <div className="cotizacion-entry-sidebar">
-            <div className="cotizacion-field-stack">
-              <label className="label">Moneda</label>
-            <CustomSelect
-              value={moneda}
-              onChange={setMoneda}
-              options={[
-                { value: 'PEN', label: 'PEN (S/) Soles' },
-                { value: 'USD', label: 'USD ($) Dólares' },
-              ]}
-              />
-            </div>
-            <div className="cotizacion-entry-sidebar-grid">
-              <div className="cotizacion-field-stack">
-            <label className="label">Condición de pago</label>
-            <CustomSelect
-              value={condicion}
-              onChange={setCondicion}
-              options={CONDICIONES_PAGO}
-            />
-          </div>
-              <div className="cotizacion-field-stack">
-            <label className="label">Fecha vencimiento</label>
-            <DatePicker
-              value={fechaVenc}
-              onChange={setFechaVenc}
-              disabled={condicion === 'contado'}
-            />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Sección: Líneas de detalle */}
-      <div className="cotizacion-form-section cotizacion-form-section--detail">
-        <div className="cotizacion-detail-header">
-          <p className="cotizacion-section-kicker">
-            Líneas de detalle
-          </p>
-          <button
-            type="button"
-            onClick={() => setAvanzado((current) => !current)}
-            className={`cotizacion-advanced-toggle ${avanzado ? 'is-active' : ''}`}
-            aria-checked={avanzado}
-            role="switch"
-          >
-            <span className="cotizacion-advanced-toggle-track">
-              <span className="cotizacion-advanced-toggle-thumb" />
-            </span>
-            <span>Mostrar unidad y afectacion IGV</span>
-          </button>
-        </div>
-
-        <div style={{ background: '#fff', border: '1px solid var(--border-subtle)', overflow: 'hidden' }}>
-          <div className="ink-table-scroll">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ background: 'var(--bg-surface-2)', borderBottom: '1px solid var(--border-subtle)' }}>
-                <tr>
-                  <th style={thStyle(avanzado ? '44%' : '60%')}>Código / Producto</th>
-                  {avanzado && <th style={thStyle('10%')}>Unidad</th>}
-                  {avanzado && <th style={thStyle('10%')}>Afectación</th>}
-                  <th style={thStyle('8%', 'right')}>Cant.</th>
-                  <th style={thStyle('12%', 'right')}>P. Unit.</th>
-                  <th style={thStyle('10%', 'right')}>Total</th>
-                  <th style={{ width: '4%', background: 'var(--bg-surface-2)' }} />
-                </tr>
-              </thead>
-              <tbody style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                {items.map((item, idx) => {
-                  const lineTotal = Number(item.cantidad) * Number(item.precio_unitario) || 0;
-                  return (
-                    <tr key={idx} style={{ borderBottom: '1px solid var(--bg-surface-2)' }}>
-                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-subtle)', padding: '4px 6px' }}>
-                        <ProductLineCell
-                          value={item}
-                          onChange={(next) => setItemAll(idx, next)}
-                          products={productosDisp}
-                          incluyeIgv
-                          sym={sym}
-                          onGenerateCode={handleGenerateCode}
-                        />
-                      </td>
-                      {avanzado && (
-                        <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-subtle)', padding: 0 }}>
-                          <CustomSelect
-                            compact
-                            value={item.unidad_medida}
-                            onChange={(v) => setItem(idx, 'unidad_medida', v)}
-                            options={UNIDADES_MEDIDA}
-                          />
-                        </td>
-                      )}
-                      {avanzado && (
-                        <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-subtle)', padding: 0 }}>
-                          <CustomSelect
-                            compact
-                            value={item.tipo_afectacion_igv}
-                            onChange={(v) => setItem(idx, 'tipo_afectacion_igv', v)}
-                            options={AFECTACION_IGV}
-                          />
-                        </td>
-                      )}
-                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-subtle)', padding: 0 }}>
-                        <input
-                          required type="number" min="0.01" step="any"
-                          className="spreadsheet-input spreadsheet-input-mono input-no-spinner"
-                          value={item.cantidad}
-                          onChange={(e) => setItem(idx, 'cantidad', e.target.value)}
-                        />
-                      </td>
-                      <td className="spreadsheet-cell" style={{ borderRight: '1px solid var(--border-subtle)', padding: 0, position: 'relative' }}>
-                        <span style={prefixStyle}>{sym}</span>
-                        <input
-                          required type="number" min="0.01" step="0.01"
-                          className="spreadsheet-input spreadsheet-input-mono input-no-spinner"
-                          style={{ paddingLeft: '24px' }}
-                          value={item.precio_unitario}
-                          onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)}
-                        />
-                      </td>
-                      <td style={{ borderRight: '1px solid var(--border-subtle)', background: 'var(--bg-surface-2)', position: 'relative' }}>
-                        <span style={prefixStyle}>{sym}</span>
-                        <input
-                          readOnly
-                          className="spreadsheet-input spreadsheet-input-mono"
-                          style={{ paddingLeft: '24px', color: 'var(--text-tertiary)' }}
-                          value={fmt(lineTotal)}
-                        />
-                      </td>
-                      <td style={{ padding: 0, textAlign: 'center' }}>
-                        {items.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeItem(idx)}
-                            style={{ width: '100%', minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: 'var(--border-subtle)', cursor: 'pointer' }}
-                            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-error)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--border-subtle)'; }}
-                          >
-                            <Trash2 style={{ width: '14px', height: '14px' }} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ padding: '8px', background: '#fff', borderTop: '1px solid var(--border-subtle)' }}>
-            <button
-              type="button"
-              onClick={addItem}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--brand-600)', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 16px' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--brand-100)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-            >
-              <PlusCircle style={{ width: '14px', height: '14px' }} /> Agregar línea
-            </button>
-          </div>
-        </div>
-
-        {/* Panel de totales */}
-        <div className="cotizacion-modal-summary-wrap">
-          <div className="cotizacion-modal-summary">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontFamily: 'var(--font-mono)', fontSize: '13px' }}>
-              {totales.gravado > 0 && (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
-                    <span>Subtotal gravado</span>
-                    <span>{sym} {fmt(subtotalGravado)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
-                    <span>IGV (18%)</span>
-                    <span>{sym} {fmt(igv)}</span>
-                  </div>
-                </>
-              )}
-              {totales.exonerado > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
-                  <span>Exonerado</span>
-                  <span>{sym} {fmt(totales.exonerado)}</span>
-                </div>
-              )}
-              {totales.inafecto > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
-                  <span>Inafecto</span>
-                  <span>{sym} {fmt(totales.inafecto)}</span>
-                </div>
-              )}
-              {totales.exportacion > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
-                  <span>Exportación</span>
-                  <span>{sym} {fmt(totales.exportacion)}</span>
-                </div>
-              )}
-              <div style={{ paddingTop: '12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Total cotización</span>
-                <span style={{ fontSize: '22px', fontWeight: 900, color: 'var(--brand-600)' }}>{sym} {fmt(totalGeneral)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Sección: Observaciones */}
-      <div className="cotizacion-form-section cotizacion-form-section--notes">
-        {!observacionesOpen && !hasObservationLines ? (
-          <button
-            type="button"
-            className="cotizacion-observaciones-toggle"
-            onClick={() => setObservacionesOpen(true)}
-          >
-            <ChevronDown style={{ width: '14px', height: '14px' }} />
-            + Anadir observaciones
-          </button>
-        ) : (
+      <form onSubmit={handleSubmit}>
+        <section className="builder">
           <div>
-            <button
-              type="button"
-              className="cotizacion-observaciones-toggle"
-              onClick={() => setObservacionesOpen((current) => !current)}
-              style={{ marginBottom: '12px' }}
-            >
-              {observacionesOpen ? <ChevronUp style={{ width: '14px', height: '14px' }} /> : <ChevronDown style={{ width: '14px', height: '14px' }} />}
-              {observacionesOpen ? 'Ocultar observaciones' : 'Mostrar observaciones'}
-            </button>
-            {observacionesOpen && (
-              <div style={{ display: 'grid', gap: '12px' }}>
-                <label className="label">Observaciones (aparecen en el PDF)</label>
-                {observationLines.map((line, index) => (
-                  <div key={`observation-line-${index}`} style={{ border: '1px solid var(--border-subtle)', background: 'var(--bg-surface-2)', padding: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-                        Linea {index + 1}
+            <article className="panel">
+              <div className="panel-header"><div><h3>Cliente y condiciones</h3><p>Primero identifica al cliente. Si ya existe, se autocompletan sus datos.</p></div></div>
+              <div className="panel-body">
+                <ClientCombobox
+                  value={clienteId}
+                  onChange={setClienteId}
+                  clients={clientes}
+                  onFormChange={handleClientFormChange}
+                  quoteCountByClient={quoteCountByClient}
+                  recentClientIds={recentClientIds}
+                />
+                {clienteId && clienteForm?.razon_social && (
+                  <div className="client-result">
+                    <div className="avatar">
+                      {clienteForm.razon_social.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <strong>{clienteForm.razon_social}</strong>
+                      <span>
+                        {getFiscalDocLabel(clienteForm.tipo_documento)} {clienteForm.numero_documento}
+                        {clienteForm.telefono ? ` · ${clienteForm.telefono}` : ''}
                       </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          <input
-                            type="checkbox"
-                            checked={line.bold}
-                            onChange={(event) => updateObservationLine(index, { bold: event.target.checked })}
+                    </div>
+                  </div>
+                )}
+                <div className="form-grid" style={{ marginTop: '16px' }}>
+                  <div className="field span-2">
+                    <label>Moneda</label>
+                    <div className="control">
+                      <CustomSelect
+                        value={moneda}
+                        onChange={setMoneda}
+                        options={[
+                          { value: 'PEN', label: 'PEN (S/) Soles' },
+                          { value: 'USD', label: 'USD ($) Dólares' },
+                        ]}
+                      />
+                    </div>
+                  </div>
+                  <div className="field span-5">
+                    <label>Condición de pago</label>
+                    <div className="control">
+                      <CustomSelect
+                        value={condicion}
+                        onChange={setCondicion}
+                        options={CONDICIONES_PAGO}
+                      />
+                    </div>
+                  </div>
+                  <div className="field span-5">
+                    <label>Fecha vencimiento</label>
+                    <div className="control">
+                      <DatePicker value={fechaVenc} onChange={setFechaVenc} disabled={condicion === 'contado'} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-header">
+                <div><h3>Líneas de detalle</h3><p>Agrega productos, servicios o descripciones libres.</p></div>
+                <label className="toggle-chip">
+                  <span className={`switch ${avanzado ? 'on' : ''}`} />
+                  Mostrar unidad e IGV
+                  <input type="checkbox" checked={avanzado} onChange={() => setAvanzado((c) => !c)} style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} />
+                </label>
+              </div>
+              <div className="panel-body">
+                <div className={`line-table${avanzado ? ' line-table--avanzado' : ''}`}>
+                  <div className="line-head">
+                    <div>Código / Producto</div>
+                    {avanzado && <div>Unidad</div>}
+                    {avanzado && <div>Afectación</div>}
+                    <div>Cant.</div>
+                    <div>P. unit.</div>
+                    <div>Desc.</div>
+                    <div>Total</div>
+                    <div></div>
+                  </div>
+                  {items.map((item, idx) => {
+                    const lineTotal = Number(item.cantidad) * Number(item.precio_unitario) || 0;
+                    return (
+                      <div className="line-row" key={idx}>
+                        <div className="product-input">
+                          <ProductLineCell
+                            value={item}
+                            onChange={(next) => setItemAll(idx, next)}
+                            products={productosDisp}
+                            incluyeIgv
+                            sym={sym}
+                            onGenerateCode={handleGenerateCode}
                           />
-                          Negrita
-                        </label>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          Color
-                          <ColorPickerField
-                            value={line.color}
-                            onChange={(val) => updateObservationLine(index, { color: val })}
-                            fallback={index === 0 ? 'var(--color-error)' : '#111111'}
-                            presets={['var(--color-error)', 'var(--color-error)', 'var(--color-warning)', 'var(--color-warning)', 'var(--text-primary)', 'var(--brand-600)']}
-                            openUpward
+                        </div>
+                        {avanzado && (
+                          <div>
+                            <CustomSelect compact value={item.unidad_medida} onChange={(v) => setItem(idx, 'unidad_medida', v)} options={UNIDADES_MEDIDA} />
+                          </div>
+                        )}
+                        {avanzado && (
+                          <div>
+                            <CustomSelect compact value={item.tipo_afectacion_igv} onChange={(v) => setItem(idx, 'tipo_afectacion_igv', v)} options={AFECTACION_IGV} />
+                          </div>
+                        )}
+                        <div><input required type="number" min="0.01" step="any" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
+                        <div><input required type="number" min="0.01" step="0.01" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} /></div>
+                        <div><input readOnly value="0%" /></div>
+                        <div><input readOnly value={`${sym} ${fmt(lineTotal)}`} /></div>
+                        <div>{items.length > 1 && <button type="button" className="trash-btn" onClick={() => removeItem(idx)}>×</button>}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="line-footer">
+                  <button type="button" className="link-btn" onClick={addItem}>⊕ Agregar línea</button>
+                </div>
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-header">
+                <div><h3>Observaciones del PDF</h3><p>Textos comerciales visibles para el cliente.</p></div>
+                {!observacionesOpen && !hasObservationLines ? (
+                  <button type="button" className="mini-action" onClick={() => setObservacionesOpen(true)}>Mostrar</button>
+                ) : (
+                  <button type="button" className="mini-action" onClick={() => setObservacionesOpen((c) => !c)}>{observacionesOpen ? 'Ocultar' : 'Mostrar'}</button>
+                )}
+              </div>
+              {observacionesOpen && (
+                <div className="panel-body">
+                  <div className="note-blocks">
+                    {observationLines.map((line, index) => (
+                      <div key={`observation-line-${index}`} className="note-row">
+                        <div className="note-top">
+                          <div className="note-label">Línea {index + 1}</div>
+                          <div className="note-tools">
+                            <label className="check-label">
+                              <input type="checkbox" checked={line.bold} onChange={(event) => updateObservationLine(index, { bold: event.target.checked })} />
+                              Negrita
+                            </label>
+                            <span className="color-pill" style={{ '--pill-color': line.color, borderColor: line.color === '#111111' || line.color === 'var(--text-primary)' ? 'var(--color-border)' : line.color }}>
+                              <span className="color-dot" style={{ background: line.color }} />
+                              <span>{line.color}</span>
+                              <ColorPickerField
+                                value={line.color}
+                                onChange={(val) => updateObservationLine(index, { color: val })}
+                                fallback={index === 0 ? '#DC2626' : '#111111'}
+                                presets={['#DC2626', '#D97706', '#111111', '#8DC63F']}
+                                openUpward
+                              />
+                            </span>
+                          </div>
+                        </div>
+                        <div className="control textarea">
+                          <textarea
+                            value={line.text}
+                            onChange={(event) => updateObservationLine(index, { text: event.target.value })}
+                            placeholder={index === 0 ? DEFAULT_NOTE_1_TEXT : DEFAULT_NOTE_2_TEXT}
+                            style={{ color: line.color, fontWeight: line.bold ? 800 : 400 }}
                           />
                         </div>
                       </div>
-                    </div>
-                    <textarea
-                      className="input"
-                      rows={2}
-                      value={line.text}
-                      onChange={(event) => updateObservationLine(index, { text: event.target.value })}
-                      placeholder={index === 0 ? DEFAULT_NOTE_1_TEXT : DEFAULT_NOTE_2_TEXT}
-                      style={{
-                        resize: 'vertical',
-                        color: line.color,
-                        fontWeight: line.bold ? 700 : 400,
-                      }}
-                    />
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
+              )}
+            </article>
           </div>
-        )}
-      </div>
 
-      {/* Footer */}
-      <div className="modal-footer cotizacion-form-footer">
-        <button type="button" onClick={handleClear} className="cotizacion-clear-link">
-          Limpiar formulario
-        </button>
-        <div className="cotizacion-form-actions">
-          <button
-            type="button"
-            onClick={() => setPreviewOpen(true)}
-            className="btn-secondary cotizacion-preview-button"
-          >
-            <Eye className="h-4 w-4" />
-            Vista previa
-          </button>
-          <button
-            type="submit"
-            disabled={saving || (!clienteId && !clienteForm?.razon_social)}
-            className="btn-primary"
-            style={{ minWidth: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-          >
-            {saving ? <Spinner size="sm" /> : <Receipt className="h-4 w-4" />}
-            Guardar cotizacion
-          </button>
-        </div>
-      </div>
+          <aside>
+            <article className="summary-card">
+              <div className="summary-header">
+                <h3>Resumen de cotización</h3>
+                <p>Cálculo siempre visible para evitar guardar sin revisar.</p>
+              </div>
+              <div className="summary-body">
+                <div className="total-line"><span>Subtotal</span><strong>{sym} {fmt(subtotalGravado + totales.exonerado + totales.inafecto + totales.exportacion)}</strong></div>
+                <div className="total-line"><span>Descuento</span><strong>{sym} 0.00</strong></div>
+                <div className="total-line"><span>IGV (18%)</span><strong>{sym} {fmt(igv)}</strong></div>
+                <div className="total-line"><span>Líneas</span><strong>{items.length}</strong></div>
+                <div className="grand-total"><span>Total</span><strong>{sym} {fmt(totalGeneral)}</strong></div>
+              </div>
+              <div className="summary-actions">
+                <button type="button" className="side-btn open-preview" onClick={() => setPreviewOpen(true)}><Eye size={16} /> Vista previa</button>
+                <button type="button" className="side-btn"><Save size={16} /> Guardar borrador</button>
+                <button type="submit" className="side-btn primary" disabled={saving || (!clienteId && !clienteForm?.razon_social)}>
+                  {saving ? 'Guardando…' : 'Guardar cotización'}
+                </button>
+              </div>
+            </article>
+          </aside>
+        </section>
       </form>
 
       <Modal
@@ -1491,32 +1417,6 @@ function NuevaCotizacionForm({
     </>
   );
 }
-
-// Estilos inline reutilizables
-const thStyle = (width, textAlign = 'left') => ({
-  padding: '8px 16px',
-  textAlign,
-  fontFamily: 'var(--font-mono)',
-  fontSize: '10px',
-  fontWeight: 700,
-  color: 'var(--text-secondary)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.08em',
-  borderRight: '1px solid var(--border-subtle)',
-  width,
-});
-
-const prefixStyle = {
-  position: 'absolute',
-  left: '8px',
-  top: '50%',
-  transform: 'translateY(-50%)',
-  fontSize: '10px',
-  color: 'var(--text-tertiary)',
-  fontFamily: 'var(--font-mono)',
-  fontWeight: 700,
-  pointerEvents: 'none',
-};
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
@@ -1559,12 +1459,16 @@ export default function CotizacionesPage() {
   const [anularDoc, setAnularDoc]   = useState(null);
   const [notaDoc, setNotaDoc]       = useState(null);
 
-  // Carga de datos maestros (clientes y productos) — una sola vez
+  // Carga de datos maestros (clientes y productos) con una página inicial acotada.
   useEffect(() => {
-    Promise.all([cliSvc.list(), prodSvc.list()])
-      .then(([c, p]) => { setClientes(c); setProductosDisp(p); })
+    Promise.all([cliSvc.page('?limit=15'), prodSvc.page('?limit=15')])
+      .then(([c, p]) => {
+        setClientes(Array.isArray(c) ? c : c?.items || []);
+        setProductosDisp(Array.isArray(p) ? p : p?.items || []);
+      })
+      .catch(() => toast('No se pudo cargar clientes y productos para cotizar.', 'error'))
       .finally(() => setLoadingMaster(false));
-  }, []);
+  }, [toast]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1619,6 +1523,31 @@ export default function CotizacionesPage() {
       || item.serie?.toLowerCase().includes(q);
     return matchDoc && matchRazon && matchSerie && matchNumero && matchTipo && matchMoneda && matchPago && matchDesde && matchHasta && matchSearch;
   });
+
+  const hasHistoryFilters = Boolean(search || filters.desde || filters.hasta);
+  const hasFiscalFilters = Boolean(
+    search
+    || filters.docReceptor
+    || filters.razonSocial
+    || filters.serie
+    || filters.numero
+    || filters.tipo !== 'all'
+    || filters.moneda !== 'all'
+    || filters.formaPago !== 'all'
+    || filters.desde
+    || filters.hasta,
+  );
+
+  const historyTotal = filteredHistory.reduce((sum, item) => sum + Number(item.total_venta || 0), 0);
+  const historyPendingBalance = filteredHistory.reduce((sum, item) => sum + Number(item.saldo_pendiente || 0), 0);
+  const historyLinkedCount = filteredHistory.filter(
+    (item) => item.linked_fiscal_document_number && item.linked_fiscal_document_status !== 'anulada',
+  ).length;
+
+  const fiscalTotal = filteredFiscal.reduce((sum, item) => sum + Number(item.total_venta || 0), 0);
+  const fiscalAcceptedCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'success').length;
+  const fiscalPendingCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'warning').length;
+  const fiscalRejectedCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'danger').length;
 
   const handleOpenNuevoCliente = (prefill = '') => {
     setNuevoClientePrefill(prefill);
@@ -1726,39 +1655,37 @@ export default function CotizacionesPage() {
     }
   };
 
-  const tabBtn = (id, label, Icon, count) => (
-    <button
-      type="button"
-      onClick={() => setView(id)}
-      className={`cotizaciones-tab ${view === id ? 'is-active' : ''}`}
-    >
-      <Icon className="h-4 w-4" />
-      <span>{label}</span>
-      {typeof count === 'number' && (
-        <span className="cotizaciones-tab-badge">{count}</span>
-      )}
-    </button>
-  );
-
   return (
-    <div className="page-shell cotizaciones-page-shell">
-
-      {/* Tab bar */}
-      <div className="cotizaciones-tabs">
-        {tabBtn('create', '+ Nueva cotizacion', Plus)}
-        <span className="cotizaciones-tab-separator" />
-        {tabBtn('history', 'Historial', History, quotations.length)}
-        <span className="cotizaciones-tab-separator" />
-        {tabBtn('fiscal', 'Emitidas SUNAT', Receipt, fiscalDocs.length)}
+    <div className="cotizaciones-page">
+      <div className="page-head ink-enter-1">
+        <div>
+          <p className="eyebrow">Motor comercial</p>
+          <h2>
+            {view === 'create' ? 'Nueva cotización' : view === 'history' ? 'Historial' : 'Emitidas SUNAT'}
+          </h2>
+          <p>
+            {view === 'create'
+              ? 'Construye una propuesta clara, calcula totales y déjala lista para vista previa.'
+              : `${quotations.length} cotizaciones · ${fiscalDocs.length} comprobantes emitidos.`}
+          </p>
+        </div>
       </div>
+
+      <nav className="quote-tabs ink-enter-2">
+        <button className={`tab ${view === 'create' ? 'active' : ''}`} onClick={() => setView('create')}>＋ Nueva cotización</button>
+        <button className={`tab ${view === 'history' ? 'active' : ''}`} onClick={() => setView('history')}>↺ Historial <span className="count-badge">{quotations.length}</span></button>
+        <button className={`tab ${view === 'fiscal' ? 'active' : ''}`} onClick={() => setView('fiscal')}>▣ Emitidas SUNAT <span className="count-badge">{fiscalDocs.length}</span></button>
+      </nav>
 
       {/* ── Vista: Crear ── */}
       {view === 'create' && (
-        <>
-          {loadingMaster ? (
-            <div className="flex justify-center py-16"><Spinner size="lg" /></div>
-          ) : (
-            <div className="ink-card" style={{ padding: '0', overflow: 'hidden' }}>
+        loadingMaster ? (
+              <article className="panel">
+                <div className="panel-body">
+                  <SkeletonForm fields={5} />
+                </div>
+              </article>
+            ) : (
               <NuevaCotizacionForm
                 onSave={handleSave}
                 onClear={() => {}}
@@ -1770,9 +1697,7 @@ export default function CotizacionesPage() {
                 recentClientIds={recentClientIds}
                 createdClient={createdClient}
               />
-            </div>
-          )}
-        </>
+            )
       )}
 
       {/* ── Vista: Historial ── */}
@@ -1788,22 +1713,76 @@ export default function CotizacionesPage() {
           />
 
           {showFilters && (
-            <div className="ink-card" style={{ margin: '0 0 20px', padding: '20px' }}>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="flex flex-col gap-1">
-                  <label className="label-xs">Desde</label>
+            <div className="proto-filter-card proto-filter-card--history">
+              <div className="proto-filter-field">
+                <label>Desde</label>
+                <div className="proto-filter-control">
                   <DatePicker compact value={filters.desde} onChange={(v) => handleFilterChange('desde', v)} />
                 </div>
-                <div className="flex flex-col gap-1">
-                  <label className="label-xs">Hasta</label>
+              </div>
+              <div className="proto-filter-field">
+                <label>Hasta</label>
+                <div className="proto-filter-control">
                   <DatePicker compact value={filters.hasta} onChange={(v) => handleFilterChange('hasta', v)} />
                 </div>
+              </div>
+              <div className="proto-filter-actions">
+                <button type="button" className="btn-secondary" onClick={() => setFilters((current) => ({ ...current, desde: '', hasta: '' }))}>
+                  Limpiar rango
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!loading && filteredHistory.length > 0 && (
+            <div className="summary-strip">
+              <div className="summary-items">
+                <div className="summary-item">
+                  <div className="summary-icon"><History size={16} /></div>
+                  <div>
+                    <span>Cotizaciones visibles</span>
+                    <strong>{filteredHistory.length}</strong>
+                    <span>Segun la busqueda y el rango elegido</span>
+                  </div>
+                </div>
+                <div className="summary-item">
+                  <div className="summary-icon"><Receipt size={16} /></div>
+                  <div>
+                    <span>Total visible</span>
+                    <strong>S/ {fmt(historyTotal)}</strong>
+                    <span>Base comercial del historial actual</span>
+                  </div>
+                </div>
+                <div className="summary-item">
+                  <div className="summary-icon"><Clock size={16} /></div>
+                  <div>
+                    <span>Saldo pendiente</span>
+                    <strong>S/ {fmt(historyPendingBalance)}</strong>
+                    <span>{historyLinkedCount} ya pasaron a comprobante</span>
+                  </div>
+                </div>
+              </div>
+              <div className="proto-pagination">
+                <span>{hasHistoryFilters ? 'Filtros activos' : 'Vista completa'}</span>
               </div>
             </div>
           )}
 
           {loading ? (
-            <div className="flex justify-center py-16"><Spinner size="lg" /></div>
+            <div className="records-card">
+              <div className="p-4">
+                <div className="skeleton skeleton--title" style={{ width: '30%' }} />
+                <div className="mt-4 space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="skeleton-row">
+                      <div className="skeleton skeleton--circle" style={{ width: 32, height: 32 }} />
+                      <div className="skeleton skeleton-row__cell" />
+                      <div className="skeleton skeleton-row__cell skeleton-row__cell--sm" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           ) : filteredHistory.length === 0 ? (
             <EmptyState
               title="Sin cotizaciones"
@@ -1815,8 +1794,18 @@ export default function CotizacionesPage() {
               }
             />
           ) : (
-            <div className="ink-table-card">
-              <table className="ink-table">
+            <div className="records-card">
+              <div className="panel-header">
+                <div>
+                  <h3>Historial comercial</h3>
+                  <p>Seguimiento de cotizaciones, conversiones y cobranza asociada.</p>
+                </div>
+                <div className="proto-pagination">
+                  <span>{filteredHistory.length} registros visibles</span>
+                </div>
+              </div>
+              <div className="ink-table-scroll">
+              <table className="ink-table cotizaciones-history-table">
                 <thead>
                   <tr>
                     <th className="ink-th">F. Emisión</th>
@@ -1867,7 +1856,7 @@ export default function CotizacionesPage() {
                         <td className="ink-td">
                           {hasLinked ? (
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: 'var(--brand-600)' }}>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: 'var(--color-primary)' }}>
                                 {item.linked_fiscal_document_number}
                               </span>
                               {linkedSunat && (
@@ -1915,39 +1904,6 @@ export default function CotizacionesPage() {
                               >
                                 <Share2 className="h-3 w-3" />
                               </button>
-                              {waLink && (
-                                <a
-                                  href={waLink}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  title="Enviar por WhatsApp"
-                                  className="row-action-icon row-action-icon--success"
-                                >
-                                  <MessageCircle className="h-3 w-3" />
-                                </a>
-                              )}
-                              {emailLink && (
-                                <a
-                                  href={emailLink}
-                                  title="Enviar por correo"
-                                  className="row-action-icon row-action-icon--info"
-                                >
-                                  <Mail className="h-3 w-3" />
-                                </a>
-                              )}
-                              {waLink && emailLink && (
-                                <button
-                                  type="button"
-                                  title="WhatsApp + correo"
-                                  className="row-action-icon row-action-icon--accent"
-                                  onClick={() => {
-                                    window.open(waLink, '_blank', 'noopener,noreferrer');
-                                    window.setTimeout(() => window.open(emailLink, '_blank', 'noopener,noreferrer'), 80);
-                                  }}
-                                >
-                                  <Send className="h-3 w-3" />
-                                </button>
-                              )}
                             </div>
                             <div className="history-actions-divider" />
                             <div className="history-actions-cluster">
@@ -2040,6 +1996,7 @@ export default function CotizacionesPage() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>
@@ -2048,7 +2005,7 @@ export default function CotizacionesPage() {
       {/* ── Vista: Emitidas SUNAT ── */}
       {view === 'fiscal' && (
         <>{/* Panel de filtros — siempre visible, 2 filas */}
-          <div className="ink-card" style={{ padding: '16px 20px', marginBottom: '0', borderBottom: 'none' }}>
+          <div className="proto-filter-card proto-filter-card--fiscal-grid">
             {/* Fila 1 */}
             <div className="grid grid-cols-2 md:grid-cols-7 gap-3 mb-3">
               <div className="flex flex-col gap-1">
@@ -2131,19 +2088,42 @@ export default function CotizacionesPage() {
           </div>
 
           {/* Barra de resultados y acciones */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', background: 'var(--bg-surface-2)', border: '1px solid var(--border-subtle)', borderTop: 'none', marginBottom: '0' }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: 'var(--text-tertiary)' }}>
-              Total registros: {filteredFiscal.length}
-            </span>
-            <div className="cotizacion-fiscal-toolbar">
+          <div className="summary-strip">
+            <div className="summary-items">
+              <div className="summary-item">
+                <div className="summary-icon"><Receipt size={16} /></div>
+                <div>
+                  <span>Total registros</span>
+                  <strong>{filteredFiscal.length}</strong>
+                  <span>{hasFiscalFilters ? 'Vista filtrada' : 'Vista completa'}</span>
+                </div>
+              </div>
+              <div className="summary-item">
+                <div className="summary-icon"><CheckCircle2 size={16} /></div>
+                <div>
+                  <span>Aceptados por SUNAT</span>
+                  <strong>{fiscalAcceptedCount}</strong>
+                  <span>{fiscalPendingCount} pendientes y {fiscalRejectedCount} observados</span>
+                </div>
+              </div>
+              <div className="summary-item">
+                <div className="summary-icon"><FileText size={16} /></div>
+                <div>
+                  <span>Total visible</span>
+                  <strong>S/ {fmt(fiscalTotal)}</strong>
+                  <span>Importe de los comprobantes visibles</span>
+                </div>
+              </div>
+            </div>
+            <div className="proto-summary-actions">
               {!selectedFiscal ? (
-                <span className="cotizacion-fiscal-placeholder">
+                <span className="proto-selection-note">
                   Selecciona un comprobante para emitir nota o anular
                 </span>
               ) : (
                 <>
               <button
-                className="btn-ghost text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
+                className="btn-secondary text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
                 disabled={!selectedFiscal || !['01','03'].includes(selectedFiscal?.tipo_comprobante) || selectedFiscal?.estado === 'anulada'}
                 onClick={() => selectedFiscal && setNotaDoc(selectedFiscal)}
                 style={{ color: selectedFiscal ? 'var(--color-warning)' : 'var(--border-subtle)', cursor: selectedFiscal ? 'pointer' : 'default' }}
@@ -2151,34 +2131,34 @@ export default function CotizacionesPage() {
                 Nota de Crédito
               </button>
               <button
-                className="btn-ghost text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
+                className="btn-secondary text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
                 disabled={!selectedFiscal || !['01','03'].includes(selectedFiscal?.tipo_comprobante) || selectedFiscal?.estado === 'anulada'}
                 onClick={() => selectedFiscal && setNotaDoc(selectedFiscal)}
                 style={{ color: selectedFiscal ? 'var(--color-warning)' : 'var(--border-subtle)', cursor: selectedFiscal ? 'pointer' : 'default' }}
               >
                 Nota de Débito
               </button>
-              <div style={{ width: '1px', height: '16px', background: 'var(--border-subtle)' }} />
+              <div className="proto-action-divider" />
               <button
-                className="btn-ghost text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
+                className="btn-secondary text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
                 disabled={!selectedFiscal || selectedFiscal?.estado === 'anulada'}
                 onClick={() => selectedFiscal && setAnularDoc(selectedFiscal)}
                 style={{ color: selectedFiscal ? 'var(--color-error)' : 'var(--border-subtle)', cursor: selectedFiscal ? 'pointer' : 'default' }}
               >
                 Anular
               </button>
-              <div style={{ width: '1px', height: '16px', background: 'var(--border-subtle)' }} />
+              <div className="proto-action-divider" />
               {/* Iconos de descarga rápida para el registro seleccionado */}
-              <a
-                href={selectedFiscal?.sunat_pdf_url || '#'}
-                target={selectedFiscal?.sunat_pdf_url ? '_blank' : undefined}
-                rel="noreferrer"
+              <button
+                type="button"
                 title="PDF"
-                style={{ opacity: selectedFiscal?.sunat_pdf_url ? 1 : 0.3, color: 'var(--color-error)', pointerEvents: selectedFiscal?.sunat_pdf_url ? 'auto' : 'none' }}
+                disabled={!selectedFiscal}
+                onClick={() => selectedFiscal && handleOpenPdf(selectedFiscal)}
+                style={{ opacity: selectedFiscal ? 1 : 0.3, color: 'var(--color-error)', pointerEvents: selectedFiscal ? 'auto' : 'none' }}
                 className="row-action-icon row-action-icon--danger"
               >
                 <FileText className="h-3 w-3" />
-              </a>
+              </button>
               <a
                 href={selectedFiscal?.sunat_xml_url || '#'}
                 target={selectedFiscal?.sunat_xml_url ? '_blank' : undefined}
@@ -2195,14 +2175,37 @@ export default function CotizacionesPage() {
           </div>
 
           {loading ? (
-            <div className="flex justify-center py-16"><Spinner size="lg" /></div>
+            <div className="records-card">
+              <div className="p-4">
+                <div className="skeleton skeleton--title" style={{ width: '30%' }} />
+                <div className="mt-4 space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="skeleton-row">
+                      <div className="skeleton skeleton--circle" style={{ width: 32, height: 32 }} />
+                      <div className="skeleton skeleton-row__cell" />
+                      <div className="skeleton skeleton-row__cell skeleton-row__cell--sm" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           ) : filteredFiscal.length === 0 ? (
             <EmptyState
               title="Sin comprobantes emitidos"
               description="Emite tu primera factura o boleta desde la pestaña Historial."
             />
           ) : (
-            <div className="ink-table-card">
+            <div className="records-card">
+              <div className="panel-header">
+                <div>
+                  <h3>Comprobantes emitidos</h3>
+                  <p>Emision fiscal, estado SUNAT y acciones posteriores desde una sola bandeja.</p>
+                </div>
+                <div className="proto-pagination">
+                  <span>{selectedFiscal ? `Seleccionado: ${selectedFiscal.serie || ''}-${String(selectedFiscal.correlativo || '').padStart(6, '0')}` : 'Selecciona un registro'}</span>
+                </div>
+              </div>
+              <div className="ink-table-scroll">
               <table className="ink-table">
                 <thead>
                   <tr>
@@ -2232,9 +2235,9 @@ export default function CotizacionesPage() {
                     return (
                       <tr
                         key={item.id}
-                        className="ink-tr"
+                        className={`ink-tr ${isSelected ? 'ink-table-row--active' : ''}`.trim()}
                         onClick={() => setSelectedFiscal(isSelected ? null : item)}
-                        style={{ cursor: 'pointer', background: isSelected ? 'var(--ink-primary-fixed)' : undefined, boxShadow: isSelected ? 'inset 2px 0 0 var(--ink-primary)' : undefined }}
+                        style={{ cursor: 'pointer' }}
                       >
                         <td className="ink-td">
                           <span className="font-mono-label text-[10px] uppercase">
@@ -2293,11 +2296,11 @@ export default function CotizacionesPage() {
                         <td className="ink-td">
                           <div className="flex justify-end items-center gap-1">
                             {item.sunat_pdf_url && (
-                              <a href={item.sunat_pdf_url} target="_blank" rel="noreferrer"
+                              <button type="button" onClick={() => handleOpenPdf(item)}
                                 title="Descargar PDF"
                                 className="row-action-icon row-action-icon--danger">
                                 <FileText className="h-3 w-3" />
-                              </a>
+                              </button>
                             )}
                             {item.sunat_xml_url && (
                               <a href={item.sunat_xml_url} target="_blank" rel="noreferrer"
@@ -2346,6 +2349,7 @@ export default function CotizacionesPage() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>
@@ -2398,8 +2402,8 @@ export default function CotizacionesPage() {
 
 function SearchBar({ search, onSearch, showFilters, onToggleFilters, onNewAction, newLabel }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-surface-2)', border: '1px solid var(--border-subtle)', padding: '0 14px', height: '40px' }}>
+    <div className="proto-toolbar proto-toolbar-compact">
+      <div className="proto-search-box">
         <Search className="h-4 w-4 text-[var(--text-tertiary)]" style={{ flexShrink: 0 }} />
         <input
           className="input-flat"
@@ -2409,6 +2413,7 @@ function SearchBar({ search, onSearch, showFilters, onToggleFilters, onNewAction
           onChange={(e) => onSearch(e.target.value)}
         />
       </div>
+      <div className="proto-toolbar-actions">
       <button
         onClick={onToggleFilters}
         className="btn-secondary"
@@ -2426,6 +2431,7 @@ function SearchBar({ search, onSearch, showFilters, onToggleFilters, onNewAction
           {newLabel}
         </button>
       )}
+      </div>
     </div>
   );
 }

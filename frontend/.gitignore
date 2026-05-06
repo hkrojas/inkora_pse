@@ -17,3 +17,8 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Playwright local artifacts
+.playwright/
+test-results/
+playwright-report/

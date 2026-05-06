@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 import crud
 import models
 import schemas
+from services.beta_feature_flags import validate_fiscal_feature_flags
 
 
 # ---------------------------------------------------------------------------
@@ -227,5 +228,12 @@ def update_subscription_general(
             status_code=400,
             detail=f"Estado invalido. Valores permitidos: {', '.join(sorted(VALID_STATUSES))}.",
         )
+    if "beta_feature_flags" in updates and updates["beta_feature_flags"] is not None:
+        try:
+            updates["beta_feature_flags"] = validate_fiscal_feature_flags(
+                updates["beta_feature_flags"]
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return crud.update_subscription_fields(db, tenant_id, updates)

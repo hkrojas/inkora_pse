@@ -3,8 +3,6 @@ import Modal from '../ui/Modal';
 import { formatCurrency } from '../../lib/utils/documents';
 import { getTypeConfig } from './DocumentType';
 
-// Confirmation dialog for irreversible fiscal actions (emit, void, note).
-// mode: 'emit' | 'void' | 'note'
 export default function ConfirmEmitDialog({
   open,
   onClose,
@@ -22,6 +20,7 @@ export default function ConfirmEmitDialog({
 
   const cfg = getTypeConfig(tipo);
   const isVoid = mode === 'void';
+  const Icon = isVoid ? AlertTriangle : CheckCircle2;
 
   const titles = {
     emit: 'Confirmar emisión del comprobante',
@@ -30,118 +29,46 @@ export default function ConfirmEmitDialog({
   };
 
   const warnings = {
-    emit: 'Esta acción enviará el comprobante a SUNAT y consumirá un número de correlativo. No se puede deshacer.',
+    emit: 'Esta acción enviará el comprobante a SUNAT y consumirá un correlativo. Revisa los datos antes de continuar.',
     void: 'SUNAT será notificada para anular este comprobante. La operación es asíncrona e irreversible.',
-    note: 'La nota se enviará a SUNAT y consumirá un correlativo. Una nota no puede anularse por sí misma.',
+    note: 'La nota se enviará a SUNAT y consumirá un correlativo propio. Revisa el motivo y el documento relacionado.',
   };
 
-  const accentColor = isVoid ? 'var(--color-error)' : cfg.color;
-  const accentBg    = isVoid ? 'var(--color-error-bg)' : cfg.bg;
-  const accentBorder= isVoid ? 'rgba(220,38,38,0.2)' : cfg.border;
+  const actionLabel = isVoid
+    ? 'Confirmar baja'
+    : mode === 'note'
+      ? 'Emitir nota'
+      : 'Emitir comprobante';
 
   return (
     <Modal open={open} onClose={onClose} title={titles[mode]} size="sm">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-
-        {/* Document chip */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '14px',
-          padding: '14px 16px',
-          background: accentBg,
-          border: `1.5px solid ${accentBorder}`,
-        }}>
-          {isVoid
-            ? <AlertTriangle size={20} style={{ color: accentColor, flexShrink: 0, marginTop: 1 }} />
-            : <CheckCircle2 size={20} style={{ color: accentColor, flexShrink: 0, marginTop: 1 }} />
-          }
-          <div style={{ minWidth: 0 }}>
-            <p style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              fontWeight: 700,
-              color: accentColor,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              marginBottom: '4px',
-            }}>
+      <div className="document-confirm-dialog">
+        <div className={`document-confirm-card${isVoid ? ' is-danger' : ''}`}>
+          <div className="document-confirm-card__icon">
+            <Icon size={18} />
+          </div>
+          <div className="document-confirm-card__body">
+            <p className="document-confirm-card__kicker">
               {cfg.label} · {serie || 'Serie pendiente'}
             </p>
-            <p style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '2px' }}>
-              {cliente || 'Cliente pendiente'}
-            </p>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '16px', fontWeight: 900, color: accentColor }}>
-              {formatCurrency(total, moneda)}
-            </p>
-            {extraLines.map((line, i) => (
-              <p key={i} style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>{line}</p>
+            <p className="document-confirm-card__title">{cliente || 'Cliente pendiente'}</p>
+            <p className="document-confirm-card__amount">{formatCurrency(total, moneda)}</p>
+            {extraLines.map((line, index) => (
+              <p key={index} className="document-confirm-card__meta">{line}</p>
             ))}
           </div>
         </div>
 
-        {/* Warning */}
-        <p style={{
-          fontSize: '12px',
-          color: 'var(--text-tertiary)',
-          lineHeight: 1.6,
-          padding: '0 2px',
-        }}>
-          {warnings[mode]}
-        </p>
+        <div className={`ink-inline-alert ${isVoid ? 'ink-inline-alert-danger' : 'ink-inline-alert-warning'}`}>
+          <span>{warnings[mode]}</span>
+        </div>
 
-        {/* Actions */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '4px' }}>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={loading}
-            style={{
-              padding: '8px 18px',
-              fontFamily: 'var(--font-body)',
-              fontSize: '13px',
-              fontWeight: 500,
-              color: 'var(--text-secondary)',
-              background: 'var(--bg-surface-2)',
-              border: '1.5px solid var(--border-subtle)',
-              cursor: 'pointer',
-            }}
-          >
+        <div className="document-confirm-actions">
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={loading}>
             Cancelar
           </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={loading}
-            style={{
-              padding: '8px 20px',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              fontWeight: 700,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              color: '#fff',
-              background: loading ? 'var(--text-tertiary)' : (isVoid ? 'var(--color-error)' : accentColor),
-              border: 'none',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'background 150ms',
-            }}
-          >
-            {loading && (
-              <span style={{
-                display: 'inline-block',
-                width: '12px',
-                height: '12px',
-                border: '2px solid rgba(255,255,255,0.4)',
-                borderTopColor: '#fff',
-                borderRadius: 0,
-                animation: 'spin 0.6s linear infinite',
-              }} />
-            )}
-            {isVoid ? 'Confirmar baja' : mode === 'note' ? 'Emitir nota' : 'Emitir comprobante'}
+          <button type="button" className={isVoid ? 'btn-danger' : 'btn-primary'} onClick={onConfirm} disabled={loading}>
+            {loading ? 'Procesando...' : actionLabel}
           </button>
         </div>
       </div>

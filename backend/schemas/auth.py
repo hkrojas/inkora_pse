@@ -9,7 +9,7 @@ from schemas.tenants import TenantSummaryResponse
 
 
 class UserIdentity(BaseModel):
-    email: EmailStr
+    email: str
     nombre_completo: Optional[str] = None
 
 
@@ -28,6 +28,11 @@ class UserAdminUpdate(StrictInputModel):
     rol: Optional[str] = None
     tenant_id: Optional[int] = None
     is_superadmin: Optional[bool] = None
+
+
+class SuperadminTenantUserUpdate(StrictInputModel):
+    nombre_completo: Optional[str] = None
+    rol: Optional[str] = None
 
 
 class UserResponse(UserIdentity):

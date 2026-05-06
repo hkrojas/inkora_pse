@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { tenant as svc } from '../services/tenant';
-import { Sun, Moon, Monitor } from 'lucide-react';
+import { Sun, Moon, Monitor, Building2, ShieldCheck, User, Palette, CreditCard, AlertTriangle, Eye, EyeOff, KeyRound, Phone, Landmark, Smartphone, WalletCards, LockKeyhole, FileCheck2, BadgeCheck, FileKey2, RadioTower, ImageUp } from 'lucide-react';
 import Spinner from '../components/ui/Spinner';
 import CustomSelect from '../components/ui/CustomSelect';
-import { FieldError } from '../components/ui/FieldError';
+import FormField from '../components/ui/FormField';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { api } from '../lib/utils/api';
 import {
   buildPaymentMethodErrorMap,
   digitsOnly,
@@ -82,9 +83,26 @@ function withCurrentOption(options, currentValue) {
 }
 
 function StatusBadge({ ok, pending, labelOk, labelPending, labelNo }) {
-  if (ok) return <span className="ink-aging-badge ink-aging-badge--ok">{labelOk}</span>;
-  if (pending) return <span className="ink-aging-badge ink-aging-badge--warning">{labelPending || labelNo}</span>;
-  return <span className="ink-aging-badge ink-aging-badge--neutral">{labelNo}</span>;
+  if (ok) return <span className="status-pill ok">{labelOk}</span>;
+  if (pending) return <span className="status-pill warn">{labelPending || labelNo}</span>;
+  return <span className="status-pill err">{labelNo}</span>;
+}
+
+function FiscalStatusTile({ icon: Icon, tone, label, value, children }) {
+  return (
+    <div className={`status-tile fiscal-status-tile is-${tone}`}>
+      <div className="fiscal-status-icon">
+        <Icon size={18} />
+      </div>
+      <div>
+        <div className="tile-label">{label}</div>
+        <div className="tile-value">{value}</div>
+      </div>
+      <div className="fiscal-status-line">
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function ReadOnlyField({ label, value }) {
@@ -98,6 +116,35 @@ function ReadOnlyField({ label, value }) {
   );
 }
 
+const BUSINESS_NAME_MAX_LENGTH = 180;
+const BUSINESS_ADDRESS_MAX_LENGTH = 250;
+const LOGO_MAX_SIZE_BYTES = 2 * 1024 * 1024;
+const LOGO_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+function normalizeBusinessText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function validateBusinessName(value) {
+  const normalized = normalizeBusinessText(value);
+  if (!normalized) return 'La razon social es obligatoria.';
+  if (normalized.length < 2) return 'La razon social debe tener al menos 2 caracteres.';
+  if (normalized.length > BUSINESS_NAME_MAX_LENGTH) {
+    return `La razon social no debe superar ${BUSINESS_NAME_MAX_LENGTH} caracteres.`;
+  }
+  return null;
+}
+
+function validateBusinessAddress(value) {
+  const normalized = normalizeBusinessText(value);
+  if (!normalized) return 'El domicilio fiscal es obligatorio.';
+  if (normalized.length < 5) return 'El domicilio fiscal debe tener al menos 5 caracteres.';
+  if (normalized.length > BUSINESS_ADDRESS_MAX_LENGTH) {
+    return `El domicilio fiscal no debe superar ${BUSINESS_ADDRESS_MAX_LENGTH} caracteres.`;
+  }
+  return null;
+}
+
 function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
   const isWallet = method.tipo === 'wallet';
   const bankOptions = withCurrentOption(BANK_OPTIONS, method.banco);
@@ -107,19 +154,18 @@ function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
   const accountHint = getBankAccountHint(method.banco, method.tipo_cuenta);
 
   return (
-    <div className="pdf-designer-bank-card">
-      <div className="pdf-designer-bank-card-header">
+    <div className="settings-bank-card">
+      <div className="settings-bank-card-header">
         <span>{isWallet ? `Billetera digital ${index + 1}` : `Cuenta bancaria ${index + 1}`}</span>
-        <button type="button" onClick={onRemove} className="pdf-designer-remove-btn">
+        <button type="button" onClick={onRemove} className="settings-remove-btn">
           Eliminar
         </button>
       </div>
 
-      <div className="pdf-designer-field-grid">
+      <div className="settings-field-grid">
         {isWallet ? (
           <>
-            <div>
-              <label className="label">Billetera</label>
+            <FormField label="Billetera" icon={WalletCards}>
               <CustomSelect
                 value={method.proveedor}
                 onChange={(value) => onChange('proveedor', value)}
@@ -131,43 +177,41 @@ function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
                 createLabel={(value) => `+ Usar "${value}"`}
                 noResultsLabel="No se encontraron billeteras"
               />
-            </div>
-            <div>
-              <label className="label">Titular</label>
+            </FormField>
+            <FormField label="Titular" icon={User}>
               <input
                 className="input"
                 value={method.titular}
                 onChange={(event) => onChange('titular', event.target.value)}
                 placeholder="Nombre del titular"
               />
-            </div>
-            <div>
-              <label className="label">Numero asociado</label>
+            </FormField>
+            <FormField
+              label="Numero asociado"
+              icon={Smartphone}
+              hint="Celular peruano: 9 dígitos numéricos e inicia en 9."
+              error={errors.numero}
+            >
               <input
-                className="input"
+                className={`input${errors.numero ? ' input-error' : ''}`}
                 value={method.numero}
                 onChange={(event) => onChange('numero', normalizeWalletPhone(event.target.value))}
                 placeholder="999 999 999"
                 inputMode="numeric"
-                style={errors.numero ? { borderColor: 'var(--color-error)', boxShadow: 'inset 0 0 0 1px var(--color-error)' } : undefined}
               />
-              <div className="settings-field-hint">Celular peruano: 9 digitos numericos e inicia en 9.</div>
-              <FieldError message={errors.numero} />
-            </div>
-            <div>
-              <label className="label">Nota</label>
+            </FormField>
+            <FormField label="Nota">
               <input
                 className="input"
                 value={method.nota}
                 onChange={(event) => onChange('nota', event.target.value)}
                 placeholder="Opcional"
               />
-            </div>
+            </FormField>
           </>
         ) : (
           <>
-            <div>
-              <label className="label">Banco</label>
+            <FormField label="Banco" icon={Landmark}>
               <CustomSelect
                 value={method.banco}
                 onChange={(value) => onChange('banco', value)}
@@ -176,9 +220,8 @@ function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
                 searchable
                 searchPlaceholder="Buscar banco..."
               />
-            </div>
-            <div>
-              <label className="label">Tipo de cuenta</label>
+            </FormField>
+            <FormField label="Tipo de cuenta" icon={CreditCard}>
               <CustomSelect
                 value={method.tipo_cuenta}
                 onChange={(value) => onChange('tipo_cuenta', value)}
@@ -187,9 +230,8 @@ function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
                 searchable
                 searchPlaceholder="Buscar tipo de cuenta..."
               />
-            </div>
-            <div>
-              <label className="label">Moneda</label>
+            </FormField>
+            <FormField label="Moneda">
               <CustomSelect
                 value={method.moneda}
                 onChange={(value) => onChange('moneda', value)}
@@ -198,33 +240,30 @@ function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
                 searchable
                 searchPlaceholder="Buscar moneda..."
               />
-            </div>
-            <div>
-              <label className="label">Numero de cuenta</label>
+            </FormField>
+            <FormField label="Numero de cuenta" hint={accountHint} error={errors.cuenta}>
               <input
-                className="input"
+                className={`input${errors.cuenta ? ' input-error' : ''}`}
                 value={method.cuenta}
                 onChange={(event) => onChange('cuenta', event.target.value)}
                 inputMode="numeric"
-                placeholder="Solo digitos"
-                style={errors.cuenta ? { borderColor: 'var(--color-error)', boxShadow: 'inset 0 0 0 1px var(--color-error)' } : undefined}
+                placeholder="Solo dígitos"
               />
-              <div className="settings-field-hint">{accountHint}</div>
-              <FieldError message={errors.cuenta} />
-            </div>
-            <div className="pdf-designer-field-grid-span">
-              <label className="label">CCI</label>
+            </FormField>
+            <FormField
+              label="CCI"
+              hint="CCI: 20 dígitos numéricos."
+              error={errors.cci}
+              className="settings-field-grid-span"
+            >
               <input
-                className="input"
+                className={`input${errors.cci ? ' input-error' : ''}`}
                 value={method.cci}
                 onChange={(event) => onChange('cci', event.target.value)}
                 inputMode="numeric"
-                placeholder="20 digitos"
-                style={errors.cci ? { borderColor: 'var(--color-error)', boxShadow: 'inset 0 0 0 1px var(--color-error)' } : undefined}
+                placeholder="20 dígitos"
               />
-              <div className="settings-field-hint">CCI: 20 digitos numericos.</div>
-              <FieldError message={errors.cci} />
-            </div>
+            </FormField>
           </>
         )}
       </div>
@@ -232,8 +271,17 @@ function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
   );
 }
 
-const TABS = ['empresa', 'fiscal', 'cuenta', 'apariencia'];
-const TAB_LABELS = { empresa: 'Perfil de Empresa', fiscal: 'Config. Fiscal', cuenta: 'Mi Cuenta', apariencia: 'Apariencia' };
+const TABS = ['empresa', 'fiscal', 'cuenta', 'seguridad', 'apariencia'];
+const TAB_LABELS = { empresa: 'Perfil de Empresa', fiscal: 'Config. Fiscal', cuenta: 'Mi Cuenta', seguridad: 'Seguridad', apariencia: 'Apariencia' };
+const TAB_DESCRIPTIONS = {
+  empresa: 'Identidad y cobros',
+  fiscal: 'SUNAT y certificados',
+  cuenta: 'Usuario actual',
+  seguridad: 'Acceso seguro',
+  apariencia: 'Tema visual',
+};
+
+const TAB_ICONS = { empresa: Building2, fiscal: ShieldCheck, cuenta: User, seguridad: KeyRound, apariencia: Palette };
 
 function AparienciaPanel() {
   const { theme, setTheme, resolvedTheme, noise, setNoise } = useTheme();
@@ -245,126 +293,216 @@ function AparienciaPanel() {
   ];
 
   return (
-    <div className="settings-company-layout">
-      <section className="ink-table-card settings-panel">
-        <div className="settings-panel-header settings-panel-header--stacked">
-          <p className="page-kicker" style={{ margin: 0 }}>Visual</p>
-          <h3 className="settings-panel-title">Apariencia del sistema</h3>
-          <p className="settings-panel-copy">
-            Personaliza el tema y la textura visual de Inkora. Los cambios se aplican inmediatamente.
-          </p>
-        </div>
-
-        {/* Tema */}
-        <div style={{ marginBottom: '24px' }}>
-          <label className="label" style={{ marginBottom: '10px', display: 'block' }}>Tema</label>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {themeOptions.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setTheme(opt.value)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '10px 16px',
-                  border: theme === opt.value ? '1.5px solid var(--brand-600)' : '1.5px solid var(--border-subtle)',
-                  background: theme === opt.value ? 'var(--brand-100)' : 'var(--bg-surface)',
-                  color: theme === opt.value ? 'var(--brand-600)' : 'var(--text-primary)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  letterSpacing: '0.06em',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                  transition: 'all 150ms',
-                }}
-              >
-                <opt.Icon size={16} strokeWidth={1.5} />
-                {opt.label}
-              </button>
-            ))}
+    <div className="settings-view">
+      <div className="appearance-card settings-panel settings-appearance-panel">
+        <div className="settings-section-title settings-section-title--stacked">
+          <div className="settings-icon-box">
+            <Palette size={15} />
           </div>
-          <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '8px' }}>
-            Tema activo: <strong style={{ color: 'var(--text-primary)' }}>{resolvedTheme === 'dark' ? 'Oscuro' : 'Claro'}</strong>
-            {theme === 'system' && ' (heredado del sistema)'}
-          </p>
+          <div>
+            <h3>Tema visual</h3>
+            <p>Personaliza el tema de Inkora. Los cambios se aplican de inmediato.</p>
+          </div>
+        </div>
+        <div className="theme-options">
+          {themeOptions.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={(event) => setTheme(opt.value, event)}
+              className={`theme-btn${theme === opt.value ? ' active' : ''}`}
+            >
+              <div className={`preview-mock theme-preview theme-preview--${opt.value}${opt.value === 'dark' ? ' dark-mock' : ''}`}>
+                <opt.Icon size={18} strokeWidth={1.5} />
+                <span />
+              </div>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-[var(--color-text-soft)] mt-3">
+          Tema activo: <strong className="text-[var(--color-text)]">{resolvedTheme === 'dark' ? 'Oscuro' : 'Claro'}</strong>
+          {theme === 'system' && ' (heredado del sistema)'}
+        </p>
+      </div>
+
+      <div className="appearance-card settings-panel settings-texture-panel">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-1">Textura editorial</p>
+            <p className="text-[14px] font-semibold text-[var(--color-text)]">Grain de papel</p>
+            <p className="text-[12px] text-[var(--color-text-muted)] mt-1">
+              Agrega una textura sutil tipo prensa al fondo. Solo afecta visualmente.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNoise(!noise)}
+            className={`settings-toggle${noise ? ' active' : ''}`}
+            aria-label={noise ? 'Desactivar grain' : 'Activar grain'}
+          >
+            <span className="settings-toggle-knob" />
+          </button>
+        </div>
+        <div className={`preview-mock settings-texture-preview mt-4${resolvedTheme === 'dark' ? ' dark-mock' : ''}${noise ? ' is-active' : ''}`}>
+          {noise ? 'Grain activado' : 'Sin grain'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PasswordInput({ label, value, onChange, required }) {
+  const [show, setShow] = useState(false);
+  return (
+    <FormField label={label} icon={LockKeyhole} required={required} className="settings-password-field">
+      <div className="settings-password-control">
+        <input
+          type={show ? 'text' : 'password'}
+          className="input"
+          value={value}
+          onChange={onChange}
+          required={required}
+          minLength={10}
+        />
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          tabIndex={-1}
+          className="settings-password-toggle"
+          aria-label={show ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+        >
+          {show ? <EyeOff size={15} /> : <Eye size={15} />}
+        </button>
+      </div>
+    </FormField>
+  );
+}
+
+function SeguridadPanel() {
+  const { user, refreshUser } = useAuth();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const [form, setForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const setField = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    if (form.new_password !== form.confirm_password) {
+      setError('Las contraseñas nuevas no coinciden.');
+      return;
+    }
+    if (form.new_password.length < 10) {
+      setError('La contraseña debe tener al menos 10 caracteres.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const data = await api.post('/users/me/change-password', {
+        current_password: form.current_password,
+        new_password: form.new_password,
+        confirm_password: form.confirm_password,
+      });
+      if (data.access_token) {
+        const storage = localStorage.getItem('token') ? localStorage : sessionStorage;
+        localStorage.removeItem('token');
+        sessionStorage.removeItem('token');
+        storage.setItem('token', data.access_token);
+      }
+      await refreshUser();
+      setForm({ current_password: '', new_password: '', confirm_password: '' });
+      toast('Contraseña actualizada correctamente', 'success');
+      if (user?.must_change_password) {
+        setTimeout(() => navigate('/dashboard', { replace: true }), 800);
+      }
+    } catch (err) {
+      setError(err.message || 'No se pudo cambiar la contraseña. Revisa tu conexión e inténtalo nuevamente.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const isFirstLogin = Boolean(user?.must_change_password);
+
+  return (
+    <div className="settings-view">
+      {isFirstLogin && (
+        <div className="proto-alert warning">
+          <ShieldCheck size={15} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="settings-alert-title">Debes cambiar tu contraseña antes de continuar</p>
+            <p className="settings-alert-copy">
+              Es la primera vez que accedes con esta cuenta. Elige una contraseña segura que solo tú conozcas.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="settings-rail-card settings-panel settings-security-panel">
+        <div className="settings-rail-card-header">
+          <div className="settings-section-title">
+            <div className="settings-icon-box">
+              <KeyRound size={15} />
+            </div>
+            <div>
+              <h3>Cambiar contraseña</h3>
+              <p>Actualiza tu contraseña de acceso periódicamente para mantener tu cuenta protegida.</p>
+            </div>
+          </div>
         </div>
 
-        {/* Grain toggle */}
-        <div style={{ borderTop: '1px solid var(--border-hair)', paddingTop: '24px' }}>
-          <label className="label" style={{ marginBottom: '10px', display: 'block' }}>Textura editorial</label>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Grain de papel</p>
-              <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                Añade una textura sutil tipo prensa al fondo. Solo afecta visualmente, no el rendimiento.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setNoise(!noise)}
-              style={{
-                position: 'relative',
-                width: '44px',
-                height: '24px',
-                borderRadius: 0,
-                border: '1.5px solid var(--border-subtle)',
-                background: noise ? 'var(--brand-600)' : 'var(--bg-surface-2)',
-                cursor: 'pointer',
-                flexShrink: 0,
-                transition: 'background 150ms',
-              }}
-            >
-              <span
-                style={{
-                  position: 'absolute',
-                  top: '3px',
-                  left: noise ? '23px' : '3px',
-                  width: '16px',
-                  height: '16px',
-                  background: '#fff',
-                  border: '1px solid var(--border-subtle)',
-                  transition: 'left 150ms',
-                }}
+        <form onSubmit={handleSubmit} className="settings-form-body">
+          <div className="settings-security-grid">
+            <div className="settings-security-fields">
+              <PasswordInput
+                label={isFirstLogin ? 'Contraseña temporal (la que te enviaron)' : 'Contraseña actual'}
+                value={form.current_password}
+                onChange={setField('current_password')}
+                required
               />
+              <PasswordInput
+                label="Nueva contraseña"
+                value={form.new_password}
+                onChange={setField('new_password')}
+                required
+              />
+              <PasswordInput
+                label="Confirmar nueva contraseña"
+                value={form.confirm_password}
+                onChange={setField('confirm_password')}
+                required
+              />
+            </div>
+
+            <aside className="settings-password-rules">
+              <span className="settings-fiscal-kicker">Política de seguridad</span>
+              <strong>Contraseña robusta</strong>
+              <p>Usa una clave única para Inkora. El cambio invalida sesiones antiguas si el backend detecta credenciales previas.</p>
+              <ul>
+                <li>Minimo 10 caracteres</li>
+                <li>Al menos una letra</li>
+                <li>Al menos un numero</li>
+              </ul>
+            </aside>
+          </div>
+
+          {error && (
+            <div className="proto-alert danger">
+              <p className="settings-alert-copy">{error}</p>
+            </div>
+          )}
+
+          <div className="settings-form-actions">
+            <button type="submit" disabled={saving} className="btn-primary">
+              {saving ? 'Guardando...' : 'Cambiar contraseña'}
             </button>
           </div>
-
-          {/* Preview card */}
-          <div
-            style={{
-              marginTop: '16px',
-              padding: '20px',
-              border: '1.5px solid var(--border-subtle)',
-              background: 'var(--bg-surface)',
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <p className="tx-kicker" style={{ marginBottom: '8px' }}>Vista previa</p>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-              {noise
-                ? 'El grain editorial está activado. Notarás una textura sutil sobre los fondos.'
-                : 'Sin grain. Fondos lisos tipo papel estándar.'}
-            </p>
-            {noise && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  pointerEvents: 'none',
-                  opacity: 0.025,
-                  backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
-                  backgroundRepeat: 'repeat',
-                  backgroundSize: '128px 128px',
-                }}
-              />
-            )}
-          </div>
-        </div>
-      </section>
+        </form>
+      </div>
     </div>
   );
 }
@@ -372,19 +510,31 @@ function AparienciaPanel() {
 export default function ConfiguracionPage() {
   const { user } = useAuth();
   const toast = useToast();
+  const [searchParams] = useSearchParams();
+  const logoInputRef = useRef(null);
+  const initialTab = searchParams.get('tab') || 'empresa';
   const [tenantData, setTenantData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoError, setLogoError] = useState(null);
+  const [businessName, setBusinessName] = useState('');
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [businessErrors, setBusinessErrors] = useState({});
   const [phone, setPhone] = useState('');
   const [phoneError, setPhoneError] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [paymentMethodErrors, setPaymentMethodErrors] = useState({});
-  const [activeTab, setActiveTab] = useState('empresa');
+  const [activeTab, setActiveTab] = useState(TABS.includes(initialTab) ? initialTab : 'empresa');
+  const [tabDirection, setTabDirection] = useState('forward');
 
   useEffect(() => {
     svc.get()
       .then((tenantResponse) => {
         setTenantData(tenantResponse);
+        setBusinessName(tenantResponse.business_name || '');
+        setBusinessAddress(tenantResponse.business_address || '');
+        setBusinessErrors({});
         setPhone(normalizePeruMobileInput(tenantResponse.business_phone || ''));
         setPhoneError(null);
         setPaymentMethods(normalizePaymentMethods(tenantResponse.bank_accounts));
@@ -396,31 +546,83 @@ export default function ConfiguracionPage() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    const nextPhoneError = validatePeruMobilePhone(phone, 'Telefono de contacto');
+    const nextBusinessName = normalizeBusinessText(businessName);
+    const nextBusinessAddress = normalizeBusinessText(businessAddress);
+    const nextBusinessErrors = {
+      business_name: validateBusinessName(nextBusinessName),
+      business_address: validateBusinessAddress(nextBusinessAddress),
+    };
+    const nextPhoneError = validatePeruMobilePhone(phone, 'Teléfono de contacto');
     const nextErrors = buildPaymentMethodErrorMap(paymentMethods);
+    setBusinessErrors(nextBusinessErrors);
     setPhoneError(nextPhoneError);
     setPaymentMethodErrors(nextErrors);
-    if (nextPhoneError || Object.keys(nextErrors).length > 0) {
-      toast('Revisa los campos de celular y los datos de cobro antes de guardar.', 'error');
+    if (
+      Object.values(nextBusinessErrors).some(Boolean)
+      || nextPhoneError
+      || Object.keys(nextErrors).length > 0
+    ) {
+      toast('Revisa los datos fiscales, celular y medios de cobro antes de guardar.', 'error');
       return;
     }
 
     setSaving(true);
     try {
       const updated = await svc.update({
+        business_name: nextBusinessName,
+        business_address: nextBusinessAddress,
         business_phone: phone,
         bank_accounts: serializePaymentMethods(paymentMethods),
       });
       setTenantData(updated);
+      setBusinessName(updated.business_name || '');
+      setBusinessAddress(updated.business_address || '');
+      setBusinessErrors({});
       setPaymentMethods(normalizePaymentMethods(updated.bank_accounts));
       setPaymentMethodErrors({});
       setPhone(normalizePeruMobileInput(updated.business_phone || ''));
       setPhoneError(null);
-      toast('Configuracion actualizada');
+      toast('Configuración actualizada');
     } catch (err) {
       toast(err.message, 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleLogoChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!LOGO_ALLOWED_TYPES.includes(file.type)) {
+      setLogoError('Formato no permitido. Usa PNG, JPG, JPEG o WEBP.');
+      toast('Formato de logo no permitido.', 'error');
+      return;
+    }
+
+    if (file.size > LOGO_MAX_SIZE_BYTES) {
+      setLogoError('El logo no debe superar 2 MB.');
+      toast('El logo excede el tamano maximo permitido.', 'error');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    setLogoError(null);
+    setUploadingLogo(true);
+    try {
+      const response = await svc.uploadLogo(formData);
+      setTenantData((current) => ({
+        ...(current || {}),
+        logo_filename: response.url,
+      }));
+      toast('Logo actualizado');
+    } catch (err) {
+      setLogoError(err.message || 'No se pudo subir el logo.');
+      toast(err.message || 'No se pudo subir el logo.', 'error');
+    } finally {
+      setUploadingLogo(false);
     }
   };
 
@@ -464,6 +666,14 @@ export default function ConfiguracionPage() {
     });
   };
 
+  const handleTabChange = (nextTab) => {
+    if (nextTab === activeTab) return;
+    const currentIndex = TABS.indexOf(activeTab);
+    const nextIndex = TABS.indexOf(nextTab);
+    setTabDirection(nextIndex > currentIndex ? 'forward' : 'backward');
+    setActiveTab(nextTab);
+  };
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -472,157 +682,307 @@ export default function ConfiguracionPage() {
     );
   }
 
-  const isSuperadmin = Boolean(user?.is_superadmin || user?.rol === 'superadmin');
-  const isAdmin = ['admin', 'superadmin'].includes(user?.rol) || isSuperadmin;
+  const isSuperadmin = Boolean(user?.is_superadmin);
+  const isAdmin = user?.rol === 'admin' || isSuperadmin;
+  const companyFormId = 'settings-company-form';
   const companyName = tenantData?.business_name || 'Empresa no configurada';
   const companyInitial = (companyName.trim()?.charAt(0) || 'I').toUpperCase();
   const bankCount = paymentMethods.filter((method) => method.tipo !== 'wallet').length;
   const walletCount = paymentMethods.filter((method) => method.tipo === 'wallet').length;
+  const fiscalReady = Boolean(tenantData?.has_sunat_credentials && tenantData?.has_sunat_cert);
+  const collectionsReady = Boolean(phone && paymentMethods.length > 0);
+  const setupStatus = fiscalReady && collectionsReady ? 'Lista para operar' : 'Requiere revision';
+  const fiscalConfiguredCount = [
+    tenantData?.has_apisperu_token,
+    tenantData?.has_sunat_credentials,
+    tenantData?.has_sunat_cert,
+    true,
+  ].filter(Boolean).length;
 
   return (
-    <div className="page-shell settings-shell">
-      <div className="settings-tabs">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className="settings-tab"
-            style={{
-              borderBottom: activeTab === tab ? '2px solid var(--brand-600)' : '2px solid transparent',
-              color: activeTab === tab ? 'var(--brand-600)' : 'var(--text-tertiary)',
-            }}
-          >
-            {TAB_LABELS[tab]}
-          </button>
-        ))}
+    <div className="page-shell configuracion-page">
+      <div className="page-head ink-enter-1">
+        <div>
+          <p className="eyebrow">Panel de control</p>
+          <h2>Configuración</h2>
+          <p>
+            Identidad, emisión fiscal, cuenta y apariencia desde un solo lugar
+          </p>
+        </div>
+      </div>
+
+      <section className="settings-command-card ink-enter-2">
+        <div className="settings-command-main">
+          <div className="settings-command-kicker">
+            <Building2 size={14} />
+            Configuración operativa
+          </div>
+          <div className="settings-command-identity">
+            {tenantData?.logo_filename ? (
+              <img src={tenantData.logo_filename} alt={`Logo ${companyName}`} className="settings-command-logo" />
+            ) : (
+              <div className="settings-command-avatar">{companyInitial}</div>
+            )}
+            <div>
+              <h3>{companyName}</h3>
+              <p>{tenantData?.business_ruc ? `RUC ${tenantData.business_ruc}` : 'RUC no configurado'}</p>
+            </div>
+          </div>
+          <p className="settings-command-copy">
+            Revisa los datos que impactan directamente en cotizaciones, comprobantes, guias y PDF comerciales.
+          </p>
+          <div className="settings-command-actions">
+            <span className={`status-pill ${fiscalReady ? 'ok' : 'warn'}`}>{setupStatus}</span>
+            {isAdmin && activeTab === 'empresa' && (
+              <button
+                type="button"
+                onClick={() => document.getElementById(companyFormId)?.requestSubmit()}
+                disabled={saving}
+                className="document-list-hero-btn document-list-hero-btn--primary"
+              >
+                {saving && <Spinner size="sm" />} Guardar cambios
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="settings-command-metrics">
+          <article>
+            <span>Empresa</span>
+            <strong>1 perfil</strong>
+            <small>Identidad comercial activa</small>
+          </article>
+          <article>
+            <span>SUNAT</span>
+            <strong>{tenantData?.has_sunat_credentials ? 'Lista' : 'Parcial'}</strong>
+            <small>{tenantData?.has_sunat_credentials ? 'Credenciales activas' : 'Configuración pendiente'}</small>
+          </article>
+          <article>
+            <span>Cobros</span>
+            <strong>{bankCount + walletCount}</strong>
+            <small>{collectionsReady ? 'Medios visibles en PDF' : 'Falta contacto o cobro'}</small>
+          </article>
+          <article>
+            <span>Cuenta</span>
+            <strong>{isSuperadmin ? 'SA' : user?.rol || 'Usuario'}</strong>
+            <small>Sesión con permisos operativos</small>
+          </article>
+        </div>
+      </section>
+
+      <div className="settings-tabs-bar ink-enter-3">
+        {TABS.map((tab) => {
+          const Icon = TAB_ICONS[tab];
+          return (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => handleTabChange(tab)}
+              className={`settings-tab-btn${activeTab === tab ? ' active' : ''}`}
+            >
+              <span className="settings-tab-icon">
+                <Icon size={15} />
+              </span>
+              <span>
+                <strong>{TAB_LABELS[tab]}</strong>
+                <small>{TAB_DESCRIPTIONS[tab]}</small>
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {activeTab === 'empresa' && (
-        <div className="settings-company-layout">
-          <section className="ink-table-card settings-panel settings-company-panel">
-            <div className="settings-panel-header settings-panel-header--stacked">
-              <p className="page-kicker" style={{ margin: 0 }}>Identidad tributaria</p>
-              <h3 className="settings-panel-title">Perfil legal y comercial</h3>
-              <p className="settings-panel-copy">
-                Aqui se concentra la informacion base de la empresa que se usa como referencia en documentos y operaciones internas.
-              </p>
-            </div>
-
-            <div className="settings-company-identity-layout">
-              <div className="settings-company-hero-card">
-                <div className="settings-company-hero-mark">
+        <div className={`settings-view settings-tab-panel settings-tab-panel--${tabDirection}`}>
+          <div className="settings-hero-card settings-panel">
+            <div className="settings-hero-grid">
+              <div>
+                <div className="flex items-center gap-3 mb-4">
                   {tenantData?.logo_filename ? (
-                    <img src={tenantData.logo_filename} alt={`Logo de ${companyName}`} className="settings-company-logo" />
+                    <img src={tenantData.logo_filename} alt={`Logo ${companyName}`} className="h-10 w-10 rounded-xl object-cover" />
                   ) : (
-                    <div className="settings-company-avatar">{companyInitial}</div>
+                    <div className="account-avatar text-sm">{companyInitial}</div>
                   )}
+                  <div>
+                    <p className="text-[15px] font-extrabold text-[var(--color-text)]">{companyName}</p>
+                    <p className="text-[11px] text-[var(--color-text-muted)]">{tenantData?.business_ruc ? `RUC ${tenantData.business_ruc}` : 'RUC no configurado'}</p>
+                  </div>
                 </div>
-                <div className="settings-company-hero-copy">
-                  <p className="settings-company-name">{companyName}</p>
-                  <p className="settings-company-meta">{tenantData?.business_ruc ? `RUC ${tenantData.business_ruc}` : 'RUC no configurado'}</p>
+                <dl className="space-y-2">
+                  <ReadOnlyField label="Razón social" value={tenantData?.business_name} />
+                  <ReadOnlyField label="Dirección fiscal" value={tenantData?.business_address} />
+                  <ReadOnlyField label="Teléfono" value={phone || tenantData?.business_phone} />
+                </dl>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-3">Medios de cobro</p>
+                <div className="credential-list settings-company-summary">
+                  <div className="credential-item">
+                    <span className="ci-label">Cuentas bancarias</span>
+                    <span className="ci-value font-bold text-[var(--color-text)]">{bankCount}</span>
+                  </div>
+                  <div className="credential-item">
+                    <span className="ci-label">Billeteras digitales</span>
+                    <span className="ci-value font-bold text-[var(--color-text)]">{walletCount}</span>
+                  </div>
+                </div>
+                <div className="hint-card mt-3">
+                  <CreditCard size={13} className="flex-shrink-0 mt-0.5" />
+                  <span>Los datos de cobro se imprimen en el pie del PDF automaticamente.</span>
                 </div>
               </div>
-
-              <dl className="settings-company-readonly-grid">
-                <ReadOnlyField label="Razon social" value={tenantData?.business_name} />
-                <ReadOnlyField label="RUC" value={tenantData?.business_ruc} />
-                <ReadOnlyField label="Direccion fiscal" value={tenantData?.business_address} />
-                <ReadOnlyField label="Telefono actual" value={phone || tenantData?.business_phone} />
-              </dl>
             </div>
-          </section>
-
-          <aside className="ink-table-card settings-panel settings-company-summary-panel">
-            <div className="settings-panel-header settings-panel-header--stacked">
-              <p className="page-kicker" style={{ margin: 0 }}>Resumen</p>
-              <h3 className="settings-panel-title">Vista general</h3>
-              <p className="settings-panel-copy">
-                Un vistazo rapido del estado comercial y de los medios de cobro configurados.
-              </p>
-            </div>
-
-            <div className="settings-company-stats">
-              <div className="settings-company-stat">
-                <span className="settings-company-stat-label">Telefono</span>
-                <strong className="settings-company-stat-value">{phone || 'Sin telefono'}</strong>
-              </div>
-              <div className="settings-company-stat">
-                <span className="settings-company-stat-label">Cuentas bancarias</span>
-                <strong className="settings-company-stat-value">{bankCount}</strong>
-              </div>
-              <div className="settings-company-stat">
-                <span className="settings-company-stat-label">Billeteras</span>
-                <strong className="settings-company-stat-value">{walletCount}</strong>
-              </div>
-            </div>
-
-            <div className="settings-company-summary-note">
-              <p className="settings-company-summary-note-title">Uso en documentos</p>
-              <p className="settings-company-summary-note-copy">
-                Las cuentas bancarias y billeteras digitales configuradas aqui se imprimen en el pie del PDF bajo "Datos para la Transferencia".
-              </p>
-            </div>
-          </aside>
+          </div>
 
           {isAdmin && (
-            <section className="ink-table-card settings-panel settings-company-form-panel">
-              <form onSubmit={handleSubmit} className="settings-company-form">
-                <div className="settings-company-form-top">
-                  <div className="settings-company-contact-card">
-                    <div className="pdf-designer-section-head">
-                      <h3>Contacto comercial</h3>
-                      <p>Actualiza el telefono visible para el equipo y para las referencias operativas de la empresa.</p>
-                    </div>
-
-                    <div className="settings-company-contact-grid">
-                      <div>
-                        <label className="label">Telefono de contacto</label>
-                        <input
-                          className="input"
-                          value={phone}
-                          onChange={(event) => {
-                            const nextPhone = normalizePeruMobileInput(event.target.value);
-                            setPhone(nextPhone);
-                            setPhoneError(validatePeruMobilePhone(nextPhone, 'Telefono de contacto'));
-                          }}
-                          placeholder="+51 999 999 999"
-                          inputMode="numeric"
-                          style={phoneError ? { borderColor: 'var(--color-error)', boxShadow: 'inset 0 0 0 1px var(--color-error)' } : undefined}
-                        />
-                        <div className="settings-field-hint">Celular peruano: 9 digitos numericos e inicia en 9.</div>
-                        <FieldError message={phoneError} />
-                      </div>
-                    </div>
+            <div className="settings-rail-card settings-panel settings-collections-panel">
+              <div className="settings-rail-card-header">
+                <div className="settings-section-title">
+                  <div className="settings-icon-box">
+                    <CreditCard size={15} />
                   </div>
-
-                  <div className="settings-company-help-card">
-                    <p className="page-kicker" style={{ margin: 0 }}>Impacto</p>
-                    <p className="settings-company-help-title">Lo que estas configurando aqui</p>
-                    <p className="settings-company-help-copy">
-                      Este perfil alimenta la identidad comercial del tenant. Los medios de cobro tambien se reutilizan en la plantilla PDF sin volver a cargarlos en cada cotizacion.
-                    </p>
+                  <div>
+                    <h3>Datos SUNAT, contacto y medios de cobro</h3>
+                    <p>Razón social y domicilio fiscal deben coincidir con la ficha RUC vigente.</p>
+                  </div>
+                </div>
+                <div className="settings-section-badges">
+                  <span>SUNAT</span>
+                  <span>PDF comercial</span>
+                  <span>Cobranza</span>
+                </div>
+              </div>
+              <form id={companyFormId} onSubmit={handleSubmit} className="settings-company-edit-form">
+                <div className="settings-logo-upload-card">
+                  <div className="settings-logo-upload-preview">
+                    {tenantData?.logo_filename ? (
+                      <img src={tenantData.logo_filename} alt={`Logo ${companyName}`} />
+                    ) : (
+                      <span>{companyInitial}</span>
+                    )}
+                  </div>
+                  <div className="settings-logo-upload-copy">
+                    <p>Logo de empresa</p>
+                    <span>Se usa en cotizaciones, comprobantes, guias y PDFs comerciales. PNG, JPG o WEBP hasta 2 MB.</span>
+                    {logoError && <strong>{logoError}</strong>}
+                  </div>
+                  <div className="settings-logo-upload-actions">
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handleLogoChange}
+                      className="sr-only"
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={uploadingLogo}
+                    >
+                      {uploadingLogo ? (
+                        <>
+                          <Spinner size="sm" /> Subiendo...
+                        </>
+                      ) : (
+                        <>
+                          <ImageUp size={15} /> Subir logo
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
 
-                <div className="settings-company-transfer-section">
-                  <div className="pdf-designer-section-head">
-                    <h3>Datos para la transferencia</h3>
-                    <p>
-                      Administra cuentas bancarias y billeteras digitales desde un solo lugar para que el pie del PDF siempre salga consistente.
-                    </p>
+                <div className="settings-tax-identity-card">
+                  <div className="settings-ruc-lock-card">
+                    <span>RUC emisor</span>
+                    <strong>{tenantData?.business_ruc || 'No configurado'}</strong>
+                    <p>Bloqueado para el tenant: cambiarlo exige revalidar token, certificado y credenciales fiscales.</p>
                   </div>
+                  <div className="settings-tax-identity-grid">
+                    <FormField
+                      label="Razón social SUNAT"
+                      icon={Building2}
+                      hint={`Debe coincidir con SUNAT. Máximo ${BUSINESS_NAME_MAX_LENGTH} caracteres.`}
+                      error={businessErrors.business_name}
+                      required
+                    >
+                      <input
+                        className={`input${businessErrors.business_name ? ' input-error' : ''}`}
+                        value={businessName}
+                        onChange={(event) => {
+                          const nextName = event.target.value;
+                          setBusinessName(nextName);
+                          setBusinessErrors((current) => ({
+                            ...current,
+                            business_name: validateBusinessName(nextName),
+                          }));
+                        }}
+                        maxLength={BUSINESS_NAME_MAX_LENGTH}
+                        placeholder="Razón social registrada en SUNAT"
+                      />
+                    </FormField>
+                    <FormField
+                      label="Domicilio fiscal SUNAT"
+                      icon={FileCheck2}
+                      hint={`Debe corresponder al domicilio fiscal vigente. Maximo ${BUSINESS_ADDRESS_MAX_LENGTH} caracteres.`}
+                      error={businessErrors.business_address}
+                      required
+                    >
+                      <textarea
+                        className={`input settings-textarea${businessErrors.business_address ? ' input-error' : ''}`}
+                        value={businessAddress}
+                        onChange={(event) => {
+                          const nextAddress = event.target.value;
+                          setBusinessAddress(nextAddress);
+                          setBusinessErrors((current) => ({
+                            ...current,
+                            business_address: validateBusinessAddress(nextAddress),
+                          }));
+                        }}
+                        maxLength={BUSINESS_ADDRESS_MAX_LENGTH}
+                        placeholder="Domicilio fiscal registrado en SUNAT"
+                        rows={3}
+                      />
+                    </FormField>
+                  </div>
+                </div>
 
+                <FormField
+                  label="Teléfono de contacto"
+                  icon={Phone}
+                  hint="Celular peruano: 9 dígitos numéricos que inicia en 9."
+                  error={phoneError}
+                  className="settings-contact-field"
+                >
+                  <input
+                    className={`input${phoneError ? ' input-error' : ''}`}
+                    value={phone}
+                    onChange={(event) => {
+                      const nextPhone = normalizePeruMobileInput(event.target.value);
+                      setPhone(nextPhone);
+                      setPhoneError(validatePeruMobilePhone(nextPhone, 'Teléfono de contacto'));
+                    }}
+                    placeholder="+51 999 999 999"
+                    inputMode="numeric"
+                  />
+                </FormField>
+
+                <div>
                   <div className="settings-payment-toolbar">
+                    <div>
+                      <p className="settings-payment-title">Datos para la transferencia</p>
+                      <span>Agrega cuentas bancarias o billeteras que saldran en el pie del PDF.</span>
+                    </div>
                     <button type="button" onClick={() => addPaymentMethod('bank')} className="btn-secondary">
-                      + Agregar cuenta bancaria
+                      + Cuenta bancaria
                     </button>
                     <button type="button" onClick={() => addPaymentMethod('wallet')} className="btn-secondary">
-                      + Agregar billetera digital
+                      + Billetera digital
                     </button>
                   </div>
-
                   {paymentMethods.length > 0 ? (
-                    <div className="pdf-designer-bank-list settings-payment-list">
+                    <div className="space-y-3">
                       {paymentMethods.map((method, index) => (
                         <PaymentMethodCard
                           key={`${method.tipo}-${index}`}
@@ -635,84 +995,113 @@ export default function ConfiguracionPage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="settings-empty-card">
-                      Todavia no hay cuentas bancarias ni billeteras digitales configuradas.
+                    <div className="hint-card">
+                      <CreditCard size={14} className="flex-shrink-0" />
+                      <span>Todavia no hay cuentas bancarias ni billeteras digitales configuradas.</span>
                     </div>
                   )}
                 </div>
 
-                <div className="settings-form-actions settings-form-actions--company">
+                <div className="flex justify-end pt-2">
                   <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
                     {saving && <Spinner size="sm" />} Guardar cambios
                   </button>
                 </div>
               </form>
-            </section>
+            </div>
           )}
         </div>
       )}
 
       {activeTab === 'fiscal' && (
-        <div className="ink-table-card settings-panel">
-          <div className="settings-panel-header">
-            <p className="page-kicker" style={{ margin: 0 }}>Credenciales y Certificados</p>
+        <div className={`settings-view settings-tab-panel settings-tab-panel--${tabDirection}`}>
+          <div className="settings-rail-card settings-panel settings-fiscal-panel">
+            <div className="settings-rail-card-header">
+              <div className="settings-section-title">
+                <div className="settings-icon-box">
+                  <ShieldCheck size={15} />
+                </div>
+                <div>
+                  <h3>Estado de credenciales fiscales</h3>
+                  <p>Checklist de requisitos para emitir comprobantes y firmar XML sin exponer secretos al usuario.</p>
+                </div>
+              </div>
+              <div className="settings-fiscal-score">
+                <strong>{fiscalConfiguredCount}/4</strong>
+                <span>requisitos listos</span>
+              </div>
+            </div>
+            <div className="settings-fiscal-overview">
+              <div>
+                <span className="settings-fiscal-kicker">Estado fiscal</span>
+                <strong>{fiscalReady ? 'Emisión lista' : 'Configuración parcial'}</strong>
+                <p>
+                  {fiscalReady
+                    ? 'El tenant tiene credenciales y certificado para operar documentos fiscales.'
+                    : 'Faltan requisitos antes de considerar completa la emisión fiscal.'}
+                </p>
+              </div>
+              <span className={`status-pill ${fiscalReady ? 'ok' : 'warn'}`}>
+                {fiscalReady ? 'Operativo' : 'Revision requerida'}
+              </span>
+            </div>
+            <div className="credential-status-grid">
+              <FiscalStatusTile
+                icon={BadgeCheck}
+                tone={tenantData?.has_apisperu_token ? 'ok' : 'missing'}
+                label="Token ApisPeru"
+                value="Consulta RUC / DNI"
+              >
+                <StatusBadge ok={tenantData?.has_apisperu_token} labelOk="Configurado" labelNo="No configurado" />
+              </FiscalStatusTile>
+              <FiscalStatusTile
+                icon={RadioTower}
+                tone={tenantData?.has_sunat_credentials ? 'ok' : 'pending'}
+                label="Credenciales fiscales gestionadas"
+                value="SUNAT / GRE"
+              >
+                <StatusBadge
+                  ok={tenantData?.has_sunat_credentials}
+                  pending={!tenantData?.has_sunat_credentials}
+                  labelOk="Configuradas"
+                  labelPending="Pendiente"
+                  labelNo="Pendiente"
+                />
+                <p className="settings-fiscal-managed-note">
+                  Solo superadmin puede cargar o rotar credenciales GRE/SUNAT.
+                </p>
+              </FiscalStatusTile>
+              <FiscalStatusTile
+                icon={FileKey2}
+                tone={tenantData?.has_sunat_cert ? 'ok' : 'missing'}
+                label="Certificado PFX"
+                value="Firma electronica de XML"
+              >
+                <StatusBadge ok={tenantData?.has_sunat_cert} labelOk="Cargado" labelNo="No cargado" />
+              </FiscalStatusTile>
+              <FiscalStatusTile
+                icon={FileCheck2}
+                tone="ok"
+                label="Modo de emisión"
+                value="Entorno activo"
+              >
+                <span className="status-pill ok">Configurado por SA</span>
+              </FiscalStatusTile>
+            </div>
           </div>
 
-          <dl className="settings-status-list">
-            <div className="settings-status-row">
-              <div>
-                <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Token ApisPeru</p>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>Conexion API para consulta RUC/DNI.</p>
-              </div>
-              <StatusBadge
-                ok={tenantData?.has_apisperu_token}
-                labelOk="Configurado"
-                labelNo="No configurado"
-              />
-            </div>
-
-            <div className="settings-status-row">
-              <div>
-                <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Credenciales SOL</p>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>Transmision a SUNAT.</p>
-              </div>
-              <StatusBadge
-                ok={tenantData?.has_sunat_credentials}
-                pending={!tenantData?.has_sunat_credentials}
-                labelOk="Configuradas"
-                labelPending="Pendiente"
-                labelNo="Pendiente"
-              />
-            </div>
-
-            <div className="settings-status-row">
-              <div>
-                <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Certificado digital (PFX)</p>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' }}>Firma electronica de XML.</p>
-              </div>
-              <StatusBadge
-                ok={tenantData?.has_sunat_cert}
-                labelOk="Cargado"
-                labelNo="No cargado"
-              />
-            </div>
-          </dl>
-
-          <div className="settings-restricted-alert">
-            <span style={{ fontSize: '18px', color: 'var(--brand-300)', marginTop: '1px' }}>ℹ</span>
+          <div className="notice-card settings-fiscal-notice">
+            <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
             <div>
-              <p style={{ color: '#fff', fontWeight: 700, fontSize: '14px', marginBottom: '4px' }}>Actualizacion Restringida</p>
-              <p style={{ color: 'var(--brand-200)', fontSize: '12px' }}>
+              <p className="font-bold text-[13px] mb-1">Actualizacion restringida</p>
+              <p className="text-[12px]">
                 {isSuperadmin ? (
                   <>
                     Como superadmin, gestiona credenciales fiscales desde{' '}
-                    <Link to="/superadmin" style={{ color: 'var(--brand-200)', textDecoration: 'underline' }}>
-                      Superadmin
-                    </Link>
-                    .
+                    <Link to="/superadmin" className="underline font-semibold">Superadmin</Link>.
                   </>
                 ) : (
-                  'Contacte al administrador de la plataforma para escalar permisos.'
+                  'Contacte al superadmin de la plataforma para configurar o rotar las credenciales fiscales.'
                 )}
               </p>
             </div>
@@ -721,43 +1110,61 @@ export default function ConfiguracionPage() {
       )}
 
       {activeTab === 'cuenta' && (
-        <div className="ink-table-card settings-panel">
-          <div className="settings-panel-header">
-            <p className="page-kicker" style={{ margin: 0 }}>Datos de Sesion</p>
+        <div className={`settings-view settings-tab-panel settings-tab-panel--${tabDirection}`}>
+          <div className="account-card settings-panel settings-account-panel">
+            <div className="account-head">
+              <div className="account-avatar">
+                {((user?.nombre_completo || user?.email || 'U')[0]).toUpperCase()}
+              </div>
+              <div>
+                <p className="text-[15px] font-extrabold text-[var(--color-text)]">{user?.nombre_completo || user?.email}</p>
+                <p className="text-[11px] font-mono uppercase tracking-[0.1em] text-[var(--color-text-muted)] mt-0.5">
+                  {isSuperadmin ? 'superadmin' : user?.rol}
+                </p>
+              </div>
+              <span className="settings-account-badge">
+                {isSuperadmin ? 'Acceso interno' : 'Cuenta activa'}
+              </span>
+            </div>
+            <div className="credential-list settings-account-list">
+              <div className="credential-item settings-account-item">
+                <span className="ci-label">Nombre completo</span>
+                <span className="ci-value">{user?.nombre_completo || '--'}</span>
+              </div>
+              <div className="credential-item settings-account-item">
+                <span className="ci-label">Email</span>
+                <span className="ci-value">{user?.email}</span>
+              </div>
+              <div className="credential-item settings-account-item">
+                <span className="ci-label">Rol</span>
+                <span className="ci-value">{isSuperadmin ? 'superadmin' : user?.rol}</span>
+              </div>
+              <div className="credential-item settings-account-item settings-account-security">
+                <span className="ci-label">Seguridad</span>
+                <button
+                  type="button"
+                  onClick={() => handleTabChange('seguridad')}
+                  className="btn-secondary settings-inline-action"
+                >
+                  Cambiar contraseña
+                </button>
+              </div>
+            </div>
           </div>
-
-          <div className="settings-account-hero">
-            <div className="settings-account-avatar">
-              {((user?.nombre_completo || user?.email || 'U')[0]).toUpperCase()}
-            </div>
-            <div>
-              <p style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>{user?.nombre_completo || user?.email}</p>
-              <p style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: '4px' }}>
-                {isSuperadmin ? 'superadmin' : user?.rol}
-              </p>
-            </div>
-          </div>
-
-          <dl className="grid gap-4 md:grid-cols-3">
-            <div>
-              <dt className="label">Nombre</dt>
-              <dd style={{ fontSize: '14px', color: 'var(--text-primary)', padding: '8px 0' }}>{user?.nombre_completo || '--'}</dd>
-            </div>
-            <div>
-              <dt className="label">Email</dt>
-              <dd style={{ fontSize: '14px', color: 'var(--text-primary)', padding: '8px 0' }}>{user?.email}</dd>
-            </div>
-            <div>
-              <dt className="label">Rol</dt>
-              <dd style={{ fontSize: '14px', color: 'var(--text-primary)', padding: '8px 0' }}>
-                {isSuperadmin ? 'superadmin' : user?.rol}
-              </dd>
-            </div>
-          </dl>
         </div>
       )}
 
-      {activeTab === 'apariencia' && <AparienciaPanel />}
+      {activeTab === 'seguridad' && (
+        <div className={`settings-tab-panel settings-tab-panel--${tabDirection}`}>
+          <SeguridadPanel />
+        </div>
+      )}
+
+      {activeTab === 'apariencia' && (
+        <div className={`settings-tab-panel settings-tab-panel--${tabDirection}`}>
+          <AparienciaPanel />
+        </div>
+      )}
     </div>
   );
 }

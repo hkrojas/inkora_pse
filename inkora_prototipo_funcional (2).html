@@ -1,0 +1,2472 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inkora · Prototipo funcional</title>
+  <style>
+    :root {
+      --bg: #eef1f4;
+      --panel: #ffffff;
+      --panel-soft: #f8fafc;
+      --ink: #151a17;
+      --muted: #667085;
+      --muted-2: #98a2b3;
+      --line: #e5e9ef;
+      --green-950: #0d2212;
+      --green-900: #112b16;
+      --green-850: #14331a;
+      --green-800: #183d20;
+      --green-700: #1f5b31;
+      --green-600: #2e7d3f;
+      --green-500: #8cc63f;
+      --green-100: #def6c7;
+      --green-50: #f0fbe8;
+      --orange: #f59e0b;
+      --orange-50: #fff7ed;
+      --red: #ef4444;
+      --red-50: #fef2f2;
+      --blue: #2563eb;
+      --blue-50: #eff6ff;
+      --purple: #7c3aed;
+      --purple-50: #f5f3ff;
+      --shadow: 0 10px 28px rgba(15, 23, 42, .07);
+      --shadow-soft: 0 5px 16px rgba(15, 23, 42, .055);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    a { color: inherit; text-decoration: none; }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: hidden;
+      padding: 24px 14px;
+      color: #dbead6;
+      background: linear-gradient(180deg, #102b16 0%, #0d2212 100%);
+      z-index: 80;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 14px 28px;
+      color: #fff;
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: -.05em;
+    }
+
+    .brand-mark {
+      color: #a3e635;
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 900;
+    }
+
+    .collapse {
+      height: 39px;
+      margin-bottom: 26px;
+      border-radius: 13px;
+      border: 1px solid rgba(255,255,255,.08);
+      color: rgba(255,255,255,.58);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .nav-scroll {
+      height: calc(100vh - 216px);
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .nav-scroll::-webkit-scrollbar { width: 6px; }
+    .nav-scroll::-webkit-scrollbar-thumb { background: rgba(140,198,63,.55); border-radius: 999px; }
+
+    .nav-title {
+      padding: 0 12px;
+      margin: 20px 0 8px;
+      color: rgba(255,255,255,.42);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .nav-item {
+      position: relative;
+      height: 42px;
+      width: 100%;
+      border: 0;
+      border-radius: 13px;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 14px;
+      color: rgba(255,255,255,.68);
+      font-size: 15px;
+      margin: 4px 0;
+      text-align: left;
+    }
+
+    .nav-item.active {
+      color: #fff;
+      background: rgba(132,204,63,.14);
+      font-weight: 850;
+    }
+
+    .nav-item.active::before {
+      content: "";
+      position: absolute;
+      left: -6px;
+      width: 4px;
+      height: 24px;
+      border-radius: 20px;
+      background: var(--green-500);
+    }
+
+    .nav-icon {
+      width: 18px;
+      text-align: center;
+      opacity: .9;
+      flex: 0 0 auto;
+    }
+
+    .user-card {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 18px;
+      min-height: 66px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.06);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .avatar-user {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #e3e941, #7cc63f);
+      color: white;
+      font-weight: 900;
+    }
+
+    .main { min-width: 0; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 70;
+      min-height: 72px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.94);
+      backdrop-filter: blur(18px);
+      display: grid;
+      grid-template-columns: 1fr minmax(260px, 380px) auto;
+      align-items: center;
+      gap: 18px;
+      padding: 0 26px;
+    }
+
+    .top-title h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: -.04em;
+    }
+
+    .top-title p {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .global-search {
+      height: 42px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      color: var(--muted-2);
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sunat-pill {
+      height: 36px;
+      border: 1px solid var(--line);
+      background: white;
+      box-shadow: var(--shadow-soft);
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      font-size: 13px;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green-500);
+      flex: 0 0 auto;
+    }
+
+    .icon-btn, .add-btn {
+      height: 42px;
+      border-radius: 13px;
+      border: 1px solid var(--line);
+      background: white;
+      box-shadow: var(--shadow-soft);
+      color: #475467;
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+    }
+
+    .icon-btn { width: 42px; }
+    .add-btn {
+      background: #121816;
+      border-color: #121816;
+      color: #fff;
+      padding: 0 18px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .content {
+      padding: 28px 26px 36px;
+    }
+
+    .page { display: none; animation: rise .24s ease both; }
+    .page.active { display: block; }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+
+    .eyebrow {
+      margin: 0 0 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .page-head h2 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1;
+      letter-spacing: -.06em;
+    }
+
+    .page-head p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .page-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      height: 42px;
+      border-radius: 13px;
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 0 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      color: #344054;
+      font-weight: 850;
+      box-shadow: var(--shadow-soft);
+      transition: .18s ease;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn.primary {
+      background: var(--green-500);
+      border-color: var(--green-500);
+      color: #102715;
+      box-shadow: 0 10px 22px rgba(111,196,58,.25);
+    }
+    .btn.dark {
+      background: #121816;
+      border-color: #121816;
+      color: #fff;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .panel + .panel { margin-top: 16px; }
+
+    .panel-header {
+      padding: 18px 20px 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #fff 0%, #fbfcfd 100%);
+    }
+    .panel-header h3 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: -.04em;
+    }
+    .panel-header p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .panel-body { padding: 18px 20px 20px; }
+
+    /* Dashboard */
+    .attention {
+      background: linear-gradient(135deg, #17361d 0%, #1d4a26 100%);
+      color: white;
+      border-radius: 22px;
+      padding: 18px;
+      display: grid;
+      grid-template-columns: 1.1fr repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .attention::after {
+      content: "";
+      position: absolute;
+      right: -38px;
+      top: -48px;
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: rgba(132,204,63,.14);
+    }
+    .attention-title { position: relative; z-index: 1; }
+    .attention-title span {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(132,204,63,.16);
+      color: #b7f478;
+      margin-bottom: 10px;
+      font-weight: 900;
+    }
+    .attention-title h3 { margin: 0; font-size: 19px; letter-spacing: -.04em; }
+    .attention-title p { margin: 8px 0 0; color: rgba(255,255,255,.68); font-size: 13px; max-width: 320px; }
+    .attention-card {
+      position: relative;
+      z-index: 1;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 17px;
+      padding: 14px;
+      min-height: 102px;
+    }
+    .attention-card strong { display: block; font-size: 26px; letter-spacing: -.06em; margin-bottom: 5px; }
+    .attention-card span { color: rgba(255,255,255,.78); font-size: 13px; line-height: 1.3; }
+    .attention-card small { display: inline-flex; margin-top: 12px; color: #b7f478; font-weight: 800; font-size: 12px; }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .metric {
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 18px;
+      min-height: 142px;
+      box-shadow: var(--shadow-soft);
+    }
+    .metric-top { display: flex; justify-content: space-between; align-items: start; gap: 8px; margin-bottom: 12px; }
+    .metric-label { color: var(--muted); font-size: 13px; font-weight: 700; }
+    .metric-badge {
+      font-size: 11px;
+      font-weight: 900;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: var(--green-50);
+      color: var(--green-700);
+      white-space: nowrap;
+    }
+    .metric-badge.warn { background: var(--orange-50); color: #c66b0b; }
+    .metric-badge.danger { background: var(--red-50); color: #dc2626; }
+    .metric-badge.neutral { background: #f3f4f6; color: #667085; }
+    .metric-value { font-size: 34px; font-weight: 900; letter-spacing: -.07em; margin-bottom: 6px; }
+    .metric-sub { color: var(--muted); font-size: 13px; line-height: 1.35; }
+    .metric-sub strong { color: var(--green-600); }
+    .metric-sub .red { color: var(--red); font-weight: 800; }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(360px, .8fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .side-stack { display: grid; gap: 16px; }
+
+    .quick-actions {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      padding: 0 18px 18px;
+    }
+    .quick-btn {
+      min-height: 72px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, #fff 0%, #fafafa 100%);
+      border-radius: 16px;
+      padding: 13px;
+      text-align: left;
+      transition: .2s ease;
+    }
+    .quick-btn strong { display: block; font-size: 14px; color: #1f2937; margin-bottom: 4px; }
+    .quick-btn span { color: var(--muted); font-size: 12px; }
+
+    .todo-list { padding: 0 18px 18px; }
+    .todo {
+      display: grid;
+      grid-template-columns: 36px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 13px 0;
+      border-bottom: 1px solid #edf0f4;
+    }
+    .todo:last-child { border-bottom: 0; }
+    .todo-icon {
+      width: 36px; height: 36px; border-radius: 12px;
+      display: grid; place-items: center; background: var(--panel-soft);
+    }
+    .todo strong { display: block; font-size: 13px; color: #1f2937; margin-bottom: 3px; }
+    .todo span { color: var(--muted); font-size: 12px; }
+    .mini-link { color: var(--green-700); font-weight: 900; font-size: 12px; white-space: nowrap; }
+    .aging { padding: 0 18px 18px; }
+    .aging-row { margin: 16px 0; }
+    .aging-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; color: #344054; font-weight: 700; }
+    .bar { height: 10px; border-radius: 999px; background: #eef1f4; overflow: hidden; }
+    .bar > i { display: block; height: 100%; border-radius: 999px; background: var(--green-700); }
+    .bar.orange > i { background: var(--orange); }
+    .bar.red > i { background: var(--red); }
+    .bar.light > i { background: var(--green-500); }
+    .sunat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 0 18px 18px; }
+    .sunat-box { border: 1px solid var(--line); border-radius: 15px; padding: 13px; background: white; }
+    .sunat-box strong { display: block; font-size: 21px; letter-spacing: -.05em; margin-bottom: 4px; }
+    .sunat-box span { color: var(--muted); font-size: 12px; font-weight: 700; }
+
+    /* Shared tables */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .data-table th {
+      text-align: left;
+      color: #667085;
+      font-size: 11px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      padding: 12px 16px;
+      background: #f9fafb;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    .data-table td {
+      padding: 13px 16px;
+      border-bottom: 1px solid #edf0f4;
+      color: #344054;
+      vertical-align: middle;
+    }
+    .data-table tr:last-child td { border-bottom: 0; }
+    .table-wrap { overflow-x: auto; background: white; }
+    .status {
+      display: inline-flex; align-items: center; gap: 6px;
+      border-radius: 999px; padding: 5px 9px; font-size: 12px; font-weight: 850; white-space: nowrap;
+    }
+    .status.ok { background: var(--green-50); color: var(--green-700); }
+    .status.pending, .status.warn { background: var(--orange-50); color: #c76f13; }
+    .status.bad { background: var(--red-50); color: #dc2626; }
+    .status.neutral { background: #f2f4f7; color: #667085; }
+    .status.blue { background: var(--blue-50); color: var(--blue); }
+    .status.purple { background: var(--purple-50); color: var(--purple); }
+
+    .table-footer {
+      padding: 14px 18px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 13px;
+      background: #fff;
+    }
+    .pagination { display: flex; gap: 8px; align-items: center; }
+    .page-btn {
+      width: 34px; height: 34px; border-radius: 11px; border: 1px solid var(--line);
+      background: #fff; color: #667085; font-weight: 900;
+    }
+    .page-btn.active { background: var(--green-50); color: var(--green-700); border-color: #b9df9d; }
+
+    /* Clientes */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin: 18px 0 16px;
+    }
+    .stat {
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: var(--shadow-soft);
+    }
+    .stat-label { color: var(--muted); font-size: 12px; font-weight: 800; margin-bottom: 8px; }
+    .stat-value { font-size: 30px; font-weight: 950; letter-spacing: -.07em; line-height: 1; }
+    .stat-foot { margin-top: 8px; color: var(--muted); font-size: 12px; }
+    .stat-foot.good { color: var(--green-700); font-weight: 850; }
+    .stat-foot.warn { color: #b45309; font-weight: 850; }
+    .stat-foot.bad { color: #dc2626; font-weight: 850; }
+
+    .toolbar {
+      padding: 16px 18px;
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #fff 0%, #fbfcfd 100%);
+    }
+    .search-box {
+      height: 46px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 15px;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 0 14px;
+      color: var(--muted-2);
+      min-width: 0;
+    }
+    .search-box input {
+      width: 100%; border: 0; outline: 0; background: transparent; color: #1f2937;
+    }
+    .toolbar-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .segments-row {
+      padding: 12px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--line);
+    }
+    .segments { display: flex; gap: 8px; flex-wrap: wrap; }
+    .segment {
+      height: 34px; border-radius: 999px; border: 1px solid var(--line); background: #fff;
+      color: #667085; padding: 0 12px; display: inline-flex; align-items: center; gap: 7px;
+      font-size: 13px; font-weight: 850;
+    }
+    .segment.active { background: var(--green-900); border-color: var(--green-900); color: white; }
+    .sort-text { color: var(--muted); font-size: 13px; }
+
+    .client-list { padding: 8px 14px 6px; background: white; }
+    .list-head, .client-row {
+      display: grid;
+      grid-template-columns: minmax(290px, 1.25fr) minmax(230px, .95fr) minmax(140px, .55fr) minmax(190px, .75fr) 156px;
+      gap: 14px;
+      align-items: center;
+    }
+    .list-head {
+      padding: 10px 10px 12px;
+      color: #667085;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      border-bottom: 1px solid var(--line);
+    }
+    .client-row {
+      min-height: 76px;
+      padding: 13px 10px;
+      border-bottom: 1px solid #edf0f4;
+      transition: .16s ease;
+    }
+    .client-row:hover {
+      background: #fbfdf9;
+      border-radius: 16px;
+      border-bottom-color: transparent;
+      box-shadow: inset 0 0 0 1px #ecf3e5;
+    }
+    .client-row:last-child { border-bottom: 0; }
+    .client-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .client-avatar {
+      width: 42px; height: 42px; border-radius: 15px; display: grid; place-items: center;
+      font-weight: 950; color: #15321b; flex: 0 0 auto;
+    }
+    .a-green { background: var(--green-100); }
+    .a-purple { background: #e9ddff; }
+    .a-yellow { background: #fff0a6; }
+    .a-red { background: #ffd9d9; }
+    .a-blue { background: #dbeafe; }
+    .client-name-line { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 3px; }
+    .client-name { font-weight: 900; color: #111827; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pill {
+      height: 23px; border-radius: 999px; padding: 0 8px; display: inline-flex; align-items: center;
+      font-size: 11px; font-weight: 900; white-space: nowrap; flex: 0 0 auto;
+    }
+    .pill.company { background: #eef2ff; color: #4f46e5; }
+    .pill.person { background: #fef3c7; color: #92400e; }
+    .pill.cash { background: var(--green-50); color: var(--green-700); }
+    .pill.credit { background: var(--orange-50); color: #b45309; }
+    .pill.ok { background: var(--green-50); color: var(--green-700); }
+    .pill.risk { background: var(--red-50); color: #dc2626; }
+    .pill.new { background: var(--blue-50); color: var(--blue); }
+    .pill.inactive { background: #f2f4f7; color: #667085; }
+    .meta { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .contact-block, .activity-block { min-width: 0; line-height: 1.42; }
+    .contact-block strong, .activity-block strong { display: block; color: #1f2937; font-size: 13px; font-weight: 850; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .contact-block span, .activity-block span { display: block; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .commercial { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+    .debt { font-size: 12px; color: var(--muted); font-weight: 750; }
+    .debt strong { color: #dc2626; }
+    .debt.zero strong { color: #667085; }
+    .actions-col { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+    .edit-btn {
+      height: 34px; border-radius: 11px; border: 1px solid #cfe9c5; background: var(--green-50);
+      color: var(--green-700); padding: 0 12px; font-size: 12px; font-weight: 900; white-space: nowrap;
+    }
+    .more-btn {
+      width: 34px; height: 34px; border-radius: 11px; border: 1px solid var(--line);
+      background: #fff; color: #98a2b3; font-weight: 900;
+    }
+
+    /* Drawer */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: none;
+      background: rgba(15,23,42,.34);
+      backdrop-filter: blur(7px);
+    }
+    .overlay.active { display: block; }
+    .drawer {
+      position: fixed;
+      z-index: 210;
+      top: 14px;
+      right: 14px;
+      bottom: 14px;
+      width: min(680px, calc(100vw - 28px));
+      border-radius: 26px;
+      background: #fff;
+      box-shadow: 0 30px 80px rgba(15,23,42,.22);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(calc(100% + 24px));
+      transition: transform .25s ease;
+      overflow: hidden;
+    }
+    .drawer.active { transform: translateX(0); }
+    .drawer-header {
+      padding: 24px 26px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+    }
+    .drawer-title { display: flex; align-items: flex-start; gap: 14px; }
+    .drawer-icon {
+      width: 46px; height: 46px; border-radius: 16px; display: grid; place-items: center;
+      background: var(--green-50); color: var(--green-700); font-size: 22px; flex: 0 0 auto;
+    }
+    .drawer-header h3 { margin: 0; font-size: 20px; letter-spacing: -.05em; }
+    .drawer-header p { margin: 6px 0 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
+    .close-drawer {
+      width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line);
+      background: white; color: #667085; font-size: 22px; flex: 0 0 auto;
+    }
+    .drawer-body { flex: 1; overflow: auto; padding: 22px 26px 24px; }
+    .drawer-footer {
+      padding: 16px 26px; border-top: 1px solid var(--line);
+      display: flex; justify-content: flex-end; gap: 12px; background: rgba(255,255,255,.94);
+    }
+
+    /* Forms */
+    .form-section { margin-bottom: 24px; }
+    .section-label {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 14px; color: #667085;
+      font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em;
+    }
+    .form-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 15px 16px; }
+    .span-2 { grid-column: span 2; }
+    .span-3 { grid-column: span 3; }
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
+    .span-7 { grid-column: span 7; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+    .field.full { grid-column: 1 / -1; }
+    .field label {
+      display: flex; align-items: center; gap: 7px; margin-bottom: 8px;
+      color: #1f2937; font-size: 14px; font-weight: 850;
+    }
+    .optional { color: var(--muted-2); font-weight: 700; }
+    .req { color: var(--red); }
+    .control, .control-with-button {
+      height: 48px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 15px;
+      display: flex;
+      align-items: center;
+      transition: .18s ease;
+    }
+    .control:focus-within, .control-with-button:focus-within {
+      border-color: #b8d795;
+      box-shadow: 0 0 0 4px rgba(140,198,63,.12);
+    }
+    .control input, .control select, .control textarea, .control-with-button input {
+      width: 100%; border: 0; outline: 0; background: transparent; color: #111827; padding: 0 14px;
+    }
+    .control select { appearance: none; }
+    .control.textarea { height: auto; align-items: stretch; }
+    .control textarea { min-height: 80px; resize: vertical; padding: 14px; line-height: 1.45; }
+    .inline-btn {
+      height: 36px; margin-right: 7px; border: 1px solid #d7e8c3; border-radius: 11px;
+      background: var(--green-50); color: var(--green-700); font-weight: 900; padding: 0 12px;
+      white-space: nowrap; font-size: 13px;
+    }
+    .field-help { margin-top: 7px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+    .btn-lg {
+      height: 46px; border-radius: 14px; border: 1px solid var(--line); background: #fff;
+      color: #1f2937; font-weight: 900; padding: 0 18px; box-shadow: var(--shadow-soft);
+    }
+    .btn-lg.primary {
+      background: var(--green-500); border-color: var(--green-500); color: #102715; min-width: 160px;
+    }
+
+    /* Listing pages */
+    .module-tabs {
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: white;
+      box-shadow: var(--shadow-soft);
+      padding: 10px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .module-tab {
+      height: 40px;
+      border: 1px solid transparent;
+      background: transparent;
+      border-radius: 14px;
+      color: var(--muted);
+      font-weight: 900;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 14px;
+    }
+    .module-tab.active {
+      color: var(--green-700);
+      background: var(--green-50);
+      border-color: #d7e8c3;
+    }
+    .count-badge {
+      min-width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center;
+      background: #eef1f4; color: #667085; font-size: 12px; padding: 0 6px;
+    }
+    .filter-card {
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: white;
+      box-shadow: var(--shadow-soft);
+      padding: 16px 18px;
+      display: grid;
+      grid-template-columns: minmax(260px, 1.35fr) repeat(5, minmax(130px, .65fr)) auto;
+      gap: 12px;
+      align-items: end;
+      margin-bottom: 16px;
+    }
+    .filter-card.products {
+      grid-template-columns: minmax(260px, 1.5fr) repeat(4, minmax(130px, .75fr)) auto;
+    }
+    .filter-card.guides {
+      grid-template-columns: minmax(260px, 1.5fr) repeat(5, minmax(130px, .75fr)) auto;
+    }
+    .filter-field label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+      margin-bottom: 6px;
+    }
+    .filter-control {
+      height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      background: white;
+      color: #111827;
+      font-size: 13px;
+      min-width: 0;
+    }
+    .filter-control input, .filter-control select {
+      border: 0; outline: 0; background: transparent; width: 100%; color: #111827;
+    }
+    .summary-strip {
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow-soft);
+      padding: 18px;
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .summary-items { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
+    .summary-item { display: flex; align-items: center; gap: 12px; min-width: 150px; }
+    .summary-icon {
+      width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
+      background: var(--green-50); color: var(--green-700); font-weight: 900;
+    }
+    .summary-icon.orange { background: #fff3d6; color: #d97706; }
+    .summary-icon.blue { background: var(--blue-50); color: var(--blue); }
+    .summary-icon.purple { background: var(--purple-50); color: var(--purple); }
+    .summary-item span { display: block; color: var(--muted); font-size: 12px; }
+    .summary-item strong { display: block; color: #111827; font-size: 20px; letter-spacing: -.04em; }
+
+    .records-card {
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .records-head {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .record-action { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    .view-btn {
+      height: 34px; border-radius: 11px; border: 1px solid var(--line); background: white;
+      color: #1f2937; padding: 0 14px; font-size: 12px; font-weight: 850;
+    }
+
+    /* Products */
+    .product-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .product-icon {
+      width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+      color: #fff; font-weight: 900; flex: 0 0 auto;
+    }
+    .product-icon.green { background: #16a34a; }
+    .product-icon.teal { background: #059669; }
+    .product-icon.orange { background: #f97316; }
+    .product-icon.purple { background: #8b5cf6; }
+    .product-icon.yellow { background: #f5b301; }
+    .product-icon.pink { background: #ec4899; }
+    .product-title strong { display: block; color: #111827; font-size: 14px; margin-bottom: 2px; }
+    .product-title span { display: block; color: var(--muted); font-size: 12px; }
+
+    /* Cotizacion */
+    .quote-tabs {
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: white;
+      box-shadow: var(--shadow-soft);
+      padding: 10px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .tab {
+      height: 40px; border: 1px solid transparent; background: transparent; border-radius: 14px;
+      color: var(--muted); font-weight: 900; display: inline-flex; align-items: center; gap: 9px; padding: 0 14px;
+    }
+    .tab.active { color: var(--green-700); background: var(--green-50); border-color: #d7e8c3; }
+    .builder {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 16px;
+      align-items: start;
+    }
+    .client-result {
+      margin-top: 14px;
+      border: 1px solid #dbeed2;
+      background: #fbfff8;
+      border-radius: 16px;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 42px 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+    .avatar {
+      width: 42px; height: 42px; border-radius: 15px; display: grid; place-items: center;
+      background: var(--green-100); color: var(--green-800); font-weight: 950;
+    }
+    .client-result strong { display: block; font-size: 14px; color: #111827; margin-bottom: 3px; }
+    .client-result span { color: var(--muted); font-size: 12px; }
+    .mini-action {
+      height: 34px; border: 1px solid var(--line); background: white; border-radius: 11px;
+      color: #344054; padding: 0 12px; font-size: 12px; font-weight: 900;
+    }
+
+    .line-table {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+    }
+    .line-head, .line-row {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) 92px 128px 92px 120px 42px;
+      gap: 0;
+      align-items: stretch;
+    }
+    .line-head {
+      background: #f9fafb;
+      color: #667085;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--line);
+    }
+    .line-head div, .line-row div {
+      padding: 12px; border-right: 1px solid var(--line); display: flex; align-items: center;
+    }
+    .line-head div:last-child, .line-row div:last-child { border-right: 0; }
+    .line-row { min-height: 64px; background: white; border-bottom: 1px solid var(--line); }
+    .line-row:last-child { border-bottom: 0; }
+    .line-row input { width: 100%; border: 0; outline: 0; background: transparent; color: #1f2937; }
+    .product-input { display: flex !important; gap: 10px; min-width: 0; }
+    .code-chip {
+      width: 82px; height: 36px; border-radius: 11px; border: 1px solid var(--line);
+      display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+      color: var(--muted); font-size: 12px; font-weight: 850; background: #fff;
+    }
+    .trash-btn {
+      width: 30px; height: 30px; border-radius: 10px; border: 1px solid var(--line);
+      background: white; color: #98a2b3;
+    }
+    .line-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 2px 0; flex-wrap: wrap; }
+    .link-btn { border: 0; background: transparent; color: var(--green-700); font-weight: 900; display: inline-flex; align-items: center; gap: 8px; padding: 0; }
+    .toggle-chip {
+      height: 36px; border: 1px solid var(--line); background: #fff; border-radius: 999px;
+      display: inline-flex; align-items: center; gap: 10px; padding: 0 12px; color: var(--muted); font-size: 13px; font-weight: 850;
+    }
+    .switch { width: 34px; height: 20px; border-radius: 999px; background: #d0d5dd; position: relative; }
+    .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+    .switch.on { background: var(--green-500); }
+    .switch.on::after { left: 17px; }
+
+    .note-blocks { display: grid; gap: 12px; }
+    .note-row { border: 1px solid var(--line); border-radius: 18px; background: #fff; padding: 14px; }
+    .note-top { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; margin-bottom: 10px; }
+    .note-label { color: #667085; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
+    .note-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .color-pill {
+      height: 34px; border: 1px solid var(--line); border-radius: 999px; background: #fff;
+      display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; color: #344054; font-size: 12px; font-weight: 850;
+    }
+    .color-dot { width: 18px; height: 18px; border-radius: 6px; background: #ff0000; }
+    .color-dot.black { background: #111111; }
+    .check-label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 800; }
+    .check-label input { accent-color: var(--green-500); }
+
+    .summary-card {
+      position: sticky;
+      top: 90px;
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .summary-header { padding: 18px 18px 13px; border-bottom: 1px solid var(--line); }
+    .summary-header h3 { margin: 0; font-size: 16px; letter-spacing: -.04em; }
+    .summary-header p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+    .summary-body { padding: 18px; }
+    .total-line { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; color: #344054; font-size: 14px; border-bottom: 1px dashed #e5e7eb; }
+    .total-line strong { color: #111827; }
+    .grand-total {
+      margin-top: 16px; border-radius: 18px; background: var(--green-50); border: 1px solid #d7e8c3;
+      padding: 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    }
+    .grand-total span { color: var(--green-800); font-size: 12px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+    .grand-total strong { color: var(--green-700); font-size: 28px; font-weight: 950; letter-spacing: -.06em; }
+    .summary-actions { display: grid; gap: 10px; padding: 0 18px 18px; }
+    .side-btn {
+      height: 44px; border-radius: 14px; border: 1px solid var(--line); background: white;
+      color: #344054; font-weight: 900; display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .side-btn.primary { background: #121816; border-color: #121816; color: white; }
+    .hint-card {
+      margin-top: 16px;
+      background: linear-gradient(135deg, #17361d 0%, #214d2a 100%);
+      color: white;
+      border-radius: 22px;
+      padding: 18px;
+      box-shadow: var(--shadow-soft);
+      position: relative;
+      overflow: hidden;
+    }
+    .hint-card::after {
+      content: ""; position: absolute; right: -34px; top: -32px; width: 110px; height: 110px; border-radius: 50%;
+      background: rgba(132,204,63,.18);
+    }
+    .hint-card h3 { position: relative; margin: 0; font-size: 17px; letter-spacing: -.05em; }
+    .hint-card p { position: relative; color: rgba(255,255,255,.72); margin: 8px 0 0; font-size: 13px; line-height: 1.45; }
+
+    /* Crear comprobante */
+    .doc-type-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+    .doc-selector {
+      height: 48px;
+      display: inline-grid;
+      grid-template-columns: 160px 160px;
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: var(--shadow-soft);
+    }
+    .doc-selector button {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 900;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+    }
+    .doc-selector button.active {
+      background: var(--green-500);
+      color: #102715;
+    }
+    .small-pill {
+      height: 40px;
+      border: 1px solid var(--line);
+      background: white;
+      border-radius: 999px;
+      padding: 0 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #344054;
+      font-weight: 850;
+      box-shadow: var(--shadow-soft);
+    }
+    .comprobante-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(360px, .78fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .top-form-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(360px, .78fr);
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 16px;
+    }
+    .lines-summary-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(360px, .78fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .info-strip {
+      margin-top: 16px;
+      border: 1px solid #dbeed2;
+      background: #fbfff8;
+      border-radius: 16px;
+      padding: 13px 16px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      color: #344054;
+      font-size: 13px;
+      align-items: center;
+    }
+    .info-strip strong { color: #111827; }
+    .info-box {
+      border: 1px solid #bfdbfe;
+      background: var(--blue-50);
+      color: #1e40af;
+      border-radius: 14px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    /* Modal preview */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 250;
+      background: rgba(15, 23, 42, .38);
+      backdrop-filter: blur(7px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+    }
+    .modal-overlay.active { display: flex; }
+    .preview-modal {
+      width: min(980px, 100%);
+      max-height: calc(100vh - 56px);
+      overflow: hidden;
+      background: white;
+      border-radius: 26px;
+      box-shadow: 0 30px 90px rgba(15, 23, 42, .25);
+      display: flex;
+      flex-direction: column;
+    }
+    .preview-header {
+      padding: 20px 26px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .preview-header h3 { margin: 0; font-size: 18px; letter-spacing: -.03em; }
+    .preview-close {
+      width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--line); background: white; color: #667085; font-size: 20px;
+    }
+    .preview-body {
+      overflow: auto;
+      padding: 28px;
+      background: #f4f6f8;
+    }
+    .pdf-paper {
+      width: 820px;
+      min-height: 560px;
+      margin: 0 auto;
+      background: white;
+      box-shadow: 0 14px 40px rgba(15, 23, 42, .12);
+      padding: 42px;
+      color: #0f172a;
+      font-family: Arial, sans-serif;
+    }
+    .pdf-top {
+      display: grid;
+      grid-template-columns: 1fr 1fr 245px;
+      gap: 24px;
+      align-items: start;
+    }
+    .pdf-logo {
+      height: 95px;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      color: #334155;
+    }
+    .pdf-title {
+      border: 2px solid #2563eb;
+      padding: 14px;
+      text-align: center;
+    }
+    .pdf-title strong { display: block; font-size: 26px; }
+    .pdf-line { height: 2px; background: #2563eb; margin: 16px 0 12px; }
+    .pdf-info {
+      border: 1px solid #cbd5e1;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    .pdf-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
+    .pdf-table th { background: #2563eb; color: white; padding: 7px; text-align: left; }
+    .pdf-table td { border-bottom: 1px solid #e2e8f0; padding: 8px; }
+    .pdf-bottom { display: grid; grid-template-columns: 1fr 220px; gap: 24px; margin-top: 18px; font-size: 12px; }
+    .pdf-total-row { display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding: 6px 0; }
+
+    @media (max-width: 1240px) {
+      .attention { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .attention-title { grid-column: 1 / -1; }
+      .metrics-grid, .stats-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .dashboard-grid, .builder, .comprobante-grid, .top-form-grid, .lines-summary-grid { grid-template-columns: 1fr; }
+      .summary-card { position: static; }
+      .filter-card, .filter-card.products, .filter-card.guides { grid-template-columns: 1fr 1fr; }
+      .summary-strip { align-items: flex-start; flex-direction: column; }
+      .list-head { display: none; }
+      .client-list { display: grid; gap: 10px; padding: 14px; }
+      .client-row {
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 14px;
+      }
+      .contact-block, .commercial, .activity-block { display: none; }
+    }
+
+    @media (max-width: 920px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .topbar { grid-template-columns: 1fr auto; padding: 14px 16px; }
+      .global-search, .sunat-pill, .top-actions .icon-btn { display: none; }
+      .content { padding: 18px 16px 26px; }
+      .page-head { flex-direction: column; }
+      .page-actions { justify-content: flex-start; }
+      .metrics-grid, .stats-row, .quick-actions, .summary-actions, .sunat-grid { grid-template-columns: 1fr; }
+      .toolbar { grid-template-columns: 1fr; }
+      .toolbar-actions { justify-content: flex-start; }
+      .filter-card, .filter-card.products, .filter-card.guides { grid-template-columns: 1fr; }
+      .form-grid { grid-template-columns: 1fr; }
+      .span-2, .span-3, .span-4, .span-5, .span-6, .span-7, .span-8, .span-12 { grid-column: 1 / -1; }
+      .line-head { display: none; }
+      .line-row {
+        grid-template-columns: 1fr 1fr;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        overflow: hidden;
+        margin-bottom: 10px;
+      }
+      .line-table { border: 0; border-radius: 0; overflow: visible; }
+      .product-input { grid-column: 1 / -1; }
+      .drawer { top: 0; right: 0; bottom: 0; width: 100%; border-radius: 0; }
+      .drawer-footer { flex-direction: column-reverse; }
+      .btn-lg, .btn-lg.primary { width: 100%; }
+      .doc-selector { grid-template-columns: 1fr 1fr; width: 100%; }
+      .pdf-paper { width: 760px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">∗</span>Inkora</div>
+      <div class="collapse">‹ Contraer</div>
+
+      <div class="nav-scroll">
+        <div class="nav-title">Menú</div>
+        <button class="nav-item active" data-page="dashboard" data-title="Dashboard" data-subtitle="Centro de control diario"><span class="nav-icon">▦</span>Dashboard</button>
+        <button class="nav-item" data-page="clientes" data-title="Clientes" data-subtitle="Relación comercial"><span class="nav-icon">♙</span>Clientes</button>
+        <button class="nav-item" data-page="cotizaciones" data-title="Cotizaciones" data-subtitle="Motor comercial"><span class="nav-icon">◫</span>Cotizaciones</button>
+        <button class="nav-item" data-page="facturas" data-title="Facturas" data-subtitle="Comprobantes tipo 01"><span class="nav-icon">▣</span>Facturas</button>
+        <button class="nav-item" data-page="boletas" data-title="Boletas" data-subtitle="Comprobantes tipo 03"><span class="nav-icon">▤</span>Boletas</button>
+        <button class="nav-item" data-page="guias" data-title="Guías de remisión" data-subtitle="Despacho fiscal"><span class="nav-icon">▱</span>Guías</button>
+        <button class="nav-item" data-page="cobranza" data-title="Cobranza" data-subtitle="Seguimiento de pagos"><span class="nav-icon">▭</span>Cobranza</button>
+        <button class="nav-item" data-page="productos" data-title="Productos" data-subtitle="Catálogo reusable"><span class="nav-icon">◈</span>Productos</button>
+
+        <div class="nav-title">General</div>
+        <button class="nav-item" data-page="crear-comprobante" data-title="Crear comprobante" data-subtitle="Emisión central"><span class="nav-icon">＋</span>Crear comprobante</button>
+        <button class="nav-item" data-page="notas" data-title="Notas Cred/Deb" data-subtitle="Ajustes fiscales"><span class="nav-icon">↺</span>Notas Cred/Deb</button>
+        <button class="nav-item" data-page="resumen-diario" data-title="Resumen diario" data-subtitle="Operación diaria"><span class="nav-icon">▥</span>Resumen diario</button>
+        <button class="nav-item" data-page="bajas" data-title="Bajas" data-subtitle="Comunicación de baja"><span class="nav-icon">✕</span>Bajas</button>
+        <button class="nav-item" data-page="reversiones" data-title="Reversiones" data-subtitle="Corrección de boletas"><span class="nav-icon">↩</span>Reversiones</button>
+        <button class="nav-item" data-page="retenciones" data-title="Retenciones" data-subtitle="Control tributario"><span class="nav-icon">◇</span>Retenciones</button>
+        <button class="nav-item" data-page="percepciones" data-title="Percepciones" data-subtitle="Control tributario"><span class="nav-icon">◇</span>Percepciones</button>
+        <button class="nav-item" data-page="configuracion" data-title="Configuración" data-subtitle="Datos del negocio"><span class="nav-icon">⚙</span>Configuración</button>
+        <button class="nav-item" data-page="seguridad" data-title="Seguridad" data-subtitle="Usuarios y acceso"><span class="nav-icon">⌘</span>Seguridad</button>
+        <button class="nav-item" style="margin-top: 22px;"><span class="nav-icon">☾</span>Modo oscuro</button>
+      </div>
+
+      <div class="user-card">
+        <div class="avatar-user">A</div>
+        <div>
+          <div style="font-weight:900;color:#fff;font-size:14px;">Admin Demo</div>
+          <div style="font-size:12px;color:rgba(255,255,255,.55);">Administrador</div>
+        </div>
+        <div style="margin-left:auto;color:rgba(255,255,255,.5);">⌄</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="top-title">
+          <h1 id="topTitle">Dashboard</h1>
+          <p id="topSubtitle">Centro de control diario</p>
+        </div>
+        <div class="global-search">⌕ <span>Buscar en Inkora...</span></div>
+        <div class="top-actions">
+          <div class="sunat-pill"><span class="dot"></span>SUNAT&nbsp;&nbsp; C 3.498 | V 3.51</div>
+          <button class="icon-btn">🔔</button>
+          <button class="icon-btn">♙</button>
+          <button class="add-btn" data-page-link="crear-comprobante">Añadir <span>＋</span></button>
+        </div>
+      </header>
+
+      <section class="content">
+        <!-- DASHBOARD -->
+        <section id="dashboard" class="page active">
+          <div class="page-head">
+            <div>
+              <p class="eyebrow">Centro operativo</p>
+              <h2>Resumen operativo</h2>
+              <p>Lo importante no es ver gráficos: es saber qué cobrar, qué emitir y qué corregir hoy.</p>
+            </div>
+            <div class="page-actions"><button class="btn">📅 Abril 2026</button></div>
+          </div>
+
+          <section class="attention">
+            <div class="attention-title">
+              <span>!</span>
+              <h3>Necesita atención hoy</h3>
+              <p>Prioriza pendientes que afectan caja, emisión fiscal o seguimiento comercial.</p>
+            </div>
+            <div class="attention-card"><strong>8</strong><span>Pagos sin conciliar.</span><small>Revisar ahora →</small></div>
+            <div class="attention-card"><strong>2</strong><span>Rechazados SUNAT.</span><small>Ver documentos →</small></div>
+            <div class="attention-card"><strong>12</strong><span>Ctas. por cobrar vencidas.</span><small>Ver cobranzas →</small></div>
+            <div class="attention-card"><strong>5</strong><span>Cotizaciones pendientes.</span><small>Dar seguimiento →</small></div>
+          </section>
+
+          <section class="metrics-grid">
+            <article class="metric">
+              <div class="metric-top"><div class="metric-label">Ventas emitidas del mes</div><div class="metric-badge neutral">+12.4%</div></div>
+              <div class="metric-value">S/ 36,450</div>
+              <div class="metric-sub">Vs. mes anterior: <strong>S/ 32,412</strong>.</div>
+            </article>
+            <article class="metric">
+              <div class="metric-top"><div class="metric-label">Cobrado este mes</div><div class="metric-badge">+8.7%</div></div>
+              <div class="metric-value">S/ 28,750</div>
+              <div class="metric-sub">Cobrado vs. emitido: <strong>78.8%</strong>.</div>
+            </article>
+            <article class="metric">
+              <div class="metric-top"><div class="metric-label">Pendiente por cobrar</div><div class="metric-badge warn">Revisar</div></div>
+              <div class="metric-value">S/ 18,260</div>
+              <div class="metric-sub"><span class="red">12 clientes</span> · 18 documentos.</div>
+            </article>
+            <article class="metric">
+              <div class="metric-top"><div class="metric-label">Estado SUNAT</div><div class="metric-badge">Operativo</div></div>
+              <div class="metric-value">100%</div>
+              <div class="metric-sub">Última consulta: hace 6 min.</div>
+            </article>
+          </section>
+
+          <section class="dashboard-grid">
+            <article class="panel">
+              <div class="panel-header">
+                <div><h3>Actividad reciente</h3><p>Últimos comprobantes, pagos y acciones importantes.</p></div>
+                <button class="btn">Ver todo</button>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr><th>Documento</th><th>Cliente</th><th>Fecha</th><th>Total</th><th>Estado</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td><strong>Factura F001-128</strong></td><td>Grafiperu SAC</td><td>27 abr</td><td><strong>S/ 350</strong></td><td><span class="status ok">Cobrado</span></td></tr>
+                    <tr><td><strong>Boleta B001-442</strong></td><td>Cliente final</td><td>26 abr</td><td><strong>S/ 180</strong></td><td><span class="status pending">Pendiente</span></td></tr>
+                    <tr><td><strong>Cotización COT-039</strong></td><td>Imprenta Sol</td><td>25 abr</td><td><strong>S/ 1,250</strong></td><td><span class="status neutral">Sin emitir</span></td></tr>
+                    <tr><td><strong>Guía T001-075</strong></td><td>Print House EIRL</td><td>24 abr</td><td><strong>-</strong></td><td><span class="status pending">Por enviar</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="quick-actions">
+                <button class="quick-btn" data-page-link="crear-comprobante"><strong>Crear factura</strong><span>Emitir comprobante a SUNAT</span></button>
+                <button class="quick-btn"><strong>Registrar cobro</strong><span>Conciliar pago recibido</span></button>
+                <button class="quick-btn"><strong>Enviar recordatorio</strong><span>Gestionar deuda vencida</span></button>
+              </div>
+            </article>
+
+            <aside class="side-stack">
+              <article class="panel">
+                <div class="panel-header"><div><h3>Pendientes urgentes</h3><p>Lista corta para operar sin perder tiempo.</p></div></div>
+                <div class="todo-list">
+                  <div class="todo"><div class="todo-icon">💳</div><div><strong>Conciliar pago de S/ 350</strong><span>Detectado hoy en cobranza.</span></div><div class="mini-link">Abrir</div></div>
+                  <div class="todo"><div class="todo-icon">📄</div><div><strong>Enviar guía pendiente</strong><span>T001-075 aún no fue enviada.</span></div><div class="mini-link">Enviar</div></div>
+                  <div class="todo"><div class="todo-icon">📩</div><div><strong>Recordar deuda vencida</strong><span>3 clientes superan fecha de pago.</span></div><div class="mini-link">Gestionar</div></div>
+                </div>
+              </article>
+
+              <article class="panel">
+                <div class="panel-header"><div><h3>Cuentas por cobrar</h3><p>Antigüedad de deuda.</p></div></div>
+                <div class="aging">
+                  <div class="aging-row"><div class="aging-top"><span>Por vencer</span><strong>S/ 1,450</strong></div><div class="bar light"><i style="width:38%"></i></div></div>
+                  <div class="aging-row"><div class="aging-top"><span>Vencido 1 - 15 días</span><strong>S/ 7,450</strong></div><div class="bar orange"><i style="width:72%"></i></div></div>
+                  <div class="aging-row"><div class="aging-top"><span>Vencido +60 días</span><strong>S/ 2,010</strong></div><div class="bar red"><i style="width:24%"></i></div></div>
+                </div>
+              </article>
+            </aside>
+          </section>
+
+          <article class="panel" style="margin-top:16px;">
+            <div class="panel-header"><div><h3>Seguimiento de cobranza</h3><p>Clientes con documentos por vencer o vencidos.</p></div></div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Cliente</th><th>Documento</th><th>Monto</th><th>Vencimiento</th><th>Días atraso</th><th>Estado</th><th>Acción</th></tr></thead>
+                <tbody>
+                  <tr><td>Inversiones del Sur S.A.C.</td><td>F001-000118</td><td>S/ 4,250.00</td><td>20/04/2026</td><td style="color:#dc2626;font-weight:800;">16 días</td><td><span class="status bad">Vencido</span></td><td><button class="view-btn">Recordar</button></td></tr>
+                  <tr><td>Distribuciones & Cía S.A.C.</td><td>F001-000119</td><td>S/ 2,980.00</td><td>27/04/2026</td><td style="color:#c76f13;font-weight:800;">9 días</td><td><span class="status bad">Vencido</span></td><td><button class="view-btn">Recordar</button></td></tr>
+                  <tr><td>Corporación Andina SAC</td><td>F001-000121</td><td>S/ 3,150.00</td><td>12/05/2026</td><td>-</td><td><span class="status warn">Por vencer</span></td><td><button class="view-btn">Recordar</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- CLIENTES -->
+        <section id="clientes" class="page">
+          <div class="page-head">
+            <div>
+              <p class="eyebrow">Directorio comercial</p>
+              <h2>Clientes</h2>
+              <p>7 registros disponibles para cotización, emisión y cobranza.</p>
+            </div>
+            <div class="page-actions">
+              <button class="btn">⇩ Importar</button>
+              <button class="btn">↗ Exportar</button>
+              <button class="btn primary open-client-drawer" data-mode="new">＋ Nuevo cliente</button>
+            </div>
+          </div>
+
+          <section class="stats-row">
+            <article class="stat"><div class="stat-label">Clientes activos</div><div class="stat-value">124</div><div class="stat-foot good">18 nuevos este mes</div></article>
+            <article class="stat"><div class="stat-label">Con crédito</div><div class="stat-value">31</div><div class="stat-foot warn">7 requieren revisión</div></article>
+            <article class="stat"><div class="stat-label">Con deuda</div><div class="stat-value">12</div><div class="stat-foot bad">S/ 18,260 pendiente</div></article>
+            <article class="stat"><div class="stat-label">Datos incompletos</div><div class="stat-value">9</div><div class="stat-foot">Falta correo, teléfono o condición</div></article>
+          </section>
+
+          <article class="panel">
+            <div class="toolbar">
+              <label class="search-box">⌕<input placeholder="Buscar por nombre, RUC/DNI, correo o teléfono..." /></label>
+              <div class="toolbar-actions">
+                <button class="btn">☰ Filtrar</button>
+                <button class="btn">▤ Columnas</button>
+                <button class="btn primary open-client-drawer" data-mode="new">＋ Nuevo cliente</button>
+              </div>
+            </div>
+            <div class="segments-row">
+              <div class="segments">
+                <button class="segment active">Todos 124</button><button class="segment">Empresas 86</button><button class="segment">Personas 38</button><button class="segment">Con deuda 12</button><button class="segment">Datos incompletos 9</button>
+              </div>
+              <div class="sort-text">Ordenar por: <strong>Última actividad</strong> ▾</div>
+            </div>
+            <div class="client-list">
+              <div class="list-head"><div>Cliente</div><div>Contacto</div><div>Condición</div><div>Actividad / saldo</div><div style="text-align:right;">Acción</div></div>
+              <div class="client-row"><div class="client-main"><div class="client-avatar a-green">AR</div><div style="min-width:0;"><div class="client-name-line"><div class="client-name">Arcor de Perú S.A.</div><span class="pill company">Empresa</span></div><div class="meta">RUC 20191308868 · Lima</div></div></div><div class="contact-block"><strong>Compras Arcor</strong><span>compras@arcor.pe · 01 612 0000</span></div><div class="commercial"><span class="pill cash">Contado</span><span class="pill ok">Activo</span></div><div class="activity-block"><strong>Factura F001-000125</strong><span class="debt zero">Saldo: <strong>S/ 0.00</strong></span></div><div class="actions-col"><button class="edit-btn open-client-drawer" data-mode="edit" data-client="Arcor de Perú S.A.">Editar</button><button class="more-btn">⋯</button></div></div>
+              <div class="client-row"><div class="client-main"><div class="client-avatar a-purple">CC</div><div style="min-width:0;"><div class="client-name-line"><div class="client-name">Cliente Corporativo SAC</div><span class="pill company">Empresa</span></div><div class="meta">RUC 20100100100 · San Isidro</div></div></div><div class="contact-block"><strong>Área de compras</strong><span>compras@corporativo.pe · 01 234 5678</span></div><div class="commercial"><span class="pill credit">Crédito 30 días</span><span class="pill ok">Activo</span></div><div class="activity-block"><strong>Cotización COT-00039</strong><span class="debt">Saldo: <strong>S/ 1,280.00</strong></span></div><div class="actions-col"><button class="edit-btn open-client-drawer" data-mode="edit" data-client="Cliente Corporativo SAC">Editar</button><button class="more-btn">⋯</button></div></div>
+              <div class="client-row"><div class="client-main"><div class="client-avatar a-yellow">DN</div><div style="min-width:0;"><div class="client-name-line"><div class="client-name">Distribuidora Norte EIRL</div><span class="pill company">Empresa</span></div><div class="meta">RUC 20200200200 · Los Olivos</div></div></div><div class="contact-block"><strong>María Torres</strong><span>norte@distribuidora.pe · 01 345 6789</span></div><div class="commercial"><span class="pill cash">Contado</span><span class="pill ok">Activo</span></div><div class="activity-block"><strong>Factura F001-000124</strong><span class="debt zero">Saldo: <strong>S/ 0.00</strong></span></div><div class="actions-col"><button class="edit-btn open-client-drawer" data-mode="edit" data-client="Distribuidora Norte EIRL">Editar</button><button class="more-btn">⋯</button></div></div>
+              <div class="client-row"><div class="client-main"><div class="client-avatar a-red">SL</div><div style="min-width:0;"><div class="client-name-line"><div class="client-name">Supermercados Lima SA</div><span class="pill company">Empresa</span></div><div class="meta">RUC 20300300300 · Ate</div></div></div><div class="contact-block"><strong>Compras Lima</strong><span>compras@superlima.pe · falta teléfono</span></div><div class="commercial"><span class="pill credit">Crédito 15 días</span><span class="pill risk">Riesgo</span></div><div class="activity-block"><strong>Factura F001-000118</strong><span class="debt">Saldo: <strong>S/ 4,250.00</strong></span></div><div class="actions-col"><button class="edit-btn open-client-drawer" data-mode="edit" data-client="Supermercados Lima SA">Editar</button><button class="more-btn">⋯</button></div></div>
+            </div>
+            <div class="table-footer"><div>Mostrando <strong>4</strong> de <strong>124</strong> clientes · Sin scroll horizontal para editar.</div><div class="pagination"><button class="page-btn">‹</button><button class="page-btn active">1</button><button class="page-btn">2</button><button class="page-btn">3</button><button class="page-btn">›</button></div></div>
+          </article>
+        </section>
+
+        <!-- COTIZACIONES -->
+        <section id="cotizaciones" class="page">
+          <div class="page-head">
+            <div>
+              <p class="eyebrow">Motor comercial</p>
+              <h2>Nueva cotización</h2>
+              <p>Construye una propuesta clara, calcula totales y déjala lista para vista previa.</p>
+            </div>
+          </div>
+          <nav class="quote-tabs">
+            <button class="tab active">＋ Nueva cotización</button>
+            <button class="tab">↺ Historial <span class="count-badge">8</span></button>
+            <button class="tab">▣ Emitidas SUNAT <span class="count-badge">2</span></button>
+          </nav>
+
+          <section class="builder">
+            <div>
+              <article class="panel">
+                <div class="panel-header"><div><h3>Cliente y condiciones</h3><p>Primero identifica al cliente. Si ya existe, se autocompletan sus datos.</p></div><button class="mini-action">Buscar cliente</button></div>
+                <div class="panel-body">
+                  <div class="form-grid">
+                    <div class="field span-3"><label>Tipo doc.</label><div class="control"><select><option>RUC</option><option>DNI</option></select></div></div>
+                    <div class="field span-4"><label>Número doc. <span class="req">*</span></label><div class="control-with-button"><input placeholder="20xxxxxxxxx" /><button class="inline-btn">Consultar</button></div></div>
+                    <div class="field span-5"><label>Razón social / Nombre <span class="req">*</span></label><div class="control"><input placeholder="Escribe para buscar o registrar..." /></div></div>
+                    <div class="field span-6"><label>Correo electrónico <span class="optional">opcional</span></label><div class="control"><input placeholder="cliente@empresa.com" /></div></div>
+                    <div class="field span-6"><label>Teléfono / WhatsApp <span class="optional">opcional</span></label><div class="control"><input placeholder="9xxxxxxxx" /></div></div>
+                    <div class="field span-8"><label>Dirección <span class="optional">opcional</span></label><div class="control"><input placeholder="Av. / Jr. / Calle..." /></div></div>
+                    <div class="field span-2"><label>Moneda</label><div class="control"><select><option>PEN</option><option>USD</option></select></div></div>
+                    <div class="field span-2"><label>Vence</label><div class="control"><input placeholder="dd/mm" /></div></div>
+                  </div>
+                  <div class="client-result"><div class="avatar">IN</div><div><strong>Inversiones del Sur S.A.C.</strong><span>RUC 20600123456 · Crédito 15 días · Última compra: 06/05/2026</span></div><button class="mini-action">Cambiar</button></div>
+                </div>
+              </article>
+
+              <article class="panel">
+                <div class="panel-header"><div><h3>Líneas de detalle</h3><p>Agrega productos, servicios o descripciones libres.</p></div><label class="toggle-chip"><span class="switch"></span> Mostrar unidad e IGV</label></div>
+                <div class="panel-body">
+                  <div class="line-table">
+                    <div class="line-head"><div>Código / Producto</div><div>Cant.</div><div>P. unit.</div><div>Desc.</div><div>Total</div><div></div></div>
+                    <div class="line-row"><div class="product-input"><span class="code-chip">COD</span><input value="Diseño e impresión de flyers A5 full color" /></div><div><input value="1000" /></div><div><input value="S/ 0.85" /></div><div><input value="0%" /></div><div><strong>S/ 850.00</strong></div><div><button class="trash-btn">×</button></div></div>
+                    <div class="line-row"><div class="product-input"><span class="code-chip">COD</span><input placeholder="Producto o descripción..." /></div><div><input value="1" /></div><div><input placeholder="S/" /></div><div><input value="0%" /></div><div><strong>S/ 0.00</strong></div><div><button class="trash-btn">×</button></div></div>
+                  </div>
+                  <div class="line-footer"><button class="link-btn">⊕ Agregar línea</button><button class="link-btn">↳ Agregar descripción libre</button></div>
+                </div>
+              </article>
+
+              <article class="panel">
+                <div class="panel-header"><div><h3>Observaciones del PDF</h3><p>Textos comerciales visibles para el cliente.</p></div><button class="mini-action">Ocultar</button></div>
+                <div class="panel-body">
+                  <div class="note-blocks">
+                    <div class="note-row"><div class="note-top"><div class="note-label">Línea 1</div><div class="note-tools"><label class="check-label"><input type="checkbox" checked /> Negrita</label><span class="color-pill"><span class="color-dot"></span>#FF0000</span></div></div><div class="control textarea"><textarea style="color:#ff0000;font-weight:800;">TODO TRABAJO SE REALIZA CON EL 50% DE ADELANTO</textarea></div></div>
+                    <div class="note-row"><div class="note-top"><div class="note-label">Línea 2</div><div class="note-tools"><label class="check-label"><input type="checkbox" /> Negrita</label><span class="color-pill"><span class="color-dot black"></span>#111111</span></div></div><div class="control textarea"><textarea>LOS PRECIOS NO INCLUYEN ENVÍOS</textarea></div></div>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <aside>
+              <article class="summary-card">
+                <div class="summary-header"><h3>Resumen de cotización</h3><p>Cálculo siempre visible para evitar guardar sin revisar.</p></div>
+                <div class="summary-body">
+                  <div class="total-line"><span>Subtotal</span><strong>S/ 850.00</strong></div>
+                  <div class="total-line"><span>Descuento</span><strong>S/ 0.00</strong></div>
+                  <div class="total-line"><span>IGV</span><strong>S/ 153.00</strong></div>
+                  <div class="total-line"><span>Líneas</span><strong>2</strong></div>
+                  <div class="grand-total"><span>Total</span><strong>S/ 1,003.00</strong></div>
+                </div>
+                <div class="summary-actions"><button class="side-btn open-preview">👁 Vista previa</button><button class="side-btn">💾 Guardar borrador</button><button class="side-btn primary">Guardar cotización</button></div>
+              </article>
+              <article class="hint-card"><h3>Menos scroll, más control</h3><p>El total queda fijo a la derecha y las observaciones se compactan.</p></article>
+            </aside>
+          </section>
+        </section>
+
+        <!-- FACTURAS -->
+        <section id="facturas" class="page">
+          <div class="page-head">
+            <div><h2>Facturas emitidas</h2><p>Controla emisión, estado SUNAT y cobranza.</p></div>
+            <div class="page-actions"><button class="btn">⇩ Exportar</button><button class="btn primary" data-page-link="crear-comprobante">＋ Nueva factura</button></div>
+          </div>
+          <div class="module-tabs">
+            <button class="module-tab active">▦ Todas <span class="count-badge">128</span></button><button class="module-tab">▤ Borradores <span class="count-badge">12</span></button><button class="module-tab">↪ Emitidas <span class="count-badge">92</span></button><button class="module-tab">⏱ Pendientes <span class="count-badge">8</span></button><button class="module-tab">⊗ Rechazadas <span class="count-badge">4</span></button><button class="module-tab">⊙ Anuladas <span class="count-badge">12</span></button>
+          </div>
+          <div class="filter-card">
+            <label class="filter-control">⌕<input placeholder="Buscar por serie, número o cliente..." /></label>
+            <div class="filter-field"><label>Estado</label><div class="filter-control"><select><option>Todos</option></select></div></div>
+            <div class="filter-field"><label>Cobranza</label><div class="filter-control"><select><option>Todos</option></select></div></div>
+            <div class="filter-field"><label>Moneda</label><div class="filter-control"><select><option>Todas</option></select></div></div>
+            <div class="filter-field"><label>Desde</label><div class="filter-control"><input placeholder="dd/mm/aaaa" /></div></div>
+            <div class="filter-field"><label>Hasta</label><div class="filter-control"><input placeholder="dd/mm/aaaa" /></div></div>
+            <button class="btn">☰ Filtros <span class="count-badge" style="background:var(--green-500);color:#102715;">1</span></button>
+          </div>
+          <div id="facturas-table"></div>
+        </section>
+
+        <!-- BOLETAS -->
+        <section id="boletas" class="page">
+          <div class="page-head">
+            <div><h2>Boletas de venta</h2><p>Controla emisión, estado SUNAT y comprobantes al instante.</p></div>
+            <div class="page-actions"><button class="btn">⇩ Exportar</button><button class="btn primary" data-page-link="crear-comprobante">＋ Nueva boleta</button></div>
+          </div>
+          <div class="module-tabs">
+            <button class="module-tab active">▦ Todas <span class="count-badge">128</span></button><button class="module-tab">▤ Borradores <span class="count-badge">12</span></button><button class="module-tab">↪ Emitidas <span class="count-badge">92</span></button><button class="module-tab">⏱ Pendientes <span class="count-badge">8</span></button><button class="module-tab">⊗ Rechazadas <span class="count-badge">4</span></button><button class="module-tab">⊙ Anuladas <span class="count-badge">12</span></button>
+          </div>
+          <div class="filter-card">
+            <label class="filter-control">⌕<input placeholder="Buscar por serie, número o cliente..." /></label>
+            <div class="filter-field"><label>Estado</label><div class="filter-control"><select><option>Todos</option></select></div></div>
+            <div class="filter-field"><label>SUNAT</label><div class="filter-control"><select><option>Todos</option></select></div></div>
+            <div class="filter-field"><label>Moneda</label><div class="filter-control"><select><option>Todas</option></select></div></div>
+            <div class="filter-field"><label>Desde</label><div class="filter-control"><input placeholder="dd/mm/aaaa" /></div></div>
+            <div class="filter-field"><label>Hasta</label><div class="filter-control"><input placeholder="dd/mm/aaaa" /></div></div>
+            <button class="btn">☰ Filtros <span class="count-badge" style="background:var(--green-500);color:#102715;">1</span></button>
+          </div>
+          <div id="boletas-table"></div>
+        </section>
+
+        <!-- GUIAS -->
+        <section id="guias" class="page">
+          <div class="page-head">
+            <div><h2>Guías de remisión</h2><p>Controla traslados, destinos y estado de despacho.</p></div>
+            <div class="page-actions"><button class="btn">⇩ Exportar</button><button class="btn primary">＋ Nueva guía</button></div>
+          </div>
+          <div class="module-tabs">
+            <button class="module-tab active">▦ Todas <span class="count-badge">28</span></button><button class="module-tab">▤ Pendientes <span class="count-badge">7</span></button><button class="module-tab">🚚 En tránsito <span class="count-badge">6</span></button><button class="module-tab">✓ Emitidas <span class="count-badge">13</span></button><button class="module-tab">⊗ Anuladas <span class="count-badge">2</span></button>
+          </div>
+          <div class="filter-card guides">
+            <label class="filter-control">⌕<input placeholder="Buscar por número, cliente o destino..." /></label>
+            <div class="filter-field"><label>Estado</label><div class="filter-control"><select><option>Todos</option></select></div></div>
+            <div class="filter-field"><label>Motivo</label><div class="filter-control"><select><option>Todos</option></select></div></div>
+            <div class="filter-field"><label>Desde</label><div class="filter-control"><input placeholder="dd/mm/aaaa" /></div></div>
+            <div class="filter-field"><label>Hasta</label><div class="filter-control"><input placeholder="dd/mm/aaaa" /></div></div>
+            <div class="filter-field"><label>Origen o destino</label><div class="filter-control"><select><option>Todos</option></select></div></div>
+            <button class="btn">☰ Filtros <span class="count-badge" style="background:var(--green-500);color:#102715;">1</span></button>
+          </div>
+          <div class="summary-strip">
+            <div class="summary-items">
+              <div class="summary-item"><div class="summary-icon orange">📦</div><div><span>Pendientes de salida</span><strong>7</strong><span>25% del total</span></div></div>
+              <div class="summary-item"><div class="summary-icon blue">🚚</div><div><span>En tránsito</span><strong>6</strong><span>21% del total</span></div></div>
+              <div class="summary-item"><div class="summary-icon">✓</div><div><span>Emitidas hoy</span><strong>5</strong><span>12% del total</span></div></div>
+              <div class="summary-item"><div class="summary-icon purple">▤</div><div><span>Emitidas este mes</span><strong>13</strong><span>46% del total</span></div></div>
+            </div>
+            <div class="pagination"><span>Mostrando 1-5 de 28 guías</span><button class="page-btn">‹</button><button class="page-btn active">1</button><button class="page-btn">2</button><button class="page-btn">3</button><button class="page-btn">›</button></div>
+          </div>
+          <article class="records-card">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Número</th><th>Fecha traslado</th><th>Cliente / destinatario</th><th>Origen</th><th>Destino</th><th>Comprobante relacionado</th><th>Estado</th><th>Acción</th></tr></thead>
+                <tbody>
+                  <tr><td><strong>T001-000028</strong></td><td>9/05/2024<br><small>10:15 a.m.</small></td><td>Inversiones Andinas S.A.C.<br><small>20601234567</small></td><td>Av. Los Industriales 150<br><small>Lima</small></td><td>Jr. Cliente 456<br><small>Miraflores</small></td><td style="color:var(--blue);font-weight:800;">F001-000123</td><td><span class="status warn">Pendiente</span></td><td><div class="record-action"><button class="view-btn">Ver</button><button class="more-btn">⋯</button></div></td></tr>
+                  <tr><td><strong>T001-000027</strong></td><td>9/05/2024<br><small>9:05 a.m.</small></td><td>Constructora Delta S.A.C.<br><small>20509876543</small></td><td>Av. Los Industriales 150<br><small>Lima</small></td><td>Av. Javier Prado 2100<br><small>San Borja</small></td><td style="color:var(--blue);font-weight:800;">F001-000122</td><td><span class="status blue">En tránsito</span></td><td><div class="record-action"><button class="view-btn">Ver</button><button class="more-btn">⋯</button></div></td></tr>
+                  <tr><td><strong>T001-000026</strong></td><td>8/05/2024<br><small>4:32 p.m.</small></td><td>Comercializadora Lima E.I.R.L.<br><small>20604567891</small></td><td>Av. Los Industriales 150<br><small>Lima</small></td><td>Panamericana Sur Km 22<br><small>Lurín</small></td><td style="color:var(--blue);font-weight:800;">F001-000121</td><td><span class="status ok">Emitida</span></td><td><div class="record-action"><button class="view-btn">Ver</button><button class="more-btn">⋯</button></div></td></tr>
+                  <tr><td><strong>T001-000024</strong></td><td>7/05/2024<br><small>2:23 p.m.</small></td><td>Tecnología & Sistemas S.A.<br><small>20123456789</small></td><td>Av. Los Industriales 150<br><small>Lima</small></td><td>Calle Los Eucaliptos 120<br><small>Lima</small></td><td style="color:var(--blue);font-weight:800;">F001-000119</td><td><span class="status bad">Anulada</span></td><td><div class="record-action"><button class="view-btn">Ver</button><button class="more-btn">⋯</button></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+          <p style="text-align:center;color:var(--muted);font-size:13px;">ⓘ Los estados de SUNAT se actualizarán automáticamente cada 15 minutos.</p>
+        </section>
+
+        <!-- PRODUCTOS -->
+        <section id="productos" class="page">
+          <div class="page-head">
+            <div><p class="eyebrow">Catálogo reusable</p><h2>Productos y servicios</h2><p>Gestiona tu catálogo para cotizaciones, facturas, boletas y guías.</p></div>
+            <div class="page-actions"><button class="btn">⇩ Exportar</button><button class="btn primary open-product-drawer" data-mode="new">＋ Nuevo producto</button></div>
+          </div>
+          <div class="module-tabs"><button class="module-tab active">▦ Todos <span class="count-badge">128</span></button><button class="module-tab">◈ Productos <span class="count-badge">82</span></button><button class="module-tab">▣ Servicios <span class="count-badge">46</span></button><button class="module-tab">● Activos <span class="count-badge">121</span></button><button class="module-tab">⊗ Inactivos <span class="count-badge">7</span></button><button class="module-tab">☆ Más usados <span class="count-badge">18</span></button></div>
+          <div class="filter-card products">
+            <label class="filter-control">⌕<input placeholder="Buscar por nombre, código o SKU..." /></label>
+            <div class="filter-field"><label>Tipo</label><div class="filter-control"><select><option>Todos</option></select></div></div>
+            <div class="filter-field"><label>Categoría</label><div class="filter-control"><select><option>Todas</option></select></div></div>
+            <div class="filter-field"><label>Estado</label><div class="filter-control"><select><option>Activos</option></select></div></div>
+            <div class="filter-field"><label>U.M.</label><div class="filter-control"><select><option>Todas</option></select></div></div>
+            <button class="btn">☰ Filtros <span class="count-badge" style="background:var(--green-500);color:#102715;">2</span></button>
+          </div>
+          <section class="metrics-grid">
+            <article class="metric"><div class="metric-top"><div class="metric-label">Productos activos</div><div class="summary-icon">◈</div></div><div class="metric-value">82</div><div class="metric-sub">Productos disponibles</div></article>
+            <article class="metric"><div class="metric-top"><div class="metric-label">Servicios activos</div><div class="summary-icon blue">▣</div></div><div class="metric-value">46</div><div class="metric-sub">Servicios disponibles</div></article>
+            <article class="metric"><div class="metric-top"><div class="metric-label">Más usados este mes</div><div class="summary-icon orange">🔥</div></div><div class="metric-value">18</div><div class="metric-sub">Productos y servicios</div></article>
+            <article class="metric"><div class="metric-top"><div class="metric-label">Con precio actualizado</div><div class="summary-icon purple">✓</div></div><div class="metric-value">121</div><div class="metric-sub">Precios al día</div></article>
+          </section>
+          <article class="records-card">
+            <div class="records-head"><div>Mostrando <strong>1-6</strong> de <strong>128</strong> items</div><div class="pagination"><button class="page-btn">‹</button><button class="page-btn active">1</button><button class="page-btn">2</button><button class="page-btn">3</button><button class="page-btn">›</button><button class="btn">6 por página ▾</button></div></div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Producto / Servicio</th><th>Tipo</th><th>SKU</th><th>Categoría</th><th>U.M.</th><th>Precio</th><th>Estado</th><th>Acción</th></tr></thead>
+                <tbody>
+                  <tr><td><div class="product-title"><div class="product-icon green">✎</div><div><strong>Diseño gráfico</strong><span>Servicio de diseño para piezas impresas</span></div></div></td><td><span class="status blue">Servicio</span></td><td><strong>DIS-GFX</strong></td><td>Diseño</td><td><span class="status ok">ZZ</span></td><td><strong>S/ 50.00</strong></td><td><span class="status ok">Activo</span></td><td><div class="record-action"><button class="view-btn open-product-drawer" data-mode="edit" data-product="Diseño gráfico" data-product-type="Servicio">Editar</button><button class="more-btn">⋯</button></div></td></tr>
+                  <tr><td><div class="product-title"><div class="product-icon teal">▤</div><div><strong>Impresión A3 Full Color</strong><span>Impresión a color en papel couché</span></div></div></td><td><span class="status ok">Producto</span></td><td><strong>IMP-A3-FC</strong></td><td>Impresión</td><td><span class="status ok">UND</span></td><td><strong>S/ 9.50</strong></td><td><span class="status ok">Activo</span></td><td><div class="record-action"><button class="view-btn open-product-drawer" data-mode="edit" data-product="Impresión A3 Full Color" data-product-type="Producto">Editar</button><button class="more-btn">⋯</button></div></td></tr>
+                  <tr><td><div class="product-title"><div class="product-icon orange">▤</div><div><strong>Impresión A4 Full Color</strong><span>Impresión a color en papel couché</span></div></div></td><td><span class="status ok">Producto</span></td><td><strong>IMP-A4-FC</strong></td><td>Impresión</td><td><span class="status ok">UND</span></td><td><strong>S/ 5.90</strong></td><td><span class="status ok">Activo</span></td><td><div class="record-action"><button class="view-btn open-product-drawer" data-mode="edit" data-product="Impresión A4 Full Color" data-product-type="Producto">Editar</button><button class="more-btn">⋯</button></div></td></tr>
+                  <tr><td><div class="product-title"><div class="product-icon purple">▧</div><div><strong>Banner 1x2 m</strong><span>Banner gigante con acabado mate</span></div></div></td><td><span class="status ok">Producto</span></td><td><strong>BAN-1X2</strong></td><td>Gigantografía</td><td><span class="status ok">UND</span></td><td><strong>S/ 45.00</strong></td><td><span class="status ok">Activo</span></td><td><div class="record-action"><button class="view-btn open-product-drawer" data-mode="edit" data-product="Banner 1x2 m" data-product-type="Producto">Editar</button><button class="more-btn">⋯</button></div></td></tr>
+                  <tr><td><div class="product-title"><div class="product-icon pink">✦</div><div><strong>Plastificado brillante A4</strong><span>Acabado laminado brillante</span></div></div></td><td><span class="status blue">Servicio</span></td><td><strong>PLA-A4-BR</strong></td><td>Acabados</td><td><span class="status ok">UND</span></td><td><strong>S/ 2.50</strong></td><td><span class="status bad">Inactivo</span></td><td><div class="record-action"><button class="view-btn open-product-drawer" data-mode="edit" data-product="Plastificado brillante A4" data-product-type="Servicio">Editar</button><button class="more-btn">⋯</button></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+          <p style="text-align:center;color:var(--muted);font-size:13px;">ⓘ Los productos del catálogo se reutilizan en cotizaciones y comprobantes.</p>
+        </section>
+
+        <!-- CREAR COMPROBANTE -->
+        <section id="crear-comprobante" class="page">
+          <div class="page-head">
+            <div>
+              <p style="margin:0 0 12px;color:var(--muted);font-weight:850;">← Volver al listado</p>
+              <h2>Crear comprobante</h2>
+              <p>Emite factura o boleta desde una sola vista operativa.</p>
+            </div>
+            <div class="page-actions"><button class="btn open-preview">👁 Vista previa</button></div>
+          </div>
+
+          <div class="doc-type-row">
+            <div class="doc-selector">
+              <button class="active" id="facturaToggle">▣ Factura</button>
+              <button id="boletaToggle">▤ Boleta</button>
+            </div>
+            <span class="small-pill"><span class="dot"></span>CPE</span>
+            <span class="small-pill">🛡 Contingencia</span>
+          </div>
+
+          <section class="top-form-grid">
+            <article class="panel">
+              <div class="panel-body">
+                <h3 style="margin:0 0 18px;">Datos del comprobante</h3>
+                <div class="form-grid">
+                  <div class="field span-4"><label>Moneda</label><div class="control"><select><option>S/ Soles</option><option>USD Dólares</option></select></div></div>
+                  <div class="field span-4"><label>Tipo de operación</label><div class="control"><select><option>Venta interna</option></select></div></div>
+                  <div class="field span-4"><label>Forma de pago</label><div class="control"><select><option>Contado</option><option>Crédito</option></select></div></div>
+                  <div class="field span-4"><label>Medio de pago</label><div class="control"><select><option>Efectivo</option><option>Transferencia</option></select></div></div>
+                  <div class="field span-4"><label>Fecha emisión</label><div class="control"><input value="28/04/2026" /></div></div>
+                  <div class="field span-4"><label>Fecha vencimiento</label><div class="control"><input placeholder="dd/mm/aaaa" /></div></div>
+                  <div class="field span-12"><label style="gap:12px;"><span class="switch on"></span>Precio incluye IGV</label><div class="field-help">El IGV se desglosa desde el precio ingresado.</div></div>
+                  <div class="field span-12"><label>Observaciones <span class="optional">opcional</span></label><div class="control textarea"><textarea placeholder="Condiciones especiales, instrucciones de entrega, información adicional..."></textarea></div></div>
+                </div>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="panel-body">
+                <h3 style="margin:0 0 18px;">Datos del cliente</h3>
+                <div class="form-grid">
+                  <div class="field span-4"><label>Tipo doc.</label><div class="control"><select><option>RUC</option><option>DNI</option></select></div></div>
+                  <div class="field span-8"><label>Número doc.</label><div class="control-with-button"><input placeholder="Ej: 20123456789" /><button class="inline-btn">⌕</button></div></div>
+                  <div class="field span-12"><label>Razón social / Nombre</label><div class="control"><input placeholder="Escribe para buscar o registrar cliente" /></div></div>
+                  <div class="field span-6"><label>Correo electrónico <span class="optional">opcional</span></label><div class="control"><input placeholder="correo@empresa.com" /></div></div>
+                  <div class="field span-6"><label>Teléfono / WhatsApp <span class="optional">opcional</span></label><div class="control"><input placeholder="9xxxxxxxx" /></div></div>
+                  <div class="field span-12"><label>Dirección <span class="optional">opcional</span></label><div class="control"><input placeholder="Av. Ejemplo 123, Lima, Perú" /></div></div>
+                  <div class="field span-12"><label><input type="checkbox" /> Enviar correo al emitir</label><div class="field-help">Se enviará el comprobante al correo ingresado.</div></div>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section class="lines-summary-grid">
+            <div>
+              <article class="panel">
+                <div class="panel-header"><div><h3>Líneas del comprobante</h3></div><div class="page-actions"><button class="btn">⇧ Subir CSV</button><button class="btn primary">＋ Agregar línea</button></div></div>
+                <div class="panel-body">
+                  <div class="line-table">
+                    <div class="line-head" style="grid-template-columns: 40px minmax(260px, 1fr) 130px 100px 120px 120px 42px;"><div>#</div><div>Código / Producto</div><div>Unidad</div><div>Cant.</div><div>P. unitario</div><div>Total</div><div></div></div>
+                    <div class="line-row" style="grid-template-columns: 40px minmax(260px, 1fr) 130px 100px 120px 120px 42px;"><div>1</div><div class="product-input"><input placeholder="Código (opcional)" style="max-width:120px;border:1px solid var(--line);border-radius:10px;padding:0 10px;height:36px;"><input placeholder="Producto o descripción..." /></div><div><select style="border:0;background:transparent;width:100%;"><option>NIU - Unidad</option></select></div><div><input value="1" /></div><div><input value="S/ 0.00" /></div><div><strong>S/ 0.00</strong></div><div><button class="trash-btn" style="color:var(--red);">⌫</button></div></div>
+                  </div>
+                </div>
+              </article>
+              <div class="info-strip"><div><strong>Todos los comprobantes se emiten bajo normativas de SUNAT.</strong><br><span>Verifica los datos antes de emitir para evitar observaciones.</span></div><a class="mini-link">Conocer más ↗</a></div>
+            </div>
+            <aside>
+              <article class="summary-card">
+                <div class="summary-header"><h3>Total del comprobante</h3></div>
+                <div class="summary-body">
+                  <div style="display:flex;gap:8px;margin-bottom:12px;"><span class="pill ok" id="summaryDocType">Factura</span><span class="pill inactive" id="summarySerie">F001</span><span class="pill inactive">1 línea</span></div>
+                  <div class="total-line"><span>Subtotal (sin IGV)</span><strong>S/ 0.00</strong></div>
+                  <div class="total-line"><span>IGV (18%)</span><strong>S/ 0.00</strong></div>
+                  <div class="grand-total"><span>Total</span><strong>S/ 0.00</strong></div>
+                </div>
+                <div class="summary-actions"><button class="side-btn open-preview">👁 Vista previa</button><button class="side-btn primary" id="emitButton">✈ Emitir factura</button><div class="info-box"><strong>Sin cliente seleccionado</strong><br>Busca o selecciona un cliente para continuar.</div></div>
+              </article>
+            </aside>
+          </section>
+        </section>
+
+        <!-- PLACEHOLDER PAGES -->
+        <section id="cobranza" class="page"><div class="page-head"><div><h2>Cobranza</h2><p>Vista pendiente de rediseño.</p></div></div><article class="panel"><div class="panel-body"><p>Esta pantalla puede seguir el patrón de bandeja operativa usado en Facturas y Boletas.</p></div></article></section>
+        <section id="notas" class="page"><div class="page-head"><div><h2>Notas Cred/Deb</h2><p>Vista pendiente de rediseño.</p></div></div><article class="panel"><div class="panel-body"><p>Placeholder funcional para navegación.</p></div></article></section>
+        <section id="resumen-diario" class="page"><div class="page-head"><div><h2>Resumen diario</h2><p>Vista pendiente de rediseño.</p></div></div><article class="panel"><div class="panel-body"><p>Placeholder funcional para navegación.</p></div></article></section>
+        <section id="bajas" class="page"><div class="page-head"><div><h2>Bajas</h2><p>Vista pendiente de rediseño.</p></div></div><article class="panel"><div class="panel-body"><p>Placeholder funcional para navegación.</p></div></article></section>
+        <section id="reversiones" class="page"><div class="page-head"><div><h2>Reversiones</h2><p>Vista pendiente de rediseño.</p></div></div><article class="panel"><div class="panel-body"><p>Placeholder funcional para navegación.</p></div></article></section>
+        <section id="retenciones" class="page"><div class="page-head"><div><h2>Retenciones</h2><p>Vista pendiente de rediseño.</p></div></div><article class="panel"><div class="panel-body"><p>Placeholder funcional para navegación.</p></div></article></section>
+        <section id="percepciones" class="page"><div class="page-head"><div><h2>Percepciones</h2><p>Vista pendiente de rediseño.</p></div></div><article class="panel"><div class="panel-body"><p>Placeholder funcional para navegación.</p></div></article></section>
+        <section id="configuracion" class="page">
+          <div class="settings-overview">
+            <div class="settings-overview-copy">
+              <div class="eyebrow">Centro de configuración</div>
+              <h3>Configura identidad, emisión, cuenta y apariencia desde un solo lugar</h3>
+              <p>Organicé esta sección como una zona de control más clara, con mejor jerarquía visual, resúmenes rápidos y formularios limpios para que se sienta consistente con las demás pantallas mejoradas de Inkora.</p>
+            </div>
+            <div class="settings-overview-actions">
+              <button class="btn">Restablecer</button>
+              <button class="btn primary">Guardar cambios</button>
+            </div>
+          </div>
+
+          <div class="settings-meta-grid">
+            <div class="settings-metric">
+              <div class="settings-metric-top"><div class="settings-metric-icon">🏢</div><span>Empresa</span></div>
+              <strong>1 perfil</strong>
+              <small>Identidad comercial principal activa para documentos y operaciones.</small>
+              <a class="tiny-link" href="#">Ver perfil</a>
+            </div>
+            <div class="settings-metric">
+              <div class="settings-metric-top"><div class="settings-metric-icon orange">☀</div><span>SUNAT</span></div>
+              <strong>Parcial</strong>
+              <small>Consultas listas. Falta completar credenciales SOL y el certificado.</small>
+              <a class="tiny-link" href="#">Revisar emisión</a>
+            </div>
+            <div class="settings-metric">
+              <div class="settings-metric-top"><div class="settings-metric-icon blue">👤</div><span>Cuenta</span></div>
+              <strong>Admin</strong>
+              <small>Sesión principal configurada con permisos de administración.</small>
+              <a class="tiny-link" href="#">Ver usuario</a>
+            </div>
+            <div class="settings-metric">
+              <div class="settings-metric-top"><div class="settings-metric-icon purple">🎨</div><span>Apariencia</span></div>
+              <strong>Claro</strong>
+              <small>Tema actual listo para escritorio con look limpio y corporativo.</small>
+              <a class="tiny-link" href="#">Personalizar</a>
+            </div>
+          </div>
+
+          <div class="settings-tabs">
+            <button class="settings-tab-btn active" data-settings-tab="perfil-empresa">Perfil de Empresa</button>
+            <button class="settings-tab-btn" data-settings-tab="config-fiscal">Config. Fiscal</button>
+            <button class="settings-tab-btn" data-settings-tab="mi-cuenta">Mi Cuenta</button>
+            <button class="settings-tab-btn" data-settings-tab="apariencia">Apariencia</button>
+          </div>
+
+          <div class="settings-view active" id="settings-perfil-empresa">
+            <div class="settings-grid">
+              <div class="settings-section-stack">
+                <article class="settings-hero-card">
+                  <div class="settings-hero-grid">
+                    <div>
+                      <div class="eyebrow">Identidad tributaria</div>
+                      <h3 style="margin:0;font-size:30px;letter-spacing:-.06em;">Perfil legal y comercial</h3>
+                      <p style="margin:10px 0 0;color:var(--muted);max-width:680px;line-height:1.55;">Aquí vive la información base que alimenta la razón social, los datos visibles del negocio y las referencias usadas en cotizaciones, comprobantes y otros documentos operativos.</p>
+                      <div class="identity-showcase">
+                        <div class="identity-logo large">I</div>
+                        <div>
+                          <h4 style="margin:0;font-size:22px;letter-spacing:-.04em;">Imprenta Demo PrintFlow SAC</h4>
+                          <p style="margin:6px 0 0;color:var(--muted);">RUC 20999999999 · Perfil principal del tenant</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="settings-side-note">
+                      <div class="settings-kpi-badge">Operativo</div>
+                      <h4>Vista general</h4>
+                      <p>Un resumen rápido del perfil que hoy se usa como base comercial en el sistema.</p>
+                      <div class="settings-side-list">
+                        <div class="row"><span>Teléfono</span><strong>999777888</strong></div>
+                        <div class="row"><span>Cuentas bancarias</span><strong>0</strong></div>
+                        <div class="row"><span>Billeteras</span><strong>1</strong></div>
+                        <div class="row"><span>Uso en PDF</span><strong>Activo</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="info-grid" style="margin-top:16px;">
+                    <div class="info-card"><label>Razón social</label><strong>Imprenta Demo PrintFlow SAC</strong></div>
+                    <div class="info-card"><label>RUC</label><strong>20999999999</strong></div>
+                    <div class="info-card"><label>Dirección fiscal</label><strong>Av. Demo 456, Lima</strong></div>
+                    <div class="info-card"><label>Teléfono actual</label><strong>999777888</strong></div>
+                  </div>
+                </article>
+
+                <div class="split-config">
+                  <div class="settings-section-stack">
+                    <article class="form-card">
+                      <div class="panel-header" style="padding:0 0 14px;border-bottom:1px solid var(--line);margin-bottom:16px;">
+                        <div>
+                          <h3>Contacto comercial</h3>
+                          <p>Actualiza el teléfono visible para el equipo y para las referencias operativas de la empresa.</p>
+                        </div>
+                      </div>
+                      <div class="settings-form-grid-2">
+                        <div class="config-field"><label>Teléfono de contacto</label><input class="input-control" value="999777888" /><div class="helper">Celular peruano: 9 dígitos numéricos e inicia en 9.</div></div>
+                        <div class="config-field"><label>Correo de referencia</label><input class="input-control" value="admin@demo.inkora.pe" /><div class="helper">Visible para el equipo interno y comunicaciones operativas.</div></div>
+                      </div>
+                    </article>
+
+                    <article class="form-card">
+                      <div class="panel-header" style="padding:0 0 14px;border-bottom:1px solid var(--line);margin-bottom:16px;">
+                        <div>
+                          <h3>Datos para la transferencia</h3>
+                          <p>Administra cuentas bancarias y billeteras digitales desde un solo lugar para que el pie del PDF siempre salga consistente.</p>
+                        </div>
+                        <div class="page-actions">
+                          <button class="btn">＋ Agregar cuenta bancaria</button>
+                          <button class="btn">＋ Agregar billetera digital</button>
+                        </div>
+                      </div>
+
+                      <div class="bank-item">
+                        <div class="bank-item-head">
+                          <strong>Billetera digital 1</strong>
+                          <button class="link-danger">Eliminar</button>
+                        </div>
+                        <div class="transfer-grid">
+                          <div class="config-field"><label>Billetera</label><select class="select-control"><option>Yape</option><option>Plin</option></select></div>
+                          <div class="config-field"><label>Titular</label><input class="input-control" value="Imprenta Demo PrintFlow SAC" /></div>
+                          <div class="config-field"><label>Número asociado</label><input class="input-control" value="999 999 999" /><div class="helper">Celular peruano: 9 dígitos numéricos e inicia en 9.</div></div>
+                          <div class="config-field"><label>Nota</label><input class="input-control" value="Cobros rápidos" /></div>
+                        </div>
+                      </div>
+
+                      <div class="bank-item">
+                        <div class="bank-item-head">
+                          <strong>Cuenta bancaria sugerida</strong>
+                          <span class="badge-soft neutral">Opcional</span>
+                        </div>
+                        <div class="bank-mini-grid">
+                          <div class="meta"><span>Banco</span><strong>BCP</strong></div>
+                          <div class="meta"><span>Moneda</span><strong>Soles</strong></div>
+                          <div class="meta"><span>Estado</span><strong>Sin registrar</strong></div>
+                        </div>
+                      </div>
+
+                      <div style="display:flex;justify-content:flex-end;margin-top:16px;"><button class="btn primary">Guardar cambios</button></div>
+                    </article>
+                  </div>
+
+                  <div class="settings-info-rail">
+                    <div class="settings-rail-card">
+                      <h4>Impacto de esta configuración</h4>
+                      <p>Este perfil alimenta la identidad comercial del tenant. Los medios de cobro también se reutilizan en la plantilla PDF sin volver a cargarlos en cada cotización.</p>
+                    </div>
+                    <div class="settings-rail-card">
+                      <h4>Uso en documentos</h4>
+                      <div class="metric-line"><span>Pie de cotización</span><strong>Activo</strong></div>
+                      <div class="metric-line"><span>Pie de factura</span><strong>Activo</strong></div>
+                      <div class="metric-line"><span>Pie de boleta</span><strong>Activo</strong></div>
+                      <div class="metric-line"><span>Última actualización</span><strong>Hoy</strong></div>
+                    </div>
+                    <div class="settings-rail-card">
+                      <h4>Recomendación UX</h4>
+                      <p>Mantén un solo canal de cobro prioritario visible para no sobrecargar el PDF y ayudar al cliente a pagar más rápido.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-view" id="settings-config-fiscal">
+            <div class="credential-status-grid">
+              <div class="status-tile"><span class="status-pill ok">Configurado</span><strong>ApisPeru</strong><p>Consulta RUC/DNI lista para autocompletado.</p></div>
+              <div class="status-tile"><span class="status-pill warn">Pendiente</span><strong>Credenciales SOL</strong><p>Faltan datos para habilitar transmisión directa a SUNAT.</p></div>
+              <div class="status-tile"><span class="status-pill neutral">No cargado</span><strong>Certificado PFX</strong><p>Aún no se cargó el archivo de firma electrónica.</p></div>
+            </div>
+            <div class="fiscal-grid">
+              <article class="panel">
+                <div class="panel-header"><div><div class="eyebrow">Credenciales y certificados</div><h3>Configuración fiscal</h3><p>Estado de integraciones clave para consulta, emisión y firma electrónica.</p></div></div>
+                <div class="panel-body">
+                  <div class="credential-list">
+                    <div class="credential-item"><div><h4>Token ApisPeru</h4><p>Conexión API para consulta RUC/DNI.</p></div><span class="badge-soft ok">Configurado</span></div>
+                    <div class="credential-item"><div><h4>Credenciales SOL</h4><p>Transmisión a SUNAT.</p></div><span class="badge-soft warn">Pendiente</span></div>
+                    <div class="credential-item"><div><h4>Certificado digital (PFX)</h4><p>Firma electrónica de XML.</p></div><span class="badge-soft neutral">No cargado</span></div>
+                  </div>
+                  <div class="notice-card"><strong>ℹ</strong><p>Contacte al administrador de la plataforma para escalar permisos o completar la configuración de emisión.</p></div>
+                </div>
+              </article>
+              <div class="settings-section-stack">
+                <div class="settings-rail-card">
+                  <h4>Prioridad actual</h4>
+                  <p>Para operar emisión electrónica completa, el siguiente paso crítico es registrar credenciales SOL y cargar el certificado PFX.</p>
+                </div>
+                <div class="settings-rail-card">
+                  <h4>Flujo de emisión</h4>
+                  <div class="emission-flow">
+                    <div class="emission-step"><b>1</b><div><strong>Consulta</strong><p>ApisPeru valida datos de RUC/DNI para reducir errores de captura.</p></div></div>
+                    <div class="emission-step"><b>2</b><div><strong>Generación</strong><p>Inkora construye el comprobante y prepara el XML con la estructura requerida.</p></div></div>
+                    <div class="emission-step"><b>3</b><div><strong>Firma y envío</strong><p>Con SOL y PFX activos, el comprobante queda listo para firma y transmisión.</p></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-view" id="settings-mi-cuenta">
+            <div class="account-overview">
+              <article class="account-card">
+                <div class="section-kicker">Datos de sesión</div>
+                <div class="account-head">
+                  <div class="account-avatar">A</div>
+                  <div>
+                    <h3>Admin Demo Inkora</h3>
+                    <span class="account-role">Admin</span>
+                  </div>
+                </div>
+                <div class="account-grid">
+                  <div><div class="section-kicker" style="margin-bottom:0;">Nombre</div><strong>Admin Demo Inkora</strong></div>
+                  <div><div class="section-kicker" style="margin-bottom:0;">Email</div><strong>admin@demo.inkora.pe</strong></div>
+                  <div><div class="section-kicker" style="margin-bottom:0;">Rol</div><strong>admin</strong></div>
+                </div>
+              </article>
+              <div class="account-side">
+                <div class="settings-rail-card">
+                  <h4>Acceso actual</h4>
+                  <div class="metric-line"><span>Perfil</span><strong>Administrador</strong></div>
+                  <div class="metric-line"><span>Último acceso</span><strong>Hoy, 08:24</strong></div>
+                  <div class="metric-line"><span>Tenant</span><strong>Inkora Demo</strong></div>
+                </div>
+                <div class="settings-rail-card">
+                  <h4>Notas</h4>
+                  <p>Esta vista mantiene la lectura simple y clara. Más adelante puede crecer con cambio de contraseña, doble factor y actividad de sesión.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-view" id="settings-apariencia">
+            <div class="appearance-layout">
+              <article class="appearance-card">
+                <div class="section-kicker">Visual</div>
+                <h3 style="margin:0;font-size:28px;letter-spacing:-.06em;">Apariencia del sistema</h3>
+                <p style="margin:10px 0 0;color:var(--muted);font-size:14px;line-height:1.55;">Personaliza el tema y la textura visual de Inkora. Los cambios son inmediatos y están pensados para conservar el look limpio, premium y corporativo del producto.</p>
+                <div style="margin-top:22px;font-weight:800;">Tema</div>
+                <div class="theme-options">
+                  <button class="theme-btn active" data-theme-choice="claro">☼ Claro</button>
+                  <button class="theme-btn" data-theme-choice="oscuro">◔ Oscuro</button>
+                  <button class="theme-btn" data-theme-choice="sistema">▣ Sistema</button>
+                </div>
+                <div id="themeCurrent" style="color:var(--muted);font-size:14px;">Tema activo: <strong style="color:#111827;">Claro</strong></div>
+                <div class="divider"></div>
+                <div>
+                  <div style="font-weight:800;">Textura editorial</div>
+                  <div class="texture-row">
+                    <div>
+                      <div style="font-size:16px;font-weight:700;">Grain de papel</div>
+                      <div style="margin-top:6px;color:var(--muted);">Añade una textura sutil tipo prensa al fondo. Solo afecta visualmente, no el rendimiento.</div>
+                    </div>
+                    <button class="checkbox" id="textureToggle">✓</button>
+                  </div>
+                  <div class="appearance-preview"><strong>Vista previa</strong><span id="texturePreviewText">Sin grain. Fondos lisos tipo papel estándar.</span></div>
+                </div>
+              </article>
+              <div class="settings-section-stack">
+                <div class="settings-rail-card">
+                  <h4>Estado visual</h4>
+                  <div class="metric-line"><span>Tema</span><strong>Claro</strong></div>
+                  <div class="metric-line"><span>Textura</span><strong>Desactivada</strong></div>
+                  <div class="metric-line"><span>Aplicación</span><strong>Inmediata</strong></div>
+                </div>
+                <div class="preview-mock">
+                  <div class="preview-mock-topbar"><span>Inkora preview</span><span>SUNAT · OK</span></div>
+                  <div class="preview-mock-body">
+                    <div class="preview-sidebar"></div>
+                    <div class="preview-content">
+                      <div class="preview-line" style="width:48%;"></div>
+                      <div class="preview-card"></div>
+                      <div class="preview-card" style="height:86px;"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+<section id="seguridad" class="page"><div class="page-head"><div><h2>Seguridad</h2><p>Vista pendiente de rediseño.</p></div></div><article class="panel"><div class="panel-body"><p>Placeholder funcional para navegación.</p></div></article></section>
+      </section>
+    </main>
+  </div>
+
+  <!-- DRAWER CLIENTES -->
+  <div class="overlay" id="overlay"></div>
+  <aside class="drawer" id="clientDrawer">
+    <div class="drawer-header">
+      <div class="drawer-title">
+        <div class="drawer-icon">♙</div>
+        <div><h3 id="drawerTitle">Nuevo cliente</h3><p id="drawerSubtitle">Registra un cliente para cotizar, emitir y cobrar con datos ordenados.</p></div>
+      </div>
+      <button class="close-drawer" id="closeDrawer">×</button>
+    </div>
+    <div class="drawer-body">
+      <div class="form-section">
+        <div class="section-label">🧾 Identidad fiscal</div>
+        <div class="form-grid">
+          <div class="field span-6"><label>Tipo de documento <span class="req">*</span></label><div class="control"><select><option>RUC</option><option>DNI</option><option>CE</option></select></div></div>
+          <div class="field span-6"><label>Número de documento <span class="req">*</span></label><div class="control-with-button"><input id="documentNumber" placeholder="Ej. 20100200300" /><button class="inline-btn">Consultar</button></div><div class="field-help">Autocompleta razón social y dirección fiscal.</div></div>
+          <div class="field span-12"><label>Razón social / Nombre <span class="req">*</span></label><div class="control"><input id="clientNameInput" placeholder="Nombre completo o razón social" /></div></div>
+          <div class="field span-12"><label>Dirección fiscal</label><div class="control"><input placeholder="Dirección fiscal" /></div></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label">✉️ Contacto</div>
+        <div class="form-grid">
+          <div class="field span-6"><label>Email</label><div class="control"><input type="email" placeholder="correo@empresa.com" /></div></div>
+          <div class="field span-6"><label>Teléfono</label><div class="control"><input placeholder="999999999" /></div></div>
+          <div class="field span-6"><label>WhatsApp</label><div class="control"><input placeholder="999999999" /></div></div>
+          <div class="field span-6"><label>Persona de contacto</label><div class="control"><input placeholder="Nombre del contacto" /></div></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label">💼 Condiciones comerciales</div>
+        <div class="form-grid">
+          <div class="field span-6"><label>Condición de pago</label><div class="control"><select><option>Contado</option><option>Crédito 15 días</option><option>Crédito 30 días</option></select></div></div>
+          <div class="field span-6"><label>Estado del cliente</label><div class="control"><select><option>Activo</option><option>Nuevo</option><option>Inactivo</option><option>Riesgo</option></select></div></div>
+          <div class="field span-12"><label>Observaciones internas</label><div class="control textarea"><textarea placeholder="Notas internas, condiciones especiales o datos útiles..."></textarea></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="drawer-footer"><button class="btn-lg" id="cancelDrawer">Cancelar</button><button class="btn-lg primary">Guardar cliente</button></div>
+  </aside>
+
+  <!-- DRAWER PRODUCTOS -->
+  <aside class="drawer" id="productDrawer">
+    <div class="drawer-header">
+      <div class="drawer-title">
+        <div class="drawer-icon">◫</div>
+        <div><h3 id="productDrawerTitle">Nuevo producto</h3><p id="productDrawerSubtitle">Registra un producto o servicio sin perder el contexto del catálogo.</p></div>
+      </div>
+      <button class="close-drawer" id="closeProductDrawer">×</button>
+    </div>
+    <div class="drawer-body">
+      <div class="form-section">
+        <div class="section-label">📦 Información del producto</div>
+        <div class="form-grid">
+          <div class="field span-6"><label>Tipo <span class="req">*</span></label><div class="control"><select id="productTypeInput"><option>Producto</option><option>Servicio</option></select></div></div>
+          <div class="field span-6"><label>Categoría</label><div class="control"><select id="productCategoryInput"><option>Impresión</option><option>Diseño</option><option>Gigantografía</option><option>Acabados</option><option>Servicios</option></select></div></div>
+          <div class="field span-12"><label>Nombre <span class="req">*</span></label><div class="control"><input id="productNameInput" placeholder="Ej. Impresión A4 full color" /></div></div>
+          <div class="field span-12"><label>Descripción</label><div class="control textarea"><textarea id="productDescriptionInput" placeholder="Describe brevemente el producto o servicio."></textarea></div></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label">💲 Precio y unidad</div>
+        <div class="form-grid">
+          <div class="field span-4"><label>Precio base <span class="req">*</span></label><div class="control"><input id="productPriceInput" placeholder="S/ 0.00" /></div></div>
+          <div class="field span-4"><label>Modo de registro</label><div class="control"><select id="productTaxModeInput"><option>Con IGV</option><option>Sin IGV</option></select></div></div>
+          <div class="field span-4"><label>Unidad (U.M.)</label><div class="control"><select id="productUnitInput"><option>UND</option><option>NIU</option><option>ZZ</option><option>MTR</option><option>HUR</option></select></div></div>
+          <div class="field span-6"><label>Código / SKU</label><div class="control-with-button"><input id="productSkuInput" placeholder="Ej. IMP-A4-FC" /><button class="inline-btn" type="button">Generar</button></div></div>
+          <div class="field span-6"><label>Afectación IGV</label><div class="control"><select id="productIgvInput"><option>Gravado</option><option>Exonerado</option><option>Inafecto</option></select></div></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="section-label">⚙️ Control interno</div>
+        <div class="form-grid">
+          <div class="field span-6"><label>Estado</label><div class="control"><select id="productStatusInput"><option>Activo</option><option>Inactivo</option><option>Borrador</option></select></div></div>
+          <div class="field span-6"><label>Área o línea</label><div class="control"><input id="productLineInput" placeholder="Ej. Comercial / Producción" /></div></div>
+          <div class="field span-12"><label>Observaciones internas</label><div class="control textarea"><textarea id="productNotesInput" placeholder="Notas internas, uso frecuente o consideraciones de venta."></textarea></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="drawer-footer"><button class="btn-lg" id="cancelProductDrawer">Cancelar</button><button class="btn-lg primary">Guardar producto</button></div>
+  </aside>
+
+  <!-- PREVIEW MODAL -->
+  <div class="modal-overlay" id="previewOverlay">
+    <div class="preview-modal">
+      <div class="preview-header"><h3 id="previewTitle">Vista previa — FACTURA F001-XXXXXX</h3><button class="preview-close" id="closePreview">×</button></div>
+      <div class="preview-body">
+        <div class="pdf-paper">
+          <div class="pdf-top">
+            <div class="pdf-logo">Imprenta Demo Inkora SAC</div>
+            <div style="text-align:center;align-self:center;"><strong>Imprenta Demo Inkora SAC</strong><br><small>Av. Demo 456, Lima<br>Teléfono: 999-777-888</small></div>
+            <div class="pdf-title"><strong id="pdfDocType">FACTURA</strong><span>ELECTRÓNICA</span><div class="pdf-line"></div><small>R.U.C.: 20999999999</small><br><strong id="pdfSerie">F001-XXXXXX</strong></div>
+          </div>
+          <div class="pdf-line"></div>
+          <div class="pdf-info">
+            <div><strong>Razón Social:</strong> —</div><div><strong>RUC:</strong> —</div>
+            <div><strong>Fecha Emisión:</strong> 28/04/2026</div><div><strong>Dirección:</strong> —</div>
+            <div><strong>Tipo Moneda:</strong> SOLES</div><div></div>
+          </div>
+          <table class="pdf-table"><thead><tr><th>ITEM</th><th>CANTIDAD</th><th>CÓDIGO</th><th>DESCRIPCIÓN</th><th>V/U</th><th>P/U</th><th>SUBTOTAL</th><th>TOTAL</th></tr></thead><tbody><tr><td>1</td><td>1</td><td>—</td><td>Producto o descripción</td><td>S/ 0.00</td><td>S/ 0.00</td><td>S/ 0.00</td><td>S/ 0.00</td></tr></tbody></table>
+          <div class="pdf-bottom">
+            <div><strong>SON: CERO CON 00/100 SOLES</strong><br><br><strong>Información Adicional</strong><hr><br><strong>Forma de Pago:</strong> Contado</div>
+            <div><div class="pdf-total-row"><span>Op. Gravadas:</span><strong>S/ 0.00</strong></div><div class="pdf-total-row"><span>I.G.V.:</span><strong>S/ 0.00</strong></div><div class="pdf-total-row"><span>Precio Venta:</span><strong>S/ 0.00</strong></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const pages = document.querySelectorAll('.page');
+    const navItems = document.querySelectorAll('.nav-item[data-page]');
+    const topTitle = document.getElementById('topTitle');
+    const topSubtitle = document.getElementById('topSubtitle');
+
+    function showPage(id, title, subtitle) {
+      pages.forEach(p => p.classList.toggle('active', p.id === id));
+      navItems.forEach(n => n.classList.toggle('active', n.dataset.page === id));
+      const nav = [...navItems].find(n => n.dataset.page === id);
+      topTitle.textContent = title || nav?.dataset.title || 'Inkora';
+      topSubtitle.textContent = subtitle || nav?.dataset.subtitle || '';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      history.replaceState(null, '', '#' + id);
+    }
+
+    navItems.forEach(item => {
+      item.addEventListener('click', () => showPage(item.dataset.page, item.dataset.title, item.dataset.subtitle));
+    });
+    document.querySelectorAll('[data-page-link]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.pageLink;
+        const nav = [...navItems].find(n => n.dataset.page === id);
+        showPage(id, nav?.dataset.title, nav?.dataset.subtitle);
+      });
+    });
+
+    function renderComprobantesTable(targetId, type) {
+      const isBoleta = type === 'boleta';
+      const prefix = isBoleta ? 'B001' : 'F001';
+      const title = isBoleta ? 'boletas' : 'facturas';
+      const summary = isBoleta
+        ? `<div class="summary-item"><div class="summary-icon">▣</div><div><span>Emitidas hoy</span><strong>12</strong><span>S/ 8,950.00</span></div></div>
+           <div class="summary-item"><div class="summary-icon blue">🛡</div><div><span>Aceptadas SUNAT</span><strong>92</strong><span>72% del total</span></div></div>
+           <div class="summary-item"><div class="summary-icon orange">💼</div><div><span>Por cobrar</span><strong>8</strong><span>S/ 3,250.00</span></div></div>`
+        : `<div class="summary-item"><div class="summary-icon">💵</div><div><span>Por cobrar este mes</span><strong>S/ 28,450.00</strong><span>14 facturas</span></div></div>
+           <div class="summary-item"><div class="summary-icon orange">📅</div><div><span>Vencidas</span><strong>S/ 8,950.00</strong><span>6 facturas</span></div></div>
+           <div class="summary-item"><div class="summary-icon blue">🛡</div><div><span>Aceptadas SUNAT</span><strong>92</strong><span>72% del total</span></div></div>`;
+      document.getElementById(targetId).innerHTML = `
+        <div class="summary-strip">
+          <div class="summary-items">${summary}</div>
+          <div class="pagination"><span>Mostrando 1-5 de 128 ${title}</span><button class="page-btn">‹</button><button class="page-btn active">1</button><button class="page-btn">2</button><button class="page-btn">3</button><button class="page-btn">›</button><button class="btn">5 por página ▾</button></div>
+        </div>
+        <article class="records-card">
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>Serie - Número</th><th>Cliente</th><th>Emisión</th>${isBoleta ? '' : '<th>Vencimiento</th>'}<th>Total</th><th>SUNAT</th><th>${isBoleta ? 'Pago' : 'Cobranza'}</th><th>Acción</th></tr></thead>
+              <tbody>
+                ${[
+                  ['000123','Inversiones Andinas S.A.C.','20601234567','9/05/2024','10:15 a.m.','9/06/2024','En 21 días','S/ 3,560.00','Aceptada','ok', isBoleta ? 'Pagada' : 'Por cobrar', isBoleta ? 'ok' : 'warn'],
+                  ['000122','Constructora Delta S.A.C.','20509876543','8/05/2024','4:32 p.m.','7/06/2024','En 19 días','S/ 12,450.00','Aceptada','ok','Por cobrar','warn'],
+                  ['000121','Comercializadora Lima E.I.R.L.','20604567891','7/05/2024','11:08 a.m.','7/05/2024','Vencida','S/ 2,180.00','Aceptada','ok', isBoleta ? 'Por cobrar' : 'Vencido', isBoleta ? 'warn' : 'bad'],
+                  ['000120','Servicios Generales S.A.C.','20498765432','6/05/2024','9:41 a.m.','5/06/2024','En 17 días','S/ 5,890.00','Pendiente','warn','Por cobrar','warn'],
+                  ['000119','Tecnología & Sistemas S.A.','20123456789','5/05/2024','2:23 p.m.','4/06/2024','En 16 días','S/ 1,950.00','Rechazada','bad','Por cobrar','warn']
+                ].map(r => `
+                  <tr>
+                    <td><strong>${prefix}-${r[0]}</strong></td>
+                    <td>${r[1]}<br><small>${r[2]}</small></td>
+                    <td>${r[3]}<br><small>${r[4]}</small></td>
+                    ${isBoleta ? '' : `<td>${r[5]}<br><small style="${r[6] === 'Vencida' ? 'color:#dc2626;font-weight:800;' : ''}">${r[6]}</small></td>`}
+                    <td><strong>${r[7]}</strong><br><small>PEN</small></td>
+                    <td><span class="status ${r[9]}">${r[8]}</span></td>
+                    <td><span class="status ${r[11]}">${r[10]}</span></td>
+                    <td><div class="record-action"><button class="view-btn open-preview">Ver</button><button class="more-btn">⋯</button></div></td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </article>
+        <p style="text-align:center;color:var(--muted);font-size:13px;">ⓘ Los estados de SUNAT se actualizan automáticamente cada 15 minutos.</p>`;
+    }
+    renderComprobantesTable('facturas-table', 'factura');
+    renderComprobantesTable('boletas-table', 'boleta');
+
+    // Drawers de clientes y productos
+    const overlay = document.getElementById('overlay');
+    const clientDrawer = document.getElementById('clientDrawer');
+    const productDrawer = document.getElementById('productDrawer');
+
+    const drawerTitle = document.getElementById('drawerTitle');
+    const drawerSubtitle = document.getElementById('drawerSubtitle');
+    const clientNameInput = document.getElementById('clientNameInput');
+    const documentNumber = document.getElementById('documentNumber');
+
+    const productDrawerTitle = document.getElementById('productDrawerTitle');
+    const productDrawerSubtitle = document.getElementById('productDrawerSubtitle');
+    const productNameInput = document.getElementById('productNameInput');
+    const productTypeInput = document.getElementById('productTypeInput');
+    const productCategoryInput = document.getElementById('productCategoryInput');
+    const productDescriptionInput = document.getElementById('productDescriptionInput');
+    const productPriceInput = document.getElementById('productPriceInput');
+    const productTaxModeInput = document.getElementById('productTaxModeInput');
+    const productUnitInput = document.getElementById('productUnitInput');
+    const productSkuInput = document.getElementById('productSkuInput');
+    const productIgvInput = document.getElementById('productIgvInput');
+    const productStatusInput = document.getElementById('productStatusInput');
+    const productLineInput = document.getElementById('productLineInput');
+    const productNotesInput = document.getElementById('productNotesInput');
+
+    function showDrawer(drawerElement) {
+      overlay.classList.add('active');
+      drawerElement.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeDrawers() {
+      overlay.classList.remove('active');
+      clientDrawer.classList.remove('active');
+      productDrawer.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+
+    function openClientDrawer(mode, clientName) {
+      const isEdit = mode === 'edit';
+      drawerTitle.textContent = isEdit ? 'Editar cliente' : 'Nuevo cliente';
+      drawerSubtitle.textContent = isEdit ? 'Actualiza los datos comerciales sin salir del listado.' : 'Registra un cliente para cotizar, emitir y cobrar con datos ordenados.';
+      clientNameInput.value = isEdit ? clientName : '';
+      documentNumber.value = isEdit ? '20100100100' : '';
+      productDrawer.classList.remove('active');
+      showDrawer(clientDrawer);
+    }
+
+    function openProductDrawer(mode, productName, productType) {
+      const isEdit = mode === 'edit';
+      const isService = (productType || '').toLowerCase() === 'servicio';
+      productDrawerTitle.textContent = isEdit ? 'Editar producto' : 'Nuevo producto';
+      productDrawerSubtitle.textContent = isEdit ? 'Actualiza precio, unidad y datos comerciales sin salir del catálogo.' : 'Registra un producto o servicio sin perder el contexto del catálogo.';
+      productNameInput.value = isEdit ? productName : '';
+      productTypeInput.value = isEdit ? (productType || 'Producto') : 'Producto';
+      productCategoryInput.value = isEdit ? (isService ? 'Diseño' : 'Impresión') : 'Impresión';
+      productDescriptionInput.value = isEdit ? (isService ? 'Servicio de diseño para piezas impresas.' : 'Producto reutilizable para cotizaciones y comprobantes.') : '';
+      productPriceInput.value = isEdit ? (isService ? 'S/ 50.00' : 'S/ 9.50') : '';
+      productTaxModeInput.value = 'Con IGV';
+      productUnitInput.value = isEdit ? (isService ? 'ZZ' : 'UND') : 'UND';
+      productSkuInput.value = isEdit ? (productName || '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 18) : '';
+      productIgvInput.value = 'Gravado';
+      productStatusInput.value = 'Activo';
+      productLineInput.value = isEdit ? (isService ? 'Comercial' : 'Producción') : '';
+      productNotesInput.value = '';
+      clientDrawer.classList.remove('active');
+      showDrawer(productDrawer);
+    }
+
+    document.addEventListener('click', e => {
+      const clientBtn = e.target.closest('.open-client-drawer');
+      if (clientBtn) openClientDrawer(clientBtn.dataset.mode, clientBtn.dataset.client || '');
+
+      const productBtn = e.target.closest('.open-product-drawer');
+      if (productBtn) openProductDrawer(productBtn.dataset.mode, productBtn.dataset.product || '', productBtn.dataset.productType || 'Producto');
+
+      const previewBtn = e.target.closest('.open-preview');
+      if (previewBtn) openPreview();
+    });
+
+    document.getElementById('closeDrawer').addEventListener('click', closeDrawers);
+    document.getElementById('cancelDrawer').addEventListener('click', closeDrawers);
+    document.getElementById('closeProductDrawer').addEventListener('click', closeDrawers);
+    document.getElementById('cancelProductDrawer').addEventListener('click', closeDrawers);
+    overlay.addEventListener('click', closeDrawers);
+
+    // Factura / Boleta toggle
+    const facturaToggle = document.getElementById('facturaToggle');
+    const boletaToggle = document.getElementById('boletaToggle');
+    const summaryDocType = document.getElementById('summaryDocType');
+    const summarySerie = document.getElementById('summarySerie');
+    const emitButton = document.getElementById('emitButton');
+    let currentDocType = 'FACTURA';
+
+    function setDocType(type) {
+      const isFactura = type === 'FACTURA';
+      currentDocType = type;
+      facturaToggle.classList.toggle('active', isFactura);
+      boletaToggle.classList.toggle('active', !isFactura);
+      summaryDocType.textContent = isFactura ? 'Factura' : 'Boleta';
+      summarySerie.textContent = isFactura ? 'F001' : 'B001';
+      emitButton.textContent = isFactura ? '✈ Emitir factura' : '✈ Emitir boleta';
+    }
+    facturaToggle.addEventListener('click', () => setDocType('FACTURA'));
+    boletaToggle.addEventListener('click', () => setDocType('BOLETA'));
+
+    // Preview modal
+    const previewOverlay = document.getElementById('previewOverlay');
+    const closePreviewBtn = document.getElementById('closePreview');
+    const previewTitle = document.getElementById('previewTitle');
+    const pdfDocType = document.getElementById('pdfDocType');
+    const pdfSerie = document.getElementById('pdfSerie');
+    function openPreview() {
+      const serie = currentDocType === 'FACTURA' ? 'F001-XXXXXX' : 'B001-XXXXXX';
+      previewTitle.textContent = `Vista previa — ${currentDocType} ${serie}`;
+      pdfDocType.textContent = currentDocType;
+      pdfSerie.textContent = serie;
+      previewOverlay.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+    function closePreview() {
+      previewOverlay.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+    closePreviewBtn.addEventListener('click', closePreview);
+    previewOverlay.addEventListener('click', e => { if (e.target === previewOverlay) closePreview(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeDrawers(); closePreview(); } });
+
+    // Configuración tabs
+    const settingsTabButtons = document.querySelectorAll('.settings-tab-btn');
+    const settingsViews = document.querySelectorAll('.settings-view');
+
+    function showSettingsTab(tabId) {
+      settingsTabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.settingsTab === tabId));
+      settingsViews.forEach(view => view.classList.toggle('active', view.id === `settings-${tabId}`));
+    }
+
+    settingsTabButtons.forEach(btn => {
+      btn.addEventListener('click', () => showSettingsTab(btn.dataset.settingsTab));
+    });
+
+    // Apariencia
+    const themeButtons = document.querySelectorAll('.theme-btn');
+    const themeCurrent = document.getElementById('themeCurrent');
+    const textureToggle = document.getElementById('textureToggle');
+    const texturePreviewText = document.getElementById('texturePreviewText');
+
+    function setThemeChoice(choice) {
+      themeButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.themeChoice === choice));
+      const label = choice.charAt(0).toUpperCase() + choice.slice(1);
+      themeCurrent.innerHTML = `Tema activo: <strong style="color:#111827;">${label}</strong>`;
+    }
+
+    let textureEnabled = false;
+    function setTexture(enabled) {
+      textureEnabled = enabled;
+      textureToggle.classList.toggle('active', enabled);
+      texturePreviewText.textContent = enabled
+        ? 'Grain activo. Fondo con textura sutil tipo papel editorial.'
+        : 'Sin grain. Fondos lisos tipo papel estándar.';
+    }
+
+    themeButtons.forEach(btn => btn.addEventListener('click', () => setThemeChoice(btn.dataset.themeChoice)));
+    if (textureToggle) textureToggle.addEventListener('click', () => setTexture(!textureEnabled));
+
+    // Hash route on load
+    const initial = location.hash?.replace('#', '');
+    if (initial && document.getElementById(initial)) {
+      const nav = [...navItems].find(n => n.dataset.page === initial);
+      showPage(initial, nav?.dataset.title, nav?.dataset.subtitle);
+    }
+  </script>
+</body>
+</html>

@@ -37,6 +37,7 @@ from access_control import (
 )
 from api_dependencies import require_admin, require_document_emitter, require_payment_manager
 from config import settings
+import crud
 import security
 
 
@@ -135,6 +136,40 @@ class TestJWTCreationAndDecode:
 
         assert result.email == "valid@test.com"
 
+    def test_token_emitido_antes_de_cambio_password_falla(self, db_session):
+        tenant = make_tenant(db_session, "B05")
+        user = make_user(db_session, tenant, email="old-token@test.com")
+        token = security.create_access_token_with_claims(user)
+
+        user.password_changed_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=1)
+        db_session.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            security.get_current_user(db_session, token)
+        assert exc_info.value.status_code == 401
+
+    def test_token_emitido_despues_de_cambio_password_pasa(self, db_session):
+        tenant = make_tenant(db_session, "B06")
+        user = make_user(db_session, tenant, email="new-token@test.com")
+        user.password_changed_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=1)
+        db_session.commit()
+
+        token = security.create_access_token_with_claims(user)
+        result = security.get_current_user(db_session, token)
+
+        assert result.email == "new-token@test.com"
+
+    def test_reset_password_invalida_token_previo(self, db_session):
+        tenant = make_tenant(db_session, "B07")
+        user = make_user(db_session, tenant, email="reset-token@test.com")
+        token = security.create_access_token_with_claims(user)
+
+        crud.reset_user_password(db_session, user.id)
+
+        with pytest.raises(HTTPException) as exc_info:
+            security.get_current_user(db_session, token)
+        assert exc_info.value.status_code == 401
+
 
 # ============================================================================
 # TENANT SUSPENDIDO: bloqueo de acceso
@@ -164,6 +199,18 @@ class TestTenantSuspendedAccess:
             assert_active_tenant_access(user)
         assert exc_info.value.status_code == 403
         assert "suspendido" in exc_info.value.detail.lower() or "inactivo" in exc_info.value.detail.lower()
+
+    def test_assert_active_tenant_access_bloquea_usuario_inactivo(self, db_session):
+        tenant = make_tenant(db_session, "C20")
+        user = make_user(db_session, tenant, email="blocked-user@test.com")
+        user.is_active = False
+        db_session.commit()
+        db_session.refresh(user)
+
+        with pytest.raises(HTTPException) as exc_info:
+            assert_active_tenant_access(user)
+        assert exc_info.value.status_code == 403
+        assert "usuario" in exc_info.value.detail.lower()
 
     def test_superadmin_no_bloqueado_por_tenant_inactivo(self, db_session):
         tenant = make_tenant(db_session, "C03", is_active=False)

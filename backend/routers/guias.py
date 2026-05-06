@@ -1,11 +1,11 @@
-from typing import List
-
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 import crud
-from services import emission_queue_service, facturacion_service
+from services import emission_queue_service, facturacion_service, fiscal_provider_service
+from services import beta_feature_flags
 import models
 import schemas
 from api_dependencies import (
@@ -42,9 +42,8 @@ def _quota_error(exc: "crud.QuotaExceededError") -> HTTPException:
 
 def _gre_credentials_warning_message() -> str:
     return (
-        "El tenant no tiene client_id/client_secret de SUNAT Nueva GRE configurados. "
-        "Si el envio falla con error interno del proveedor, configure esas credenciales "
-        "en el portal de ApisPeru para la empresa emisora."
+        "El tenant no tiene credenciales SUNAT GRE completas para guias Smart PSE. "
+        "Configuralas desde superadmin antes de emitir."
     )
 
 
@@ -74,14 +73,46 @@ def crear_guia_remision(
         )
 
 
-@router.get("/guias-remision/", response_model=List[schemas.GuiaRemisionResponse])
+@router.get("/guias-remision/", response_model=schemas.GuiaRemisionPageResponse)
 def listar_guias_remision(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=15, ge=1, le=100),
+    estado: str | None = Query(default=None),
+    tab: str | None = Query(default="all", pattern="^(all|pending|smartpse|transit|emitted|cancelled|voided)$"),
+    motivo: str | None = Query(default=None),
+    modalidad: str | None = Query(default=None),
+    desde: str | None = Query(default=None),
+    hasta: str | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=80),
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
-    return crud.get_guias_remision(db, current_user, skip, limit)
+    desde_dt = None
+    hasta_dt = None
+    if desde:
+        try:
+            desde_dt = datetime.fromisoformat(desde)
+        except ValueError:
+            raise HTTPException(400, "Fecha 'desde' invalida. Usa formato YYYY-MM-DD.")
+    if hasta:
+        try:
+            hasta_dt = datetime.fromisoformat(hasta).replace(hour=23, minute=59, second=59)
+        except ValueError:
+            raise HTTPException(400, "Fecha 'hasta' invalida. Usa formato YYYY-MM-DD.")
+
+    return crud.get_guias_remision_page(
+        db,
+        current_user,
+        skip,
+        limit,
+        estado=estado,
+        tab=tab,
+        motivo=motivo,
+        modalidad=modalidad,
+        desde=desde_dt,
+        hasta=hasta_dt,
+        q=q,
+    )
 
 
 @router.get("/guias-remision/{guia_id}", response_model=schemas.GuiaRemisionResponse)
@@ -176,6 +207,12 @@ def emitir_guia_remision_endpoint(
     _emission_check: models.User = Depends(require_emission_allowed),
     mode: str | None = Query(default=None, pattern="^(sync|async)$"),
 ):
+    beta_feature_flags.require_fiscal_feature_enabled(
+        db,
+        current_user.tenant_id,
+        beta_feature_flags.FISCAL_FEATURE_GUIDES,
+        current_user=current_user,
+    )
     guia = crud.get_guia_remision(db, guia_id, current_user)
     if not guia:
         raise HTTPException(404, "Guia de Remision no encontrada.")
@@ -190,12 +227,13 @@ def emitir_guia_remision_endpoint(
         )
 
     tenant = current_user.tenant
-    if not tenant or not tenant.apisperu_token:
+    if not fiscal_provider_service.has_smartpse_credentials(tenant):
+        reason = fiscal_provider_service.smartpse_block_reason(tenant)
         raise HTTPException(
             status_code=400,
             detail=(
-                "Pre-validacion fallida: El tenant no tiene token ApisPeru configurado. "
-                "Contacta al administrador para configurar el token de empresa."
+                "Pre-validacion fallida: El tenant no tiene credenciales Smart PSE configuradas. "
+                f"{reason or 'Contacta al administrador para aprovisionar Smart PSE.'}"
             ),
         )
 
@@ -207,9 +245,16 @@ def emitir_guia_remision_endpoint(
         except crud.QuotaExceededError as exc:
             raise _quota_error(exc)
 
-    has_gre_credentials = bool(
-        tenant and tenant.sunat_gre_client_id and tenant.sunat_gre_client_secret
-    )
+    has_gre_credentials = fiscal_provider_service.has_smartpse_gre_credentials(tenant)
+    if not has_gre_credentials:
+        reason = fiscal_provider_service.smartpse_gre_block_reason(tenant)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Pre-validacion fallida: El tenant no tiene credenciales SUNAT GRE configuradas. "
+                f"{reason or _gre_credentials_warning_message()}"
+            ),
+        )
 
     try:
         resolved_mode = emission_queue_service.resolve_emission_mode(mode)
@@ -233,8 +278,6 @@ def emitir_guia_remision_endpoint(
             resultado,
             tenant_id=current_user.tenant_id,
         )
-        if not has_gre_credentials:
-            resultado["gre_credentials_warning"] = _gre_credentials_warning_message()
         return resultado
     except facturacion_service.FacturacionException as exc:
         crud.guardar_error_sunat_gre(
@@ -244,8 +287,6 @@ def emitir_guia_remision_endpoint(
             tenant_id=current_user.tenant_id,
         )
         detail = str(exc)
-        if not has_gre_credentials:
-            detail = f"{detail} {_gre_credentials_warning_message()}"
         raise HTTPException(400, detail)
     except Exception as exc:
         raise_internal_server_error(

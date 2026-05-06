@@ -20,8 +20,24 @@ from types import SimpleNamespace
 # Asegurar que el directorio backend esté en el path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import crud
+import models
+import schemas
+from conftest import make_cliente, make_tenant, make_user, make_quote_via_crud
+from fastapi import HTTPException
+from routers import facturacion
 from services import calculations
+from services import emission_queue_service
 from services import facturacion_service
+from services.document_flow_service import (
+    DOCUMENT_KIND_CREDIT_NOTE,
+    DOCUMENT_KIND_DEBIT_NOTE,
+    DOCUMENT_STATUS_ISSUED,
+)
+from services.fiscal_balance_service import (
+    get_credit_note_available_amount,
+    get_fiscal_document_balance,
+)
 
 
 # ==========================================
@@ -61,17 +77,18 @@ def _mock_cliente(tipo_documento="6", numero_documento="20123456789",
 
 def _mock_user(ruc="20100100100", nombre="Empresa Emisora SAC"):
     """Crea un mock de User (Emisor)."""
-    user = MagicMock()
-    user.business_ruc = ruc
-    user.business_name = nombre
-    user.business_address = "Jr. Emisor 456"
-    user.apisperu_token = "test_token_123"
-    user.bank_accounts = [
+    tenant = MagicMock()
+    tenant.business_ruc = ruc
+    tenant.business_name = nombre
+    tenant.business_address = "Jr. Emisor 456"
+    tenant.apisperu_token = "test_token_123"
+    tenant.apisperu_url = "https://facturacion.test/api/v1"
+    tenant.bank_accounts = [
         {"banco": "Banco de la Nacion", "moneda": "Soles", "cuenta": "00-123-456789"}
     ]
-    # tenant_access.get_company_bank_accounts prioriza tenant.bank_accounts.
-    # Poner tenant = None obliga al fallback a user.bank_accounts.
-    user.tenant = None
+
+    user = MagicMock()
+    user.tenant = tenant
     return user
 
 
@@ -104,6 +121,619 @@ def _mock_cotizacion(items, moneda="PEN", tipo_comprobante="01",
     cotizacion.total_venta = calculations.redondear(total_venta)
     
     return cotizacion
+
+
+def _make_accepted_fiscal_document(db_session, tenant, user, cliente, *, precio="500.00"):
+    quote = make_quote_via_crud(
+        db_session,
+        tenant,
+        user,
+        cliente,
+        precio=precio,
+    )
+    fiscal = crud.create_fiscal_document_from_quote(
+        db_session,
+        quote,
+        user.id,
+        "01",
+    )
+    fiscal.estado = DOCUMENT_STATUS_ISSUED
+    db_session.commit()
+    db_session.refresh(fiscal)
+    return quote, fiscal
+
+
+def _partial_note_items(*, total="118.00", afectacion="10"):
+    return [
+        schemas.CotizacionItemCreate(
+            descripcion="Ajuste parcial",
+            cantidad=Decimal("1"),
+            precio_unitario=Decimal(total),
+            tipo_afectacion_igv=afectacion,
+        )
+    ]
+
+
+def _create_note(
+    db_session,
+    fiscal,
+    user,
+    *,
+    tipo_nota="credito",
+    items=None,
+    estado=None,
+):
+    note = crud.crear_nota_credito_debito(
+        db_session,
+        fiscal,
+        user.id,
+        tipo_nota,
+        "01",
+        "Ajuste de prueba",
+        items=items,
+    )
+    if estado is not None:
+        note.estado = estado
+        db_session.commit()
+        db_session.refresh(note)
+    return note
+
+
+async def _noop_async(*args, **kwargs):
+    return None
+
+
+def _provider_success_response():
+    return {
+        "success": True,
+        "serie": "NC01",
+        "correlativo": "000001",
+        "provider_endpoint": "/invoice/send",
+        "provider_status_code": 200,
+        "sunat_response": {"success": True, "cdrResponse": {"description": "Aceptado"}},
+    }
+
+
+def _set_active_subscription(db_session, tenant):
+    subscription = crud.get_subscription_by_tenant(db_session, tenant.id)
+    if subscription is None:
+        subscription = models.Subscription(tenant_id=tenant.id)
+        db_session.add(subscription)
+    subscription.status = models.SUBSCRIPTION_STATUS_ACTIVE
+    db_session.commit()
+    db_session.refresh(subscription)
+    return subscription
+
+
+def _enable_apisperu_for_worker(db_session, tenant):
+    tenant.smartpse_company_id = "77"
+    tenant.smartpse_environment = "demo"
+    tenant.smartpse_usuario_secundaria = "AB3KPQR9"
+    tenant.smartpse_token_acceso = "MX7TNVQG"
+    subscription = _set_active_subscription(db_session, tenant)
+    subscription.beta_feature_flags = {
+        "credit_notes": True,
+        "debit_notes": True,
+    }
+    db_session.commit()
+
+
+class TestNotasParcialesFiscalBalance:
+
+    def test_nota_total_legacy_sigue_funcionando_sin_items(self, db_session):
+        tenant = make_tenant(db_session, "NP01")
+        user = make_user(db_session, tenant, email="np01@test.com")
+        cliente = make_cliente(db_session, tenant, "NP01")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="118.00",
+        )
+
+        note = _create_note(db_session, fiscal, user)
+
+        assert note.document_kind == DOCUMENT_KIND_CREDIT_NOTE
+        assert note.total_gravada == fiscal.total_gravada
+        assert note.total_exonerada == fiscal.total_exonerada
+        assert note.total_inafecta == fiscal.total_inafecta
+        assert note.total_igv == fiscal.total_igv
+        assert note.total_venta == fiscal.total_venta
+        assert len(note.items) == len(fiscal.items)
+
+    def test_nota_parcial_calcula_gravada_exonerada_inafecta_igv_y_total(self, db_session):
+        tenant = make_tenant(db_session, "NP02")
+        user = make_user(db_session, tenant, email="np02@test.com")
+        cliente = make_cliente(db_session, tenant, "NP02")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="500.00",
+        )
+        items = [
+            schemas.CotizacionItemCreate(
+                descripcion="Gravado",
+                cantidad=Decimal("1"),
+                precio_unitario=Decimal("118.00"),
+                tipo_afectacion_igv="10",
+            ),
+            schemas.CotizacionItemCreate(
+                descripcion="Exonerado",
+                cantidad=Decimal("1"),
+                precio_unitario=Decimal("50.00"),
+                tipo_afectacion_igv="20",
+            ),
+            schemas.CotizacionItemCreate(
+                descripcion="Inafecto",
+                cantidad=Decimal("1"),
+                precio_unitario=Decimal("30.00"),
+                tipo_afectacion_igv="30",
+            ),
+        ]
+
+        note = _create_note(db_session, fiscal, user, items=items)
+
+        assert note.total_gravada == Decimal("100.00")
+        assert note.total_exonerada == Decimal("50.00")
+        assert note.total_inafecta == Decimal("30.00")
+        assert note.total_igv == Decimal("18.00")
+        assert note.total_venta == Decimal("198.00")
+        assert len(note.items) == 3
+
+    def test_nota_parcial_con_item_gravado_calcula_igv_correctamente(self, db_session):
+        tenant = make_tenant(db_session, "NP03")
+        user = make_user(db_session, tenant, email="np03@test.com")
+        cliente = make_cliente(db_session, tenant, "NP03")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="500.00",
+        )
+
+        note = _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="118.00", afectacion="10"),
+        )
+
+        assert note.total_gravada == Decimal("100.00")
+        assert note.total_igv == Decimal("18.00")
+        assert note.total_venta == Decimal("118.00")
+
+    def test_dos_notas_credito_aceptadas_no_pueden_exceder_disponible(self, db_session):
+        tenant = make_tenant(db_session, "NP04")
+        user = make_user(db_session, tenant, email="np04@test.com")
+        cliente = make_cliente(db_session, tenant, "NP04")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="300.00",
+        )
+        _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="200.00", afectacion="20"),
+            estado=DOCUMENT_STATUS_ISSUED,
+        )
+
+        with pytest.raises(ValueError, match="excede el monto fiscal disponible"):
+            _create_note(
+                db_session,
+                fiscal,
+                user,
+                items=_partial_note_items(total="101.00", afectacion="20"),
+            )
+
+    def test_nota_credito_pendiente_o_rechazada_no_consume_disponibilidad(self, db_session):
+        tenant = make_tenant(db_session, "NP05")
+        user = make_user(db_session, tenant, email="np05@test.com")
+        cliente = make_cliente(db_session, tenant, "NP05")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="300.00",
+        )
+        pending_note = _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="250.00", afectacion="20"),
+        )
+        assert get_credit_note_available_amount(
+            db_session,
+            tenant.id,
+            fiscal.id,
+        ) == Decimal("300.00")
+
+        pending_note.estado = "rechazada"
+        db_session.commit()
+        assert get_credit_note_available_amount(
+            db_session,
+            tenant.id,
+            fiscal.id,
+        ) == Decimal("300.00")
+
+        full_note = _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="300.00", afectacion="20"),
+        )
+        assert full_note.total_venta == Decimal("300.00")
+
+    def test_nota_credito_aceptada_reduce_balance_y_debito_aceptada_aumenta_balance(self, db_session):
+        tenant = make_tenant(db_session, "NP06")
+        user = make_user(db_session, tenant, email="np06@test.com")
+        cliente = make_cliente(db_session, tenant, "NP06")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="300.00",
+        )
+        _create_note(
+            db_session,
+            fiscal,
+            user,
+            tipo_nota="credito",
+            items=_partial_note_items(total="100.00", afectacion="20"),
+            estado=DOCUMENT_STATUS_ISSUED,
+        )
+        credit_balance = get_fiscal_document_balance(db_session, tenant.id, fiscal.id)
+        assert credit_balance.credit_notes_total == Decimal("100.00")
+        assert credit_balance.saldo_pendiente == Decimal("200.00")
+
+        _create_note(
+            db_session,
+            fiscal,
+            user,
+            tipo_nota="debito",
+            items=_partial_note_items(total="50.00", afectacion="20"),
+            estado=DOCUMENT_STATUS_ISSUED,
+        )
+        debit_balance = get_fiscal_document_balance(db_session, tenant.id, fiscal.id)
+        assert debit_balance.debit_notes_total == Decimal("50.00")
+        assert debit_balance.saldo_pendiente == Decimal("250.00")
+
+    def test_nota_contra_documento_otro_tenant_devuelve_404(self, db_session):
+        tenant = make_tenant(db_session, "NP07")
+        other_tenant = make_tenant(db_session, "NP08")
+        user = make_user(db_session, tenant, email="np07@test.com")
+        other_user = make_user(db_session, other_tenant, email="np08@test.com")
+        cliente = make_cliente(db_session, tenant, "NP07")
+        other_cliente = make_cliente(db_session, other_tenant, "NP08")
+        _quote, _fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="118.00",
+        )
+        _other_quote, other_fiscal = _make_accepted_fiscal_document(
+            db_session,
+            other_tenant,
+            other_user,
+            other_cliente,
+            precio="118.00",
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            facturacion.emitir_nota(
+                schemas.NotaCreate(
+                    comprobante_afectado_id=other_fiscal.id,
+                    tipo_nota="credito",
+                    cod_motivo="01",
+                    descripcion_motivo="Nota de otro tenant",
+                ),
+                db=db_session,
+                current_user=user,
+                _emission_check=user,
+                mode="sync",
+            )
+
+        assert exc.value.status_code == 404
+
+    def test_nota_contra_documento_no_aceptado_o_cotizacion_comercial_falla(self, db_session):
+        tenant = make_tenant(db_session, "NP09")
+        user = make_user(db_session, tenant, email="np09@test.com")
+        cliente = make_cliente(db_session, tenant, "NP09")
+        quote = make_quote_via_crud(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="118.00",
+        )
+        fiscal = crud.create_fiscal_document_from_quote(
+            db_session,
+            quote,
+            user.id,
+            "01",
+        )
+
+        with pytest.raises(ValueError, match="estado 'facturada'"):
+            _create_note(db_session, fiscal, user)
+
+        with pytest.raises(ValueError, match="comprobantes fiscales"):
+            _create_note(db_session, quote, user)
+
+    def test_nota_credito_mayor_al_disponible_falla_con_error_claro(self, db_session):
+        tenant = make_tenant(db_session, "NP10")
+        user = make_user(db_session, tenant, email="np10@test.com")
+        cliente = make_cliente(db_session, tenant, "NP10")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="118.00",
+        )
+
+        with pytest.raises(ValueError, match="excede el monto fiscal disponible"):
+            _create_note(
+                db_session,
+                fiscal,
+                user,
+                items=_partial_note_items(total="119.00", afectacion="20"),
+            )
+
+    def test_dos_nc_pendientes_solo_una_puede_terminar_aceptada(self, db_session):
+        tenant = make_tenant(db_session, "NP11")
+        user = make_user(db_session, tenant, email="np11@test.com")
+        cliente = make_cliente(db_session, tenant, "NP11")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="100.00",
+        )
+        first_note = _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="100.00", afectacion="20"),
+        )
+        second_note = _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="100.00", afectacion="20"),
+        )
+
+        crud.guardar_respuesta_sunat(
+            db_session,
+            first_note.id,
+            {"success": True, "xml": "<xml/>"},
+            tenant_id=tenant.id,
+        )
+        blocked = crud.guardar_respuesta_sunat(
+            db_session,
+            second_note.id,
+            {"success": True, "xml": "<xml/>"},
+            tenant_id=tenant.id,
+        )
+
+        db_session.refresh(first_note)
+        db_session.refresh(second_note)
+        assert first_note.estado == DOCUMENT_STATUS_ISSUED
+        assert blocked.estado != DOCUMENT_STATUS_ISSUED
+        assert second_note.estado != DOCUMENT_STATUS_ISSUED
+        assert "excede el monto fiscal disponible" in second_note.sunat_error
+
+    def test_nc_pendiente_no_llama_proveedor_si_otra_nc_aceptada_consumio_disponible(self, db_session):
+        tenant = make_tenant(db_session, "NP12")
+        _enable_apisperu_for_worker(db_session, tenant)
+        user = make_user(db_session, tenant, email="np12@test.com")
+        cliente = make_cliente(db_session, tenant, "NP12")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="100.00",
+        )
+        first_note = _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="100.00", afectacion="20"),
+        )
+        second_note = _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="100.00", afectacion="20"),
+        )
+        crud.guardar_respuesta_sunat(
+            db_session,
+            first_note.id,
+            {"success": True, "xml": "<xml/>"},
+            tenant_id=tenant.id,
+        )
+        job, _ = emission_queue_service.enqueue_note_job(
+            db_session,
+            second_note,
+            user,
+            tipo_nota="credito",
+            cod_motivo="01",
+            descripcion_motivo="Ajuste de prueba",
+        )
+        crud.claim_next_emission_job(db_session)
+
+        with patch("services.emission_queue_service.facturacion_service.emitir_nota") as provider_call:
+            processed = emission_queue_service.process_emission_job(
+                job.id,
+                db_session=db_session,
+            )
+
+        db_session.expire_all()
+        updated_job = crud.get_emission_job(db_session, job.id)
+        updated_note = crud.get_cotizacion(db_session, second_note.id, user)
+        assert processed is False
+        assert updated_job.status == models.EMISSION_JOB_STATUS_FAILED
+        assert "excede el monto fiscal disponible" in updated_job.last_error
+        assert updated_note.estado != DOCUMENT_STATUS_ISSUED
+        provider_call.assert_not_called()
+
+    def test_nc_rechazada_no_consume_disponibilidad_y_otra_puede_emitirse(self, db_session):
+        tenant = make_tenant(db_session, "NP13")
+        _enable_apisperu_for_worker(db_session, tenant)
+        user = make_user(db_session, tenant, email="np13@test.com")
+        cliente = make_cliente(db_session, tenant, "NP13")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="100.00",
+        )
+        rejected_note = _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="100.00", afectacion="20"),
+        )
+        crud.guardar_respuesta_sunat(
+            db_session,
+            rejected_note.id,
+            {"success": False, "message": "Rechazado"},
+            tenant_id=tenant.id,
+        )
+        second_note = _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="100.00", afectacion="20"),
+        )
+        job, _ = emission_queue_service.enqueue_note_job(
+            db_session,
+            second_note,
+            user,
+            tipo_nota="credito",
+            cod_motivo="01",
+            descripcion_motivo="Ajuste de prueba",
+        )
+        crud.claim_next_emission_job(db_session)
+
+        with patch(
+            "services.emission_queue_service.facturacion_service.emitir_nota",
+            return_value=_provider_success_response(),
+        ) as provider_call, patch(
+            "services.emission_queue_service.pdf_storage_service.process_pdf_background",
+            side_effect=_noop_async,
+        ):
+            processed = emission_queue_service.process_emission_job(
+                job.id,
+                db_session=db_session,
+            )
+
+        db_session.expire_all()
+        updated_note = crud.get_cotizacion(db_session, second_note.id, user)
+        assert processed is True
+        assert updated_note.estado == DOCUMENT_STATUS_ISSUED
+        provider_call.assert_called_once()
+
+    def test_nota_debito_aceptada_aumenta_disponibilidad_para_nc(self, db_session):
+        tenant = make_tenant(db_session, "NP14")
+        user = make_user(db_session, tenant, email="np14@test.com")
+        cliente = make_cliente(db_session, tenant, "NP14")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="100.00",
+        )
+        _create_note(
+            db_session,
+            fiscal,
+            user,
+            tipo_nota="debito",
+            items=_partial_note_items(total="50.00", afectacion="20"),
+            estado=DOCUMENT_STATUS_ISSUED,
+        )
+        credit_note = _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="150.00", afectacion="20"),
+        )
+
+        accepted = crud.guardar_respuesta_sunat(
+            db_session,
+            credit_note.id,
+            {"success": True, "xml": "<xml/>"},
+            tenant_id=tenant.id,
+        )
+
+        assert accepted.estado == DOCUMENT_STATUS_ISSUED
+        balance = get_fiscal_document_balance(db_session, tenant.id, fiscal.id)
+        assert balance.debit_notes_total == Decimal("50.00")
+        assert balance.credit_notes_total == Decimal("150.00")
+        assert balance.saldo_pendiente == Decimal("0.00")
+
+    def test_revalidacion_de_nc_mantiene_tenant_isolation(self, db_session):
+        tenant = make_tenant(db_session, "NP15")
+        other_tenant = make_tenant(db_session, "NP16")
+        user = make_user(db_session, tenant, email="np15@test.com")
+        other_user = make_user(db_session, other_tenant, email="np16@test.com")
+        cliente = make_cliente(db_session, tenant, "NP15")
+        other_cliente = make_cliente(db_session, other_tenant, "NP16")
+        _quote, fiscal = _make_accepted_fiscal_document(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="100.00",
+        )
+        other_note = models.Cotizacion(
+            tenant_id=other_tenant.id,
+            cliente_id=other_cliente.id,
+            usuario_id=other_user.id,
+            serie="NCX",
+            correlativo=1,
+            document_kind=DOCUMENT_KIND_CREDIT_NOTE,
+            tipo_comprobante="07",
+            estado=DOCUMENT_STATUS_ISSUED,
+            nota_referencia_id=fiscal.id,
+            total_gravada=Decimal("0.00"),
+            total_exonerada=Decimal("100.00"),
+            total_inafecta=Decimal("0.00"),
+            total_igv=Decimal("0.00"),
+            total_venta=Decimal("100.00"),
+        )
+        db_session.add(other_note)
+        db_session.commit()
+        own_note = _create_note(
+            db_session,
+            fiscal,
+            user,
+            items=_partial_note_items(total="100.00", afectacion="20"),
+        )
+
+        accepted = crud.guardar_respuesta_sunat(
+            db_session,
+            own_note.id,
+            {"success": True, "xml": "<xml/>"},
+            tenant_id=tenant.id,
+        )
+
+        assert accepted.estado == DOCUMENT_STATUS_ISSUED
+        balance = get_fiscal_document_balance(db_session, tenant.id, fiscal.id)
+        assert balance.credit_notes_total == Decimal("100.00")
 
 
 # ==========================================

@@ -58,7 +58,7 @@ print(f'  EMISSION_MODE_DEFAULT: {settings.EMISSION_MODE_DEFAULT}')
 "
 
 # ── 5. Levantar servidor ──────────────────────────────────────────────────────
-WORKERS="${UVICORN_WORKERS:-2}"
+WORKERS="${UVICORN_WORKERS:-1}"
 PORT="${PORT:-8000}"
 
 echo ""

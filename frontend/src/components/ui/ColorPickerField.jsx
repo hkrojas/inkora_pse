@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Pipette } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 const HEX_COLOR_PATTERN = /^#([0-9A-F]{6})$/i;
 
@@ -112,11 +112,6 @@ function hslToRgb({ h, s, l }) {
   };
 }
 
-function hexToRgba(hex, alpha) {
-  const { r, g, b } = hexToRgb(hex);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
 function ColorRange({ label, value, min, max, onChange, background }) {
   return (
     <label className="pdf-color-picker-slider">
@@ -150,8 +145,7 @@ export default function ColorPickerField({
   const [isOpen, setIsOpen] = useState(false);
   const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0, width: 0, maxHeight: 420 });
   const [hexInput, setHexInput] = useState(safeValue);
-  const rgb = useMemo(() => hexToRgb(safeValue), [safeValue]);
-  const hsl = useMemo(() => rgbToHsl(rgb), [rgb]);
+  const hsl = useMemo(() => rgbToHsl(hexToRgb(safeValue)), [safeValue]);
 
   useEffect(() => {
     setHexInput(safeValue);
@@ -246,15 +240,6 @@ export default function ColorPickerField({
     commitHex(hexInput);
   };
 
-  const commitRgb = (partialRgb) => {
-    const nextRgb = {
-      r: clamp(partialRgb.r ?? rgb.r, 0, 255),
-      g: clamp(partialRgb.g ?? rgb.g, 0, 255),
-      b: clamp(partialRgb.b ?? rgb.b, 0, 255),
-    };
-    commitHex(rgbToHex(nextRgb));
-  };
-
   const commitHsl = (partialHsl) => {
     const nextHsl = {
       h: partialHsl.h ?? hsl.h,
@@ -264,10 +249,9 @@ export default function ColorPickerField({
     commitHex(rgbToHex(hslToRgb(nextHsl)));
   };
 
-  const displayPresets = presets.length > 0 ? presets : [fallback, '#0F172A', '#2563EB', '#14B8A6', '#F97316', '#EF4444'];
+  const displayPresets = presets.length > 0 ? presets : ['#EF4444', '#F97316', '#111111', '#2563EB'];
   const saturationBackground = `linear-gradient(90deg, hsl(${Math.round(hsl.h)}deg 0% ${Math.round(hsl.l)}%), hsl(${Math.round(hsl.h)}deg 100% ${Math.round(hsl.l)}%))`;
   const lightnessBackground = `linear-gradient(90deg, hsl(${Math.round(hsl.h)}deg ${Math.round(hsl.s)}% 0%), hsl(${Math.round(hsl.h)}deg ${Math.round(hsl.s)}% 50%), hsl(${Math.round(hsl.h)}deg ${Math.round(hsl.s)}% 100%))`;
-  const previewBackground = `linear-gradient(135deg, ${hexToRgba(safeValue, 0.22)} 0%, ${hexToRgba(safeValue, 0.92)} 100%)`;
 
   return (
     <div ref={rootRef} className={`pdf-color-picker ${isOpen ? 'is-open' : ''}`}>
@@ -309,30 +293,31 @@ export default function ColorPickerField({
             top: popoverPos.top,
             left: popoverPos.left,
             width: popoverPos.width,
-            maxHeight: popoverPos.maxHeight,
-            zIndex: 9999,
           }}
         >
-          <div className="pdf-color-picker-preview" style={{ background: previewBackground }}>
-            <div className="pdf-color-picker-preview-chip" style={{ '--picker-color': safeValue }} />
-            <div className="pdf-color-picker-preview-copy">
-              <div className="pdf-color-picker-preview-title">Color activo</div>
-              <div className="pdf-color-picker-preview-value">{safeValue}</div>
-            </div>
-            <div className="pdf-color-picker-preview-icon">
-              <Pipette size={16} />
-            </div>
+          <div className="pdf-color-picker-header">
+            <span className="pdf-color-picker-swatch-lg" style={{ background: safeValue }} />
+            <input
+              className="input pdf-color-picker-hex-input"
+              style={{ flex: 1 }}
+              value={hexInput}
+              onChange={handleHexInputChange}
+              onBlur={handleHexBlur}
+              maxLength={7}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="#000000"
+            />
           </div>
 
           <div className="pdf-color-picker-presets">
-            {displayPresets.map((preset) => {
+            {displayPresets.map((preset, presetIndex) => {
               const normalizedPreset = normalizeHex(preset, fallback);
-              const isActive = normalizedPreset === safeValue;
               return (
                 <button
-                  key={normalizedPreset}
+                  key={`${presetIndex}-${normalizedPreset}`}
                   type="button"
-                  className={`pdf-color-picker-preset ${isActive ? 'is-active' : ''}`}
+                  className={`pdf-color-picker-preset ${normalizedPreset === safeValue ? 'is-active' : ''}`}
                   style={{ '--picker-color': normalizedPreset }}
                   onClick={() => commitHex(normalizedPreset)}
                   title={normalizedPreset}
@@ -351,7 +336,7 @@ export default function ColorPickerField({
               background="linear-gradient(90deg, #FF3B30 0%, #FF9500 16%, #FFD60A 32%, #34C759 48%, #0A84FF 66%, #5E5CE6 82%, #FF2D55 100%)"
             />
             <ColorRange
-              label="Saturacion"
+              label="Satur."
               value={hsl.s}
               min={0}
               max={100}
@@ -366,29 +351,6 @@ export default function ColorPickerField({
               onChange={(nextLightness) => commitHsl({ l: nextLightness })}
               background={lightnessBackground}
             />
-          </div>
-
-          <div className="pdf-color-picker-rgb">
-            {[
-              ['R', rgb.r, 'r'],
-              ['G', rgb.g, 'g'],
-              ['B', rgb.b, 'b'],
-            ].map(([channelLabel, channelValue, channelKey]) => (
-              <label key={channelKey} className="pdf-color-picker-rgb-field">
-                <span>{channelLabel}</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={255}
-                  className="input input-no-spinner"
-                  value={channelValue}
-                  onChange={(event) => {
-                    const rawValue = Number(event.target.value);
-                    commitRgb({ [channelKey]: Number.isFinite(rawValue) ? rawValue : 0 });
-                  }}
-                />
-              </label>
-            ))}
           </div>
         </div>,
         document.body,

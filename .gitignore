@@ -32,6 +32,7 @@ skills-lock.json
 # Logs y salidas locales
 *.log
 output.txt
+test_mcp_output*.txt
 frontend_dev.log
 /backend/*.log
 /backend/*.err.log
@@ -41,3 +42,19 @@ frontend_dev.log
 
 # Evidencia y scripts temporales de pruebas manuales
 /pruebas/
+/backend/pruebas/
+/backend/pruebas qwen/
+
+# Artefactos locales de QA/smoke y salidas temporales
+/backend/frontend_smoke.db
+/backend/_*.txt
+/frontend/test-results/
+/nul
+
+# Backups, dumps y material descargado de referencia
+/backups/
+/Smart_PSE/
+/swagger*.json
+
+# Configuracion local de agentes/IDE auxiliares
+/.kilo/

@@ -37,6 +37,13 @@ def column_exists(inspector, table: str, column: str) -> bool:
         return False
 
 
+def table_exists(inspector, table: str) -> bool:
+    try:
+        return table in inspector.get_table_names()
+    except Exception:
+        return False
+
+
 def index_exists(inspector, table: str, index_name: str) -> bool:
     try:
         return index_name in [idx["name"] for idx in inspector.get_indexes(table)]
@@ -146,27 +153,31 @@ def run_migration():
         )
 
         print("\n[PASO 4] Campos de trazabilidad en pagos...")
-        add_column_if_missing(
-            conn,
-            inspector,
-            "pagos",
-            "source_quote_id",
-            "INTEGER REFERENCES cotizaciones(id)",
-        )
-        add_column_if_missing(
-            conn,
-            inspector,
-            "pagos",
-            "fiscal_document_id",
-            "INTEGER REFERENCES cotizaciones(id)",
-        )
-        add_column_if_missing(
-            conn,
-            inspector,
-            "pagos",
-            "internal_order_number",
-            "VARCHAR",
-        )
+        pagos_exists = table_exists(inspector, "pagos")
+        if pagos_exists:
+            add_column_if_missing(
+                conn,
+                inspector,
+                "pagos",
+                "source_quote_id",
+                "INTEGER REFERENCES cotizaciones(id)",
+            )
+            add_column_if_missing(
+                conn,
+                inspector,
+                "pagos",
+                "fiscal_document_id",
+                "INTEGER REFERENCES cotizaciones(id)",
+            )
+            add_column_if_missing(
+                conn,
+                inspector,
+                "pagos",
+                "internal_order_number",
+                "VARCHAR",
+            )
+        else:
+            print("  [!] Tabla 'pagos' no existe; se omite trazabilidad de pagos en fase 4.")
 
         print("\n[PASO 5] Indices...")
         create_index_if_missing(
@@ -197,13 +208,16 @@ def run_migration():
             "idx_guias_internal_order_number",
             "internal_order_number",
         )
-        create_index_if_missing(
-            conn,
-            inspector,
-            "pagos",
-            "idx_pagos_internal_order_number",
-            "internal_order_number",
-        )
+        if pagos_exists:
+            create_index_if_missing(
+                conn,
+                inspector,
+                "pagos",
+                "idx_pagos_internal_order_number",
+                "internal_order_number",
+            )
+        else:
+            print("  [!] Tabla 'pagos' no existe; se omite indice idx_pagos_internal_order_number.")
 
         conn.commit()
 

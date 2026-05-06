@@ -1,12 +1,18 @@
 """models/tenants.py — Tenant, User, AuditLog, Subscription, SubscriptionPayment."""
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
 APISPERU_TOKEN_STATUS_OK = "ok"
 APISPERU_TOKEN_STATUS_INVALID = "invalid"
 APISPERU_TOKEN_STATUS_UNCHECKED = "unchecked"
+SMARTPSE_STATUS_OK = "ok"
+SMARTPSE_STATUS_INVALID = "invalid"
+SMARTPSE_STATUS_UNCHECKED = "unchecked"
+SMARTPSE_GRE_STATUS_OK = "ok"
+SMARTPSE_GRE_STATUS_INVALID = "invalid"
+SMARTPSE_GRE_STATUS_UNCHECKED = "unchecked"
 
 from database import Base
 
@@ -16,6 +22,15 @@ from database import Base
 
 class Tenant(Base):
     __tablename__ = "tenants"
+    __table_args__ = (
+        Index(
+            "ix_tenants_scale_lookup",
+            "id",
+            "business_ruc",
+            "is_active",
+            "smartpse_gre_status",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
@@ -38,9 +53,21 @@ class Tenant(Base):
     apisperu_url = Column(String, nullable=True)
     apisperu_token_status = Column(String, default=APISPERU_TOKEN_STATUS_UNCHECKED, nullable=True)
     apisperu_token_checked_at = Column(DateTime, nullable=True)
+    smartpse_company_id = Column(String, nullable=True)
+    smartpse_environment = Column(String, default="demo", nullable=True)
+    smartpse_usuario_secundaria = Column(String, nullable=True)
+    smartpse_token_acceso = Column(String, nullable=True)
+    smartpse_status = Column(String, default=SMARTPSE_STATUS_UNCHECKED, nullable=True)
+    smartpse_checked_at = Column(DateTime, nullable=True)
 
     sunat_gre_client_id = Column(String, nullable=True)
     sunat_gre_client_secret = Column(String, nullable=True)
+    smartpse_gre_sol_username = Column(String, nullable=True)
+    smartpse_gre_sol_password_enc = Column(Text, nullable=True)
+    smartpse_gre_client_id = Column(String, nullable=True)
+    smartpse_gre_client_secret_enc = Column(Text, nullable=True)
+    smartpse_gre_status = Column(String, default=SMARTPSE_GRE_STATUS_UNCHECKED, nullable=True)
+    smartpse_gre_checked_at = Column(DateTime, nullable=True)
 
     plan_type = Column(String, default="Free")
     plan_start_date = Column(DateTime, default=datetime.now)
@@ -66,6 +93,10 @@ class Tenant(Base):
     subscription = relationship("Subscription", back_populates="tenant", uselist=False)
     subscription_payments = relationship("SubscriptionPayment", back_populates="tenant")
     emission_jobs = relationship("DocumentEmissionJob", back_populates="tenant")
+    resumenes_diarios = relationship("ResumenDiario", back_populates="tenant")
+    reversiones_fiscales = relationship("ReversionFiscal", back_populates="tenant")
+    retenciones_fiscales = relationship("RetencionFiscal", back_populates="tenant")
+    percepciones_fiscales = relationship("PercepcionFiscal", back_populates="tenant")
 
 
 # ==========================================
@@ -161,6 +192,7 @@ class Subscription(Base):
     max_users = Column(Integer, default=5, nullable=True)
     max_documents = Column(Integer, default=500, nullable=True)
     documents_used = Column(Integer, default=0, nullable=False)
+    beta_feature_flags = Column(JSON, nullable=True)
 
     onboarding_status = Column(String, default=ONBOARDING_STATUS_NOT_STARTED, nullable=False)
     notes_internal = Column(Text, nullable=True)

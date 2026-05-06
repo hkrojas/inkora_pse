@@ -7,7 +7,7 @@ export default function ThemeToggle({ theme, setTheme, className }) {
   return (
     <button
       type="button"
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      onClick={(event) => setTheme(isDark ? 'light' : 'dark', event)}
       className={cn(
         'inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors',
         className

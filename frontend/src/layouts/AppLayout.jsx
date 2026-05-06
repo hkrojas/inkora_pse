@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { AlertTriangle, ShieldCheck, XCircle, TrendingUp } from 'lucide-react';
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { AlertTriangle, Bell, Plus, Search, ShieldCheck, User, XCircle } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
 import { FullPageSpinner } from '../components/ui/Spinner';
+import PageTransition from '../components/ui/PageTransition';
 import { sunat } from '../services/sunat';
 import { tenant as tenantSvc } from '../services/tenant';
 import { cn } from '../lib/utils/cn';
 
-function SunatExchangeRate() {
+function SunatStatus() {
   const [rate, setRate] = useState(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -24,10 +24,7 @@ function SunatExchangeRate() {
         retryId = setTimeout(load, 30 * 60 * 1000);
       } catch {
         if (!mounted) return;
-        setRate(null);
         retryId = setTimeout(load, 60 * 1000);
-      } finally {
-        if (mounted) setLoading(false);
       }
     };
 
@@ -38,111 +35,55 @@ function SunatExchangeRate() {
     };
   }, []);
 
-  const baseClass =
-    'inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-3 py-1.5 text-xs font-bold text-[var(--color-text)]';
-
-  if (loading) {
-    return (
-      <span className={cn(baseClass, 'opacity-60')}>
-        <TrendingUp size={13} className="text-[var(--color-text-muted)]" />
-        <span className="text-[var(--color-text-muted)]">TC</span>
-        <span className="font-mono">...</span>
-      </span>
-    );
-  }
-
-  if (!rate) {
-    return (
-      <span className={cn(baseClass, 'opacity-70')}>
-        <TrendingUp size={13} className="text-[var(--color-text-muted)]" />
-        <span className="text-[var(--color-text-muted)]">TC</span>
-        <span className="font-mono">N/D</span>
-      </span>
-    );
-  }
-
   return (
-    <span
-      className={cn(baseClass, rate.stale && 'opacity-70')}
-      title={`SUNAT ${rate.date}`}
-    >
-      <TrendingUp size={13} className="text-[var(--color-primary)]" />
-      <span className="text-[var(--color-text-muted)]">TC SUNAT</span>
-      <span className="font-mono">
-        C {rate.buy} <span className="text-[var(--color-text-soft)]">|</span> V {rate.sell}
-      </span>
-    </span>
-  );
-}
-
-function SystemClock() {
-  const [time, setTime] = useState('');
-  const [date, setDate] = useState('');
-
-  useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      const h = String(now.getHours()).padStart(2, '0');
-      const m = String(now.getMinutes()).padStart(2, '0');
-      setTime(`${h}:${m}`);
-      setDate(
-        now
-          .toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' })
-          .toUpperCase(),
-      );
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  return (
-    <div className="hidden flex-col items-end leading-tight sm:flex">
-      <span className="font-mono text-sm font-bold text-[var(--color-text)]">{time}</span>
-      <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-soft)]">
-        {date}
-      </span>
+    <div className="app-sunat-pill hidden items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2 shadow-[var(--shadow-soft)] sm:flex">
+      <span className="attention-pulse-dot" />
+      <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[var(--color-text-muted)]">SUNAT</span>
+      {rate && (
+        <span className="font-mono text-[11px] font-semibold text-[var(--color-text)]">
+          C {rate.buy} | V {rate.sell}
+        </span>
+      )}
     </div>
   );
 }
 
 const ROUTE_META = {
-  '/dashboard': { kicker: 'Resumen operativo', title: 'Panel Inkora', breadcrumb: 'Inicio / Dashboard' },
-  '/clientes': { kicker: 'Relación comercial', title: 'Clientes', breadcrumb: 'Catálogo / Clientes' },
-  '/productos': { kicker: 'Catálogo reusable', title: 'Productos', breadcrumb: 'Catálogo / Productos' },
-  '/cotizaciones': { kicker: 'Motor comercial', title: 'Cotizaciones', breadcrumb: 'Ventas / Cotizaciones' },
-  '/cobranza': { kicker: 'Flujo de caja', title: 'Cobranza', breadcrumb: 'Ventas / Cobranza' },
-  '/guias': { kicker: 'Despacho fiscal', title: 'Guías de remisión', breadcrumb: 'Logística / Guías' },
-  '/facturas': { kicker: 'Comprobantes tipo 01', title: 'Facturas', breadcrumb: 'Ventas / Facturas' },
-  '/comprobantes/nuevo': { kicker: 'Emisión central', title: 'Crear comprobante', breadcrumb: 'Ventas / Emisión' },
-  '/boletas': { kicker: 'Comprobantes tipo 03', title: 'Boletas', breadcrumb: 'Ventas / Boletas' },
-  '/notas': { kicker: 'Ajustes fiscales', title: 'Notas Crédito/Débito', breadcrumb: 'Ventas / Notas' },
-  '/retenciones': { kicker: 'Régimen de retenciones', title: 'Retenciones', breadcrumb: 'SUNAT / Retenciones' },
-  '/percepciones': { kicker: 'Régimen de percepciones', title: 'Percepciones', breadcrumb: 'SUNAT / Percepciones' },
-  '/resumen-diario': { kicker: 'Consolidado de boletas', title: 'Resumen Diario', breadcrumb: 'SUNAT / Resumen Diario' },
-  '/bajas': { kicker: 'Anulación ante SUNAT', title: 'Comunicación de Bajas', breadcrumb: 'SUNAT / Bajas' },
-  '/reversiones': { kicker: 'Reversión de documentos', title: 'Reversiones', breadcrumb: 'SUNAT / Reversiones' },
-  '/configuracion': { kicker: 'Datos del negocio', title: 'Perfil de empresa', breadcrumb: 'Sistema / Perfil' },
-  '/cambiar-password': { kicker: 'Seguridad de cuenta', title: 'Cambiar contraseña', breadcrumb: 'Sistema / Contraseña' },
-  '/diseno-pdf': { kicker: 'Plantilla comercial', title: 'Diseño PDF', breadcrumb: 'Sistema / Diseño PDF' },
-  '/superadmin': { kicker: 'Control interno', title: 'Superadmin', breadcrumb: 'Sistema / Superadmin' },
+  '/dashboard': { title: 'Dashboard', sub: 'Centro de control diario' },
+  '/clientes': { title: 'Clientes', sub: 'Relación comercial' },
+  '/productos': { title: 'Productos', sub: 'Catálogo reusable' },
+  '/cotizaciones': { title: 'Cotizaciones', sub: 'Motor comercial' },
+  '/cobranza': { title: 'Cobranza', sub: 'Seguimiento de pagos' },
+  '/guias': { title: 'Guías de remisión', sub: 'Despacho fiscal' },
+  '/facturas': { title: 'Facturas', sub: 'Comprobantes tipo 01' },
+  '/comprobantes/nuevo': { title: 'Crear comprobante', sub: 'Emisión central' },
+  '/boletas': { title: 'Boletas', sub: 'Comprobantes tipo 03' },
+  '/notas': { title: 'Notas crédito/débito', sub: 'Ajustes fiscales' },
+  '/retenciones': { title: 'Retenciones', sub: 'Régimen de retenciones' },
+  '/percepciones': { title: 'Percepciones', sub: 'Régimen de percepciones' },
+  '/resumen-diario': { title: 'Resumen diario', sub: 'Operación diaria' },
+  '/bajas': { title: 'Bajas', sub: 'Comunicación de baja' },
+  '/reversiones': { title: 'Reversiones', sub: 'Corrección de documentos' },
+  '/configuracion': { title: 'Configuración', sub: 'Datos del negocio' },
+  '/diseno-pdf': { title: 'Diseño PDF', sub: 'Plantilla comercial' },
+  '/superadmin': { title: 'Superadmin', sub: 'Control interno' },
 };
 
 function getRouteMeta(pathname) {
   if (pathname.startsWith('/cotizaciones/')) {
-    return { kicker: 'Detalle comercial', title: 'Detalle de cotización', breadcrumb: 'Ventas / Cotizaciones / Detalle' };
+    return { title: 'Detalle de cotización', sub: 'Detalle comercial' };
   }
   if (pathname.startsWith('/guias/')) {
-    return { kicker: 'Seguimiento de despacho', title: 'Detalle de guía', breadcrumb: 'Logística / Guías / Detalle' };
+    return { title: 'Detalle de guía', sub: 'Seguimiento de despacho' };
   }
-  return ROUTE_META[pathname] || { kicker: 'Operación', title: 'Inkora', breadcrumb: 'Inkora' };
+  return ROUTE_META[pathname] || { title: 'Inkora', sub: 'Operación' };
 }
 
 function SubscriptionBanner({ user }) {
   const [status, setStatus] = useState(null);
 
   useEffect(() => {
-    if (!user || user.is_superadmin || user.rol === 'superadmin') return;
+    if (!user || user.is_superadmin) return;
     tenantSvc
       .subscriptionStatus()
       .then((data) => {
@@ -159,7 +100,7 @@ function SubscriptionBanner({ user }) {
   return (
     <div
       className={cn(
-        'flex items-center gap-3 px-6 py-2.5 text-sm font-semibold border-b border-[var(--color-border)]',
+        'flex items-center gap-3 border-b border-[var(--color-border)] px-6 py-3 text-sm font-semibold',
         isBlocked
           ? 'bg-[var(--color-danger-soft)] text-[var(--color-danger-text)]'
           : 'bg-[var(--color-warning-soft)] text-[var(--color-warning-text)]',
@@ -174,72 +115,127 @@ function SubscriptionBanner({ user }) {
 export default function AppLayout() {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
 
   if (loading) return <FullPageSpinner />;
   if (!user) return <Navigate to="/login" replace />;
 
-  if (user.must_change_password && location.pathname !== '/cambiar-password') {
-    return <Navigate to="/cambiar-password" replace />;
+  if (user.must_change_password && !location.pathname.startsWith('/configuracion')) {
+    return <Navigate to="/configuracion?tab=seguridad" replace />;
   }
 
   const meta = getRouteMeta(location.pathname);
-  const isSuperadmin = user?.is_superadmin || user?.rol === 'superadmin';
+  const isSuperadmin = Boolean(user?.is_superadmin);
+
+  const isDashboardRoute = location.pathname === '/dashboard';
+  const isClientesRoute = location.pathname === '/clientes';
+  const isCotizacionesRoute = location.pathname.startsWith('/cotizaciones');
+  const isProductosRoute = location.pathname === '/productos';
+  const isCobranzaRoute = location.pathname === '/cobranza';
+  const isComprobantesNuevoRoute = location.pathname === '/comprobantes/nuevo';
+  const isFacturasRoute = location.pathname === '/facturas';
+  const isBoletasRoute = location.pathname === '/boletas';
+  const isGuiasRoute = location.pathname.startsWith('/guias');
+  const isNotasRoute = location.pathname === '/notas';
+  const isResumenDiarioRoute = location.pathname === '/resumen-diario';
+  const isBajasRoute = location.pathname === '/bajas';
+  const isReversionesRoute = location.pathname === '/reversiones';
+  const isRetencionesRoute = location.pathname === '/retenciones';
+  const isPercepcionesRoute = location.pathname === '/percepciones';
+  const isConfiguracionRoute = location.pathname.startsWith('/configuracion');
 
   return (
-    <>
-      {/* Línea de tensión decorativa (gradient marca) */}
-      <div
-        className="fixed inset-x-0 top-0 z-[100] h-[3px]"
-        style={{
-          background: 'linear-gradient(90deg, #2563EB 0%, #7C3AED 60%, #D946EF 100%)',
-        }}
-        aria-hidden="true"
-      />
+    <div
+      className={cn(
+        'app-dashboard-shell flex h-screen bg-[var(--color-bg)]',
+        isDashboardRoute && 'app-route-dashboard',
+        isClientesRoute && 'app-route-clientes',
+        isCotizacionesRoute && 'app-route-cotizaciones',
+        isProductosRoute && 'app-route-productos',
+        isGuiasRoute && 'app-route-guias',
+        isNotasRoute && 'app-route-notas',
+        isResumenDiarioRoute && 'app-route-resumen-diario',
+        isBajasRoute && 'app-route-bajas',
+        isReversionesRoute && 'app-route-reversiones',
+        isRetencionesRoute && 'app-route-retenciones',
+        isPercepcionesRoute && 'app-route-percepciones',
+        isConfiguracionRoute && 'app-route-configuracion',
+        isCobranzaRoute && 'app-route-cobranza',
+        isComprobantesNuevoRoute && 'app-route-comprobantes-nuevo',
+        isFacturasRoute && 'app-route-facturas',
+        isBoletasRoute && 'app-route-boletas',
+      )}
+    >
+      <Sidebar />
 
-      <div className="flex min-h-screen bg-[var(--color-bg)]">
-        <Sidebar />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="app-topbar sticky top-0 z-30 grid min-h-[72px] flex-shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-[var(--color-border)] bg-[rgba(255,255,255,0.94)] px-4 backdrop-blur-[18px] sm:px-6">
+          <div className="flex min-w-0 flex-col pl-10 lg:pl-0">
+            <div className="flex items-center gap-2.5">
+              <h1 className="m-0 truncate text-[18px] font-extrabold leading-tight tracking-[-0.04em] text-[var(--color-text)]">
+                {meta.title}
+              </h1>
+              {isSuperadmin && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--color-primary-text)]">
+                  <ShieldCheck size={10} />
+                  SA
+                </span>
+              )}
+            </div>
+            <span className="hidden text-[13px] leading-none text-[var(--color-text-muted)] sm:block">
+              {meta.sub}
+            </span>
+          </div>
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          {/* Topbar */}
-          <header className="sticky top-0 z-30 flex flex-col gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
-            {/* Lado izquierdo: breadcrumb + título */}
-            <div className="flex flex-col gap-0.5 pl-12 lg:pl-0">
-              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-soft)]">
-                {meta.breadcrumb}
+          <div className="hidden items-center gap-2.5 rounded-[14px] border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-2 text-[var(--color-text-soft)] sm:flex">
+            <Search size={14} className="flex-shrink-0" />
+            <span className="whitespace-nowrap text-[12px]">Buscar en Inkora...</span>
+          </div>
+
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <SunatStatus />
+
+            <button
+              type="button"
+              className="relative inline-flex h-[42px] w-[42px] items-center justify-center rounded-[13px] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] shadow-[var(--shadow-soft)] transition-colors hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2"
+              aria-label="Ver notificaciones"
+              title="Notificaciones"
+            >
+              <Bell size={15} />
+              <span className="absolute right-[10px] top-[10px] h-[6px] w-[6px] rounded-full border border-white bg-[var(--color-primary)]" />
+            </button>
+
+            <button
+              type="button"
+              className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-[13px] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] shadow-[var(--shadow-soft)] transition-colors hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2"
+              aria-label="Abrir menú de usuario"
+              title="Usuario"
+            >
+              <User size={15} />
+            </button>
+
+            <button
+              className="hidden items-center gap-2 rounded-[18px] bg-[var(--color-dark-btn)] px-6 py-3 text-[16px] font-extrabold text-white transition-opacity hover:opacity-90 sm:flex"
+              type="button"
+              onClick={() => navigate('/comprobantes/nuevo')}
+              aria-label="Crear comprobante"
+            >
+              Crear comprobante
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/15">
+                <Plus size={11} strokeWidth={2.5} />
               </span>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-extrabold tracking-tight text-[var(--color-text)] sm:text-xl">
-                  {meta.title}
-                </h1>
-                {isSuperadmin && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-purple-soft)] px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-[var(--color-purple-text)]">
-                    <ShieldCheck size={10} />
-                    superadmin
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-[var(--color-text-muted)]">{meta.kicker}</p>
-            </div>
+            </button>
+          </div>
+        </header>
 
-            {/* Lado derecho: chips de operación */}
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <SunatExchangeRate />
-              <SystemClock />
-              <div className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--color-success-soft)] px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-[var(--color-success-text)]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]" />
-                SUNAT
-              </div>
-            </div>
-          </header>
+        <SubscriptionBanner user={user} />
 
-          <SubscriptionBanner user={user} />
-
-          {/* Contenido */}
-          <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
+        <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7">
+          <PageTransition>
             <Outlet />
-          </main>
-        </div>
+          </PageTransition>
+        </main>
       </div>
-    </>
+    </div>
   );
 }

@@ -19,6 +19,13 @@ from schemas.tenants import (
     SuperadminTenantResponse,
     ApisPeruTokenValidationRequest,
     ApisPeruTokenValidationResponse,
+    SmartPSECredentialsValidationRequest,
+    SmartPSECredentialsValidationResponse,
+    SmartPSEProvisionRequest,
+    SmartPSEGreCredentialsUpdate,
+    SmartPSEGreCredentialsValidationResponse,
+    SuperadminTenantPageMetrics,
+    SuperadminTenantPageResponse,
     EmissionErrorResponse,
     TokenHealthResponse,
 )
@@ -28,6 +35,7 @@ from schemas.auth import (
     UserRegisterRequest,
     UserUpdateProfile,
     UserAdminUpdate,
+    SuperadminTenantUserUpdate,
     SuperadminUserCreate,
     UserResponse,
     UserMetrics,
@@ -46,12 +54,14 @@ from schemas.clientes import (
     ClienteCreate,
     ClienteUpdate,
     ClienteResponse,
+    ClientePageResponse,
 )
 
 from schemas.productos import (
     ProductoBase,
     ProductoCreate,
     ProductoResponse,
+    ProductoPageResponse,
     InsumoBase,
     InsumoCreate,
     InsumoResponse,
@@ -71,8 +81,16 @@ from schemas.productos import (
 from schemas.cotizaciones import (
     CotizacionItemCreate,
     CotizacionItemResponse,
+    CuotaPagoCreate,
     CotizacionCreate,
+    CotizacionListResponse,
     CotizacionResponse,
+    ClienteDocumentoListResponse,
+    FiscalDocumentListResponse,
+    FiscalDocumentPageResponse,
+    NoteReferenceDocumentListResponse,
+    FiscalNoteListResponse,
+    FiscalNotePageResponse,
     PagoCreate,
     PagoResponse,
     CobranzaResumenResponse,
@@ -89,6 +107,43 @@ from schemas.guias import (
     GuiaRemisionItemResponse,
     EtiquetaGuiaResponse,
     GuiaRemisionResponse,
+    GuiaRemisionListResponse,
+    GuiaRemisionCountsResponse,
+    GuiaRemisionPageResponse,
+    SmartPSEGuideReconcileRequest,
+)
+
+from schemas.resumenes import (
+    ResumenDiarioDocReferencia,
+    ResumenDiarioPercepcion,
+    ResumenDiarioDetalleCreate,
+    ResumenDiarioCreate,
+    ResumenDiarioResponse,
+    ResumenDiarioPageResponse,
+)
+from schemas.reversiones import (
+    ReversionDetalleCreate,
+    ReversionCreate,
+    ReversionResponse,
+    ReversionPageResponse,
+)
+from schemas.retenciones import (
+    RetencionClientCreate,
+    RetencionPaymentCreate,
+    RetencionExchangeCreate,
+    RetencionDetalleCreate,
+    RetencionCreate,
+    RetencionResponse,
+    RetencionPageResponse,
+)
+from schemas.percepciones import (
+    PercepcionClientCreate,
+    PercepcionPaymentCreate,
+    PercepcionExchangeCreate,
+    PercepcionDetalleCreate,
+    PercepcionCreate,
+    PercepcionResponse,
+    PercepcionPageResponse,
 )
 
 from schemas.ai import (
@@ -102,6 +157,9 @@ from schemas.subscriptions import (
     SubscriptionResponse,
     SubscriptionPaymentCreate,
     SubscriptionPaymentResponse,
+    FiscalFeatureFlagDefinitionResponse,
+    FiscalFeatureFlagsResponse,
+    UpdateFiscalFeatureFlagsRequest,
     ActivateTenantRequest,
     SuspendTenantRequest,
     ExtendAccessRequest,
@@ -135,7 +193,11 @@ __all__ = [
     # tenants
     "TenantBase", "TenantCreate", "TenantUpdate", "TenantSummaryResponse",
     "TenantResponse", "TenantSaaSUpdate", "SuperadminTenantCreate", "SuperadminTenantResponse",
+    "SuperadminTenantPageMetrics", "SuperadminTenantPageResponse",
     "ApisPeruTokenValidationRequest", "ApisPeruTokenValidationResponse",
+    "SmartPSECredentialsValidationRequest", "SmartPSECredentialsValidationResponse",
+    "SmartPSEProvisionRequest", "SmartPSEGreCredentialsUpdate",
+    "SmartPSEGreCredentialsValidationResponse",
     "EmissionErrorResponse", "TokenHealthResponse",
     # auth
     "UserIdentity", "UserRegisterRequest", "UserUpdateProfile", "UserAdminUpdate",
@@ -143,27 +205,43 @@ __all__ = [
     "ResetPasswordResponse", "ToggleUserActiveRequest", "Token", "TokenData",
     "ChangePasswordRequest", "CreateUserWithPasswordResponse",
     # clientes
-    "CONDICION_PAGO_VALORES", "ClienteBase", "ClienteCreate", "ClienteUpdate", "ClienteResponse",
+    "CONDICION_PAGO_VALORES", "ClienteBase", "ClienteCreate", "ClienteUpdate", "ClienteResponse", "ClientePageResponse",
     # productos + MRP
-    "ProductoBase", "ProductoCreate", "ProductoResponse",
+    "ProductoBase", "ProductoCreate", "ProductoResponse", "ProductoPageResponse",
     "InsumoBase", "InsumoCreate", "InsumoResponse",
     "RecetaBOMBase", "RecetaBOMCreate", "RecetaBOMResponse",
     "AlertaInventarioResponse", "DashboardStatsResponse",
     "ProveedorBase", "ProveedorCreate", "ProveedorUpdate", "ProveedorResponse",
     "OrdenProduccionDetalleResponse", "OrdenProduccionResponse",
     # cotizaciones + pagos
-    "CotizacionItemCreate", "CotizacionItemResponse", "CotizacionCreate", "CotizacionResponse",
+    "CotizacionItemCreate", "CotizacionItemResponse", "CuotaPagoCreate", "CotizacionCreate", "CotizacionListResponse", "CotizacionResponse",
+    "ClienteDocumentoListResponse", "FiscalDocumentListResponse", "FiscalDocumentPageResponse",
+    "NoteReferenceDocumentListResponse", "FiscalNoteListResponse", "FiscalNotePageResponse",
     "PagoCreate", "PagoResponse",
     "CobranzaResumenResponse", "CobranzaVencidaItem",
     "FacturarPayload", "NotaCreate", "AnulacionCreate", "DescargaArchivoPayload",
     # guias
     "GuiaRemisionItemCreate", "GuiaRemisionCreate", "GuiaRemisionItemResponse",
-    "EtiquetaGuiaResponse", "GuiaRemisionResponse",
+    "EtiquetaGuiaResponse", "GuiaRemisionResponse", "GuiaRemisionListResponse",
+    "GuiaRemisionCountsResponse", "GuiaRemisionPageResponse", "SmartPSEGuideReconcileRequest",
+    # resumen diario
+    "ResumenDiarioDocReferencia", "ResumenDiarioPercepcion",
+    "ResumenDiarioDetalleCreate", "ResumenDiarioCreate", "ResumenDiarioResponse", "ResumenDiarioPageResponse",
+    # reversiones
+    "ReversionDetalleCreate", "ReversionCreate", "ReversionResponse", "ReversionPageResponse",
+    # retenciones
+    "RetencionClientCreate", "RetencionPaymentCreate", "RetencionExchangeCreate",
+    "RetencionDetalleCreate", "RetencionCreate", "RetencionResponse", "RetencionPageResponse",
+    # percepciones
+    "PercepcionClientCreate", "PercepcionPaymentCreate", "PercepcionExchangeCreate",
+    "PercepcionDetalleCreate", "PercepcionCreate", "PercepcionResponse", "PercepcionPageResponse",
     # ai
     "AIItemCotizacion", "AIParsedCotizacionResponse",
     "AIInsumoFactura", "AIParsedFacturaResponse",
     # subscriptions / superadmin / beta
     "SubscriptionResponse", "SubscriptionPaymentCreate", "SubscriptionPaymentResponse",
+    "FiscalFeatureFlagDefinitionResponse", "FiscalFeatureFlagsResponse",
+    "UpdateFiscalFeatureFlagsRequest",
     "ActivateTenantRequest", "SuspendTenantRequest", "ExtendAccessRequest",
     "SetFounderPricingRequest", "UpdateSubscriptionRequest", "SuperadminTenantDetailResponse",
     "UpdateNotasRequest", "TenantActividadResponse", "BetaTenantSummary",

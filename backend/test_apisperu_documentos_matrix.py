@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import crud
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
-from services import facturacion_service
+from services import facturacion_service, smartpse_client
 
 
 def _make_user_with_apisperu(db_session, suffix: str):
@@ -36,9 +36,64 @@ def _make_user_with_apisperu(db_session, suffix: str):
     user = make_user(db_session, tenant, email=f"{suffix.lower()}@test.com")
     tenant.apisperu_token = "fake_token"
     tenant.apisperu_url = "https://facturacion.test/api/v1"
+    tenant.smartpse_company_id = "77"
+    tenant.smartpse_environment = "demo"
+    tenant.smartpse_usuario_secundaria = "AB3KPQR9"
+    tenant.smartpse_token_acceso = "MX7TNVQG"
     db_session.commit()
     db_session.refresh(tenant)
     return tenant, user
+
+
+def _smartpse_accepted(*, description: str = "Aceptado", tag: str = "Invoice"):
+    return {
+        "estado": 200,
+        "mensaje": description,
+        "xml_firmado": f"<{tag} />",
+        "codigo_hash": "hash-123",
+        "cdr": "<ApplicationResponse/>",
+        "rechazado": False,
+    }
+
+
+def _smartpse_pending(ticket: str, *, tag: str = "ApplicationResponse"):
+    return {
+        "estado": 202,
+        "mensaje": "Pendiente",
+        "ticket": ticket,
+        "xml_firmado": f"<{tag} />",
+        "codigo_hash": "hash-ticket",
+    }
+
+
+class _FakeSmartPSEClient:
+    def __init__(self, process_responses=None, consult_responses=None):
+        self.process_responses = list(process_responses or [_smartpse_accepted()])
+        self.consult_responses = list(consult_responses or [])
+        self.process_calls = []
+        self.consult_calls = []
+
+    def process_xml(self, tenant, nombre_archivo, xml_content, *, demo=False):
+        self.process_calls.append((tenant, nombre_archivo, xml_content, demo))
+        response = self.process_responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    def consult_ticket(self, tenant, nombre_archivo):
+        self.consult_calls.append((tenant, nombre_archivo))
+        response = self.consult_responses.pop(0) if self.consult_responses else _smartpse_accepted()
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+def _patch_smartpse(fake_client):
+    return patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client)
+
+
+def _filename_ruc(tenant) -> str:
+    return "".join(ch for ch in str(tenant.business_ruc) if ch.isdigit())
 
 
 def _mock_immediate_provider_response(*, description: str = "Aceptado"):
@@ -199,9 +254,10 @@ def _make_guia(db_session, suffix: str):
 
 class TestApisPeruDocumentosMatrix:
     def test_factura_usa_invoice_send_y_respuesta_inmediata(self, db_session):
-        _, user, _, fiscal = _make_fiscal_document(db_session, "MX01", "01")
+        tenant, user, _, fiscal = _make_fiscal_document(db_session, "MX01", "01")
+        fake_client = _FakeSmartPSEClient([_smartpse_accepted(tag="Invoice")])
 
-        with patch("requests.post", return_value=_mock_immediate_provider_response()) as post_mock:
+        with _patch_smartpse(fake_client):
             result = facturacion_service.emitir_factura(
                 fiscal,
                 db_session,
@@ -209,14 +265,18 @@ class TestApisPeruDocumentosMatrix:
                 tipo_doc_override="01",
             )
 
-        assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/invoice/send"
+        _, filename, xml_content, demo = fake_client.process_calls[0]
+        assert filename.startswith(f"{_filename_ruc(tenant)}-01-")
+        assert b"InvoiceTypeCode" in xml_content
+        assert demo is True
         assert result["success"] is True
-        assert "ticket" not in result
+        assert not result.get("ticket")
 
     def test_boleta_usa_invoice_send_y_respuesta_inmediata(self, db_session):
-        _, user, _, fiscal = _make_fiscal_document(db_session, "MX02", "03")
+        tenant, user, _, fiscal = _make_fiscal_document(db_session, "MX02", "03")
+        fake_client = _FakeSmartPSEClient([_smartpse_accepted(tag="Invoice")])
 
-        with patch("requests.post", return_value=_mock_immediate_provider_response()) as post_mock:
+        with _patch_smartpse(fake_client):
             result = facturacion_service.emitir_factura(
                 fiscal,
                 db_session,
@@ -224,16 +284,18 @@ class TestApisPeruDocumentosMatrix:
                 tipo_doc_override="03",
             )
 
-        sent_payload = json.loads(post_mock.call_args.kwargs["data"])
-        assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/invoice/send"
-        assert sent_payload["tipoDoc"] == "03"
+        _, filename, xml_content, _ = fake_client.process_calls[0]
+        assert filename.startswith(f"{_filename_ruc(tenant)}-03-")
+        assert "InvoiceTypeCode" in xml_content.decode("utf-8")
+        assert ">03<" in xml_content.decode("utf-8")
         assert result["success"] is True
-        assert "ticket" not in result
+        assert not result.get("ticket")
 
     def test_nota_credito_usa_note_send_y_respuesta_inmediata(self, db_session):
         user, fiscal, nota = _make_nota_documento(db_session, "MX03", tipo_nota="credito")
+        fake_client = _FakeSmartPSEClient([_smartpse_accepted(tag="CreditNote")])
 
-        with patch("requests.post", return_value=_mock_immediate_provider_response()) as post_mock:
+        with _patch_smartpse(fake_client):
             result = facturacion_service.emitir_nota(
                 nota,
                 fiscal,
@@ -243,16 +305,17 @@ class TestApisPeruDocumentosMatrix:
                 "credito",
             )
 
-        sent_payload = json.loads(post_mock.call_args.kwargs["data"])
-        assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/note/send"
-        assert sent_payload["tipoDoc"] == "07"
-        assert sent_payload["serie"] == "FF01"
+        _, filename, xml_content, _ = fake_client.process_calls[0]
+        assert filename.startswith(f"{_filename_ruc(fiscal.tenant)}-07-")
+        assert b"CreditNoteTypeCode" in xml_content
+        assert b"DiscrepancyResponse" in xml_content
         assert result["success"] is True
 
     def test_nota_debito_usa_note_send_y_respuesta_inmediata(self, db_session):
         user, fiscal, nota = _make_nota_documento(db_session, "MX04", tipo_nota="debito")
+        fake_client = _FakeSmartPSEClient([_smartpse_accepted(tag="DebitNote")])
 
-        with patch("requests.post", return_value=_mock_immediate_provider_response()) as post_mock:
+        with _patch_smartpse(fake_client):
             result = facturacion_service.emitir_nota(
                 nota,
                 fiscal,
@@ -262,13 +325,15 @@ class TestApisPeruDocumentosMatrix:
                 "debito",
             )
 
-        sent_payload = json.loads(post_mock.call_args.kwargs["data"])
-        assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/note/send"
-        assert sent_payload["tipoDoc"] == "08"
+        _, filename, xml_content, _ = fake_client.process_calls[0]
+        assert filename.startswith(f"{_filename_ruc(fiscal.tenant)}-08-")
+        assert b"DebitNoteTypeCode" not in xml_content
+        assert b"DiscrepancyResponse" in xml_content
         assert result["success"] is True
 
-    def test_resumen_diario_usa_summary_send_y_status(self, db_session):
+    def test_resumen_diario_usa_summary_send_y_guarda_ticket_pendiente(self, db_session):
         tenant, user = _make_user_with_apisperu(db_session, "MX05")
+        fake_client = _FakeSmartPSEClient([_smartpse_pending("summary-1", tag="SummaryDocuments")])
         payload = {
             "fecGeneracion": "2026-04-11T10:00:00-05:00",
             "fecResumen": "2026-04-11T10:00:00-05:00",
@@ -278,85 +343,80 @@ class TestApisPeruDocumentosMatrix:
             "details": [],
         }
 
-        with patch("requests.post", return_value=_mock_async_send_response("summary-1")) as post_mock, patch(
-            "requests.get",
-            return_value=_mock_async_status_response(description="Resumen aceptado"),
-        ) as get_mock:
+        with _patch_smartpse(fake_client):
             result = facturacion_service.emitir_resumen_diario(payload, user)
 
-        assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/summary/send"
-        assert get_mock.call_args.args[0] == "https://facturacion.test/api/v1/summary/status"
-        assert get_mock.call_args.kwargs["params"]["ticket"] == "summary-1"
-        assert get_mock.call_args.kwargs["params"]["ruc"] == tenant.business_ruc
+        _, filename, xml_content, _ = fake_client.process_calls[0]
+        assert filename.startswith(f"{_filename_ruc(tenant)}-RC-")
+        assert b"SummaryDocuments" in xml_content
+        assert fake_client.consult_calls == []
         assert result["success"] is True
+        assert result["pending"] is True
         assert result["ticket"] == "summary-1"
 
     def test_comunicacion_baja_factura_usa_voided_send_y_status(self, db_session):
         _, user, _, fiscal = _make_fiscal_document(db_session, "MX06", "01")
         fiscal.estado = "facturada"
         db_session.commit()
+        fake_client = _FakeSmartPSEClient(
+            [_smartpse_pending("voided-1", tag="VoidedDocuments")],
+            [_smartpse_accepted(description="Baja aceptada", tag="VoidedDocuments")],
+        )
 
-        with patch("requests.post", return_value=_mock_async_send_response("voided-1")) as post_mock, patch(
-            "requests.get",
-            return_value=_mock_async_status_response(description="Baja aceptada"),
-        ) as get_mock:
+        with _patch_smartpse(fake_client):
             result = facturacion_service.anular_comprobante(
                 fiscal,
                 "ERROR EN CALCULOS",
                 user,
             )
 
-        sent_payload = json.loads(post_mock.call_args.kwargs["data"])
-        assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/voided/send"
-        assert sent_payload["details"][0]["tipoDoc"] == "01"
-        assert get_mock.call_args.args[0] == "https://facturacion.test/api/v1/voided/status"
-        assert get_mock.call_args.kwargs["params"]["ruc"] == fiscal.tenant.business_ruc
+        _, filename, xml_content, _ = fake_client.process_calls[0]
+        assert filename.startswith(f"{_filename_ruc(fiscal.tenant)}-RA-")
+        assert b"DocumentTypeCode" in xml_content
+        assert b"ERROR EN CALCULOS" in xml_content
+        assert fake_client.consult_calls == []
         assert result["success"] is True
+        assert result["pending"] is True
         assert result["ticket"] == "voided-1"
 
     def test_baja_boleta_usa_summary_send_y_status(self, db_session):
         _, user, _, boleta = _make_fiscal_document(db_session, "MX07", "03")
         boleta.estado = "facturada"
         db_session.commit()
+        fake_client = _FakeSmartPSEClient(
+            [_smartpse_pending("summary-2", tag="SummaryDocuments")],
+            [_smartpse_accepted(description="Resumen de baja aceptado", tag="SummaryDocuments")],
+        )
 
-        with patch("requests.post", return_value=_mock_async_send_response("summary-2")) as post_mock, patch(
-            "requests.get",
-            return_value=_mock_async_status_response(description="Resumen de baja aceptado"),
-        ) as get_mock:
+        with _patch_smartpse(fake_client):
             result = facturacion_service.anular_comprobante(
                 boleta,
                 "ANULACION DE BOLETA",
                 user,
             )
 
-        assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/summary/send"
-        assert get_mock.call_args.args[0] == "https://facturacion.test/api/v1/summary/status"
-        assert get_mock.call_args.kwargs["params"]["ruc"] == boleta.tenant.business_ruc
+        _, filename, xml_content, _ = fake_client.process_calls[0]
+        assert filename.startswith(f"{_filename_ruc(boleta.tenant)}-RC-")
+        assert b"SummaryDocuments" in xml_content
+        assert fake_client.consult_calls == []
         assert result["success"] is True
+        assert result["pending"] is True
         assert result["ticket"] == "summary-2"
 
     def test_guia_remision_usa_despatch_send_y_status(self, db_session):
         user, guia = _make_guia(db_session, "MX08")
+        fake_client = _FakeSmartPSEClient(
+            [_smartpse_pending("despatch-1", tag="DespatchAdvice")],
+            [_smartpse_accepted(description="Guia aceptada", tag="DespatchAdvice")],
+        )
 
-        with patch("requests.post", return_value=_mock_async_send_response("despatch-1")) as post_mock, patch(
-            "requests.get",
-            return_value=_mock_async_status_response(description="Guia aceptada"),
-        ) as get_mock:
+        with _patch_smartpse(fake_client):
             result = facturacion_service.emitir_guia_remision(guia, user)
 
-        sent_payload = json.loads(post_mock.call_args.kwargs["data"])
-        assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/despatch/send"
-        assert sent_payload["tipoDoc"] == "09"
-        assert sent_payload["company"]["address"]["codLocal"] == "0000"
-        assert sent_payload["envio"]["partida"]["codLocal"] == "0000"
-        assert sent_payload["envio"]["partida"]["ruc"] == guia.tenant.business_ruc
-        assert "codLocal" not in sent_payload["envio"]["llegada"]
-        assert "codEstablecimiento" not in sent_payload["envio"]["llegada"]
-        assert sent_payload["envio"]["vehiculo"]["placa"] == "ABC123"
-        assert sent_payload["envio"]["choferes"][0]["nroDoc"] == "72758912"
-        assert "transportista" not in sent_payload["envio"]
-        assert get_mock.call_args.args[0] == "https://facturacion.test/api/v1/despatch/status"
-        assert get_mock.call_args.kwargs["params"]["ruc"] == guia.tenant.business_ruc
+        _, filename, xml_content, _ = fake_client.process_calls[0]
+        assert filename.startswith(f"{_filename_ruc(guia.tenant)}-09-")
+        assert b"DespatchAdvice" in xml_content
+        assert fake_client.consult_calls[0][1] == filename
         assert result["success"] is True
         assert result["ticket"] == "despatch-1"
 
@@ -430,12 +490,8 @@ class TestApisPeruDocumentosMatrix:
             "proveedor": {"tipoDoc": "6", "numDoc": "20191308868", "rznSocial": "Proveedor Demo"},
         }
 
-        with patch("requests.post", return_value=_mock_immediate_provider_response()) as post_mock:
-            result = facturacion_service.emitir_retencion(payload, user)
-
-        assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/retention/send"
-        assert result["success"] is True
-        assert "ticket" not in result
+        with pytest.raises(facturacion_service.FacturacionException, match="Smart PSE v1"):
+            facturacion_service.emitir_retencion(payload, user)
 
     def test_percepcion_usa_perception_send_y_respuesta_inmediata(self, db_session):
         _, user = _make_user_with_apisperu(db_session, "MX10")
@@ -446,15 +502,15 @@ class TestApisPeruDocumentosMatrix:
             "cliente": {"tipoDoc": "6", "numDoc": "20191308868", "rznSocial": "Cliente Demo"},
         }
 
-        with patch("requests.post", return_value=_mock_immediate_provider_response()) as post_mock:
-            result = facturacion_service.emitir_percepcion(payload, user)
-
-        assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/perception/send"
-        assert result["success"] is True
-        assert "ticket" not in result
+        with pytest.raises(facturacion_service.FacturacionException, match="Smart PSE v1"):
+            facturacion_service.emitir_percepcion(payload, user)
 
     def test_reversion_usa_reversion_send_y_status(self, db_session):
         tenant, user = _make_user_with_apisperu(db_session, "MX11")
+        fake_client = _FakeSmartPSEClient(
+            [_smartpse_pending("reversion-1", tag="VoidedDocuments")],
+            [_smartpse_accepted(description="Reversion aceptada", tag="VoidedDocuments")],
+        )
         payload = {
             "fecGeneracion": "2026-04-11T10:00:00-05:00",
             "fecComunicacion": "2026-04-11T10:01:00-05:00",
@@ -463,56 +519,54 @@ class TestApisPeruDocumentosMatrix:
             "details": [],
         }
 
-        with patch("requests.post", return_value=_mock_async_send_response("reversion-1")) as post_mock, patch(
-            "requests.get",
-            return_value=_mock_async_status_response(description="Reversion aceptada"),
-        ) as get_mock:
+        with _patch_smartpse(fake_client):
             result = facturacion_service.emitir_reversion(payload, user)
 
-        assert post_mock.call_args.args[0] == "https://facturacion.test/api/v1/reversion/send"
-        assert get_mock.call_args.args[0] == "https://facturacion.test/api/v1/reversion/status"
-        assert get_mock.call_args.kwargs["params"]["ticket"] == "reversion-1"
-        assert get_mock.call_args.kwargs["params"]["ruc"] == tenant.business_ruc
+        _, filename, xml_content, _ = fake_client.process_calls[0]
+        assert filename.startswith(f"{_filename_ruc(tenant)}-RR-")
+        assert b"VoidedDocuments" in xml_content
+        assert fake_client.consult_calls[0][1] == filename
         assert result["success"] is True
         assert result["ticket"] == "reversion-1"
 
     def test_poll_async_status_reintenta_cuando_ticket_aun_no_existe(self, db_session):
         tenant, user = _make_user_with_apisperu(db_session, "MX12")
+        fake_client = _FakeSmartPSEClient(
+            [_smartpse_pending("reversion-12", tag="VoidedDocuments")],
+            [
+                smartpse_client.SmartPSEException("Ticket no existe"),
+                _smartpse_accepted(description="Reversion aceptada luego de espera", tag="VoidedDocuments"),
+            ],
+        )
         payload = {
             "fecGeneracion": "2026-04-11T10:00:00-05:00",
-            "fecResumen": "2026-04-11T10:00:00-05:00",
+            "fecComunicacion": "2026-04-11T10:01:00-05:00",
             "correlativo": "00001",
-            "moneda": "PEN",
             "company": {"ruc": tenant.business_ruc},
             "details": [],
         }
-        pending = MagicMock()
-        pending.status_code = 200
-        pending.json.return_value = {
-            "success": False,
-            "error": {
-                "code": "0127",
-                "message": "Ticket no existe",
-            },
-            "code": "0127",
-        }
 
-        with patch("requests.post", return_value=_mock_async_send_response("summary-12")), patch(
-            "requests.get",
-            side_effect=[
-                pending,
-                _mock_async_status_response(description="Resumen aceptado luego de espera"),
-            ],
-        ) as get_mock, patch("services.facturacion_service.time.sleep") as sleep_mock:
-            result = facturacion_service.emitir_resumen_diario(payload, user)
+        with _patch_smartpse(fake_client), patch("services.facturacion_service.time.sleep") as sleep_mock:
+            result = facturacion_service.emitir_reversion(payload, user)
 
-        assert get_mock.call_count == 2
+        assert len(fake_client.consult_calls) == 2
+        assert all(call[1] == fake_client.process_calls[0][1] for call in fake_client.consult_calls)
         sleep_mock.assert_called_once()
         assert result["success"] is True
-        assert result["ticket"] == "summary-12"
+        assert result["ticket"] == "reversion-12"
 
     def test_resumen_diario_reporta_diagnostico_si_proveedor_genera_xml_sin_percent(self, db_session):
         tenant, user = _make_user_with_apisperu(db_session, "MX13")
+        fake_client = _FakeSmartPSEClient(
+            [
+                {
+                    "estado": 422,
+                    "mensaje": "Falta tasa del tributo",
+                    "errores": ["Falta tasa del tributo"],
+                    "rechazado": True,
+                }
+            ]
+        )
         payload = {
             "fecGeneracion": "2026-04-11T10:00:00-05:00",
             "fecResumen": "2026-04-11T10:00:00-05:00",
@@ -521,24 +575,12 @@ class TestApisPeruDocumentosMatrix:
             "company": {"ruc": tenant.business_ruc},
             "details": [],
         }
-        xml_without_percent = (
-            "<cac:TaxSubtotal><cbc:TaxAmount currencyID='PEN'>9.00</cbc:TaxAmount>"
-            "<cac:TaxCategory><cac:TaxScheme><cbc:ID>1000</cbc:ID></cac:TaxScheme>"
-            "</cac:TaxCategory></cac:TaxSubtotal>"
-        )
 
-        with patch(
-            "requests.post",
-            return_value=_mock_provider_business_error_response(
-                code="2992",
-                message="Falta tasa del tributo",
-                xml=xml_without_percent,
-            ),
-        ):
+        with _patch_smartpse(fake_client):
             with pytest.raises(facturacion_service.FacturacionException) as exc:
                 facturacion_service.emitir_resumen_diario(payload, user)
 
-        assert "<cbc:Percent>" in str(exc.value)
+        assert "Falta tasa del tributo" in str(exc.value)
 
     def test_resumen_baja_payload_usa_estado_anular(self, db_session):
         """_build_summary_payload debe usar estado '3' para anulacion segun Catalogo 19."""
@@ -584,19 +626,13 @@ class TestApisPeruDocumentosMatrix:
 
     def test_guia_reporta_cuando_xml_funciona_pero_send_falla(self, db_session):
         user, guia = _make_guia(db_session, "MX14")
+        fake_client = _FakeSmartPSEClient(
+            [smartpse_client.SmartPSEException("Error interno Smart PSE al enviar GRE")]
+        )
 
-        with patch(
-            "requests.post",
-            side_effect=[
-                _mock_provider_http_error_response(
-                    status_code=500,
-                    body={"error": "Error al comunicarse con el servidor interno"},
-                ),
-                _mock_xml_render_response(),
-            ],
-        ):
+        with _patch_smartpse(fake_client):
             with pytest.raises(facturacion_service.FacturacionException) as exc:
                 facturacion_service.emitir_guia_remision(guia, user)
 
-        assert "/despatch/xml" in str(exc.value)
-        assert "envio SUNAT" in str(exc.value)
+        assert "Smart PSE" in str(exc.value)
+        assert "GRE" in str(exc.value)

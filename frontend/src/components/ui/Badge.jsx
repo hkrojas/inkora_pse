@@ -44,6 +44,7 @@ export default function Badge({ children, variant = 'draft', className }) {
 export function statusBadge(estado) {
   const map = {
     pendiente: 'pending',
+    pendiente_smartpse: 'warning',
     pagado: 'paid',
     parcial: 'partial',
     vencido: 'overdue',

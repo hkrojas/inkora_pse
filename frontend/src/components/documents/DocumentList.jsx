@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download, ExternalLink, FileText, Plus, RefreshCw, Search, XCircle } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  Clock3,
+  Download,
+  ExternalLink,
+  FileText,
+  Plus,
+  RefreshCw,
+  Search,
+  XCircle,
+  XOctagon,
+} from 'lucide-react';
 import { api } from '../../lib/utils/api';
 import { useToast } from '../ui/Toast';
 import Spinner from '../ui/Spinner';
@@ -9,6 +21,9 @@ import CustomSelect from '../ui/CustomSelect';
 import DatePicker from '../ui/DatePicker';
 import { DocumentTypeBadge } from './DocumentType';
 import { getSunatStatus, formatCurrency } from '../../lib/utils/documents';
+import EmptyState from '../ui/EmptyState';
+import { PageError } from '../ui/PageState';
+import useDebouncedValue from '../../hooks/useDebouncedValue';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos' },
@@ -24,31 +39,168 @@ const MONEDA_OPTIONS = [
   { value: 'USD', label: '$ Dolares' },
 ];
 
-const PER_PAGE = 25;
+const PER_PAGE = 15;
 
-// Filterable, searchable document list for Facturas / Boletas / Notas
-// Props: tipo ('01'|'03'|'07'|'08'), title, subtitle, newLabel, newHref, endpoint
+const TAB_DEFS = [
+  { key: 'all', label: 'Todas' },
+  { key: 'draft', label: 'Borradores' },
+  { key: 'emitted', label: 'Emitidas' },
+  { key: 'pending', label: 'Pendientes' },
+  { key: 'rejected', label: 'Rechazadas' },
+  { key: 'voided', label: 'Anuladas' },
+];
+
+const STATUS_TO_TAB = {
+  aceptado: 'emitted',
+  pendiente: 'pending',
+  error: 'rejected',
+  anulado: 'voided',
+};
+
+function getDocumentFamily(tipo, title) {
+  if (tipo === '01') {
+    return {
+      pageTitle: 'Facturas',
+      heroSubtitle: 'Emitidas ante SUNAT y listas para seguimiento.',
+      emptyTitle: 'Aun no tienes facturas emitidas',
+      emptyDescription: 'Crea tu primera factura usando un cliente registrado o una cotizacion aprobada.',
+      filteredEmptyTitle: 'No hay facturas para esta vista',
+      newFallback: 'Nueva factura',
+    };
+  }
+
+  if (tipo === '03') {
+    return {
+      pageTitle: 'Boletas',
+      heroSubtitle: 'Emitidas ante SUNAT y listas para seguimiento.',
+      emptyTitle: 'Aun no tienes boletas emitidas',
+      emptyDescription: 'Emite la primera boleta cuando el cliente necesite un comprobante rapido y validado.',
+      filteredEmptyTitle: 'No hay boletas para esta vista',
+      newFallback: 'Nueva boleta',
+    };
+  }
+
+  return {
+    pageTitle: title || 'Comprobantes',
+    heroSubtitle: 'Documentos emitidos y listos para seguimiento.',
+    emptyTitle: 'Aun no tienes comprobantes emitidos',
+    emptyDescription: 'Crea tu primer comprobante usando un cliente registrado o una cotizacion aprobada.',
+    filteredEmptyTitle: 'No hay comprobantes para esta vista',
+    newFallback: 'Nuevo comprobante',
+  };
+}
+
+function getVisibleRange(page, pageSize, total) {
+  if (!total) return '0';
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
+  return `${start}-${end}`;
+}
+
+function getStateEmptyCopy(activeTab, family) {
+  if (activeTab === 'draft') return `No hay ${family.pageTitle.toLowerCase()} en borrador.`;
+  if (activeTab === 'emitted') return `No hay ${family.pageTitle.toLowerCase()} aceptadas en esta vista.`;
+  if (activeTab === 'pending') return `No hay ${family.pageTitle.toLowerCase()} pendientes de respuesta SUNAT.`;
+  if (activeTab === 'rejected') return `No hay ${family.pageTitle.toLowerCase()} rechazadas u observadas.`;
+  if (activeTab === 'voided') return `No hay ${family.pageTitle.toLowerCase()} anuladas en esta vista.`;
+  return family.filteredEmptyTitle;
+}
+
+function normalizeActionLabel(label, fallback) {
+  const raw = String(label || fallback || '').trim();
+  return raw.replace(/^\+\s*/, '');
+}
+
+function formatDocNumber(doc) {
+  return `${doc.serie || '-'}-${String(doc.correlativo || 0).padStart(6, '0')}`;
+}
+
+function csvCell(value) {
+  const text = String(value ?? '').replaceAll('"', '""');
+  return `"${text}"`;
+}
+
+function downloadTextFile(filename, content, mime = 'text/csv;charset=utf-8') {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function filenameFromDisposition(disposition, fallback) {
+  const match = /filename="?([^"]+)"?/i.exec(disposition || '');
+  return match?.[1] || fallback;
+}
+
+function downloadBlobFile(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export default function DocumentList({ tipo, title, subtitle, newLabel, newHref, endpoint }) {
   const [docs, setDocs] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [tabCounts, setTabCounts] = useState({ all: 0, draft: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [downloadingId, setDownloadingId] = useState(null);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ desde: '', hasta: '', estado: 'all', moneda: 'all' });
   const [page, setPage] = useState(1);
+  const [activeTab, setActiveTab] = useState('all');
   const toast = useToast();
+  const debouncedSearch = useDebouncedValue(search, 300);
+
+  const family = useMemo(() => getDocumentFamily(tipo, title), [tipo, title]);
+  const primaryLabel = useMemo(
+    () => normalizeActionLabel(newLabel, family.newFallback),
+    [newLabel, family.newFallback],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const url = endpoint || '/facturas-emitidas/';
-      const all = await api.get(url);
-      const filtered = tipo ? all.filter((d) => d.tipo_comprobante === tipo) : all;
-      setDocs(filtered);
-    } catch {
-      toast('No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error');
+      const selectedTab = filters.estado !== 'all'
+        ? STATUS_TO_TAB[filters.estado] || 'all'
+        : activeTab;
+      const params = new URLSearchParams({
+        skip: String((page - 1) * PER_PAGE),
+        limit: String(PER_PAGE),
+        tab: selectedTab,
+      });
+      if (tipo) params.set('tipo_comprobante', tipo);
+      if (debouncedSearch.trim()) params.set('q', debouncedSearch.trim());
+      if (filters.desde) params.set('desde', filters.desde);
+      if (filters.hasta) params.set('hasta', filters.hasta);
+      if (filters.moneda !== 'all') params.set('moneda', filters.moneda);
+      const url = endpoint || `/facturas-emitidas/page?${params.toString()}`;
+      const data = await api.get(url);
+      const items = Array.isArray(data) ? data : data.items || [];
+      setDocs(items);
+      setTotal(Array.isArray(data) ? items.length : data.total || 0);
+      setTabCounts(data.counts || { all: items.length, draft: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 });
+    } catch (err) {
+      setError(err);
+      setDocs([]);
+      setTotal(0);
+      setTabCounts({ all: 0, draft: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 });
+      toast(err.message || 'No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error');
     } finally {
       setLoading(false);
     }
-  }, [tipo, endpoint, toast]);
+  }, [activeTab, debouncedSearch, endpoint, filters, page, tipo, toast]);
 
   useEffect(() => {
     load();
@@ -56,458 +208,440 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
 
   useEffect(() => {
     setPage(1);
-  }, [search, filters]);
+  }, [debouncedSearch, filters, activeTab]);
 
-  const setFilter = (k, v) => setFilters((f) => ({ ...f, [k]: v }));
+  const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
+
   const clearFilters = () => {
     setFilters({ desde: '', hasta: '', estado: 'all', moneda: 'all' });
     setSearch('');
   };
 
-  const filtered = useMemo(() => {
-    return docs.filter((d) => {
-      const q = search.toLowerCase();
-      const matchSearch = !q
-        || (d.cliente?.razon_social || d.cliente?.nombre || '').toLowerCase().includes(q)
-        || (d.cliente?.numero_documento || '').includes(q)
-        || (`${d.serie}-${d.correlativo}`).toLowerCase().includes(q);
-      const matchDesde = !filters.desde || new Date(d.fecha_emision) >= new Date(filters.desde);
-      const matchHasta = !filters.hasta || new Date(d.fecha_emision) <= new Date(filters.hasta);
-      const sunatSt = getSunatStatus(d);
-      const matchEstado = filters.estado === 'all'
-        || (filters.estado === 'aceptado' && sunatSt?.kind === 'ok')
-        || (filters.estado === 'pendiente' && sunatSt?.kind === 'pending')
-        || (filters.estado === 'error' && sunatSt?.kind === 'error')
-        || (filters.estado === 'anulado' && sunatSt?.kind === 'voided');
-      const matchMoneda = filters.moneda === 'all' || d.moneda === filters.moneda;
-      return matchSearch && matchDesde && matchHasta && matchEstado && matchMoneda;
+  const exportCurrentView = () => {
+    if (!docs.length) {
+      toast('No hay documentos para exportar.', 'error');
+      return;
+    }
+
+    const headers = ['folio', 'fecha_emision', 'cliente', 'documento_cliente', 'tipo', 'moneda', 'total', 'estado', 'sunat'];
+    const rows = docs.map((doc) => {
+      const sunat = getSunatStatus(doc);
+      return [
+        formatDocNumber(doc),
+        doc.fecha_emision ? new Date(doc.fecha_emision).toLocaleDateString('es-PE') : '',
+        doc.cliente?.razon_social || doc.cliente?.nombre || '',
+        doc.cliente?.numero_documento || '',
+        doc.tipo_comprobante || '',
+        doc.moneda || 'PEN',
+        Number(doc.total_venta || 0).toFixed(2),
+        doc.estado || '',
+        sunat?.label || '',
+      ].map(csvCell).join(',');
     });
-  }, [docs, search, filters]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const pageItems = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-
-  const hasActiveFilters = (
-    search
-    || filters.desde
-    || filters.hasta
-    || filters.estado !== 'all'
-    || filters.moneda !== 'all'
-  );
-
-  const handleExport = () => {
-    toast('La exportación está en desarrollo.', 'info');
+    downloadTextFile(`${family.pageTitle.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`, [headers.join(','), ...rows].join('\n'));
+    toast('Exportación CSV generada.', 'success');
   };
 
+  const downloadFiscalFile = async (doc, type) => {
+    setDownloadingId(`${doc.id}-${type}`);
+    try {
+      const { blob, disposition } = await api.blob(`/facturacion/${type}`, { comprobante_id: doc.id }, { timeoutMs: 45000 });
+      const fallback = `${formatDocNumber(doc)}.${type === 'cdr' ? 'zip' : type}`;
+      downloadBlobFile(blob, filenameFromDisposition(disposition, fallback));
+    } catch (err) {
+      toast(err.message || 'No se pudo descargar el archivo fiscal.', 'error');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const pageItems = docs;
+
+  const hasActiveFilters =
+    search || filters.desde || filters.hasta || filters.estado !== 'all' || filters.moneda !== 'all';
+
+  const metrics = useMemo(() => {
+    const accepted = tabCounts.emitted || 0;
+    const pending = tabCounts.pending || 0;
+    const rejected = tabCounts.rejected || 0;
+    const amount = docs.reduce((sum, doc) => sum + Number(doc.total_venta || 0), 0);
+    return { accepted, pending, rejected, amount };
+  }, [docs, tabCounts]);
+
+  const visibleMetrics = useMemo(() => {
+    const accepted = docs.filter((doc) => getSunatStatus(doc)?.kind === 'ok').length;
+    const pending = docs.filter((doc) => getSunatStatus(doc)?.kind === 'pending').length;
+    const rejected = docs.filter((doc) => getSunatStatus(doc)?.kind === 'error').length;
+    const amount = docs.reduce((sum, doc) => sum + Number(doc.total_venta || 0), 0);
+    return { accepted, pending, rejected, amount };
+  }, [docs]);
+
+  const acceptedRate = tabCounts.all
+    ? Math.round((metrics.accepted / tabCounts.all) * 100)
+    : 0;
+
+  const heroCards = [
+    {
+      key: 'all',
+      value: tabCounts.all || total,
+      label: `${family.pageTitle} visibles`,
+      text: formatCurrency(metrics.amount, 'PEN'),
+      link: 'Ver todas',
+      icon: <FileText size={16} />,
+    },
+    {
+      key: 'emitted',
+      value: metrics.accepted,
+      label: 'Aceptadas SUNAT',
+      text: `${acceptedRate}% del total actual`,
+      link: 'Abrir emitidas',
+      icon: <CheckCircle2 size={16} />,
+    },
+    {
+      key: 'pending',
+      value: metrics.pending,
+      label: 'Pendientes',
+      text: metrics.pending ? 'Requieren seguimiento o recarga' : 'Sin espera pendiente',
+      link: 'Revisar pendientes',
+      icon: <Clock3 size={16} />,
+    },
+    {
+      key: 'rejected',
+      value: metrics.rejected,
+      label: 'Observadas',
+      text: metrics.rejected ? 'Necesitan corrección o reenvío' : 'Sin errores SUNAT',
+      link: 'Ver observadas',
+      icon: <XOctagon size={16} />,
+    },
+  ];
+
   return (
-    <div className="page-shell">
-      {/* Topbar */}
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          <h1 className="page-title">{title}</h1>
-          <span
-            className="tx-meta"
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontWeight: 700,
-              fontSize: 'var(--fs-micro)',
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              padding: '4px 10px',
-              border: '1px solid var(--border-rule)',
-              background: 'var(--bg-surface-2)',
-              color: 'var(--text-tertiary)',
-            }}
+    <div className="page-shell page-shell--dense">
+      <div className="page-head ink-enter-1">
+        <div className="page-actions document-list-page-actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={exportCurrentView}
           >
-            {filtered.length} de {docs.length}
-          </span>
-          {subtitle && (
-            <p className="tx-meta" style={{ margin: 0, color: 'var(--text-muted)' }}>
-              {subtitle}
-            </p>
-          )}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button type="button" className="btn-secondary" onClick={handleExport}>
-            <Download size={16} />
-            EXPORTAR
+            <Download size={15} />
+            Exportar
           </button>
+
           {newHref && (
             <Link className="btn-primary" to={newHref}>
-              <Plus size={16} />
-              {newLabel || 'NUEVO'}
+              <Plus size={15} />
+              {primaryLabel}
             </Link>
           )}
         </div>
       </div>
 
-      {/* Sticky filters */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 10,
-          background: 'var(--bg-app)',
-          borderBottom: '1px solid var(--border-hair)',
-          padding: '12px 0',
-          marginBottom: '16px',
-        }}
-      >
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr repeat(4, auto) auto',
-            gap: '10px',
-            alignItems: 'end',
-          }}
-        >
-          <div className="ink-search" style={{ position: 'relative' }}>
-            <Search
-              size={14}
-              style={{
-                position: 'absolute',
-                left: '12px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'var(--text-muted)',
-                pointerEvents: 'none',
-              }}
-            />
+      <section className="attention document-list-hero ink-enter-2">
+        <div className="attention-title document-list-hero-title">
+          <div className="document-list-hero-head">
+            <div className="attention-title-badge">
+              <FileText size={15} />
+            </div>
+          </div>
+
+          <div className="document-list-hero-pagecopy">
+            <h2>{family.pageTitle}</h2>
+            <p>
+              {family.heroSubtitle || subtitle || `Administra ${family.pageTitle.toLowerCase()} emitidas, estados SUNAT y acciones pendientes.`}
+            </p>
+          </div>
+
+          <div className="document-list-hero-kicker">
+            {tipo ? `Tipo ${tipo}` : 'Comprobantes'} · {tabCounts.pending ? `${tabCounts.pending} por revisar` : 'Operación estable'}
+          </div>
+        </div>
+
+        {heroCards.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={`attention-card document-list-hero-card${activeTab === item.key ? ' is-active' : ''}`}
+            onClick={() => setActiveTab(item.key)}
+          >
+            <div className="document-list-hero-card-icon">{item.icon}</div>
+            <strong>{item.value}</strong>
+            <div className="attention-card-text">
+              {item.label}
+              <span>{item.text}</span>
+            </div>
+            <span className="attention-card-link">
+              {item.link}
+              <ArrowRight size={13} />
+            </span>
+          </button>
+        ))}
+      </section>
+
+      <article className="panel document-list-panel ink-enter-3">
+        <div className="toolbar">
+          <label className="search-box">
+            <Search size={16} />
             <input
-              className="input-compact"
-              style={{ paddingLeft: '36px', width: '100%' }}
-              placeholder="Buscar por folio, cliente o documento..."
+              placeholder="Buscar por serie, número o cliente..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-          </div>
+          </label>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <label className="tx-label">Estado</label>
-            <CustomSelect
-              compact
-              value={filters.estado}
-              onChange={(v) => setFilter('estado', v)}
-              options={STATUS_OPTIONS}
-            />
+          <div className="toolbar-actions">
+            {metrics.pending > 0 && (
+              <button type="button" className="btn-secondary" onClick={load}>
+                <RefreshCw size={15} />
+                Actualizar estados
+              </button>
+            )}
+            {hasActiveFilters && (
+              <button type="button" className="btn-ghost" onClick={clearFilters}>
+                <XCircle size={15} />
+                Limpiar filtros
+              </button>
+            )}
           </div>
+        </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <label className="tx-label">Moneda</label>
-            <CustomSelect
-              compact
-              value={filters.moneda}
-              onChange={(v) => setFilter('moneda', v)}
-              options={MONEDA_OPTIONS}
-            />
+        <div className="document-list-filters">
+          <div className="document-list-filter">
+            <span>Estado SUNAT</span>
+            <CustomSelect compact value={filters.estado} onChange={(v) => setFilter('estado', v)} options={STATUS_OPTIONS} />
           </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <label className="tx-label">Desde</label>
+          <div className="document-list-filter">
+            <span>Moneda</span>
+            <CustomSelect compact value={filters.moneda} onChange={(v) => setFilter('moneda', v)} options={MONEDA_OPTIONS} />
+          </div>
+          <div className="document-list-filter">
+            <span>Desde</span>
             <DatePicker compact value={filters.desde} onChange={(v) => setFilter('desde', v)} />
           </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <label className="tx-label">Hasta</label>
+          <div className="document-list-filter">
+            <span>Hasta</span>
             <DatePicker compact value={filters.hasta} onChange={(v) => setFilter('hasta', v)} />
           </div>
-
-          {hasActiveFilters && (
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={clearFilters}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                height: '36px',
-                whiteSpace: 'nowrap',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 'var(--fs-micro)',
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-              }}
-            >
-              <XCircle size={14} />
-              LIMPIAR FILTROS
-            </button>
-          )}
         </div>
-      </div>
 
-      {/* Content */}
-      {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 0' }}>
-          <Spinner size="lg" />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '80px 20px',
-            textAlign: 'center',
-          }}
-        >
-          <div
-            style={{
-              width: '64px',
-              height: '64px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: '1.5px solid var(--ink-200)',
-              color: 'var(--ink-300)',
-              marginBottom: '20px',
-            }}
-          >
-            <FileText size={28} strokeWidth={1.5} />
-          </div>
-          <h3
-            style={{
-              fontFamily: 'var(--font-body)',
-              fontSize: 'var(--fs-h3)',
-              fontWeight: 700,
-              color: 'var(--text-primary)',
-              marginBottom: '8px',
-            }}
-          >
-            {hasActiveFilters ? 'Sin resultados para estos filtros' : 'Aún no tienes comprobantes emitidos'}
-          </h3>
-          <p
-            style={{
-              fontFamily: 'var(--font-body)',
-              fontSize: 'var(--fs-body)',
-              color: 'var(--text-secondary)',
-              maxWidth: '360px',
-              marginBottom: '20px',
-            }}
-          >
-            {hasActiveFilters
-              ? 'Prueba ajustar los filtros o limpia la búsqueda para ver más resultados.'
-              : 'Crea tu primera factura o boleta usando un cliente registrado o una cotización aprobada.'}
-          </p>
-          {hasActiveFilters ? (
-            <button className="btn-secondary" onClick={clearFilters}>
-              Limpiar filtros
-            </button>
-          ) : newHref ? (
-            <Link className="btn-primary" to={newHref}>
-              <Plus size={16} />
-              {newLabel || 'Nuevo'}
-            </Link>
-          ) : null}
-        </div>
-      ) : (
-        <div className="ink-card" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-rule)' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="ink-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '720px' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--ink-900)' }}>
-                <th className="ink-th" style={{ textAlign: 'left', padding: '12px 16px' }}>
-                  <span className="tx-label">Folio</span>
-                </th>
-                <th className="ink-th" style={{ textAlign: 'left', padding: '12px 16px' }}>
-                  <span className="tx-label">Fecha</span>
-                </th>
-                <th className="ink-th" style={{ textAlign: 'left', padding: '12px 16px' }}>
-                  <span className="tx-label">Cliente</span>
-                </th>
-                <th className="ink-th" style={{ textAlign: 'left', padding: '12px 16px' }}>
-                  <span className="tx-label">Tipo</span>
-                </th>
-                <th className="ink-th" style={{ textAlign: 'right', padding: '12px 16px' }}>
-                  <span className="tx-label">Total</span>
-                </th>
-                <th className="ink-th" style={{ textAlign: 'left', padding: '12px 16px' }}>
-                  <span className="tx-label">Estado SUNAT</span>
-                </th>
-                <th className="ink-th" style={{ textAlign: 'right', padding: '12px 16px' }}>
-                  <span className="tx-label">Acciones</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageItems.map((doc) => {
-                const sunatSt = getSunatStatus(doc);
-                const num = `${doc.serie}-${String(doc.correlativo).padStart(8, '0')}`;
-                const clienteName = doc.cliente?.razon_social || doc.cliente?.nombre || '-';
-                const clienteDoc = doc.cliente?.numero_documento || doc.cliente?.ruc || doc.cliente?.dni;
-                const isAceptado = sunatSt?.kind === 'ok';
-
-                return (
-                  <tr
-                    key={doc.id}
-                    style={{
-                      borderBottom: '1px solid var(--border-hair)',
-                      transition: 'background 120ms ease',
-                      borderLeft: isAceptado ? '2px solid var(--sx-success)' : '2px solid transparent',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'var(--bg-surface-2)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent';
-                    }}
-                  >
-                    <td className="ink-td" style={{ padding: '12px 16px' }}>
-                      <span className="tx-folio">{num}</span>
-                    </td>
-                    <td className="ink-td" style={{ padding: '12px 16px' }}>
-                      <span className="tx-meta">
-                        {doc.fecha_emision ? new Date(doc.fecha_emision).toLocaleDateString('es-PE') : '-'}
-                      </span>
-                    </td>
-                    <td className="ink-td" style={{ padding: '12px 16px' }}>
-                      <p style={{ fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: 'var(--fs-body)', margin: 0 }}>
-                        {clienteName}
-                      </p>
-                      {clienteDoc && (
-                        <p className="tx-meta" style={{ margin: 0 }}>{clienteDoc}</p>
-                      )}
-                    </td>
-                    <td className="ink-td" style={{ padding: '12px 16px' }}>
-                      <DocumentTypeBadge tipo={doc.tipo_comprobante} size="sm" />
-                    </td>
-                    <td className="ink-td" style={{ padding: '12px 16px', textAlign: 'right' }}>
-                      <span className="tx-amount">{formatCurrency(doc.total_venta, doc.moneda)}</span>
-                    </td>
-                    <td className="ink-td" style={{ padding: '12px 16px' }}>
-                      {sunatSt ? (
-                        <Badge
-                          variant={sunatSt.variant === 'danger' ? 'error' : sunatSt.variant}
-                          title={sunatSt.tooltip}
-                        >
-                          {sunatSt.label}
-                        </Badge>
-                      ) : (
-                        <Badge variant="default">-</Badge>
-                      )}
-                    </td>
-                    <td className="ink-td" style={{ padding: '12px 16px' }}>
-                      <div className="ink-row-actions" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '6px' }}>
-                        {doc.sunat_pdf_url && (
-                          <a
-                            href={doc.sunat_pdf_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn-icon"
-                            title="Ver PDF SUNAT"
-                            style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            <ExternalLink size={14} />
-                          </a>
-                        )}
-                        <Link
-                          to={`/cotizaciones/${doc.id}`}
-                          className="btn-icon"
-                          title="Ver detalle"
-                          style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <FileText size={14} />
-                        </Link>
-                        {!doc.sunat_pdf_url && sunatSt?.kind === 'pending' && (
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            title="Recargar estado SUNAT"
-                            onClick={load}
-                            style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            <RefreshCw size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
-
-          {/* Sticky pagination footer */}
-          {totalPages > 1 && (
-            <div
-              style={{
-                position: 'sticky',
-                bottom: 0,
-                background: 'var(--bg-app)',
-                borderTop: '1px solid var(--border-hair)',
-                padding: '12px 20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 'var(--fs-xs)',
-                  fontWeight: 600,
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                  color: 'var(--text-tertiary)',
-                }}
+        <div className="segments-row">
+          <div className="segments">
+            {TAB_DEFS.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                className={`segment ${activeTab === key ? 'active' : ''}`}
+                onClick={() => setActiveTab(key)}
               >
-                PAG. {page} / {totalPages}
+                {label}
+                <span className="document-list-segment-count">{tabCounts[key] || 0}</span>
+              </button>
+            ))}
+          </div>
+          <div className="sort-text">
+            Mostrando <strong>{getVisibleRange(page, PER_PAGE, total)}</strong> de <strong>{total}</strong>
+          </div>
+        </div>
+
+        {error && !loading ? (
+          <div className="document-list-empty">
+            <PageError error={error} onRetry={load} />
+          </div>
+        ) : loading ? (
+          <div className="document-list-loading">
+            <Spinner size="lg" />
+          </div>
+        ) : docs.length === 0 ? (
+          <div className="document-list-empty">
+            <EmptyState
+              icon={<FileText size={22} />}
+              title={
+                hasActiveFilters
+                  ? 'Sin resultados para estos filtros'
+                  : activeTab === 'all'
+                    ? family.emptyTitle
+                    : getStateEmptyCopy(activeTab, family)
+              }
+              description={
+                hasActiveFilters
+                  ? 'Ajusta fechas, moneda o estado para recuperar resultados de esta vista.'
+                  : activeTab === 'all'
+                    ? family.emptyDescription
+                    : 'Cuando existan documentos en este estado aparecerán aquí con sus acciones recomendadas.'
+              }
+              action={
+                hasActiveFilters ? (
+                  <button className="btn-secondary" onClick={clearFilters}>
+                    Limpiar filtros
+                  </button>
+                ) : newHref ? (
+                  <Link className="btn-primary" to={newHref}>
+                    <Plus size={15} />
+                    {primaryLabel}
+                  </Link>
+                ) : null
+              }
+            />
+          </div>
+        ) : (
+          <div className="ink-table-card document-list-table">
+            <div className="ink-table-header">
+              <div className="ink-table-title">
+                <strong>{title}</strong>
+                <span>
+                  {total} visibles · {formatCurrency(visibleMetrics.amount, 'PEN')} en esta página
+                </span>
+              </div>
+
+              <div className="document-list-table-meta">
+                <span className="document-list-table-pill">
+                  <CheckCircle2 size={13} />
+                  {visibleMetrics.accepted} aceptadas
+                </span>
+                <span className="document-list-table-pill">
+                  <Clock3 size={13} />
+                  {visibleMetrics.pending} pendientes
+                </span>
+                <span className="document-list-table-pill">
+                  <XOctagon size={13} />
+                  {visibleMetrics.rejected} observadas
+                </span>
+              </div>
+            </div>
+
+            <div className="ink-table-scroll">
+              <table className="ink-table ink-document-table">
+                <thead>
+                  <tr>
+                    <th>Folio</th>
+                    <th>Fecha</th>
+                    <th>Cliente</th>
+                    <th>Tipo</th>
+                    <th className="text-right">Total</th>
+                    <th>Estado SUNAT</th>
+                    <th className="text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageItems.map((doc) => {
+                    const sunat = getSunatStatus(doc);
+                    const num = formatDocNumber(doc);
+                    const clienteName = doc.cliente?.razon_social || doc.cliente?.nombre || '-';
+                    const clienteDoc = doc.cliente?.numero_documento || doc.cliente?.ruc || doc.cliente?.dni;
+                    const rowClass =
+                      sunat?.kind === 'ok'
+                        ? 'ink-table-row--accepted'
+                        : sunat?.kind === 'pending'
+                          ? 'ink-table-row--active'
+                          : '';
+
+                    return (
+                      <tr key={doc.id} className={rowClass}>
+                        <td data-label="Folio">
+                          <div className="ink-table-cell__primary document-list-folio">{num}</div>
+                          <div className="ink-table-cell__meta">
+                            Serie {doc.serie || '-'} · Corr. {doc.correlativo || '-'}
+                          </div>
+                        </td>
+                        <td data-label="Fecha">
+                          <div className="ink-table-cell__primary">
+                            {doc.fecha_emision ? new Date(doc.fecha_emision).toLocaleDateString('es-PE') : '-'}
+                          </div>
+                          <div className="ink-table-cell__meta">{doc.moneda || 'PEN'}</div>
+                        </td>
+                        <td data-label="Cliente">
+                          <div className="ink-table-cell__primary">{clienteName}</div>
+                          {clienteDoc && <div className="ink-table-cell__meta">{clienteDoc}</div>}
+                        </td>
+                        <td data-label="Tipo">
+                          <DocumentTypeBadge tipo={doc.tipo_comprobante} size="sm" />
+                        </td>
+                        <td className="text-right" data-label="Total">
+                          <div className="ink-table-cell__primary document-list-amount">
+                            {formatCurrency(doc.total_venta, doc.moneda)}
+                          </div>
+                        </td>
+                        <td data-label="Estado SUNAT">
+                          {sunat ? (
+                            <Badge variant={sunat.variant === 'danger' ? 'error' : sunat.variant} title={sunat.tooltip}>
+                              {sunat.label}
+                            </Badge>
+                          ) : (
+                            <Badge variant="default">Sin estado</Badge>
+                          )}
+                        </td>
+                        <td data-label="Acciones">
+                          <div className="ink-table-row-actions document-list-row-actions">
+                            {doc.estado !== 'anulada' && (
+                              <button
+                                type="button"
+                                className="ink-row-btn"
+                                title="Descargar PDF"
+                                disabled={downloadingId === `${doc.id}-pdf`}
+                                onClick={() => downloadFiscalFile(doc, 'pdf')}
+                              >
+                                {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download size={14} />}
+                              </button>
+                            )}
+                            {doc.sunat_xml_url && (
+                              <button
+                                type="button"
+                                className="ink-row-btn"
+                                title="Descargar XML"
+                                disabled={downloadingId === `${doc.id}-xml`}
+                                onClick={() => downloadFiscalFile(doc, 'xml')}
+                              >
+                                {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink size={14} />}
+                              </button>
+                            )}
+                            <Link to={`/cotizaciones/${doc.id}`} className="ink-row-btn" title="Ver detalle">
+                              <FileText size={14} />
+                            </Link>
+                            {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
+                              <button type="button" className="ink-row-btn" title="Recargar estado SUNAT" onClick={load}>
+                                <RefreshCw size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="ink-table-footer">
+              <span className="ink-table-count">
+                Pag. <strong>{page}</strong> de <strong>{totalPages}</strong>
               </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="pagination">
                 <button
                   type="button"
-                  className="btn-icon"
+                  className="page-btn"
                   disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  style={{
-                    width: '36px',
-                    height: '36px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    opacity: page <= 1 ? 0.45 : 1,
-                    cursor: page <= 1 ? 'not-allowed' : 'pointer',
-                  }}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
                 >
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', fontWeight: 700 }}>{'<'}</span>
+                  &#8249;
+                </button>
+                <button type="button" className="page-btn active">
+                  {page}
                 </button>
                 <button
                   type="button"
-                  className="btn-icon"
+                  className="page-btn"
                   disabled={page >= totalPages}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  style={{
-                    width: '36px',
-                    height: '36px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    opacity: page >= totalPages ? 0.45 : 1,
-                    cursor: page >= totalPages ? 'not-allowed' : 'pointer',
-                  }}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
                 >
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', fontWeight: 700 }}>{'>'}</span>
+                  &#8250;
                 </button>
               </div>
-              <span
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 'var(--fs-xs)',
-                  fontWeight: 600,
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                  color: 'var(--text-tertiary)',
-                }}
-              >
-                MOSTRAR: {PER_PAGE}
-              </span>
+              <span className="ink-table-count">{PER_PAGE} por página</span>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </article>
     </div>
   );
 }

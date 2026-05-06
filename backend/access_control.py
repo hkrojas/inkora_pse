@@ -51,7 +51,10 @@ def normalize_role(role: str | None) -> str:
 def get_effective_role(user: Any) -> str:
     if getattr(user, "is_superadmin", False):
         return ROLE_SUPERADMIN
-    return normalize_role(getattr(user, "rol", ROLE_VENDEDOR))
+    role = normalize_role(getattr(user, "rol", ROLE_VENDEDOR))
+    if role == ROLE_SUPERADMIN:
+        return ROLE_VENDEDOR
+    return role
 
 
 def _normalize_allowed_roles(roles: Iterable[str]) -> set[str]:
@@ -74,6 +77,12 @@ def assert_user_has_roles(
 
 
 def assert_active_tenant_access(user: Any) -> Any:
+    if not getattr(user, "is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El usuario se encuentra bloqueado o inactivo.",
+        )
+
     if getattr(user, "is_superadmin", False):
         return user
 

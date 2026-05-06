@@ -1,17 +1,72 @@
 """schemas/productos.py — Producto, Insumo, RecetaBOM, Proveedor, OrdenProduccion, Dashboard."""
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from fiscal_catalogs import (
+    PRODUCT_DESCRIPTION_MAX_LENGTH,
+    PRODUCT_INTERNAL_CODE_MAX_LENGTH,
+    PRODUCT_NAME_MAX_LENGTH,
+    normalize_internal_product_code,
+    normalize_sunat_unit_code,
+    normalize_tax_affectation_code,
+)
 
 
 class ProductoBase(BaseModel):
-    codigo_interno: Optional[str] = None
-    nombre: str
-    descripcion: Optional[str] = None
+    codigo_interno: Optional[str] = Field(
+        default=None,
+        max_length=PRODUCT_INTERNAL_CODE_MAX_LENGTH,
+    )
+    nombre: str = Field(..., min_length=1, max_length=PRODUCT_NAME_MAX_LENGTH)
+    descripcion: Optional[str] = Field(
+        default=None,
+        max_length=PRODUCT_DESCRIPTION_MAX_LENGTH,
+    )
+    moneda: str = "PEN"
     unidad_medida: str = "NIU"
     tipo_afectacion_igv: str = "10"
+
+    @field_validator("nombre")
+    @classmethod
+    def normalize_nombre(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("El nombre del producto es obligatorio")
+        return normalized
+
+    @field_validator("codigo_interno", "descripcion", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value):
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @field_validator("codigo_interno")
+    @classmethod
+    def normalize_codigo(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_internal_product_code(value)
+
+    @field_validator("moneda")
+    @classmethod
+    def validate_moneda(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in {"PEN", "USD"}:
+            raise ValueError("La moneda debe ser PEN o USD")
+        return normalized
+
+    @field_validator("unidad_medida")
+    @classmethod
+    def normalize_unidad_medida(cls, value: str) -> str:
+        return normalize_sunat_unit_code(value)
+
+    @field_validator("tipo_afectacion_igv")
+    @classmethod
+    def validate_tipo_afectacion_igv(cls, value: str) -> str:
+        return normalize_tax_affectation_code(value)
 
 
 class ProductoCreate(ProductoBase):
@@ -24,6 +79,14 @@ class ProductoResponse(ProductoBase):
     precio_unitario: Decimal
     valor_unitario: Decimal
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProductoPageResponse(BaseModel):
+    items: List[ProductoResponse]
+    total: int
+    skip: int
+    limit: int
+    counts: Dict[str, int]
 
 
 class InsumoBase(BaseModel):

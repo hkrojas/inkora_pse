@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
@@ -23,6 +24,22 @@ from services.document_flow_service import (
     DOCUMENT_STATUS_PENDING,
     is_quote_document,
 )
+
+
+def _serialize_cuotas_pago(cuotas_pago) -> list[dict]:
+    serialized = []
+    for cuota in cuotas_pago or []:
+        fecha_pago = getattr(cuota, "fecha_pago", None)
+        monto = getattr(cuota, "monto", None)
+        if not fecha_pago or monto is None:
+            continue
+        serialized.append(
+            {
+                "fecha_pago": fecha_pago.isoformat(),
+                "monto": str(calculations.redondear(monto)),
+            }
+        )
+    return serialized
 
 
 def get_cotizaciones(
@@ -93,11 +110,13 @@ def _create_cotizacion_inner(
         getattr(cotizacion, "condicion_pago", None)
         or getattr(db_cliente, "condicion_pago", None)
     )
+    cuotas_pago = _serialize_cuotas_pago(getattr(cotizacion, "cuotas_pago", None))
 
     db_cotizacion = models.Cotizacion(
         cliente_id=db_cliente.id,
         usuario_id=usuario_id,
         tenant_id=tenant_id,
+        fecha_emision=cotizacion.fecha_emision or datetime.now(),
         fecha_vencimiento=cotizacion.fecha_vencimiento,
         moneda=cotizacion.moneda,
         tipo_comprobante=cotizacion.tipo_comprobante,
@@ -107,6 +126,7 @@ def _create_cotizacion_inner(
         serie=QUOTE_SERIE,
         observaciones=getattr(cotizacion, "observaciones", None),
         condicion_pago=condicion_pago,
+        cuotas_pago=cuotas_pago or None,
         total_gravada=totales["total_gravada"],
         total_exonerada=totales["total_exonerada"],
         total_inafecta=totales["total_inafecta"],
@@ -146,9 +166,11 @@ def duplicate_cotizacion(
         tipo_comprobante=original.tipo_comprobante or "00",
         observaciones=original.observaciones,
         condicion_pago=original.condicion_pago,
+        cuotas_pago=original.cuotas_pago or [],
         items=[
             schemas.CotizacionItemCreate(
                 producto_id=item.producto_id,
+                codigo_producto=item.codigo_producto,
                 descripcion=item.descripcion,
                 cantidad=item.cantidad,
                 precio_unitario=item.precio_unitario,

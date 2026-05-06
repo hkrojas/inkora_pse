@@ -4,6 +4,8 @@ from sqlalchemy.orm import sessionmaker
 import pytest
 from decimal import Decimal
 
+pytest.importorskip("slowapi")
+
 # Import your FastAPI app and models
 from main import app
 from database import get_db
