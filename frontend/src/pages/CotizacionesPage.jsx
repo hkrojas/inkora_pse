@@ -23,6 +23,7 @@ import ProductLineCell from '../components/ui/ProductLineCell';
 import { FieldError } from '../components/ui/FieldError';
 import { useToast } from '../components/ui/Toast';
 import { getPaymentMethodPreview, normalizePaymentMethods } from '../lib/utils/paymentMethods';
+import { BASE_URL } from '../lib/utils/config';
 import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/peruPhoneValidation';
 import {
   FISCAL_DOC_TYPE_OPTIONS,
@@ -118,8 +119,7 @@ function getWhatsAppLink(cliente, doc) {
 
 function getPublicShareUrl(doc) {
   if (!doc?.uuid_publico) return null;
-  const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
-  return `${baseUrl}/public/cotizaciones/${doc.uuid_publico}/pdf`;
+  return `${BASE_URL}/public/cotizaciones/${doc.uuid_publico}/pdf`;
 }
 
 function getEmailLink(cliente, doc) {

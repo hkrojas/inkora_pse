@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, FileText, Plus, Receipt, Share2 } from 'lucide-react';
 import { cotizaciones as svc } from '../services/cotizaciones';
+import { BASE_URL } from '../lib/utils/config';
 import Spinner from '../components/ui/Spinner';
 import Badge, { statusBadge } from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
@@ -181,7 +182,7 @@ export default function CotizacionDetalle() {
             Compartir
           </button>
           <a
-            href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/cotizaciones/${id}/pdf?redirect=1`}
+            href={`${BASE_URL}/cotizaciones/${id}/pdf?redirect=1`}
             target="_blank"
             rel="noreferrer"
             className="btn-secondary flex items-center gap-2"
