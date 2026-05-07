@@ -77,6 +77,19 @@ def resolve_storage_download_url(
     return create_signed_storage_url(value, expires_in_seconds=expires_in_seconds)
 
 
+def download_private_storage_reference(value: str) -> bytes:
+    parsed = parse_private_storage_reference(value)
+    if not parsed:
+        raise ValueError("La referencia no apunta a storage privado.")
+    bucket, path = parsed
+    content = get_supabase_client().storage.from_(bucket).download(path)
+    if isinstance(content, bytes):
+        return content
+    if hasattr(content, "content"):
+        return content.content
+    raise ValueError("Storage no devolvio bytes para el archivo solicitado.")
+
+
 async def upload_to_storage(
     file_bytes: bytes,
     folder_name: str,

@@ -15,7 +15,13 @@ from access_control import DOCUMENT_EMITTER_ROLES, get_effective_role
 from config import settings
 from database import SessionLocal, apply_tenant_context, reset_tenant_context
 from logging_utils import get_logger
-from services import beta_feature_flags, facturacion_service, fiscal_provider_service, pdf_storage_service
+from services import (
+    beta_feature_flags,
+    facturacion_service,
+    fiscal_artifact_service,
+    fiscal_provider_service,
+    pdf_storage_service,
+)
 from services.facturacion_background_service import process_direct_sunat_emission_bg
 from services.fiscal_balance_service import ensure_credit_note_within_available_amount
 
@@ -583,7 +589,31 @@ def _process_emit_fiscal_job(
         user,
         tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
     )
-    crud.guardar_respuesta_sunat(db, fiscal_document.id, result, tenant_id=job.tenant_id)
+    persisted_document = crud.guardar_respuesta_sunat(
+        db,
+        fiscal_document.id,
+        result,
+        tenant_id=job.tenant_id,
+    )
+
+    if result.get("cdr_xml") and persisted_document:
+        try:
+            _run_async_syncsafe(
+                fiscal_artifact_service.persist_cdr_artifact(
+                    db,
+                    persisted_document,
+                    result.get("cdr_xml"),
+                )
+            )
+        except Exception as cdr_err:
+            logger.warning(
+                "cdr_artifact_persist_failed_but_emission_ok",
+                extra={
+                    "event": "cdr_artifact_persist_failed_but_emission_ok",
+                    "context": f"document_id={fiscal_document.id}",
+                    "error": str(cdr_err),
+                },
+            )
 
     # PDF generation is a side-effect; failure should not mark the fiscal job as failed.
     try:
@@ -628,6 +658,24 @@ def _process_emit_note_job(
         tipo_nota=payload_snapshot.get("tipo_nota"),
     )
     updated_note = crud.guardar_respuesta_sunat(db, nota.id, result, tenant_id=job.tenant_id)
+    if result.get("cdr_xml") and updated_note:
+        try:
+            _run_async_syncsafe(
+                fiscal_artifact_service.persist_cdr_artifact(
+                    db,
+                    updated_note,
+                    result.get("cdr_xml"),
+                )
+            )
+        except Exception as cdr_err:
+            logger.warning(
+                "cdr_artifact_persist_failed_but_emission_ok",
+                extra={
+                    "event": "cdr_artifact_persist_failed_but_emission_ok",
+                    "context": f"document_id={nota.id}",
+                    "error": str(cdr_err),
+                },
+            )
     if (
         result.get("success")
         and updated_note

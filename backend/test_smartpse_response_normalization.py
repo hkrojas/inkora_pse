@@ -102,3 +102,24 @@ def test_consult_response_with_cdr_completes_ticket_flow():
     assert result["success"] is True
     assert result["ticket"] == "20123456789-RC-20260505-001"
     assert result["cdr_xml"] == "<ApplicationResponse/>"
+
+
+def test_cdr_zip_base64_is_normalized_to_xml_content():
+    payload = {"serie": "F001", "correlativo": "00000001", "tipoDoc": "01"}
+    cdr_xml = "<ApplicationResponse><Response>0</Response></ApplicationResponse>"
+    data = {
+        "estado": 200,
+        "mensaje": "Procesado",
+        "xml_firmado": "<Invoice/>",
+        "cdr": _zip_b64("R-20123456789-01-F001-00000001.xml", cdr_xml),
+        "rechazado": False,
+    }
+
+    result = build_smartpse_result(
+        payload,
+        data,
+        endpoint="/api/cpe/procesar-demo",
+        status_code=200,
+    )
+
+    assert result["cdr_xml"] == cdr_xml

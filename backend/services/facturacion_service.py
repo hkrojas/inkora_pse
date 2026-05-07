@@ -12,10 +12,12 @@ from config import settings
 from fiscal_catalogs import tax_affectation_bucket
 from services import calculations
 from services import fiscal_xml_service
+from services import fiscal_qr_service
 from services import smartpse_client
 from services import smartpse_gre_credentials
 from services import smartpse_response
 from services import smartpse_ubl_service
+from services import storage_service
 from services.quote_observation_service import observation_lines_to_plain_text
 from tenant_access import (
     get_apisperu_token as _get_apisperu_token,
@@ -246,8 +248,12 @@ def _normalize_links(data: dict) -> dict:
     return normalized
 
 
-def _fetch_sale_qr_svg(user, xml_content: str | None) -> tuple[dict | None, str | None]:
-    qr_payload = fiscal_xml_service.build_sale_qr_payload_from_xml(xml_content)
+def _fetch_sale_qr_svg(
+    user,
+    xml_content: str | None,
+    provider_hash: str | None = None,
+) -> tuple[dict | None, str | None]:
+    qr_payload = fiscal_qr_service.build_sunat_qr_payload(xml_content, provider_hash=provider_hash)
     if not qr_payload or not all(
         qr_payload.get(key)
         for key in ("ruc", "tipo", "serie", "numero", "emision", "clienteTipo", "clienteNumero")
@@ -261,7 +267,7 @@ def _attach_sale_artifacts(result: dict, user) -> dict:
         return result
 
     xml_content = result.get("xml")
-    qr_payload, qr_svg = _fetch_sale_qr_svg(user, xml_content)
+    qr_payload, qr_svg = _fetch_sale_qr_svg(user, xml_content, result.get("hash"))
     if qr_payload:
         result["qr_payload"] = qr_payload
     if qr_svg:
@@ -1755,9 +1761,11 @@ def descargar_archivo(tipo_archivo: str, comprobante: models.Cotizacion, user: m
         )
 
     if tipo_archivo == "cdr":
+        cdr_reference = getattr(comprobante, "sunat_cdr_url", None)
+        if storage_service.is_private_storage_reference(cdr_reference):
+            return storage_service.download_private_storage_reference(cdr_reference)
         raise FacturacionException(
-            "Smart PSE no tiene un CDR local persistido para este flujo. "
-            "Use el CDR devuelto al momento de la emision o agregue almacenamiento de CDR."
+            f"No hay CDR Smart PSE almacenado para {_document_number(comprobante)}."
         )
 
     raise FacturacionException(

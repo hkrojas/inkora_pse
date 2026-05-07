@@ -21,4 +21,5 @@ openpyxl
 supabase
 xmltodict
 signxml
+zeep
 slowapi

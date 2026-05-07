@@ -16,6 +16,7 @@ import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -47,7 +48,7 @@ def get_database_url() -> str:
     """Return DATABASE_URL without hardcoding secrets."""
     database_url = os.environ.get("DATABASE_URL", "").strip()
     if database_url:
-        return database_url
+        return strip_internal_database_url_flags(database_url)
 
     try:
         from config import settings
@@ -57,7 +58,29 @@ def get_database_url() -> str:
             "antes de ejecutar Alembic."
         ) from exc
 
-    return settings.DATABASE_URL
+    return strip_internal_database_url_flags(settings.DATABASE_URL)
+
+
+def strip_internal_database_url_flags(database_url: str) -> str:
+    """Remove app-only URL flags before handing the DSN to SQLAlchemy."""
+    if "?" not in database_url:
+        return database_url
+
+    parsed = urlsplit(database_url)
+    query_items = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() != "pgbouncer"
+    ]
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urlencode(query_items, doseq=True),
+            parsed.fragment,
+        )
+    )
 
 
 def get_target_metadata():

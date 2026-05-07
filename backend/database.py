@@ -3,6 +3,7 @@
 # ================================================================
 
 from contextvars import ContextVar, Token
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
@@ -13,6 +14,28 @@ from logging_utils import get_logger
 # ==========================================
 # CONEXION A BASE DE DATOS
 # ==========================================
+
+
+def _strip_internal_database_url_flags(database_url: str) -> str:
+    """Remove app-only URL flags before handing the DSN to psycopg2."""
+    if "?" not in database_url:
+        return database_url
+
+    parsed = urlsplit(database_url)
+    query_items = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() != "pgbouncer"
+    ]
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urlencode(query_items, doseq=True),
+            parsed.fragment,
+        )
+    )
 
 engine_kwargs = {
     "pool_pre_ping": settings.DB_POOL_PING,
@@ -34,7 +57,10 @@ if not settings.DATABASE_URL.startswith("sqlite"):
 USES_PGBOUNCER = "pgbouncer" in settings.DATABASE_URL.lower()
 USES_SQLITE = settings.DATABASE_URL.startswith("sqlite")
 
-engine = create_engine(settings.DATABASE_URL, **engine_kwargs)
+engine = create_engine(
+    _strip_internal_database_url_flags(settings.DATABASE_URL),
+    **engine_kwargs,
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

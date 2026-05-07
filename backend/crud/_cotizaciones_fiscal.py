@@ -27,6 +27,7 @@ from services.document_flow_service import (
     DOCUMENT_STATUS_VOIDED,
     is_quote_document,
 )
+from services import fiscal_qr_service
 from services.fiscal_balance_service import ensure_credit_note_within_available_amount
 
 
@@ -103,8 +104,12 @@ def guardar_respuesta_sunat(
             db_cot.sunat_xml_content = data_sunat.get("xml")
         if data_sunat.get("hash"):
             db_cot.sunat_hash = data_sunat.get("hash")
-        if data_sunat.get("qr_payload"):
-            db_cot.sunat_qr_payload = data_sunat.get("qr_payload")
+        qr_payload = data_sunat.get("qr_payload") or fiscal_qr_service.build_sunat_qr_payload(
+            data_sunat.get("xml") or db_cot.sunat_xml_content,
+            provider_hash=data_sunat.get("hash") or db_cot.sunat_hash,
+        )
+        if qr_payload:
+            db_cot.sunat_qr_payload = qr_payload
         if data_sunat.get("qr_svg"):
             db_cot.sunat_qr_svg = data_sunat.get("qr_svg")
 

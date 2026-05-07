@@ -35,9 +35,22 @@ def _decode_base64_text(value: str | None) -> str | None:
     if text.startswith("<"):
         return text
     try:
-        return base64.b64decode(text, validate=True).decode("utf-8")
+        raw = base64.b64decode(text, validate=True)
     except Exception:
         return text
+    try:
+        with zipfile.ZipFile(BytesIO(raw)) as archive:
+            names = [name for name in archive.namelist() if name.lower().endswith(".xml")]
+            if not names:
+                names = archive.namelist()
+            if not names:
+                return None
+            return archive.read(names[0]).decode("utf-8")
+    except zipfile.BadZipFile:
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
 
 
 def extract_xml_from_signed_zip(value: str | None) -> str | None:

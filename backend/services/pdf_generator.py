@@ -18,7 +18,7 @@ from reportlab.lib.units import cm, inch
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import Flowable, Image, KeepInFrame, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from services import fiscal_xml_service
+from services import fiscal_qr_service, fiscal_xml_service
 from services.calculations import TOTAL_PRECISION, calculate_cotizacion_totals_v3, to_decimal
 from services.quote_observation_service import build_default_observation_lines, parse_quote_observations
 from tenant_access import get_company_bank_accounts
@@ -205,6 +205,9 @@ def _build_payment_methods_text(payment_methods, beneficiary_name: str = "") -> 
 def _build_qr_content(document_data, fallback_content: str) -> str:
     qr_payload = getattr(document_data, "sunat_qr_payload", None)
     if isinstance(qr_payload, dict):
+        qr_content = qr_payload.get("qr_content")
+        if isinstance(qr_content, str) and qr_content.strip():
+            return qr_content.strip()
         return "|".join(
             [
                 str(qr_payload.get("ruc") or ""),
@@ -218,12 +221,37 @@ def _build_qr_content(document_data, fallback_content: str) -> str:
                 str(qr_payload.get("clienteNumero") or ""),
             ]
         )
+    xml_content = getattr(document_data, "sunat_xml_content", None)
+    provider_hash = getattr(document_data, "sunat_hash", None)
+    generated_payload = fiscal_qr_service.build_sunat_qr_payload(xml_content, provider_hash=provider_hash)
+    if generated_payload and generated_payload.get("qr_content"):
+        return generated_payload["qr_content"]
     return fallback_content
+
+
+def _resolve_qr_visible_summary(document_data) -> str | None:
+    qr_payload = getattr(document_data, "sunat_qr_payload", None)
+    if isinstance(qr_payload, dict) and qr_payload.get("digest_in_qr") is False:
+        summary = qr_payload.get("qr_visible_summary") or qr_payload.get("valorResumen")
+        return str(summary).strip() if summary else None
+
+    generated_payload = fiscal_qr_service.build_sunat_qr_payload(
+        getattr(document_data, "sunat_xml_content", None),
+        provider_hash=getattr(document_data, "sunat_hash", None),
+    )
+    if generated_payload and generated_payload.get("digest_in_qr") is False:
+        summary = generated_payload.get("qr_visible_summary") or generated_payload.get("valorResumen")
+        return str(summary).strip() if summary else None
+    return None
 
 
 def _build_qr_flowable(document_data, qr_content: str, ancho_total: float):
     official_qr_svg = getattr(document_data, "sunat_qr_svg", None)
-    if official_qr_svg:
+    qr_payload = getattr(document_data, "sunat_qr_payload", None)
+    should_use_legacy_svg = official_qr_svg and not (
+        isinstance(qr_payload, dict) and qr_payload.get("qr_content")
+    )
+    if should_use_legacy_svg:
         try:
             from io import BytesIO as _BytesIO
 
@@ -251,7 +279,14 @@ def _build_qr_flowable(document_data, qr_content: str, ancho_total: float):
         except Exception as qr_err:
             print(f"Error cargando QR oficial SVG en PDF: {qr_err}")
 
-    qr_img = qrcode.make(qr_content)
+    qr = qrcode.QRCode(
+        error_correction=qrcode.constants.ERROR_CORRECT_Q,
+        border=4,
+        box_size=8,
+    )
+    qr.add_data(qr_content or "QR")
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
     qr_buffer = io.BytesIO()
     qr_img.save(qr_buffer, format="PNG")
     qr_buffer.seek(0)
@@ -2274,6 +2309,7 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
             body,
         )
         qr_link = Paragraph("www.sunat.gob.pe", body_bold_blue)
+        qr_summary_text = _resolve_qr_visible_summary(document_data)
         bottom_left_text = "Puedes descargar el XML, CDR y representación impresa desde nuestro portal."
     else:
         qr_content, wallet = _build_quote_wallet_qr_content(company_data["bank_accounts"], company_data["name"])
@@ -2292,11 +2328,14 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
             qr_lines.append(wallet["nota"])
         qr_body = Paragraph("<br/>".join(qr_lines) if qr_lines else "Usa la billetera digital configurada por el emisor.", body)
         qr_link = Paragraph("", body)
+        qr_summary_text = None
         bottom_left_text = "Condiciones sujetas a confirmación comercial."
 
     qr_right_rows = [[qr_title], [qr_body]]
     if is_comprobante:
         qr_right_rows.append([qr_link])
+        if qr_summary_text:
+            qr_right_rows.append([Paragraph(f"Valor resumen: {qr_summary_text}", body_small)])
     else:
         if qr_link.getPlainText().strip():
             qr_right_rows.append([qr_link])

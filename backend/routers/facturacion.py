@@ -27,7 +27,7 @@ from api_dependencies import (
     require_emission_allowed,
 )
 from api_utils import raise_internal_server_error
-from services import pdf_storage_service
+from services import fiscal_artifact_service, pdf_storage_service
 from services.facturacion_background_service import process_direct_sunat_emission_bg
 from models.tenants import (
     USAGE_LIMIT_KIND_BOLETA,
@@ -713,6 +713,13 @@ def emitir_comprobante(
             resultado,
             tenant_id=current_user.tenant_id,
         )
+        if resultado.get("cdr_xml"):
+            background_tasks.add_task(
+                fiscal_artifact_service.process_cdr_background,
+                fiscal_document.id,
+                current_user.tenant_id,
+                resultado.get("cdr_xml"),
+            )
 
         background_tasks.add_task(
             pdf_storage_service.process_pdf_background,
@@ -824,6 +831,13 @@ def emitir_nota(
             resultado,
             tenant_id=current_user.tenant_id,
         )
+        if resultado.get("cdr_xml"):
+            background_tasks.add_task(
+                fiscal_artifact_service.process_cdr_background,
+                db_nota.id,
+                current_user.tenant_id,
+                resultado.get("cdr_xml"),
+            )
         if (
             resultado.get("success")
             and updated_note
