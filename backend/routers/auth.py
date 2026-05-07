@@ -23,7 +23,7 @@ router = APIRouter(tags=["auth"])
 
 @router.post("/token", response_model=schemas.Token)
 @limiter.limit("10/minute")
-async def login_for_access_token(
+def login_for_access_token(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
@@ -83,7 +83,7 @@ def register_user(
 
 
 @router.get("/users/me/", response_model=schemas.UserResponse)
-async def read_users_me(current_user: models.User = Depends(get_current_user)):
+def read_users_me(current_user: models.User = Depends(get_current_user)):
     return current_user
 
 
@@ -114,7 +114,7 @@ def change_password(
 
 
 @router.put("/users/profile", response_model=schemas.UserResponse)
-async def update_user_profile(
+def update_user_profile(
     data: schemas.UserUpdateProfile,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
