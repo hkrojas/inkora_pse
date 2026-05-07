@@ -10,6 +10,9 @@ _DEFAULT_LOCAL_CORS_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:5173",
 ]
+_DEFAULT_REMOTE_CORS_ORIGINS = [
+    "https://inkora-pse.vercel.app",
+]
 
 
 class Settings(BaseSettings):
@@ -193,7 +196,7 @@ class Settings(BaseSettings):
             ]
 
         if self.is_non_local:
-            return []
+            return list(_DEFAULT_REMOTE_CORS_ORIGINS)
 
         return list(_DEFAULT_LOCAL_CORS_ORIGINS)
 

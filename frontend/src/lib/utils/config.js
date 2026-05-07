@@ -5,5 +5,8 @@
  * globales deben importar desde aquí para evitar duplicación.
  */
 
-export const BASE_URL =
-  import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const DEFAULT_API_URL = import.meta.env.DEV
+  ? 'http://localhost:8000'
+  : 'https://inkorapse-production.up.railway.app';
+
+export const BASE_URL = (import.meta.env.VITE_API_URL || DEFAULT_API_URL).replace(/\/$/, '');
