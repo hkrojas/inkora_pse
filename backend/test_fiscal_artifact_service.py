@@ -1,7 +1,7 @@
 import asyncio
 import zipfile
 from io import BytesIO
-from unittest.mock import AsyncMock, patch
+from unittest.mock import Mock, patch
 
 import crud
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
@@ -46,7 +46,7 @@ def test_persist_cdr_artifact_uploads_zip_to_tenant_scoped_private_storage(db_se
 
     with patch(
         "services.fiscal_artifact_service.storage_service.upload_to_storage",
-        new=AsyncMock(return_value=private_ref),
+        new=Mock(return_value=private_ref),
     ) as upload:
         result = _run(
             fiscal_artifact_service.persist_cdr_artifact(
@@ -58,12 +58,12 @@ def test_persist_cdr_artifact_uploads_zip_to_tenant_scoped_private_storage(db_se
 
     assert result == private_ref
     assert fiscal.sunat_cdr_url == private_ref
-    upload.assert_awaited_once()
-    kwargs = upload.await_args.kwargs
-    assert kwargs["folder_name"] == f"cotizaciones/tenant_{tenant.id}/cdr"
-    assert kwargs["filename"] == "R-F001-00000042.zip"
-    assert kwargs["content_type"] == "application/zip"
-    with zipfile.ZipFile(BytesIO(kwargs["file_bytes"])) as archive:
+    upload.assert_called_once()
+    file_bytes, folder_name, filename, content_type = upload.call_args.args
+    assert folder_name == f"cotizaciones/tenant_{tenant.id}/cdr"
+    assert filename == "R-F001-00000042.zip"
+    assert content_type == "application/zip"
+    with zipfile.ZipFile(BytesIO(file_bytes)) as archive:
         assert archive.read("R-F001-00000042.xml").decode("utf-8") == "<ApplicationResponse>OK</ApplicationResponse>"
 
 
@@ -74,7 +74,7 @@ def test_persist_cdr_artifact_returns_existing_private_reference_without_reuploa
 
     with patch(
         "services.fiscal_artifact_service.storage_service.upload_to_storage",
-        new=AsyncMock(side_effect=AssertionError("CDR should not be uploaded twice")),
+        new=Mock(side_effect=AssertionError("CDR should not be uploaded twice")),
     ):
         result = _run(
             fiscal_artifact_service.persist_cdr_artifact(

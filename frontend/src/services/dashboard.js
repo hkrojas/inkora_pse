@@ -18,7 +18,14 @@ export const dashboard = {
   stats:       ()       => getWithRetry('/analytics/dashboard', null),
   cobranzaResumen: ()   => getWithRetry('/cobranza/resumen', null),
   cobranzaVencidas: (params = '?limit=4') => getWithRetry(`/cobranza/vencidas${params}`, []),
-  reporteMensual: ()    => api.get('/reporte/mensual', { timeoutMs: DASHBOARD_TIMEOUT_MS }),
+  reporteMensual: (anio, mes) => {
+    if (!anio || !mes) {
+      throw new Error('reporteMensual requiere anio y mes');
+    }
+    return api.get(`/reporte/mensual?anio=${encodeURIComponent(anio)}&mes=${encodeURIComponent(mes)}`, {
+      timeoutMs: DASHBOARD_TIMEOUT_MS,
+    });
+  },
 
   // Documentos recientes para el dashboard
   recentDocuments: async () => {

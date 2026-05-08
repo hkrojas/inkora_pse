@@ -1,9 +1,11 @@
 from config import settings
+from logging_utils import get_logger
 from supabase_client import get_supabase_client
 
 
 PRIVATE_STORAGE_SCHEME = "supabase-private"
 DEFAULT_SIGNED_URL_TTL_SECONDS = 3600
+logger = get_logger(__name__)
 
 
 def build_storage_path(folder_name: str, filename: str) -> str:
@@ -90,7 +92,7 @@ def download_private_storage_reference(value: str) -> bytes:
     raise ValueError("Storage no devolvio bytes para el archivo solicitado.")
 
 
-async def upload_to_storage(
+def upload_to_storage(
     file_bytes: bytes,
     folder_name: str,
     filename: str,
@@ -99,7 +101,7 @@ async def upload_to_storage(
     return_public_url: bool = False,
 ):
     """
-    Sube un archivo al bucket configurado.
+    Sube un archivo al bucket configurado de forma sincrona.
 
     - `return_public_url=True`: retorna URL publica (ej. logos).
     - `return_public_url=False`: retorna referencia privada para luego firmarla.
@@ -113,13 +115,38 @@ async def upload_to_storage(
     bucket = settings.SUPABASE_STORAGE_BUCKET
     path = build_storage_path(folder_name, filename)
 
-    client.storage.from_(bucket).upload(
-        path=path,
-        file=file_bytes,
-        file_options={"content-type": content_type, "x-upsert": "true"},
-    )
+    import time
+
+    started_at = time.perf_counter()
+    try:
+        client.storage.from_(bucket).upload(
+            path=path,
+            file=file_bytes,
+            file_options={"content-type": content_type, "x-upsert": "true"},
+        )
+    finally:
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        logger.info(
+            "storage_upload_completed",
+            extra={
+                "event": "storage_upload_completed",
+                "duration_ms": duration_ms,
+                "context": f"bucket={bucket} path={path} bytes={len(file_bytes)}",
+            },
+        )
 
     if return_public_url:
         return client.storage.from_(bucket).get_public_url(path)
 
     return build_private_storage_reference(path, bucket=bucket)
+
+
+def check_storage_ready() -> dict:
+    if not settings.has_supabase_storage:
+        return {"configured": False, "bucket": settings.SUPABASE_STORAGE_BUCKET}
+    get_supabase_client()
+    return {
+        "configured": True,
+        "bucket": settings.SUPABASE_STORAGE_BUCKET,
+        "uses_server_key": bool(settings.SUPABASE_SERVICE_ROLE_KEY.strip()),
+    }

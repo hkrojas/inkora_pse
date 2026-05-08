@@ -13,8 +13,11 @@ def get_supabase_client() -> Client:
 
     if not settings.has_supabase_storage:
         raise RuntimeError(
-            "Supabase Storage no esta configurado. Defina SUPABASE_URL y SUPABASE_KEY."
+            "Supabase Storage no esta configurado. Defina SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY."
         )
 
-    _supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+    # Server-side storage operations must use the secret/service key. The
+    # publishable key is kept only as a local-development fallback.
+    storage_key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_KEY
+    _supabase_client = create_client(settings.SUPABASE_URL, storage_key)
     return _supabase_client

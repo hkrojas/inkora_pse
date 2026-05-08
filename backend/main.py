@@ -20,6 +20,7 @@ from routers import (
     facturacion,
     guias,
     legacy_frozen,
+    ops,
     pagos,
     productos,
     reportes,
@@ -102,6 +103,7 @@ def create_app() -> FastAPI:
     app.include_router(superadmin.router)
     app.include_router(dashboard.router)
     app.include_router(sunat.router)
+    app.include_router(ops.router)
 
     # Compatibilidad temporal local: endpoints congelados fuera del launch scope.
     if settings.is_local:

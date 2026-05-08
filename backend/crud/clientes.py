@@ -63,6 +63,26 @@ def create_cliente(db: Session, cliente: schemas.ClienteCreate, tenant_id: int):
         raise e
 
 
+def create_clientes_bulk(
+    db: Session,
+    clientes: list[schemas.ClienteCreate],
+    tenant_id: int,
+) -> list[models.Cliente]:
+    db_clientes = [
+        models.Cliente(**cliente.model_dump(), tenant_id=tenant_id)
+        for cliente in clientes
+    ]
+    if not db_clientes:
+        return []
+    try:
+        db.add_all(db_clientes)
+        db.commit()
+        return db_clientes
+    except Exception as e:
+        db.rollback()
+        raise e
+
+
 def update_cliente(db: Session, cliente_id: int, cliente_data: schemas.ClienteCreate, tenant_id: int):
     db_cliente = get_cliente_for_tenant(db, cliente_id, tenant_id)
     if db_cliente:

@@ -5,6 +5,7 @@ from io import BytesIO
 
 import models
 from database import SessionLocal, apply_tenant_context, reset_tenant_context
+from fastapi.concurrency import run_in_threadpool
 from logging_utils import get_logger
 from services import storage_service
 
@@ -50,11 +51,12 @@ async def persist_cdr_artifact(db, cotizacion: models.Cotizacion, cdr_xml: str |
     basename = _cdr_basename(cotizacion)
     file_bytes = package_cdr_xml_as_zip(cdr_xml, filename=f"{basename}.xml")
     folder = f"cotizaciones/tenant_{cotizacion.tenant_id}/cdr"
-    reference = await storage_service.upload_to_storage(
-        file_bytes=file_bytes,
-        folder_name=folder,
-        filename=f"{basename}.zip",
-        content_type="application/zip",
+    reference = await run_in_threadpool(
+        storage_service.upload_to_storage,
+        file_bytes,
+        folder,
+        f"{basename}.zip",
+        "application/zip",
     )
     cotizacion.sunat_cdr_url = reference
     db.commit()

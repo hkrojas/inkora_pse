@@ -6,5 +6,6 @@
  */
 
 const DEFAULT_API_URL = 'https://inkorapse-production.up.railway.app';
+const viteEnv = import.meta.env || {};
 
-export const BASE_URL = (import.meta.env.VITE_API_URL || DEFAULT_API_URL).replace(/\/$/, '');
+export const BASE_URL = (viteEnv.VITE_API_URL || DEFAULT_API_URL).replace(/\/$/, '');

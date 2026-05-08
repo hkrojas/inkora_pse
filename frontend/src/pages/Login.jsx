@@ -27,7 +27,7 @@ export default function Login() {
     return (
       <main className="auth-loading-screen">
         <Loader2 size={22} className="login-spin" />
-        <span>Verificando sesion</span>
+        <span>Verificando sesión</span>
       </main>
     );
   }
@@ -82,13 +82,13 @@ export default function Login() {
                 onChange={(event) => setEmail(event.target.value)}
                 autoComplete="username"
                 autoFocus
-                placeholder="admin@demo.inkora.pe"
+                placeholder="usuario@empresa.pe"
               />
             </div>
           </label>
 
           <label className="login-field">
-            <span>Contrasena</span>
+            <span>Contraseña</span>
             <div className="login-input-wrap">
               <LockKeyhole size={17} />
               <input
@@ -103,7 +103,7 @@ export default function Login() {
                 type="button"
                 className="login-eye-btn"
                 onClick={() => setShowPassword((value) => !value)}
-                aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -123,7 +123,7 @@ export default function Login() {
               Recordar dispositivo
             </label>
             <Link to="/recuperar-password" className="login-link">
-              Olvide mi clave
+              Olvidé mi clave
             </Link>
           </div>
 
@@ -142,7 +142,7 @@ export default function Login() {
           </button>
 
           <p className="login-request">
-            No tienes cuenta? <Link to="/solicitar-acceso">Solicitar acceso</Link>
+            ¿No tienes cuenta? <Link to="/solicitar-acceso">Solicitar acceso</Link>
           </p>
         </form>
       </section>

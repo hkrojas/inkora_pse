@@ -128,7 +128,7 @@ export default function NotasPage() {
       if (search.trim()) params.set('q', search.trim());
       const [notasRes, facturasRes] = await Promise.all([
         api.get(`/notas/page?${params.toString()}`),
-        api.get('/facturas-emitidas/page?limit=100&tab=emitted'),
+        api.get('/facturas-emitidas/page?limit=15&tab=emitted'),
       ]);
       const notaItems = Array.isArray(notasRes) ? notasRes : notasRes.items || [];
       const facturaItems = Array.isArray(facturasRes) ? facturasRes : facturasRes.items || [];

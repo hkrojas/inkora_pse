@@ -52,9 +52,19 @@ if not settings.DATABASE_URL.startswith("sqlite"):
         }
     )
 
-# Si la URL contiene "?pgbouncer=true", se asume modo transaccional.
-# PgBouncer en modo transaction no soporta prepared statements ni session vars.
-USES_PGBOUNCER = "pgbouncer" in settings.DATABASE_URL.lower()
+def _database_url_uses_transaction_pooler(database_url: str) -> bool:
+    """Detect Supabase/PgBouncer transaction pooler URLs."""
+    normalized = (database_url or "").lower()
+    if "pgbouncer" in normalized:
+        return True
+    parsed = urlsplit(database_url)
+    host = (parsed.hostname or "").lower()
+    return parsed.port == 6543 or "pooler.supabase.com" in host
+
+
+# Si la URL apunta al pooler transaccional, no se usan session vars.
+# PgBouncer/Supavisor transaction mode no garantiza estado por sesion.
+USES_PGBOUNCER = _database_url_uses_transaction_pooler(settings.DATABASE_URL)
 USES_SQLITE = settings.DATABASE_URL.startswith("sqlite")
 
 engine = create_engine(

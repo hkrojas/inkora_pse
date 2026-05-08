@@ -23,8 +23,8 @@ class Settings(BaseSettings):
 
     # Base de datos
     DATABASE_URL: str = ""
-    DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_SIZE: int = 3
+    DB_MAX_OVERFLOW: int = 2
     DB_POOL_TIMEOUT_SECONDS: int = 30
     DB_POOL_RECYCLE_SECONDS: int = 1800
     DB_POOL_PING: bool = True
@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     EMISSION_MAX_ATTEMPTS: int = 5
     EMISSION_RETRY_BASE_SECONDS: int = 15
     EMISSION_PROCESSING_TIMEOUT_SECONDS: int = 300
-    EMISSION_WORKER_CONCURRENCY: int = 3
+    EMISSION_WORKER_CONCURRENCY: int = 1
     FISCAL_ENV: str = Field(
         default="",
         validation_alias=AliasChoices("FISCAL_ENV", "FISCAL_ENVIRONMENT"),
@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     # Storage / assets
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
     SUPABASE_STORAGE_BUCKET: str = "printflow-archivos"
 
     # App / runtime
@@ -151,7 +152,7 @@ class Settings(BaseSettings):
 
         if self.is_non_local and not self.has_supabase_storage:
             raise ValueError(
-                "SUPABASE_URL y SUPABASE_KEY son obligatorias en staging/producción."
+                "SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son obligatorias en staging/produccion."
             )
 
     @property
@@ -176,7 +177,10 @@ class Settings(BaseSettings):
 
     @property
     def has_supabase_storage(self) -> bool:
-        return bool(self.SUPABASE_URL.strip() and self.SUPABASE_KEY.strip())
+        return bool(
+            self.SUPABASE_URL.strip()
+            and (self.SUPABASE_SERVICE_ROLE_KEY.strip() or self.SUPABASE_KEY.strip())
+        )
 
     @property
     def is_fiscal_beta(self) -> bool:

@@ -100,6 +100,41 @@ def create_producto(db: Session, producto: schemas.ProductoCreate, tenant_id: in
         raise e
 
 
+def _producto_model_from_schema(
+    producto: schemas.ProductoCreate,
+    tenant_id: int,
+) -> models.Producto:
+    payload = producto.model_dump(exclude={"precio_incluye_igv"})
+    precio_final, valor_unitario = _resolve_product_prices(
+        precio_referencia=producto.precio_unitario,
+        precio_incluye_igv=producto.precio_incluye_igv,
+        tipo_afectacion_igv=producto.tipo_afectacion_igv,
+    )
+    payload["precio_unitario"] = precio_final
+    payload["valor_unitario"] = valor_unitario
+    return models.Producto(**payload, tenant_id=tenant_id)
+
+
+def create_productos_bulk(
+    db: Session,
+    productos: list[schemas.ProductoCreate],
+    tenant_id: int,
+) -> list[models.Producto]:
+    db_productos = [
+        _producto_model_from_schema(producto, tenant_id)
+        for producto in productos
+    ]
+    if not db_productos:
+        return []
+    try:
+        db.add_all(db_productos)
+        db.commit()
+        return db_productos
+    except Exception as e:
+        db.rollback()
+        raise e
+
+
 def update_producto(db: Session, producto_id: int, producto_data: schemas.ProductoCreate, tenant_id: int):
     db_producto = get_producto_for_tenant(db, producto_id, tenant_id)
     if db_producto:

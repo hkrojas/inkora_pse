@@ -529,7 +529,8 @@ export default function ConfiguracionPage() {
   const [tabDirection, setTabDirection] = useState('forward');
 
   useEffect(() => {
-    svc.get()
+    const controller = new AbortController();
+    svc.get({ signal: controller.signal })
       .then((tenantResponse) => {
         setTenantData(tenantResponse);
         setBusinessName(tenantResponse.business_name || '');
@@ -540,8 +541,17 @@ export default function ConfiguracionPage() {
         setPaymentMethods(normalizePaymentMethods(tenantResponse.bank_accounts));
         setPaymentMethodErrors({});
       })
-      .catch(() => toast('No se pudo cargar la configuración. Revisa tu conexión e inténtalo nuevamente.', 'error'))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (err?.isCanceled) return;
+        toast('No se pudo cargar la configuración. Revisa tu conexión e inténtalo nuevamente.', 'error');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
+
+    return () => controller.abort();
   }, []);
 
   const handleSubmit = async (event) => {

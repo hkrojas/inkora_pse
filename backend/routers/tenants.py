@@ -3,7 +3,8 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,7 @@ from api_dependencies import (
 )
 from api_utils import raise_internal_server_error, read_validated_upload
 from config import settings
+from rate_limit import limiter
 from security import validate_password_strength
 from services.beta_feature_flags import normalize_fiscal_feature_flags
 from services import storage_service
@@ -310,7 +312,9 @@ def admin_reset_user_password(
 
 
 @router.post("/users/upload-logo")
+@limiter.limit("10/minute")
 async def upload_logo(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_admin),
@@ -324,11 +328,12 @@ async def upload_logo(
         )
 
         unique_filename = f"logo_{uuid.uuid4()}.{ext}"
-        public_url = await storage_service.upload_to_storage(
-            file_bytes=validated_file_content,
-            folder_name="logos",
-            filename=unique_filename,
-            content_type=file.content_type or "",
+        public_url = await run_in_threadpool(
+            storage_service.upload_to_storage,
+            validated_file_content,
+            "logos",
+            unique_filename,
+            file.content_type or "",
             return_public_url=True,
         )
 

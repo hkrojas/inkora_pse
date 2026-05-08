@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
@@ -139,20 +139,49 @@ export default function ReversionesPage() {
   const [filters, setFilters] = useState({ desde: '', hasta: '' });
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState('all');
+  const [total, setTotal] = useState(0);
+  const [serverCounts, setServerCounts] = useState({ all: 0, sent: 0, pending: 0, rejected: 0 });
 
-  const load = async () => {
+  const load = async ({ signal } = {}) => {
     setLoading(true);
     try {
-      const res = await api.get(`/reversiones/?limit=${PER_PAGE}`);
-      setResultados(Array.isArray(res) ? res : []);
-    } catch {
+      const params = new URLSearchParams({
+        skip: String((page - 1) * PER_PAGE),
+        limit: String(PER_PAGE),
+      });
+      const q = search.trim();
+      if (q) params.set('q', q);
+      if (activeTab !== 'all') params.set('status', activeTab);
+      if (filters.desde) params.set('desde', filters.desde);
+      if (filters.hasta) params.set('hasta', filters.hasta);
+      const res = await api.get(`/reversiones/page?${params.toString()}`, { signal });
+      const items = Array.isArray(res) ? res : res.items || [];
+      setResultados(items);
+      setTotal(Array.isArray(res) ? items.length : Number(res.total || 0));
+      setServerCounts({
+        all: Number(res?.counts?.all || 0),
+        sent: Number(res?.counts?.sent || 0),
+        pending: Number(res?.counts?.pending || 0),
+        rejected: Number(res?.counts?.rejected || 0),
+      });
+    } catch (err) {
+      if (err?.isCanceled) return;
       toast('No se pudo cargar reversiones. Revisa tu conexion e intentalo nuevamente.', 'error');
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    const debounce = setTimeout(() => load({ signal: controller.signal }), 300);
+    return () => {
+      clearTimeout(debounce);
+      controller.abort();
+    };
+  }, [page, search, filters.desde, filters.hasta, activeTab]);
 
   useEffect(() => {
     setPage(1);
@@ -225,45 +254,17 @@ export default function ReversionesPage() {
     }
   };
 
-  const constrained = useMemo(
-    () =>
-      resultados.filter((reversion) => {
-        const q = search.trim().toLowerCase();
-        const fecha = onlyDate(reversion.fec_comunicacion || reversion._fecha);
-        const correlativo = reversionDisplayNumber(reversion).toLowerCase();
-        const ticket = reversionTicket(reversion).toLowerCase();
-        const error = String(reversion.sunat_error || '').toLowerCase();
-        const matchSearch = !q || correlativo.includes(q) || fecha.includes(q) || ticket.includes(q) || error.includes(q);
-        const matchDesde = !filters.desde || fecha >= filters.desde;
-        const matchHasta = !filters.hasta || fecha <= filters.hasta;
-        return matchSearch && matchDesde && matchHasta;
-      }),
-    [resultados, search, filters],
-  );
-
-  const tabCounts = useMemo(() => {
-    const base = { all: constrained.length, sent: 0, pending: 0, rejected: 0 };
-    constrained.forEach((reversion) => {
-      const key = getReversionStatus(reversion);
-      if (base[key] !== undefined) base[key] += 1;
-    });
-    return base;
-  }, [constrained]);
-
-  const filtered = useMemo(
-    () => constrained.filter((reversion) => activeTab === 'all' || getReversionStatus(reversion) === activeTab),
-    [constrained, activeTab],
-  );
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const pageItems = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const tabCounts = serverCounts;
+  const filtered = resultados;
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const pageItems = resultados;
 
   const heroCards = [
     {
       key: 'all',
-      value: constrained.length,
+      value: tabCounts.all,
       label: 'Reversiones',
-      text: `${constrained.length} registradas en esta vista`,
+      text: `${tabCounts.all} registradas`,
       link: 'Ver todos',
       icon: <RotateCcw size={16} />,
     },
@@ -398,7 +399,7 @@ export default function ReversionesPage() {
             ))}
           </div>
           <div className="sort-text">
-            Mostrando <strong>{getVisibleRange(page, PER_PAGE, filtered.length)}</strong> de <strong>{filtered.length}</strong> reversiones
+            Mostrando <strong>{getVisibleRange(page, PER_PAGE, total)}</strong> de <strong>{total}</strong> reversiones
           </div>
         </div>
 
@@ -443,7 +444,7 @@ export default function ReversionesPage() {
             <div className="ink-table-header">
               <div className="ink-table-title">
                 <strong>Reversiones enviadas</strong>
-                <span>{filtered.length} visibles en esta vista</span>
+                <span>{total} visibles en esta vista</span>
               </div>
 
               <div className="document-list-table-meta">

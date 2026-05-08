@@ -1,15 +1,28 @@
 from datetime import datetime
 from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import Mock, patch
 
 from fastapi import BackgroundTasks
+from starlette.requests import Request
 
 import crud
 import schemas
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
 from routers import cotizaciones as cotizaciones_router
 from services import fiscal_xml_service, pdf_generator, pdf_storage_service, storage_service
+
+
+def _make_request(path: str = "/test") -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": path,
+            "headers": [],
+            "client": ("testclient", 50000),
+        }
+    )
 
 
 SAMPLE_INVOICE_XML = """<?xml version="1.0" encoding="utf-8"?>
@@ -319,7 +332,7 @@ def test_generate_and_upload_pdf_usa_renderer_de_cotizacion(db_session):
         return_value=BytesIO(b"doc-pdf"),
     ) as comprobante_renderer, patch(
         "services.pdf_storage_service.storage_service.upload_to_storage",
-        new=AsyncMock(return_value=private_ref),
+        new=Mock(return_value=private_ref),
     ):
         result = _run(pdf_storage_service.generate_and_upload_pdf(db_session, cotizacion))
 
@@ -347,7 +360,7 @@ def test_generate_and_upload_pdf_usa_renderer_de_comprobante(db_session):
         return_value=BytesIO(b"doc-pdf"),
     ) as comprobante_renderer, patch(
         "services.pdf_storage_service.storage_service.upload_to_storage",
-        new=AsyncMock(return_value=private_ref),
+        new=Mock(return_value=private_ref),
     ):
         result = _run(pdf_storage_service.generate_and_upload_pdf(db_session, fiscal))
 
@@ -382,7 +395,7 @@ def test_generate_and_upload_pdf_usa_renderer_de_comprobante_para_nota(db_sessio
         return_value=BytesIO(b"note-pdf"),
     ) as comprobante_renderer, patch(
         "services.pdf_storage_service.storage_service.upload_to_storage",
-        new=AsyncMock(return_value=storage_service.build_private_storage_reference("cotizaciones/tenant_3/nota.pdf")),
+        new=Mock(return_value=storage_service.build_private_storage_reference("cotizaciones/tenant_3/nota.pdf")),
     ):
         _run(pdf_storage_service.generate_and_upload_pdf(db_session, nota))
 
@@ -428,6 +441,7 @@ def test_descargar_pdf_publico_redirige_a_url_firmada():
     ):
         response = _run(
             cotizaciones_router.descargar_pdf_publico(
+                _make_request("/public/cotizaciones/uuid-demo/pdf"),
                 "uuid-demo",
                 None,
                 SimpleNamespace(),
@@ -457,6 +471,7 @@ def test_descargar_pdf_interno_devuelve_url_firmada_para_api():
     ):
         payload = _run(
             cotizaciones_router.descargar_pdf_interno(
+                _make_request("/cotizaciones/1/pdf"),
                 1,
                 BackgroundTasks(),
                 False,

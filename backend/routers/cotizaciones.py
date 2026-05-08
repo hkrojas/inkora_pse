@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ import models
 import schemas
 from api_dependencies import get_current_user, get_db, get_db_tenant
 from config import settings
+from rate_limit import limiter
 from services import pdf_storage_service, storage_service
 
 router = APIRouter(tags=["cotizaciones"])
@@ -118,7 +119,9 @@ def delete_cotizacion(
 
 
 @router.get("/public/cotizaciones/{uuid_publico}/pdf")
+@limiter.limit("30/minute")
 async def descargar_pdf_publico(
+    request: Request,
     uuid_publico: str,
     pin: Optional[str] = None,  # Parámetro legacy; ignorado. El UUID v4 es el secreto.
     db: Session = Depends(get_db),
@@ -137,7 +140,9 @@ async def descargar_pdf_publico(
 
 
 @router.get("/cotizaciones/{cotizacion_id}/pdf")
+@limiter.limit("30/minute")
 async def descargar_pdf_interno(
+    request: Request,
     cotizacion_id: int,
     background_tasks: BackgroundTasks,
     redirect: bool = Query(default=False),

@@ -140,20 +140,49 @@ export default function RetencionesPage() {
   const [filters, setFilters] = useState({ desde: '', hasta: '' });
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState('all');
+  const [total, setTotal] = useState(0);
+  const [serverCounts, setServerCounts] = useState({ all: 0, sent: 0, pending: 0, rejected: 0 });
 
-  const load = async () => {
+  const load = async ({ signal } = {}) => {
     setLoading(true);
     try {
-      const res = await api.get(`/retenciones/?limit=${PER_PAGE}`);
-      setResultados(Array.isArray(res) ? res : []);
-    } catch {
+      const params = new URLSearchParams({
+        skip: String((page - 1) * PER_PAGE),
+        limit: String(PER_PAGE),
+      });
+      const q = search.trim();
+      if (q) params.set('q', q);
+      if (activeTab !== 'all') params.set('status', activeTab);
+      if (filters.desde) params.set('desde', filters.desde);
+      if (filters.hasta) params.set('hasta', filters.hasta);
+      const res = await api.get(`/retenciones/page?${params.toString()}`, { signal });
+      const items = Array.isArray(res) ? res : res.items || [];
+      setResultados(items);
+      setTotal(Array.isArray(res) ? items.length : Number(res.total || 0));
+      setServerCounts({
+        all: Number(res?.counts?.all || 0),
+        sent: Number(res?.counts?.sent || 0),
+        pending: Number(res?.counts?.pending || 0),
+        rejected: Number(res?.counts?.rejected || 0),
+      });
+    } catch (err) {
+      if (err?.isCanceled) return;
       toast('No se pudo cargar retenciones. Revisa tu conexion e intentalo nuevamente.', 'error');
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    const debounce = setTimeout(() => load({ signal: controller.signal }), 300);
+    return () => {
+      clearTimeout(debounce);
+      controller.abort();
+    };
+  }, [page, search, filters.desde, filters.hasta, activeTab]);
 
   useEffect(() => {
     setPage(1);
@@ -271,47 +300,17 @@ export default function RetencionesPage() {
     }
   };
 
-  const constrained = useMemo(
-    () =>
-      resultados.filter((retencion) => {
-        const q = search.trim().toLowerCase();
-        const matchSearch =
-          !q ||
-          displayNumber(retencion).toLowerCase().includes(q) ||
-          (retencion.proveedor_rzn_social || '').toLowerCase().includes(q) ||
-          (retencion.proveedor_num_doc || '').toLowerCase().includes(q) ||
-          (retencion.ticket || '').toLowerCase().includes(q);
-        const date = String(retencion.fecha_emision || '').slice(0, 10);
-        const matchDesde = !filters.desde || date >= filters.desde;
-        const matchHasta = !filters.hasta || date <= filters.hasta;
-        return matchSearch && matchDesde && matchHasta;
-      }),
-    [resultados, search, filters],
-  );
-
-  const tabCounts = useMemo(() => {
-    const base = { all: constrained.length, sent: 0, pending: 0, rejected: 0 };
-    constrained.forEach((retencion) => {
-      const status = getStatus(retencion);
-      if (base[status] !== undefined) base[status] += 1;
-    });
-    return base;
-  }, [constrained]);
-
-  const filtered = useMemo(
-    () => constrained.filter((retencion) => activeTab === 'all' || getStatus(retencion) === activeTab),
-    [constrained, activeTab],
-  );
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const pageItems = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const tabCounts = serverCounts;
+  const filtered = resultados;
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const pageItems = resultados;
 
   const heroCards = [
     {
       key: 'all',
-      value: constrained.length,
+      value: tabCounts.all,
       label: 'Retenciones',
-      text: `${constrained.length} cargadas`,
+      text: `${tabCounts.all} registradas`,
       link: 'Ver todos',
       icon: <HandCoins size={16} />,
     },
@@ -438,8 +437,8 @@ export default function RetencionesPage() {
             ))}
           </div>
           <div className="sort-text">
-            Mostrando <strong>{getVisibleRange(page, PER_PAGE, filtered.length)}</strong> de{' '}
-            <strong>{filtered.length}</strong> retenciones
+            Mostrando <strong>{getVisibleRange(page, PER_PAGE, total)}</strong> de{' '}
+            <strong>{total}</strong> retenciones
           </div>
         </div>
 
@@ -477,7 +476,7 @@ export default function RetencionesPage() {
             <div className="ink-table-header">
               <div className="ink-table-title">
                 <strong>Retenciones emitidas</strong>
-                <span>{filtered.length} visibles en esta vista</span>
+                <span>{total} visibles en esta vista</span>
               </div>
 
               <div className="document-list-table-meta">

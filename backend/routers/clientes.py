@@ -2,7 +2,7 @@ from typing import List, Optional
 
 import httpx
 from cachetools import TTLCache
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import and_, func, or_
@@ -14,6 +14,7 @@ import schemas
 from api_dependencies import get_current_user, get_db_tenant
 from api_utils import raise_internal_server_error, read_validated_upload
 from config import settings
+from rate_limit import limiter
 from services.import_service import parse_clientes
 from tenant_access import get_document_lookup_token
 
@@ -141,7 +142,9 @@ async def _consultar_documento(numero: str, current_user: models.User):
 
 
 @router.get("/consultar-documento/{numero}")
+@limiter.limit("30/minute")
 async def consultar_documento(
+    request: Request,
     numero: str,
     current_user: models.User = Depends(get_current_user),
 ):
@@ -149,7 +152,9 @@ async def consultar_documento(
 
 
 @router.get("/consultar-ruc/{numero}")
+@limiter.limit("30/minute")
 async def consultar_ruc_legacy(
+    request: Request,
     numero: str,
     current_user: models.User = Depends(get_current_user),
 ):
@@ -316,7 +321,9 @@ def descargar_plantilla_clientes():
     response_model=schemas.ImportResultResponse,
     summary="Importar clientes desde CSV o Excel",
 )
+@limiter.limit("10/minute")
 async def importar_clientes(
+    request: Request,
     file: UploadFile = File(..., description="Archivo CSV o Excel (.xlsx)"),
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
@@ -340,24 +347,32 @@ async def importar_clientes(
         max_size_bytes=_IMPORT_MAX_SIZE,
     )
 
-    validas, errores_parse = parse_clientes(ext, raw_bytes)
+    validas, errores_parse = await run_in_threadpool(parse_clientes, ext, raw_bytes)
 
     importados = 0
     omitidos = 0
-    for fila in validas:
-        existente = (
-            db.query(models.Cliente)
+    documentos = [fila.numero_documento for fila in validas if fila.numero_documento]
+    existentes = set()
+    if documentos:
+        existentes = {
+            value
+            for (value,) in db.query(models.Cliente.numero_documento)
             .filter(
                 models.Cliente.tenant_id == current_user.tenant_id,
-                models.Cliente.numero_documento == fila.numero_documento,
+                models.Cliente.numero_documento.in_(documentos),
             )
-            .first()
-        )
-        if existente:
+            .all()
+        }
+
+    vistos_archivo = set()
+    nuevos = []
+    for fila in validas:
+        if fila.numero_documento in existentes or fila.numero_documento in vistos_archivo:
             omitidos += 1
             continue
+        vistos_archivo.add(fila.numero_documento)
 
-        cliente_data = schemas.ClienteCreate(
+        nuevos.append(schemas.ClienteCreate(
             tipo_documento=fila.tipo_documento,
             numero_documento=fila.numero_documento,
             razon_social=fila.razon_social,
@@ -370,9 +385,11 @@ async def importar_clientes(
             condicion_pago=fila.condicion_pago,
             direccion_entrega=fila.direccion_entrega,
             observaciones=fila.observaciones,
-        )
-        crud.create_cliente(db, cliente_data, current_user.tenant_id)
-        importados += 1
+        ))
+
+    if nuevos:
+        crud.create_clientes_bulk(db, nuevos, current_user.tenant_id)
+        importados = len(nuevos)
 
     return schemas.ImportResultResponse(
         importados=importados,

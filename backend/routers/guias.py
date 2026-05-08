@@ -1,5 +1,5 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from api_dependencies import (
 )
 from api_utils import raise_internal_server_error
 from models.tenants import USAGE_LIMIT_KIND_GUIA
+from rate_limit import limiter
 
 router = APIRouter(tags=["guias"])
 
@@ -200,7 +201,9 @@ def obtener_etiqueta_guia(
 
 
 @router.post("/guias-remision/{guia_id}/emitir")
+@limiter.limit("10/minute")
 def emitir_guia_remision_endpoint(
+    request: Request,
     guia_id: int,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_document_emitter),

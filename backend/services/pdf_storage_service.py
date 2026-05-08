@@ -1,8 +1,12 @@
 import models
 from database import SessionLocal, apply_tenant_context, reset_tenant_context
 from fastapi.concurrency import run_in_threadpool
+from logging_utils import get_logger
 from services import pdf_generator, storage_service
 from sqlalchemy.orm import Session
+
+
+logger = get_logger(__name__)
 
 
 async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion):
@@ -16,21 +20,43 @@ async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion):
     ):
         return existing_reference
 
+    import time
+
     document_kind = getattr(cotizacion, "document_kind", "quotation")
+    started_at = time.perf_counter()
     if document_kind == "quotation":
-        pdf_buffer = await run_in_threadpool(pdf_generator.generar_pdf_cotizacion, cotizacion, cotizacion.tenant)
+        pdf_buffer = await run_in_threadpool(
+            pdf_generator.generar_pdf_cotizacion,
+            cotizacion,
+            cotizacion.tenant,
+        )
     else:
-        pdf_buffer = await run_in_threadpool(pdf_generator.create_comprobante_pdf, cotizacion, cotizacion.tenant)
+        pdf_buffer = await run_in_threadpool(
+            pdf_generator.create_comprobante_pdf,
+            cotizacion,
+            cotizacion.tenant,
+        )
 
     pdf_bytes = pdf_buffer.getvalue()
+    generation_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    logger.info(
+        "pdf_generation_completed",
+        extra={
+            "event": "pdf_generation_completed",
+            "duration_ms": generation_ms,
+            "context": f"tenant_id={cotizacion.tenant_id} cotizacion_id={cotizacion.id} bytes={len(pdf_bytes)}",
+        },
+    )
+
     folder = f"cotizaciones/tenant_{cotizacion.tenant_id}"
     filename = f"{cotizacion.serie}-{cotizacion.correlativo}-{cotizacion.uuid_publico[:8]}.pdf"
 
-    private_reference = await storage_service.upload_to_storage(
-        file_bytes=pdf_bytes,
-        folder_name=folder,
-        filename=filename,
-        content_type="application/pdf",
+    private_reference = await run_in_threadpool(
+        storage_service.upload_to_storage,
+        pdf_bytes,
+        folder,
+        filename,
+        "application/pdf",
     )
 
     cotizacion.sunat_pdf_url = private_reference

@@ -3,6 +3,7 @@ import os
 import traceback
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, getcontext
+from functools import lru_cache
 from types import SimpleNamespace
 
 import models
@@ -304,15 +305,23 @@ def _build_qr_flowable(document_data, qr_content: str, ancho_total: float):
     return qr_table
 
 
+@lru_cache(maxsize=128)
+def _load_remote_logo_bytes(url: str) -> bytes | None:
+    response = requests.get(url, timeout=2)
+    if response.status_code != 200:
+        return None
+    return response.content
+
+
 def _load_logo(tenant):
     if not getattr(tenant, "logo_filename", None):
         return ""
 
     try:
         if tenant.logo_filename.startswith("http"):
-            response = requests.get(tenant.logo_filename, timeout=5)
-            if response.status_code == 200:
-                return Image(io.BytesIO(response.content), width=151, height=76)
+            content = _load_remote_logo_bytes(tenant.logo_filename)
+            if content:
+                return Image(io.BytesIO(content), width=151, height=76)
         elif os.path.exists(f"logos/{tenant.logo_filename}"):
             return Image(f"logos/{tenant.logo_filename}", width=151, height=76)
     except Exception as err:

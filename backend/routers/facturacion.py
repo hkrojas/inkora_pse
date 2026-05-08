@@ -2,7 +2,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any, List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session, joinedload
@@ -27,6 +27,7 @@ from api_dependencies import (
     require_emission_allowed,
 )
 from api_utils import raise_internal_server_error
+from rate_limit import limiter
 from services import fiscal_artifact_service, pdf_storage_service
 from services.facturacion_background_service import process_direct_sunat_emission_bg
 from models.tenants import (
@@ -625,7 +626,9 @@ def _validar_pre_emision(quote, tipo_comprobante: str):
 
 
 @router.post("/cotizaciones/{cotizacion_id}/facturar")
+@limiter.limit("10/minute")
 def emitir_comprobante(
+    request: Request,
     cotizacion_id: int,
     payload: schemas.FacturarPayload,
     background_tasks: BackgroundTasks,
@@ -754,7 +757,9 @@ def emitir_comprobante(
 
 
 @router.post("/notas/emitir")
+@limiter.limit("10/minute")
 def emitir_nota(
+    request: Request,
     nota_data: schemas.NotaCreate,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_document_emitter),
@@ -878,7 +883,9 @@ def emitir_nota(
 
 
 @router.post("/bajas/anular")
+@limiter.limit("10/minute")
 def anular_documento(
+    request: Request,
     data: schemas.AnulacionCreate,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_document_emitter),
@@ -1251,7 +1258,9 @@ def list_retenciones_page(
 
 
 @router.post("/retenciones/emitir", response_model=schemas.RetencionResponse)
+@limiter.limit("10/minute")
 def emitir_retencion(
+    request: Request,
     payload: schemas.RetencionCreate,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_document_emitter),
@@ -1381,7 +1390,9 @@ def list_percepciones_page(
 
 
 @router.post("/percepciones/emitir", response_model=schemas.PercepcionResponse)
+@limiter.limit("10/minute")
 def emitir_percepcion(
+    request: Request,
     payload: schemas.PercepcionCreate,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_document_emitter),
@@ -1508,7 +1519,9 @@ def list_resumenes_diarios_page(
 
 
 @router.post("/resumen-diario/enviar", response_model=schemas.ResumenDiarioResponse)
+@limiter.limit("10/minute")
 def enviar_resumen_diario(
+    request: Request,
     payload: schemas.ResumenDiarioCreate,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_document_emitter),
@@ -1630,7 +1643,9 @@ def list_reversiones_page(
 
 
 @router.post("/reversiones/enviar", response_model=schemas.ReversionResponse)
+@limiter.limit("10/minute")
 def enviar_reversion(
+    request: Request,
     payload: schemas.ReversionCreate,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_document_emitter),
@@ -1693,7 +1708,9 @@ def enviar_reversion_legacy():
 
 
 @router.post("/facturacion/{tipo_archivo}")
+@limiter.limit("30/minute")
 def recuperar_archivo_api(
+    request: Request,
     tipo_archivo: str,
     payload: schemas.DescargaArchivoPayload,
     db: Session = Depends(get_db_tenant),

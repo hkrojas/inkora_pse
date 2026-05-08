@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
@@ -69,6 +69,8 @@ export default function BajasPage() {
   const [filters, setFilters] = useState({ desde: '', hasta: '', estado: 'all', tipo: 'all' });
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState('all');
+  const [total, setTotal] = useState(0);
+  const [serverCounts, setServerCounts] = useState({ all: 0, emitida: 0, anulada: 0 });
 
   const [selected, setSelected] = useState(null);
   const [motivo, setMotivo] = useState('ERROR_EN_EL_RUC');
@@ -76,19 +78,49 @@ export default function BajasPage() {
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const load = async () => {
+  const load = async ({ signal } = {}) => {
     setLoading(true);
     try {
-      const res = await api.get(`/facturas-emitidas/?limit=${PER_PAGE}`);
-      setFacturas(res);
-    } catch {
+      const params = new URLSearchParams({
+        skip: String((page - 1) * PER_PAGE),
+        limit: String(PER_PAGE),
+      });
+      const q = search.trim();
+      if (q) params.set('q', q);
+      if (activeTab === 'emitida') params.set('tab', 'emitted');
+      else if (activeTab === 'anulada') params.set('tab', 'voided');
+      else params.set('tab', 'all');
+      if (filters.estado !== 'all') params.set('estado', filters.estado);
+      if (filters.tipo !== 'all') params.set('tipo_comprobante', filters.tipo);
+      if (filters.desde) params.set('desde', filters.desde);
+      if (filters.hasta) params.set('hasta', filters.hasta);
+      const res = await api.get(`/facturas-emitidas/page?${params.toString()}`, { signal });
+      const items = Array.isArray(res) ? res : res.items || [];
+      setFacturas(items);
+      setTotal(Array.isArray(res) ? items.length : Number(res.total || 0));
+      setServerCounts({
+        all: Number(res?.counts?.all || 0),
+        emitida: Number(res?.counts?.emitted || 0),
+        anulada: Number(res?.counts?.voided || 0),
+      });
+    } catch (err) {
+      if (err?.isCanceled) return;
       toast('No se pudo cargar la informacion. Revisa tu conexion e intentalo nuevamente.', 'error');
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    const debounce = setTimeout(() => load({ signal: controller.signal }), 300);
+    return () => {
+      clearTimeout(debounce);
+      controller.abort();
+    };
+  }, [page, search, filters.desde, filters.hasta, filters.estado, filters.tipo, activeTab]);
 
   useEffect(() => {
     setPage(1);
@@ -103,57 +135,17 @@ export default function BajasPage() {
 
   const hasActiveFilters = search || filters.desde || filters.hasta || filters.estado !== 'all' || filters.tipo !== 'all';
 
-  const constrained = useMemo(
-    () =>
-      facturas.filter((doc) => {
-        const q = search.trim().toLowerCase();
-        const cliente = doc.cliente?.razon_social || doc.cliente?.nombre || '';
-        const num = `${doc.serie || ''}-${String(doc.correlativo || '').padStart(6, '0')}`;
-        const matchSearch =
-          !q ||
-          cliente.toLowerCase().includes(q) ||
-          (doc.cliente?.numero_documento || '').includes(q) ||
-          num.toLowerCase().includes(q);
-        const matchDesde = !filters.desde || new Date(doc.fecha_emision) >= new Date(filters.desde);
-        const matchHasta = !filters.hasta || new Date(doc.fecha_emision) <= new Date(filters.hasta);
-        const matchEstado =
-          filters.estado === 'all' || doc.estado === filters.estado;
-        const matchTipo =
-          filters.tipo === 'all' || doc.tipo_comprobante === filters.tipo;
-        return matchSearch && matchDesde && matchHasta && matchEstado && matchTipo;
-      }),
-    [facturas, search, filters],
-  );
-
-  const tabCounts = useMemo(() => {
-    const base = { all: constrained.length, emitida: 0, anulada: 0 };
-    constrained.forEach((doc) => {
-      if (canVoidDocument(doc)) base.emitida += 1;
-      else if (doc.estado === 'anulada') base.anulada += 1;
-    });
-    return base;
-  }, [constrained]);
-
-  const filtered = useMemo(
-    () =>
-      constrained.filter((doc) => {
-        if (activeTab === 'all') return true;
-        if (activeTab === 'emitida') return canVoidDocument(doc);
-        if (activeTab === 'anulada') return doc.estado === 'anulada';
-        return true;
-      }),
-    [constrained, activeTab],
-  );
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const pageItems = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const tabCounts = serverCounts;
+  const filtered = facturas;
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const pageItems = facturas;
 
   const heroCards = [
     {
       key: 'all',
-      value: constrained.length,
+      value: tabCounts.all,
       label: 'Comprobantes',
-      text: `${constrained.length} documentos cargados`,
+      text: `${tabCounts.all} documentos registrados`,
       link: 'Ver todos',
       icon: <FileText size={16} />,
     },
@@ -311,7 +303,7 @@ export default function BajasPage() {
             ))}
           </div>
           <div className="sort-text">
-            Mostrando <strong>{getVisibleRange(page, PER_PAGE, filtered.length)}</strong> de <strong>{filtered.length}</strong>
+            Mostrando <strong>{getVisibleRange(page, PER_PAGE, total)}</strong> de <strong>{total}</strong>
           </div>
         </div>
 
@@ -353,7 +345,7 @@ export default function BajasPage() {
             <div className="ink-table-header">
               <div className="ink-table-title">
                 <strong>Comprobantes</strong>
-                <span>{filtered.length} visibles · {tabCounts.emitida} disponibles para baja</span>
+                <span>{total} visibles · {tabCounts.emitida} disponibles para baja</span>
               </div>
 
               <div className="document-list-table-meta">
