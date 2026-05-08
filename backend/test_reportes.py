@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 import crud
 import models
@@ -154,6 +155,31 @@ def _row_for_series(ws, serie: str) -> dict:
     raise AssertionError(f"No se encontro la serie {serie} en el reporte mensual.")
 
 
+class _SelectCapture:
+    def __init__(self, db_session):
+        self.engine = db_session.get_bind()
+        self.statements = []
+
+    def _before_cursor_execute(
+        self,
+        conn,
+        cursor,
+        statement,
+        parameters,
+        context,
+        executemany,
+    ):
+        if statement.lstrip().lower().startswith("select"):
+            self.statements.append(statement)
+
+    def __enter__(self):
+        event.listen(self.engine, "before_cursor_execute", self._before_cursor_execute)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        event.remove(self.engine, "before_cursor_execute", self._before_cursor_execute)
+
+
 def test_cobranza_resumen_documentos_pagados_mes_filtra_por_mes_actual(db_session):
     tenant = make_tenant(db_session, "REP01")
     user = make_user(db_session, tenant, email="rep01@test.com")
@@ -197,6 +223,57 @@ def test_cobranza_resumen_documentos_pagados_mes_filtra_por_mes_actual(db_sessio
     resumen = crud.get_cobranza_resumen(db_session, tenant.id)
 
     assert resumen["documentos_pagados_mes"] == 1
+
+
+def test_cobranza_resumen_usa_agregaciones_sql_acotadas(db_session):
+    tenant = make_tenant(db_session, "REPQ1")
+    user = make_user(db_session, tenant, email="repq1@test.com")
+    cliente = make_cliente(db_session, tenant, "REPQ1")
+    now = datetime.now().replace(microsecond=0)
+
+    for idx in range(8):
+        quote = make_quote_via_crud(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="100.00",
+        )
+        fiscal = _issue_fiscal_from_quote(
+            db_session,
+            quote,
+            user,
+            fecha_vencimiento=now - timedelta(days=idx + 1),
+        )
+        if idx % 3 == 0:
+            crud.registrar_pago(
+                db_session,
+                quote.id,
+                schemas.PagoCreate(
+                    monto_pagado=Decimal("25.00"),
+                    metodo_pago="Transferencia",
+                    tipo="pago",
+                ),
+                tenant.id,
+            )
+        if idx == 1:
+            _make_collection_note(
+                db_session,
+                fiscal,
+                user,
+                document_kind=DOCUMENT_KIND_CREDIT_NOTE,
+                tipo_comprobante="07",
+                total="10.00",
+                serie="NCQ1",
+                correlativo=1,
+            )
+
+    with _SelectCapture(db_session) as capture:
+        resumen = crud.get_cobranza_resumen(db_session, tenant.id)
+
+    assert resumen["documentos_vencidos"] == 8
+    assert resumen["total_por_cobrar"] == Decimal("715.00")
+    assert len(capture.statements) <= 3
 
 
 def test_cobranza_resumen_usa_saldo_fiscal_neto_factura_nc_nd_pagos(db_session):
@@ -306,6 +383,48 @@ def test_cobranza_vencida_lista_saldo_fiscal_neto_con_notas_y_pagos(db_session):
     assert row.total_venta == Decimal("450.00")
     assert row.monto_pagado == Decimal("200.00")
     assert row.saldo_pendiente == Decimal("250.00")
+
+
+def test_cobranza_vencida_pagina_en_sql_con_consultas_acotadas(db_session):
+    tenant = make_tenant(db_session, "REPQ2")
+    user = make_user(db_session, tenant, email="repq2@test.com")
+    cliente = make_cliente(db_session, tenant, "REPQ2")
+    now = datetime.now().replace(microsecond=0)
+    fiscales = []
+
+    for idx in range(10):
+        quote = make_quote_via_crud(
+            db_session,
+            tenant,
+            user,
+            cliente,
+            precio="100.00",
+        )
+        fiscal = _issue_fiscal_from_quote(
+            db_session,
+            quote,
+            user,
+            fecha_vencimiento=now - timedelta(days=10 - idx),
+        )
+        fiscales.append(fiscal)
+
+    expected = [
+        fiscal.id
+        for fiscal in sorted(fiscales, key=lambda item: item.fecha_vencimiento)[2:5]
+    ]
+
+    with _SelectCapture(db_session) as capture:
+        rows = crud.get_cobranza_vencida(
+            db_session,
+            tenant.id,
+            skip=2,
+            limit=3,
+            scope="overdue",
+        )
+
+    assert [row.id for row in rows] == expected
+    assert len(rows) == 3
+    assert len(capture.statements) <= 3
 
 
 def test_cobranza_excluye_anulados_cotizaciones_y_no_aplica_nota_rechazada(db_session):
