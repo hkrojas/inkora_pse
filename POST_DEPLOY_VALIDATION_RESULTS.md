@@ -11,11 +11,11 @@
 - Responsable de validacion: Codex
 
 ## 2. Resultado ejecutivo
-- Estado general: FAIL
-- Resumen: backend focal PASS, frontend build/lint PASS, Railway `/health` PASS, Vercel production deploy PASS y CORS preflight desde Vercel hacia search endpoints PASS. Supabase fue validado desde el dashboard autenticado y via `psql`: el proyecto esta activo, `pg_trgm` esta instalado y la base esta casi vacia. Se genero un dump logico manual valido, pero no hay backups/PITR gestionados y los 14 indices core `idx_*` esperados por el plan no existen.
-- Bloqueadores: Supabase Free Plan no incluye backups; migracion core `001_scalability_indexes.sql` no esta aplicada con los nombres esperados; indices opcionales `idx_*_trgm` tampoco existen con los nombres esperados; siguen pendientes token JWT tenant, revision Railway variables/logs/worker y validacion UI autenticada.
-- Riesgos no bloqueantes: `pytest` completo falla en 3 tests fuera de scope; `npm ci` reporta 1 vulnerabilidad moderada en dependencias; backend Railway responde con `environment: "staging"` aunque la URL contiene `production`; Vercel no tiene env vars configuradas y usa el fallback del bundle hacia Railway.
-- Proximas acciones: no aplicar migraciones hasta confirmar backup/PITR o aceptar explicitamente el riesgo de operar solo con dump logico manual; aplicar/validar `001_scalability_indexes.sql`; decidir si los indices legacy `ix_*` sustituyen o si se requieren los `idx_*` del plan; proveer token JWT tenant; revisar Railway CLI/dashboard; ejecutar smoke UI autenticado y performance con `k6`.
+- Estado general: PARTIAL
+- Resumen: backend focal PASS, frontend build/lint PASS, Railway `/health` PASS, Vercel production deploy PASS y CORS preflight desde Vercel hacia search endpoints PASS. Supabase fue validado desde el dashboard autenticado y via `psql`: el proyecto esta activo, `pg_trgm` esta instalado y la base esta casi vacia. Se genero un dump logico manual valido, el operador autorizo continuar manualmente sin PITR gestionado, y se aplicaron/validaron las migraciones `001` y `002` con los 14 indices core y 4 indices trigram esperados.
+- Bloqueadores: siguen pendientes token JWT tenant, smoke API autenticado, revision Railway variables/logs/worker y validacion UI autenticada. Sin esos pasos no se puede declarar PASS.
+- Riesgos no bloqueantes: Supabase Free Plan no incluye backups/PITR gestionados; `pytest` completo falla en 3 tests fuera de scope; `npm ci` reporta 1 vulnerabilidad moderada en dependencias; backend Railway responde con `environment: "staging"` aunque la URL contiene `production`; Vercel no tiene env vars configuradas y usa el fallback del bundle hacia Railway.
+- Proximas acciones: proveer token JWT tenant o credenciales de login para smoke; revisar Railway CLI/dashboard; ejecutar smoke UI autenticado y performance con `k6`; evaluar habilitar PITR/Pro aunque el operador haya autorizado esta fase con dump manual.
 
 ## 3. Validacion local
 ### Backend focal
@@ -76,13 +76,14 @@ Resultado:
 
 ## 4. Supabase
 ### 4.1 Backup/PITR
-Resultado: FAIL para backup/PITR gestionado; PASS para dump logico manual pre-DDL.
+Resultado: PASS operativo con dump logico manual autorizado; riesgo aceptado por ausencia de backup/PITR gestionado.
 
 Evidencia:
 
 - Dashboard autenticado: `Backups | Database | Supabase`, proyecto `inkora_pse`, branch `main Production`.
 - La pagina `database/backups/scheduled` muestra: `Free Plan does not include project backups. Upgrade to the Pro Plan for up to 7 days of scheduled backups.`
 - El overview tambien mostraba `Last backup: No backups`.
+- Autorizacion del operador: 2026-05-08 17:10 America/Lima, se autorizo continuar manualmente usando el dump logico como resguardo pre-DDL.
 - Dump logico manual pre-DDL:
   - Herramientas locales: `pg_dump` y `pg_restore` disponibles.
   - Entorno local: `DATABASE_URL` no esta configurado; se uso `PGPASSWORD` temporal en la sesion de PowerShell y se elimino al finalizar.
@@ -96,52 +97,47 @@ Evidencia:
   - `pg_restore --list` completo: PASS, exit code `0`, `738` lineas en `C:\Users\HP\Desktop\inkora_backups\inkora_pse_pre_indexes_20260508-165311.list`.
   - SHA256: `408A3A0A8AA0698306086A9B7F03C7E09DEEAC2FD7F56DD9E1CE4943C9893AF6`.
   - No se reseteo la password porque romperia conexiones existentes y no fue autorizado explicitamente.
-- No se aplicaron migraciones ni DDL porque el criterio acordado para PASS exige backup/PITR gestionado, o aceptacion explicita del riesgo antes de tocar DDL solo con dump manual.
+- Se aplicaron migraciones DDL despues del dump manual y autorizacion explicita.
 
 ### 4.2 Migracion core 001
-Resultado: FAIL
+Resultado: PASS
 
 Evidencia:
 
 - Proyecto identificado: `inkora_pse`, host `db.wiezwkosiuczpnbnvmef.supabase.co`, PostgreSQL `17.6.1.113`.
-- SQL read-only ejecutado desde SQL Editor autenticado y revalidado con `psql` por Session Pooler IPv4.
+- Migracion aplicada por `psql` via Session Pooler IPv4:
+  - `backend/migrations/001_scalability_indexes.sql`
+  - Output: `CREATE INDEX` x14.
+  - Exit code: `0`.
+- SQL read-only ejecutado desde SQL Editor autenticado y revalidado con `psql` por Session Pooler IPv4 despues de aplicar DDL.
 - Resultado resumido:
   - `database`: `postgres`
   - `db_user`: `postgres`
   - `postgres_version`: `17.6`
-  - `core_indexes_present`: `0`
+  - `core_indexes_present`: `14`
   - `core_indexes_expected`: `14`
-  - `core_indexes_missing`: los 14 indices `idx_*` esperados por `001_scalability_indexes.sql`.
-- La migracion core no esta aplicada con los nombres esperados del plan.
-
-Comando pendiente:
-
-```bash
-psql "$DATABASE_URL" -f backend/migrations/001_scalability_indexes.sql
-```
+  - `core_indexes_missing`: `0`
+- La migracion core esta aplicada con los nombres esperados del plan.
 
 ### 4.3 Migracion opcional 002 pg_trgm
-Resultado: PARTIAL
+Resultado: PASS
 
 Evidencia:
 
 - `pg_trgm_installed`: `true`.
-- `optional_trgm_indexes_present`: `0` de `4` con los nombres esperados por `002_optional_pg_trgm_indexes.sql`.
-- Existen indices GIN legacy equivalentes con prefijo `ix_*`:
+- Migracion aplicada por `psql` via Session Pooler IPv4:
+  - `backend/migrations/002_optional_pg_trgm_indexes.sql`
+  - Output: `CREATE EXTENSION` con notice `extension "pg_trgm" already exists, skipping`, y `CREATE INDEX` x4.
+  - Exit code: `0`.
+- `optional_trgm_indexes_present`: `4` de `4` con los nombres esperados por `002_optional_pg_trgm_indexes.sql`.
+- Tambien existen indices GIN legacy equivalentes con prefijo `ix_*`; se mantienen sin cambios en esta fase:
   - `ix_clientes_razon_social_trgm`
   - `ix_clientes_numero_documento_trgm`
   - `ix_productos_nombre_trgm`
   - `ix_productos_codigo_trgm`
-- La migracion opcional `002` no esta aplicada con los nombres `idx_clientes_razon_social_trgm`, `idx_clientes_numero_documento_trgm`, `idx_productos_nombre_trgm`, `idx_productos_codigo_interno_trgm`.
-
-Comando pendiente:
-
-```bash
-psql "$DATABASE_URL" -f backend/migrations/002_optional_pg_trgm_indexes.sql
-```
 
 ### 4.4 Indices visibles
-Resultado: FAIL para nombres esperados `idx_*`; PARTIAL por cobertura legacy `ix_*`
+Resultado: PASS para los nombres esperados `idx_*`; existen indices legacy `ix_*` adicionales.
 
 SQL ejecutado:
 
@@ -161,14 +157,19 @@ ORDER BY tablename, indexname;
 
 Salida/resumen:
 
-- Se encontraron 50 indices existentes en las tablas objetivo, pero ninguno de los 14 indices core `idx_*` esperados.
-- Indices existentes relevantes:
-  - `clientes`: `ix_clientes_tenant_numero_documento`, `ix_clientes_tenant_razon_social`, `ix_clientes_razon_social_trgm`, `ix_clientes_numero_documento_trgm`.
-  - `productos`: `ix_productos_tenant_codigo`, `ix_productos_tenant_nombre`, `ix_productos_nombre_trgm`, `ix_productos_codigo_trgm`.
-  - `cotizaciones`: `ix_cotizaciones_tenant_estado_fecha`, `ix_cotizaciones_source_quote_id`, `ix_cotizaciones_cliente_id`.
-  - `cotizacion_items`: `ix_cotizacion_items_cotizacion_id`, `ix_cotizacion_items_producto_id`.
-  - `pagos`: `ix_pagos_fiscal_document_id`, `ix_pagos_source_quote_id`, `ix_pagos_tenant_id`.
-  - `document_emission_jobs`: `ix_document_emission_jobs_claim`, `ix_document_emission_jobs_status`, `ix_document_emission_jobs_available_at`, `ix_document_emission_jobs_tenant_id`.
+- Validacion posterior a DDL:
+  - `core_indexes_present`: `14`
+  - `core_indexes_expected`: `14`
+  - `core_indexes_missing`: `0`
+  - `optional_trgm_indexes_present`: `4`
+  - `optional_trgm_indexes_missing`: `0`
+- Indices `idx_*` visibles:
+  - `clientes`: `idx_clientes_numero_documento_trgm`, `idx_clientes_razon_social_trgm`, `idx_clientes_tenant_numero_documento`, `idx_clientes_tenant_razon_social`.
+  - `productos`: `idx_productos_codigo_interno_trgm`, `idx_productos_nombre_trgm`, `idx_productos_tenant_codigo_interno`, `idx_productos_tenant_nombre`.
+  - `cotizaciones`: `idx_cotizaciones_tenant_cliente`, `idx_cotizaciones_tenant_fecha_vencimiento`, `idx_cotizaciones_tenant_kind_estado_fecha`, `idx_cotizaciones_tenant_source_kind_estado`.
+  - `cotizacion_items`: `idx_cotizacion_items_cotizacion_id`, `idx_cotizacion_items_producto_id`.
+  - `pagos`: `idx_pagos_tenant_fecha_pago`, `idx_pagos_tenant_fiscal_document`, `idx_pagos_tenant_source_quote`.
+  - `document_emission_jobs`: `idx_emission_jobs_claim`.
 - Conteos de tablas:
   - `tenants`: `1`
   - `users`: `1`
@@ -180,15 +181,15 @@ Salida/resumen:
   - `document_emission_jobs`: `0`
 
 ### 4.5 EXPLAIN ANALYZE
-Clientes documento: N/A por base sin datos operativos y core indexes esperados ausentes.
-Clientes razon social: N/A por base sin datos operativos y core indexes esperados ausentes.
-Productos SKU: N/A por base sin datos operativos y core indexes esperados ausentes.
-Productos nombre: N/A por base sin datos operativos y core indexes esperados ausentes.
-Cobranza resumen: N/A por base sin datos operativos y core indexes esperados ausentes.
-Cobranza vencidas: N/A por base sin datos operativos y core indexes esperados ausentes.
-Claim jobs: N/A por `document_emission_jobs = 0`; indice legacy `ix_document_emission_jobs_claim` existe, pero falta el indice core esperado `idx_emission_jobs_claim`.
+Clientes documento: N/A por base sin datos operativos (`clientes = 0`); indices esperados ya presentes.
+Clientes razon social: N/A por base sin datos operativos (`clientes = 0`); indices esperados ya presentes.
+Productos SKU: N/A por base sin datos operativos (`productos = 0`); indices esperados ya presentes.
+Productos nombre: N/A por base sin datos operativos (`productos = 0`); indices esperados ya presentes.
+Cobranza resumen: N/A por base sin datos operativos (`cotizaciones = 0`, `pagos = 0`); indices esperados ya presentes.
+Cobranza vencidas: N/A por base sin datos operativos (`cotizaciones = 0`); indices esperados ya presentes.
+Claim jobs: N/A por `document_emission_jobs = 0`; indice core esperado `idx_emission_jobs_claim` ya presente.
 
-Nota: se detuvo la validacion de performance DB porque no hay datos operativos y falta la migracion core exacta del plan.
+Nota: la validacion de performance DB queda sin metricas representativas porque no hay datos operativos.
 
 ## 5. Railway
 ### 5.1 Variables criticas
@@ -371,12 +372,9 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
 ```
 
 ## 9. Conclusion
-- Deploy estable? FAIL. La parte publica y build/deploy estan sanas, pero Supabase falla criterios obligatorios: no hay backups/PITR incluidos y la migracion core de indices `idx_*` no esta aplicada.
-- Apto para produccion? No. Antes de declarar PASS hay que resolver backups y migraciones/indices en Supabase, ademas de cerrar smoke autenticado y Railway logs/worker.
+- Deploy estable? PARTIAL. La parte publica y build/deploy estan sanas, y Supabase ya tiene dump manual validado mas migraciones `001`/`002` aplicadas. No se puede declarar PASS hasta cerrar smoke autenticado, Railway logs/worker y UI autenticada.
+- Apto para produccion? Parcialmente validado. Para declarar PASS operativo faltan smoke API/UI con usuario tenant y revision de logs/worker; PITR/Pro sigue recomendado aunque esta fase fue autorizada manualmente.
 - Pendientes obligatorios:
-  - Habilitar backup/PITR o documentar aceptacion explicita del riesgo antes de tocar DDL solo con dump logico manual.
-  - Aplicar/validar `backend/migrations/001_scalability_indexes.sql` o reconciliar formalmente los indices legacy `ix_*` contra los `idx_*` requeridos por el plan.
-  - Decidir si se aplicara `002_optional_pg_trgm_indexes.sql`; `pg_trgm` existe, pero los indices opcionales tienen nombres legacy `ix_*`.
   - Ejecutar smoke API autenticado con token tenant.
   - Confirmar Railway variables/logs/worker.
   - Validar Vercel UI autenticada y Network de autocomplete.
@@ -410,15 +408,17 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
   - `pg_dump` manual por Session Pooler IPv4, archivo `C:\Users\HP\Desktop\inkora_backups\inkora_pse_pre_indexes_20260508-165311.dump`.
   - `pg_restore --list C:\Users\HP\Desktop\inkora_backups\inkora_pse_pre_indexes_20260508-165311.dump` con exit code `0`.
   - `Get-FileHash C:\Users\HP\Desktop\inkora_backups\inkora_pse_pre_indexes_20260508-165311.dump -Algorithm SHA256`.
+  - `psql` via Session Pooler IPv4: `backend/migrations/001_scalability_indexes.sql`, exit code `0`.
+  - `psql` via Session Pooler IPv4: `backend/migrations/002_optional_pg_trgm_indexes.sql`, exit code `0`.
 - SQL:
   - SQL Editor Supabase autenticado ejecuto consulta read-only de resumen:
-    - `core_indexes_present = 0`
+    - `core_indexes_present = 14`
     - `core_indexes_expected = 14`
     - `pg_trgm_installed = true`
-    - `optional_trgm_indexes_present = 0` con nombres `idx_*`
+    - `optional_trgm_indexes_present = 4` con nombres `idx_*`
     - `table_counts = {"tenants":1,"users":1,"clientes":0,"productos":0,"cotizaciones":0,"cotizacion_items":0,"pagos":0,"document_emission_jobs":0}`
     - `stuck_processing_jobs_over_15m = 0`
-  - SQL Editor Supabase listo indices existentes; hay indices legacy `ix_*`, pero no los `idx_*` esperados por las migraciones del plan.
+  - SQL Editor Supabase y `psql` listaron indices existentes; hay indices legacy `ix_*` y tambien los `idx_*` esperados por las migraciones del plan.
 - Logs resumidos:
   - Railway health: `HTTP/1.1 200 OK`, body `{"status":"ok","environment":"staging"}`.
   - Backend focal: `24 passed in 10.48s`.
@@ -428,6 +428,6 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
   - Supabase dashboard: proyecto `inkora_pse` activo, `Backups` indica `Free Plan does not include project backups`.
   - Supabase connection settings: password DB no visible; URI de conexion usa placeholder `[YOUR-PASSWORD]`; Session Pooler IPv4 valido para `pg_dump` y consultas read-only con password vigente provista por el operador.
   - Supabase dump manual: `338573` bytes, `pg_restore --list` exit code `0`, SHA256 `408A3A0A8AA0698306086A9B7F03C7E09DEEAC2FD7F56DD9E1CE4943C9893AF6`.
-  - Supabase SQL: migracion core exacta FAIL por indices `idx_*` ausentes; base sin datos operativos.
+  - Supabase SQL: migracion core `001` PASS con 14/14 indices; migracion opcional `002` PASS con 4/4 indices trigram; base sin datos operativos.
   - Vercel deployment: production `Ready`, built from `main` commit `653e229`, no runtime error logs in queried window.
   - CORS preflight: PASS for `/clientes/search` and `/productos/search` from `https://inkora-pse.vercel.app`.
