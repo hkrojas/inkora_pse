@@ -1,21 +1,21 @@
 # POST DEPLOY VALIDATION RESULTS - Inkora PSE
 
 ## 1. Datos generales
-- Fecha/hora: 2026-05-08 16:08:56 America/Lima (21:08:56 GMT)
+- Fecha/hora: 2026-05-08 16:08:56 America/Lima (21:08:56 GMT); Supabase UI revalidado en navegador integrado durante la misma jornada.
 - Repo: `hkrojas/inkora_pse`
 - Branch: `validation/post-deploy`
-- Commit validado local: `0e434c0 Update post-deploy validation results` (incluye base remota `653e229 Update post-deploy validation evidence`)
+- Commit validado local: rama `validation/post-deploy` con reporte actualizado; incluye base remota `653e229 Update post-deploy validation evidence`.
 - Backend Railway URL: `https://inkorapse-production.up.railway.app`
 - Frontend Vercel URL: `https://inkora-pse.vercel.app`
 - Supabase project/environment: `inkora_pse` (`wiezwkosiuczpnbnvmef`), `ACTIVE_HEALTHY`, region `us-east-1`, PostgreSQL `17.6.1.113`
 - Responsable de validacion: Codex
 
 ## 2. Resultado ejecutivo
-- Estado general: PARTIAL
-- Resumen: backend focal PASS, frontend build/lint PASS, Railway `/health` PASS, Vercel production deploy PASS y CORS preflight desde Vercel hacia search endpoints PASS. Supabase project fue identificado, pero las consultas SQL reales siguen bloqueadas por reautenticacion del conector. Smoke API autenticado, EXPLAIN, cola fiscal, Railway variables/logs y flujos UI autenticados siguen pendientes por credenciales especificas.
-- Bloqueadores: no se puede declarar PASS sin acceso SQL Supabase efectivo, token JWT tenant, revision Railway variables/logs/worker y validacion UI autenticada.
+- Estado general: FAIL
+- Resumen: backend focal PASS, frontend build/lint PASS, Railway `/health` PASS, Vercel production deploy PASS y CORS preflight desde Vercel hacia search endpoints PASS. Supabase fue validado desde el dashboard autenticado: el proyecto esta activo, `pg_trgm` esta instalado y la base esta casi vacia, pero no hay backups incluidos y los 14 indices core `idx_*` esperados por el plan no existen.
+- Bloqueadores: Supabase Free Plan no incluye backups; migracion core `001_scalability_indexes.sql` no esta aplicada con los nombres esperados; indices opcionales `idx_*_trgm` tampoco existen con los nombres esperados; siguen pendientes token JWT tenant, revision Railway variables/logs/worker y validacion UI autenticada.
 - Riesgos no bloqueantes: `pytest` completo falla en 3 tests fuera de scope; `npm ci` reporta 1 vulnerabilidad moderada en dependencias; backend Railway responde con `environment: "staging"` aunque la URL contiene `production`; Vercel no tiene env vars configuradas y usa el fallback del bundle hacia Railway.
-- Proximas acciones: reautenticar Supabase MCP o proveer `DATABASE_URL`; proveer token JWT tenant; revisar Railway CLI/dashboard; ejecutar smoke UI autenticado y performance con `k6`.
+- Proximas acciones: no aplicar migraciones hasta confirmar backup/PITR o ventana aceptada; aplicar/validar `001_scalability_indexes.sql`; decidir si los indices legacy `ix_*` sustituyen o si se requieren los `idx_*` del plan; proveer token JWT tenant; revisar Railway CLI/dashboard; ejecutar smoke UI autenticado y performance con `k6`.
 
 ## 3. Validacion local
 ### Backend focal
@@ -76,29 +76,30 @@ Resultado:
 
 ## 4. Supabase
 ### 4.1 Backup/PITR
-Resultado: PENDIENTE POR CREDENCIALES / REAUTENTICACION
+Resultado: FAIL
 
 Evidencia:
 
-- El conector Supabase listo el proyecto `inkora_pse` (`wiezwkosiuczpnbnvmef`) como `ACTIVE_HEALTHY`.
-- No hay `DATABASE_URL` en el entorno local.
-- La verificacion de backup/PITR no esta disponible en las herramientas expuestas.
+- Dashboard autenticado: `Backups | Database | Supabase`, proyecto `inkora_pse`, branch `main Production`.
+- La pagina `database/backups/scheduled` muestra: `Free Plan does not include project backups. Upgrade to the Pro Plan for up to 7 days of scheduled backups.`
+- El overview tambien mostraba `Last backup: No backups`.
 - No se aplicaron migraciones ni DDL.
 
 ### 4.2 Migracion core 001
-Resultado: PENDIENTE POR CREDENCIALES / REAUTENTICACION
+Resultado: FAIL
 
 Evidencia:
 
 - Proyecto identificado: `inkora_pse`, host `db.wiezwkosiuczpnbnvmef.supabase.co`, PostgreSQL `17.6.1.113`.
-- Intento read-only de SQL:
-
-```sql
-SELECT current_database() AS database_name, current_user AS db_user, version() AS postgres_version;
-```
-
-- Resultado del conector: `UNAUTHORIZED; ReauthenticationRequired: 401: Reauthentication required`.
-- No se aplico `backend/migrations/001_scalability_indexes.sql` porque esta ejecucion es de validacion y el SQL real no pudo autenticarse.
+- SQL read-only ejecutado desde SQL Editor autenticado.
+- Resultado resumido:
+  - `database`: `postgres`
+  - `db_user`: `postgres`
+  - `postgres_version`: `17.6`
+  - `core_indexes_present`: `0`
+  - `core_indexes_expected`: `14`
+  - `core_indexes_missing`: los 14 indices `idx_*` esperados por `001_scalability_indexes.sql`.
+- La migracion core no esta aplicada con los nombres esperados del plan.
 
 Comando pendiente:
 
@@ -107,12 +108,18 @@ psql "$DATABASE_URL" -f backend/migrations/001_scalability_indexes.sql
 ```
 
 ### 4.3 Migracion opcional 002 pg_trgm
-Resultado: PENDIENTE POR CREDENCIALES / REAUTENTICACION
+Resultado: PARTIAL
 
 Evidencia:
 
-- No se valido `pg_trgm` ni indices GIN por bloqueo de autenticacion SQL.
-- No se aplico `backend/migrations/002_optional_pg_trgm_indexes.sql`.
+- `pg_trgm_installed`: `true`.
+- `optional_trgm_indexes_present`: `0` de `4` con los nombres esperados por `002_optional_pg_trgm_indexes.sql`.
+- Existen indices GIN legacy equivalentes con prefijo `ix_*`:
+  - `ix_clientes_razon_social_trgm`
+  - `ix_clientes_numero_documento_trgm`
+  - `ix_productos_nombre_trgm`
+  - `ix_productos_codigo_trgm`
+- La migracion opcional `002` no esta aplicada con los nombres `idx_clientes_razon_social_trgm`, `idx_clientes_numero_documento_trgm`, `idx_productos_nombre_trgm`, `idx_productos_codigo_interno_trgm`.
 
 Comando pendiente:
 
@@ -121,9 +128,9 @@ psql "$DATABASE_URL" -f backend/migrations/002_optional_pg_trgm_indexes.sql
 ```
 
 ### 4.4 Indices visibles
-Resultado: PENDIENTE POR CREDENCIALES / REAUTENTICACION
+Resultado: FAIL para nombres esperados `idx_*`; PARTIAL por cobertura legacy `ix_*`
 
-SQL pendiente:
+SQL ejecutado:
 
 ```sql
 SELECT indexname, tablename
@@ -141,19 +148,34 @@ ORDER BY tablename, indexname;
 
 Salida/resumen:
 
-- No se pudo ejecutar por `ReauthenticationRequired: 401`.
-- La base fue reportada por el usuario como casi vacia; sin SQL efectivo, los indices no pueden marcarse PASS.
+- Se encontraron 50 indices existentes en las tablas objetivo, pero ninguno de los 14 indices core `idx_*` esperados.
+- Indices existentes relevantes:
+  - `clientes`: `ix_clientes_tenant_numero_documento`, `ix_clientes_tenant_razon_social`, `ix_clientes_razon_social_trgm`, `ix_clientes_numero_documento_trgm`.
+  - `productos`: `ix_productos_tenant_codigo`, `ix_productos_tenant_nombre`, `ix_productos_nombre_trgm`, `ix_productos_codigo_trgm`.
+  - `cotizaciones`: `ix_cotizaciones_tenant_estado_fecha`, `ix_cotizaciones_source_quote_id`, `ix_cotizaciones_cliente_id`.
+  - `cotizacion_items`: `ix_cotizacion_items_cotizacion_id`, `ix_cotizacion_items_producto_id`.
+  - `pagos`: `ix_pagos_fiscal_document_id`, `ix_pagos_source_quote_id`, `ix_pagos_tenant_id`.
+  - `document_emission_jobs`: `ix_document_emission_jobs_claim`, `ix_document_emission_jobs_status`, `ix_document_emission_jobs_available_at`, `ix_document_emission_jobs_tenant_id`.
+- Conteos de tablas:
+  - `tenants`: `1`
+  - `users`: `1`
+  - `clientes`: `0`
+  - `productos`: `0`
+  - `cotizaciones`: `0`
+  - `cotizacion_items`: `0`
+  - `pagos`: `0`
+  - `document_emission_jobs`: `0`
 
 ### 4.5 EXPLAIN ANALYZE
-Clientes documento: PENDIENTE POR CREDENCIALES / REAUTENTICACION
-Clientes razon social: PENDIENTE POR CREDENCIALES / REAUTENTICACION
-Productos SKU: PENDIENTE POR CREDENCIALES / REAUTENTICACION
-Productos nombre: PENDIENTE POR CREDENCIALES / REAUTENTICACION
-Cobranza resumen: PENDIENTE POR CREDENCIALES / REAUTENTICACION
-Cobranza vencidas: PENDIENTE POR CREDENCIALES / REAUTENTICACION
-Claim jobs: PENDIENTE POR CREDENCIALES / REAUTENTICACION
+Clientes documento: N/A por base sin datos operativos y core indexes esperados ausentes.
+Clientes razon social: N/A por base sin datos operativos y core indexes esperados ausentes.
+Productos SKU: N/A por base sin datos operativos y core indexes esperados ausentes.
+Productos nombre: N/A por base sin datos operativos y core indexes esperados ausentes.
+Cobranza resumen: N/A por base sin datos operativos y core indexes esperados ausentes.
+Cobranza vencidas: N/A por base sin datos operativos y core indexes esperados ausentes.
+Claim jobs: N/A por `document_emission_jobs = 0`; indice legacy `ix_document_emission_jobs_claim` existe, pero falta el indice core esperado `idx_emission_jobs_claim`.
 
-Nota: si la base no tiene datos operativos, los EXPLAIN con metricas reales deben documentarse como `N/A por base sin datos operativos`; aun asi se requiere SQL efectivo para confirmarlo.
+Nota: se detuvo la validacion de performance DB porque no hay datos operativos y falta la migracion core exacta del plan.
 
 ## 5. Railway
 ### 5.1 Variables criticas
@@ -217,12 +239,12 @@ curl.exe -i -H "Authorization: Bearer $TOKEN" "$BASE/cobranza/vencidas?limit=5"
 ```
 
 ### 5.4 Worker/cola fiscal
-Resultado: PENDIENTE POR CREDENCIALES / REAUTENTICACION SQL
-Estado de jobs: no consultado; falta acceso SQL efectivo.
+Resultado: PARTIAL
+Estado de jobs: SQL Supabase confirma `document_emission_jobs = 0`, `job_status = []` y `stuck_processing_jobs_over_15m = 0`.
 Riesgos:
 
 - No se pudo confirmar si hay worker separado en Railway.
-- No se pudo medir `queued`, `processing`, `retry`, `failed` ni jobs colgados.
+- No hay jobs para medir throughput real; la base esta sin datos operativos.
 
 ### 5.5 Logs Railway
 Resultado: PENDIENTE POR CREDENCIALES / HERRAMIENTA
@@ -336,11 +358,12 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
 ```
 
 ## 9. Conclusion
-- Deploy estable? PARTIAL. La parte publica y build/deploy estan sanas, pero falta evidencia de DB, API autenticada, cola fiscal y UI autenticada.
-- Apto para produccion? No declarable como PASS con la evidencia disponible. Se requiere cerrar credenciales SQL/JWT/Railway.
+- Deploy estable? FAIL. La parte publica y build/deploy estan sanas, pero Supabase falla criterios obligatorios: no hay backups/PITR incluidos y la migracion core de indices `idx_*` no esta aplicada.
+- Apto para produccion? No. Antes de declarar PASS hay que resolver backups y migraciones/indices en Supabase, ademas de cerrar smoke autenticado y Railway logs/worker.
 - Pendientes obligatorios:
-  - Reautenticar Supabase MCP o proveer `DATABASE_URL`.
-  - Validar/aplicar indices core y opcionales segun autorizacion.
+  - Habilitar backup/PITR o documentar aceptacion explicita del riesgo antes de tocar DDL.
+  - Aplicar/validar `backend/migrations/001_scalability_indexes.sql` o reconciliar formalmente los indices legacy `ix_*` contra los `idx_*` requeridos por el plan.
+  - Decidir si se aplicara `002_optional_pg_trgm_indexes.sql`; `pg_trgm` existe, pero los indices opcionales tienen nombres legacy `ix_*`.
   - Ejecutar smoke API autenticado con token tenant.
   - Confirmar Railway variables/logs/worker.
   - Validar Vercel UI autenticada y Network de autocomplete.
@@ -372,13 +395,21 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
   - `npx --yes vercel@latest logs --project inkora-pse --environment production --since 1h --no-branch --limit 20 --json`
   - `npx --yes vercel@latest logs --project inkora-pse --environment production --since 1h --no-branch --level error --limit 20 --json`
 - SQL:
-  - Intento read-only Supabase bloqueado por `ReauthenticationRequired: 401`.
+  - SQL Editor Supabase autenticado ejecuto consulta read-only de resumen:
+    - `core_indexes_present = 0`
+    - `core_indexes_expected = 14`
+    - `pg_trgm_installed = true`
+    - `optional_trgm_indexes_present = 0` con nombres `idx_*`
+    - `table_counts = {"tenants":1,"users":1,"clientes":0,"productos":0,"cotizaciones":0,"cotizacion_items":0,"pagos":0,"document_emission_jobs":0}`
+    - `stuck_processing_jobs_over_15m = 0`
+  - SQL Editor Supabase listo indices existentes; hay indices legacy `ix_*`, pero no los `idx_*` esperados por las migraciones del plan.
 - Logs resumidos:
   - Railway health: `HTTP/1.1 200 OK`, body `{"status":"ok","environment":"staging"}`.
   - Backend focal: `24 passed in 10.48s`.
   - Backend completo: `419 passed, 3 failed, 12 warnings in 91.21s`.
   - Frontend build: PASS, `1670 modules transformed`, `built in 6.11s`.
   - Frontend lint: PASS.
-  - Supabase connector: project `inkora_pse` found, SQL blocked by reauthentication.
+  - Supabase dashboard: proyecto `inkora_pse` activo, `Backups` indica `Free Plan does not include project backups`.
+  - Supabase SQL: migracion core exacta FAIL por indices `idx_*` ausentes; base sin datos operativos.
   - Vercel deployment: production `Ready`, built from `main` commit `653e229`, no runtime error logs in queried window.
   - CORS preflight: PASS for `/clientes/search` and `/productos/search` from `https://inkora-pse.vercel.app`.
