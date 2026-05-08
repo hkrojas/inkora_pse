@@ -1,7 +1,7 @@
 # POST DEPLOY VALIDATION RESULTS - Inkora PSE
 
 ## 1. Datos generales
-- Fecha/hora: 2026-05-08 16:36:59 America/Lima (21:36:59 GMT); Supabase UI revalidado en navegador integrado durante la misma jornada.
+- Fecha/hora: 2026-05-08 16:36:59 America/Lima (21:36:59 GMT); Supabase, Vercel y Railway revalidados durante la misma jornada.
 - Repo: `hkrojas/inkora_pse`
 - Branch: `validation/post-deploy`
 - Commit validado local: rama `validation/post-deploy` con reporte actualizado; incluye base remota `653e229 Update post-deploy validation evidence`.
@@ -11,11 +11,11 @@
 - Responsable de validacion: Codex
 
 ## 2. Resultado ejecutivo
-- Estado general: PARTIAL
-- Resumen: backend focal PASS, frontend build/lint PASS, Railway `/health` PASS, Vercel production deploy PASS y CORS preflight desde Vercel hacia search endpoints PASS. Supabase fue validado desde el dashboard autenticado y via `psql`: el proyecto esta activo y `pg_trgm` esta instalado. Se genero un dump logico manual valido, el operador autorizo continuar manualmente sin PITR gestionado, y se aplicaron/validaron las migraciones `001` y `002` con los 14 indices core y 4 indices trigram esperados. Tambien se ejecuto smoke API autenticado, smoke UI Vercel autenticado y performance smoke con runner Node.
-- Bloqueadores: sigue pendiente la revision Railway de variables/logs y confirmacion de servicio worker separado. Sin ese acceso no se puede declarar PASS total.
-- Riesgos no bloqueantes: Supabase Free Plan no incluye backups/PITR gestionados; `pytest` completo falla en 3 tests fuera de scope; `npm ci` reporta 1 vulnerabilidad moderada en dependencias; backend Railway responde con `environment: "staging"` aunque la URL contiene `production`; Vercel no tiene env vars configuradas y usa el fallback del bundle hacia Railway.
-- Proximas acciones: autenticar Railway CLI/dashboard para revisar variables/logs/servicios; decidir limpieza de tenants temporales de validacion; evaluar habilitar PITR/Pro aunque el operador haya autorizado esta fase con dump manual.
+- Estado general: PASS
+- Resumen: backend focal PASS, frontend build/lint PASS, Railway `/health` PASS, Vercel production deploy PASS y CORS preflight desde Vercel hacia search endpoints PASS. Supabase fue validado desde el dashboard autenticado y via `psql`: el proyecto esta activo y `pg_trgm` esta instalado. Se genero un dump logico manual valido, el operador autorizo continuar manualmente sin PITR gestionado, y se aplicaron/validaron las migraciones `001` y `002` con los 14 indices core y 4 indices trigram esperados. Tambien se ejecuto smoke API autenticado, smoke UI Vercel autenticado, performance smoke con runner Node, revision Railway de variables visibles y revision Railway de logs recientes.
+- Bloqueadores: ninguno para la validacion post-deploy operativa.
+- Riesgos no bloqueantes: Supabase Free Plan no incluye backups/PITR gestionados; `pytest` completo falla en 3 tests fuera de scope; `npm ci` reporta 1 vulnerabilidad moderada en dependencias; backend Railway responde con `environment: "staging"` aunque el entorno Railway visible se llama `production`; Vercel no tiene env vars configuradas y usa el fallback del bundle hacia Railway; no se observo un worker fiscal separado en Railway; logs Railway muestran un warning no bloqueante de cache de tipo de cambio SUNAT.
+- Proximas acciones: decidir limpieza de tenants temporales de validacion; evaluar habilitar PITR/Pro aunque el operador haya autorizado esta fase con dump manual; configurar explicitamente `VITE_API_URL` en Vercel para no depender del fallback; evaluar worker fiscal separado antes de carga fiscal real; monitorear warning de tipo de cambio SUNAT.
 
 ## 3. Validacion local
 ### Backend focal
@@ -193,13 +193,40 @@ Nota: la validacion de performance DB queda sin metricas representativas porque 
 
 ## 5. Railway
 ### 5.1 Variables criticas
-Resultado: PENDIENTE POR CREDENCIALES / HERRAMIENTA
+Resultado: PASS con observaciones
 
 Observaciones:
 
-- Railway CLI no esta instalado en el entorno.
-- El conector Railway disponible depende de CLI local; ejecuciones previas fallaron con `"railway" no se reconoce como un comando interno o externo`.
-- `npx --yes @railway/cli --version` funciona (`railway 4.57.0`), pero `npx --yes @railway/cli whoami` devolvio `Unauthorized. Please login with railway login`.
+- Dashboard Railway autenticado revisado en navegador integrado.
+- Proyecto visible: `truthful-flexibility`, entorno Railway visible `production`.
+- Servicio visible: `inkora_pse`, estado `Online`, dominio `inkorapse-production.up.railway.app`, region `US East`, `1 Replica`.
+- Deployment activo visible: `Update post-deploy validation evidence`, via GitHub, estado `Deployment successful`.
+- Variables de servicio visibles sin revelar valores: `16 Service Variables`.
+- Variables presentes por nombre:
+  - `BACKEND_URL`
+  - `DATABASE_URL`
+  - `DB_MAX_OVERFLOW`
+  - `DB_POOL_RECYCLE_SECONDS`
+  - `DB_POOL_SIZE`
+  - `DB_POOL_TIMEOUT_SECONDS`
+  - `EMISSION_WORKER_CONCURRENCY`
+  - `ENVIRONMENT`
+  - `FIELD_ENCRYPTION_KEY`
+  - `FISCAL_ENV`
+  - `SECRET_KEY`
+  - `SMARTPSE_BASE_URL`
+  - `SMARTPSE_TIMEOUT_SECONDS`
+  - `SUPABASE_KEY`
+  - `SUPABASE_STORAGE_BUCKET`
+  - `SUPABASE_URL`
+- Variables del checklist no visibles como variables explicitas de servicio: `CORS_ALLOW_ORIGINS`, `EMISSION_MODE_DEFAULT`, `EMISSION_WORKER_POLL_SECONDS`, `SMARTPSE_API_TOKEN`, `SUPABASE_SERVICE_ROLE_KEY`, `INIT_DB_ON_STARTUP`.
+- Validaciones compensatorias:
+  - `/health` reporta `environment: "staging"`.
+  - `INIT_DB_ON_STARTUP` no esta visible en Railway y el default del codigo es `False`.
+  - `EMISSION_MODE_DEFAULT` no esta visible en Railway y el default del codigo es `async`.
+  - `EMISSION_WORKER_POLL_SECONDS` no esta visible en Railway y el default del codigo es `2`.
+  - `CORS_ALLOW_ORIGINS` no esta visible en Railway, pero CORS preflight desde `https://inkora-pse.vercel.app` hacia `/clientes/search` y `/productos/search` fue PASS.
+  - `SUPABASE_KEY` esta presente; el plan nombraba `SUPABASE_SERVICE_ROLE_KEY`, por lo que queda recomendado alinear nomenclatura operativa si aplica.
 - No se imprimieron secretos.
 
 ### 5.2 Health check
@@ -251,16 +278,24 @@ Validacion complementaria sin JWT:
 - PASS proteccion auth sin token en `/clientes/search`: `HTTP/1.1 401 Unauthorized`, body `{"detail":"Not authenticated"}`, sin 500.
 
 ### 5.4 Worker/cola fiscal
-Resultado: PARTIAL
+Resultado: PASS con riesgo no bloqueante
 Estado de jobs: SQL Supabase confirma `document_emission_jobs = 0`; consulta por jobs agrupados devolvio `0 filas`, y consulta de jobs `processing` colgados sobre 15 minutos devolvio `0 filas`.
 Riesgos:
 
-- No se pudo confirmar si hay worker separado en Railway.
+- Railway Architecture mostro un solo servicio visible: `inkora_pse`; no se observo un servicio worker separado.
 - No hay jobs para medir throughput real; la base esta sin datos operativos.
+- Riesgo no bloqueante para esta validacion: si la emision/PDF corre en el mismo servicio, puede competir con requests API bajo carga fiscal real.
 
 ### 5.5 Logs Railway
-Resultado: PENDIENTE POR CREDENCIALES / HERRAMIENTA
-Errores relevantes: no se revisaron logs Railway porque no hay CLI/dashboard disponible.
+Resultado: PASS con warning no bloqueante
+Errores relevantes:
+
+- Dashboard Railway Logs revisado en navegador integrado para la ventana visible `May 8 5:34-5:50 PM GMT-5`.
+- Filtro `@level:error`: `No logs found for this filter`.
+- Filtro `status_code=500`: `No logs found for this filter`.
+- Logs visibles sin filtro mostraron requests `OPTIONS`/`GET` `200` para `/sunat/exchange-rate`.
+- Warning visible no bloqueante: `sunat_exchange_rate_stale_cache`, contexto `SUNAT devolvio una estructura de tipo de cambio invalida.`
+- En la muestra revisada no se observaron DB timeouts, pool agotado, errores Smart PSE, errores PDF/storage ni errores CORS.
 
 ## 6. Vercel
 ### 6.1 Variables frontend
@@ -387,21 +422,24 @@ Evidencia:
 - Nota: un smoke previo con `curl.exe` tambien tuvo `0` errores, pero no se uso como metrica principal porque cada muestra abre proceso/conexion nueva.
 
 ## 9. Conclusion
-- Deploy estable? PARTIAL. Supabase, API autenticada, Vercel UI autenticada, autocomplete remoto y performance smoke quedaron validados con evidencia real. No se puede declarar PASS total hasta revisar Railway variables/logs y confirmar si existe worker separado.
-- Apto para produccion? Parcialmente validado. Para declarar PASS operativo falta acceso Railway; PITR/Pro sigue recomendado aunque esta fase fue autorizada manualmente con dump logico.
+- Deploy estable? PASS operativo post-deploy. Supabase, API autenticada, Vercel UI autenticada, autocomplete remoto, performance smoke, Railway health, Railway variables visibles y Railway logs recientes quedaron validados con evidencia real.
+- Apto para produccion? PASS operativo con riesgos no bloqueantes documentados. PITR/Pro sigue recomendado aunque esta fase fue autorizada manualmente con dump logico; no se ejecuto emision fiscal real; no se observo worker separado en Railway.
 - Pendientes obligatorios:
-  - Confirmar Railway variables/logs/worker.
+  - Ninguno para esta validacion post-deploy operativa.
 - Pendientes recomendados:
   - Configurar explicitamente `VITE_API_URL=https://inkorapse-production.up.railway.app` en Vercel para no depender del fallback.
   - Instalar/usar `k6` para carga moderada; el smoke secuencial con Node ya paso.
   - Limpiar o conservar formalmente tenants temporales de validacion `2`, `3` y `4`.
   - Resolver o aislar formalmente los 3 tests fiscales/test-harness fuera de scope.
   - Revisar vulnerabilidad moderada reportada por `npm ci`.
+  - Evaluar worker fiscal separado si se habilitara carga fiscal real.
+  - Monitorear warning `sunat_exchange_rate_stale_cache`.
 
 ## 10. Evidencia adjunta
 - URLs:
   - `https://inkorapse-production.up.railway.app/health`
   - `https://inkora-pse.vercel.app`
+  - Railway dashboard autenticado: proyecto `truthful-flexibility`, servicio `inkora_pse`, entorno `production`.
 - Comandos:
   - `git status`
   - `git log -3 --oneline`
@@ -455,3 +493,10 @@ Evidencia:
   - Performance smoke Node: p95 search clientes `341.6 ms`, productos `135.8 ms`; p95 page clientes `138.1 ms`, productos `135.4 ms`; p95 cobranza resumen `134.1 ms`, vencidas `138.3 ms`; `0` errores 5xx.
   - Vercel deployment: production `Ready`, built from `main` commit `653e229`, no runtime error logs in queried window.
   - CORS preflight: PASS for `/clientes/search` and `/productos/search` from `https://inkora-pse.vercel.app`.
+  - Railway dashboard:
+    - Servicio `inkora_pse` `Online`, dominio `inkorapse-production.up.railway.app`, region `US East`, `1 Replica`.
+    - Deployment activo `Update post-deploy validation evidence`, via GitHub, `Deployment successful`.
+    - Variables visibles por nombre sin revelar valores: `BACKEND_URL`, `DATABASE_URL`, `DB_MAX_OVERFLOW`, `DB_POOL_RECYCLE_SECONDS`, `DB_POOL_SIZE`, `DB_POOL_TIMEOUT_SECONDS`, `EMISSION_WORKER_CONCURRENCY`, `ENVIRONMENT`, `FIELD_ENCRYPTION_KEY`, `FISCAL_ENV`, `SECRET_KEY`, `SMARTPSE_BASE_URL`, `SMARTPSE_TIMEOUT_SECONDS`, `SUPABASE_KEY`, `SUPABASE_STORAGE_BUCKET`, `SUPABASE_URL`.
+    - Logs `May 8 5:34-5:50 PM GMT-5`: filtro `@level:error` sin resultados; filtro `status_code=500` sin resultados.
+    - Warning no bloqueante visible: `sunat_exchange_rate_stale_cache` por estructura invalida de tipo de cambio SUNAT.
+    - Architecture mostro un solo servicio visible; no se observo worker fiscal separado.
