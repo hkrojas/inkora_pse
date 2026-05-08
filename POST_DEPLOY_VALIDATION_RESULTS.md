@@ -88,6 +88,10 @@ Evidencia:
   - Entorno local: `DATABASE_URL` no esta configurado.
   - Supabase `Database Settings` indica: `The database password isn't viewable after creation. Resetting it will break any existing connections.`
   - Modal `Connect` muestra URI con placeholder: `postgresql://postgres:[YOUR-PASSWORD]@db.wiezwkosiuczpnbnvmef.supabase.co:5432/postgres`.
+  - Reintento con password provista por el operador:
+    - Direct connection no usable desde esta red local porque el host directo resuelve solo IPv6.
+    - Session pooler IPv4 `aws-1-us-east-1.pooler.supabase.com:5432` responde, pero `pg_dump` falla con `password authentication failed`.
+    - Transaction pooler IPv4 `aws-1-us-east-1.pooler.supabase.com:6543` responde, pero `psql` falla con `password authentication failed`.
   - No se reseteo la password porque romperia conexiones existentes y no fue autorizado explicitamente.
 - No se aplicaron migraciones ni DDL.
 
@@ -368,7 +372,7 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
 - Apto para produccion? No. Antes de declarar PASS hay que resolver backups y migraciones/indices en Supabase, ademas de cerrar smoke autenticado y Railway logs/worker.
 - Pendientes obligatorios:
   - Habilitar backup/PITR o documentar aceptacion explicita del riesgo antes de tocar DDL.
-  - Proveer `DATABASE_URL` real de forma segura o una password DB vigente para poder ejecutar `pg_dump`; la pagina de Supabase no expone la password actual.
+  - Proveer `DATABASE_URL` real de forma segura o una password DB vigente; la password probada no autentica contra los poolers.
   - Aplicar/validar `backend/migrations/001_scalability_indexes.sql` o reconciliar formalmente los indices legacy `ix_*` contra los `idx_*` requeridos por el plan.
   - Decidir si se aplicara `002_optional_pg_trgm_indexes.sql`; `pg_trgm` existe, pero los indices opcionales tienen nombres legacy `ix_*`.
   - Ejecutar smoke API autenticado con token tenant.
@@ -401,7 +405,7 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
   - `npx --yes vercel@latest api /v9/projects/prj_n0pDzkSeFjBVqZkPryxwxSXTxwlu/env --raw`
   - `npx --yes vercel@latest logs --project inkora-pse --environment production --since 1h --no-branch --limit 20 --json`
   - `npx --yes vercel@latest logs --project inkora-pse --environment production --since 1h --no-branch --level error --limit 20 --json`
-  - `pg_dump`/`pg_restore` precheck local: herramientas presentes, `DATABASE_URL` ausente.
+  - `pg_dump`/`pg_restore` precheck local: herramientas presentes, `DATABASE_URL` ausente; pooler IPv4 accesible pero password probada no autentica.
 - SQL:
   - SQL Editor Supabase autenticado ejecuto consulta read-only de resumen:
     - `core_indexes_present = 0`
@@ -418,7 +422,7 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
   - Frontend build: PASS, `1670 modules transformed`, `built in 6.11s`.
   - Frontend lint: PASS.
   - Supabase dashboard: proyecto `inkora_pse` activo, `Backups` indica `Free Plan does not include project backups`.
-  - Supabase connection settings: password DB no visible; URI de conexion usa placeholder `[YOUR-PASSWORD]`.
+  - Supabase connection settings: password DB no visible; URI de conexion usa placeholder `[YOUR-PASSWORD]`; password probada rechazada por Session/Transaction pooler.
   - Supabase SQL: migracion core exacta FAIL por indices `idx_*` ausentes; base sin datos operativos.
   - Vercel deployment: production `Ready`, built from `main` commit `653e229`, no runtime error logs in queried window.
   - CORS preflight: PASS for `/clientes/search` and `/productos/search` from `https://inkora-pse.vercel.app`.
