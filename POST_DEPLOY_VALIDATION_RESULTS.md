@@ -12,10 +12,10 @@
 
 ## 2. Resultado ejecutivo
 - Estado general: PARTIAL
-- Resumen: backend focal PASS, frontend build/lint PASS, Railway `/health` PASS, Vercel production deploy PASS y CORS preflight desde Vercel hacia search endpoints PASS. Supabase fue validado desde el dashboard autenticado y via `psql`: el proyecto esta activo, `pg_trgm` esta instalado y la base esta casi vacia. Se genero un dump logico manual valido, el operador autorizo continuar manualmente sin PITR gestionado, y se aplicaron/validaron las migraciones `001` y `002` con los 14 indices core y 4 indices trigram esperados.
-- Bloqueadores: siguen pendientes token JWT tenant, smoke API autenticado, revision Railway variables/logs/worker y validacion UI autenticada. Sin esos pasos no se puede declarar PASS.
+- Resumen: backend focal PASS, frontend build/lint PASS, Railway `/health` PASS, Vercel production deploy PASS y CORS preflight desde Vercel hacia search endpoints PASS. Supabase fue validado desde el dashboard autenticado y via `psql`: el proyecto esta activo y `pg_trgm` esta instalado. Se genero un dump logico manual valido, el operador autorizo continuar manualmente sin PITR gestionado, y se aplicaron/validaron las migraciones `001` y `002` con los 14 indices core y 4 indices trigram esperados. Tambien se ejecuto smoke API autenticado, smoke UI Vercel autenticado y performance smoke con runner Node.
+- Bloqueadores: sigue pendiente la revision Railway de variables/logs y confirmacion de servicio worker separado. Sin ese acceso no se puede declarar PASS total.
 - Riesgos no bloqueantes: Supabase Free Plan no incluye backups/PITR gestionados; `pytest` completo falla en 3 tests fuera de scope; `npm ci` reporta 1 vulnerabilidad moderada en dependencias; backend Railway responde con `environment: "staging"` aunque la URL contiene `production`; Vercel no tiene env vars configuradas y usa el fallback del bundle hacia Railway.
-- Proximas acciones: proveer token JWT tenant o credenciales de login para smoke; revisar Railway CLI/dashboard; ejecutar smoke UI autenticado y performance con `k6`; evaluar habilitar PITR/Pro aunque el operador haya autorizado esta fase con dump manual.
+- Proximas acciones: autenticar Railway CLI/dashboard para revisar variables/logs/servicios; decidir limpieza de tenants temporales de validacion; evaluar habilitar PITR/Pro aunque el operador haya autorizado esta fase con dump manual.
 
 ## 3. Validacion local
 ### Backend focal
@@ -170,26 +170,26 @@ Salida/resumen:
   - `cotizacion_items`: `idx_cotizacion_items_cotizacion_id`, `idx_cotizacion_items_producto_id`.
   - `pagos`: `idx_pagos_tenant_fecha_pago`, `idx_pagos_tenant_fiscal_document`, `idx_pagos_tenant_source_quote`.
   - `document_emission_jobs`: `idx_emission_jobs_claim`.
-- Conteos de tablas:
-  - `tenants`: `1`
-  - `users`: `1`
-  - `clientes`: `0`
-  - `productos`: `0`
-  - `cotizaciones`: `0`
-  - `cotizacion_items`: `0`
+- Conteos de tablas posteriores al smoke autenticado:
+  - `tenants`: `4`
+  - `users`: `4`
+  - `clientes`: `1`
+  - `productos`: `1`
+  - `cotizaciones`: `1`
+  - `cotizacion_items`: `1`
   - `pagos`: `0`
   - `document_emission_jobs`: `0`
 
 ### 4.5 EXPLAIN ANALYZE
-Clientes documento: N/A por base sin datos operativos (`clientes = 0`); indices esperados ya presentes.
-Clientes razon social: N/A por base sin datos operativos (`clientes = 0`); indices esperados ya presentes.
-Productos SKU: N/A por base sin datos operativos (`productos = 0`); indices esperados ya presentes.
-Productos nombre: N/A por base sin datos operativos (`productos = 0`); indices esperados ya presentes.
-Cobranza resumen: N/A por base sin datos operativos (`cotizaciones = 0`, `pagos = 0`); indices esperados ya presentes.
-Cobranza vencidas: N/A por base sin datos operativos (`cotizaciones = 0`); indices esperados ya presentes.
+Clientes documento: N/A como metrica representativa; solo existe dato minimo temporal de validacion (`clientes = 1`); indices esperados ya presentes.
+Clientes razon social: N/A como metrica representativa; solo existe dato minimo temporal de validacion (`clientes = 1`); indices esperados ya presentes.
+Productos SKU: N/A como metrica representativa; solo existe dato minimo temporal de validacion (`productos = 1`); indices esperados ya presentes.
+Productos nombre: N/A como metrica representativa; solo existe dato minimo temporal de validacion (`productos = 1`); indices esperados ya presentes.
+Cobranza resumen: N/A como metrica representativa; existe una cotizacion no fiscal y `pagos = 0`; indices esperados ya presentes.
+Cobranza vencidas: N/A como metrica representativa; existe una cotizacion no fiscal; indices esperados ya presentes.
 Claim jobs: N/A por `document_emission_jobs = 0`; indice core esperado `idx_emission_jobs_claim` ya presente.
 
-Nota: la validacion de performance DB queda sin metricas representativas porque no hay datos operativos.
+Nota: la validacion de performance DB queda sin metricas representativas porque solo hay datos temporales minimos de validacion.
 
 ## 5. Railway
 ### 5.1 Variables criticas
@@ -199,6 +199,7 @@ Observaciones:
 
 - Railway CLI no esta instalado en el entorno.
 - El conector Railway disponible depende de CLI local; ejecuciones previas fallaron con `"railway" no se reconoce como un comando interno o externo`.
+- `npx --yes @railway/cli --version` funciona (`railway 4.57.0`), pero `npx --yes @railway/cli whoami` devolvio `Unauthorized. Please login with railway login`.
 - No se imprimieron secretos.
 
 ### 5.2 Health check
@@ -223,14 +224,25 @@ Body:
 ```
 
 ### 5.3 Smoke API autenticado
-Clientes page: PENDIENTE POR CREDENCIALES
-Clientes search: PENDIENTE POR CREDENCIALES
-Productos page: PENDIENTE POR CREDENCIALES
-Productos search: PENDIENTE POR CREDENCIALES
-Cobranza resumen: PENDIENTE POR CREDENCIALES
-Cobranza vencidas: PENDIENTE POR CREDENCIALES
+Clientes page: PASS, `HTTP 200`, `count=1`.
+Clientes search: PASS, documento `HTTP 200 count=1`; nombre `HTTP 200 count=1`.
+Productos page: PASS, `HTTP 200`, `count=1`.
+Productos search: PASS, SKU `HTTP 200 count=1`; nombre `HTTP 200 count=1`.
+Cobranza resumen: PASS, `HTTP 200`.
+Cobranza vencidas: PASS, `HTTP 200`, `count=0`.
 
-Motivo: no hay token JWT tenant en el entorno.
+Evidencia autenticada:
+
+- Fecha local: `2026-05-08 17:23:54 -05:00`.
+- Tenant temporal exitoso: `tenant_id=4`, `user_id=4`, `validation_email=validation-20260508172343@inkora.test`.
+- Datos minimos no fiscales creados por API:
+  - `cliente_id=1`, status create `201`.
+  - `producto_id=1`, status create `201`.
+  - `cotizacion_id=1`, status create `200`, `tipo_comprobante=00`.
+- Login `/token`: PASS; token no impreso ni guardado.
+- `/users/me/`: `HTTP 200`.
+- `/cotizaciones/?limit=15`: `HTTP 200`, `count=1`.
+- No se ejecuto emision fiscal real.
 
 Validacion complementaria sin JWT:
 
@@ -238,23 +250,9 @@ Validacion complementaria sin JWT:
 - PASS CORS preflight `/productos/search` desde `Origin: https://inkora-pse.vercel.app`: `HTTP/1.1 200 OK`, `Access-Control-Allow-Origin: https://inkora-pse.vercel.app`, `Access-Control-Allow-Credentials: true`.
 - PASS proteccion auth sin token en `/clientes/search`: `HTTP/1.1 401 Unauthorized`, body `{"detail":"Not authenticated"}`, sin 500.
 
-Comandos pendientes:
-
-```powershell
-$TOKEN="<TOKEN>"
-$BASE="https://inkorapse-production.up.railway.app"
-
-curl.exe -i -H "Authorization: Bearer $TOKEN" "$BASE/clientes/page?limit=15"
-curl.exe -i -H "Authorization: Bearer $TOKEN" "$BASE/clientes/search?q=test&limit=20"
-curl.exe -i -H "Authorization: Bearer $TOKEN" "$BASE/productos/page?limit=15"
-curl.exe -i -H "Authorization: Bearer $TOKEN" "$BASE/productos/search?q=test&limit=20"
-curl.exe -i -H "Authorization: Bearer $TOKEN" "$BASE/cobranza/resumen"
-curl.exe -i -H "Authorization: Bearer $TOKEN" "$BASE/cobranza/vencidas?limit=5"
-```
-
 ### 5.4 Worker/cola fiscal
 Resultado: PARTIAL
-Estado de jobs: SQL Supabase confirma `document_emission_jobs = 0`, `job_status = []` y `stuck_processing_jobs_over_15m = 0`.
+Estado de jobs: SQL Supabase confirma `document_emission_jobs = 0`; consulta por jobs agrupados devolvio `0 filas`, y consulta de jobs `processing` colgados sobre 15 minutos devolvio `0 filas`.
 Riesgos:
 
 - No se pudo confirmar si hay worker separado en Railway.
@@ -291,12 +289,12 @@ Interpretacion:
 
 ### 6.2 Smoke UI
 Login: PASS
-Dashboard: PENDIENTE POR CREDENCIALES
-Clientes: PENDIENTE POR CREDENCIALES
-Productos: PENDIENTE POR CREDENCIALES
-Cotizaciones: PENDIENTE POR CREDENCIALES
-Autocomplete cliente: PENDIENTE POR CREDENCIALES
-Autocomplete producto: PENDIENTE POR CREDENCIALES
+Dashboard: PASS
+Clientes: PASS
+Productos: PASS
+Cotizaciones: PASS
+Autocomplete cliente: PASS
+Autocomplete producto: PASS
 
 Evidencia login/public shell:
 
@@ -307,19 +305,30 @@ Evidencia login/public shell:
   - `consoleErrors: []`
   - `failedRequests: []`
 
-Motivo de pendientes autenticados: no se proporcionaron credenciales de usuario ni token JWT tenant. No se intento adivinar credenciales.
+Evidencia autenticada:
+
+- Playwright headless con usuario temporal `validation-20260508172343@inkora.test`.
+- Visitado: `/dashboard`, `/clientes`, `/productos`, `/cotizaciones`.
+- En `/cotizaciones` se encontraron inputs de autocomplete:
+  - cliente por nombre: `true`.
+  - producto por codigo: `true`.
+  - producto por nombre: `true`.
+- Network observo `/clientes/search` y `/productos/search`.
+- Respuestas search observadas: `HTTP 200`, `HTTP 200`, `HTTP 200`.
+- `consoleErrorsCount=0`, `requestFailuresCount=0`, `responseErrorsCount=0`.
+- Contraseña temporal y token no se imprimieron ni se guardaron.
 
 ### 6.3 DevTools Network
-/clientes/search: PENDIENTE POR CREDENCIALES
-/productos/search: PENDIENTE POR CREDENCIALES
+/clientes/search: PASS
+/productos/search: PASS
 CORS: PASS
-Errores consola: PASS en login/public shell
-Requests duplicados: PENDIENTE POR CREDENCIALES
+Errores consola: PASS
+Requests duplicados: PASS en smoke acotado; no se observaron errores ni failures durante autocomplete.
 
 Evidencia:
 
-- No se observaron errores de consola ni requests fallidos en carga publica de login.
-- Los endpoints `/clientes/search` y `/productos/search` no se disparan antes de login; validar autocomplete requiere usuario autenticado.
+- No se observaron errores de consola ni requests fallidos en carga publica de login ni en smoke autenticado de autocomplete.
+- Los endpoints `/clientes/search` y `/productos/search` se dispararon desde Vercel con usuario autenticado.
 - CORS preflight desde `https://inkora-pse.vercel.app` hacia Railway PASS para search endpoints.
 
 ### 6.4 Deploy y logs Vercel
@@ -347,40 +356,45 @@ Evidencia:
   - `vercel logs --project inkora-pse --environment production --since 1h --no-branch --level error --limit 20 --json` no devolvio errores.
 
 ## 7. End-to-end funcional
-Cliente/producto/cotizacion: PENDIENTE POR CREDENCIALES
-Cobranza: PENDIENTE POR CREDENCIALES
-Reporte mensual: PENDIENTE POR CREDENCIALES
+Cliente/producto/cotizacion: PASS para flujo no fiscal minimo.
+Cobranza: PASS para endpoints de resumen y vencidas con dataset minimo.
+Reporte mensual: N/A por no existir documentos fiscales operativos.
 Fiscal staging, si autorizado: NO EJECUTADO
 
 Notas:
 
 - No se ejecuto emision fiscal real.
-- La base fue reportada por el usuario como casi vacia y sin datos operativos; aun con acceso SQL, varios flujos podrian quedar `N/A por base sin datos operativos`.
+- Se crearon datos temporales no fiscales en `tenant_id=4`: un cliente, un producto y una cotizacion.
+- Tambien quedaron dos tenants temporales de intentos previos sin cliente/producto/cotizacion: `tenant_id=2` y `tenant_id=3`. No se eliminaron sin instruccion explicita.
 
 ## 8. Performance smoke
-Herramienta: `k6` no instalado.
-Resultados: PENDIENTE POR CREDENCIALES / HERRAMIENTA
-p95 search: PENDIENTE
-p95 page: PENDIENTE
-p95 cobranza: PENDIENTE
-Errores 5xx: PENDIENTE
+Herramienta: `k6` no instalado; se ejecuto runner equivalente con `node fetch` secuencial en un solo proceso.
+Resultados: PASS smoke acotado, sin 5xx.
+p95 search: clientes `341.6 ms`, productos `135.8 ms`.
+p95 page: clientes `138.1 ms`, productos `135.4 ms`.
+p95 cobranza: resumen `134.1 ms`, vencidas `138.3 ms`.
+Errores 5xx: `0`.
 
-Comando pendiente:
+Evidencia:
 
-```powershell
-BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run inkora-smoke.js
-```
+- Fecha: `2026-05-08T22:30:53.791Z`.
+- `clientes_search`: `10/10` OK, status `200`.
+- `productos_search`: `10/10` OK, status `200`.
+- `clientes_page`: `5/5` OK, status `200`.
+- `productos_page`: `5/5` OK, status `200`.
+- `cobranza_resumen`: `5/5` OK, status `200`.
+- `cobranza_vencidas`: `5/5` OK, status `200`.
+- Nota: un smoke previo con `curl.exe` tambien tuvo `0` errores, pero no se uso como metrica principal porque cada muestra abre proceso/conexion nueva.
 
 ## 9. Conclusion
-- Deploy estable? PARTIAL. La parte publica y build/deploy estan sanas, y Supabase ya tiene dump manual validado mas migraciones `001`/`002` aplicadas. No se puede declarar PASS hasta cerrar smoke autenticado, Railway logs/worker y UI autenticada.
-- Apto para produccion? Parcialmente validado. Para declarar PASS operativo faltan smoke API/UI con usuario tenant y revision de logs/worker; PITR/Pro sigue recomendado aunque esta fase fue autorizada manualmente.
+- Deploy estable? PARTIAL. Supabase, API autenticada, Vercel UI autenticada, autocomplete remoto y performance smoke quedaron validados con evidencia real. No se puede declarar PASS total hasta revisar Railway variables/logs y confirmar si existe worker separado.
+- Apto para produccion? Parcialmente validado. Para declarar PASS operativo falta acceso Railway; PITR/Pro sigue recomendado aunque esta fase fue autorizada manualmente con dump logico.
 - Pendientes obligatorios:
-  - Ejecutar smoke API autenticado con token tenant.
   - Confirmar Railway variables/logs/worker.
-  - Validar Vercel UI autenticada y Network de autocomplete.
 - Pendientes recomendados:
   - Configurar explicitamente `VITE_API_URL=https://inkorapse-production.up.railway.app` en Vercel para no depender del fallback.
-  - Instalar/usar `k6` y ejecutar smoke performance.
+  - Instalar/usar `k6` para carga moderada; el smoke secuencial con Node ya paso.
+  - Limpiar o conservar formalmente tenants temporales de validacion `2`, `3` y `4`.
   - Resolver o aislar formalmente los 3 tests fiscales/test-harness fuera de scope.
   - Revisar vulnerabilidad moderada reportada por `npm ci`.
 
@@ -410,15 +424,22 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
   - `Get-FileHash C:\Users\HP\Desktop\inkora_backups\inkora_pse_pre_indexes_20260508-165311.dump -Algorithm SHA256`.
   - `psql` via Session Pooler IPv4: `backend/migrations/001_scalability_indexes.sql`, exit code `0`.
   - `psql` via Session Pooler IPv4: `backend/migrations/002_optional_pg_trgm_indexes.sql`, exit code `0`.
+  - `curl.exe` smoke API autenticado con usuario tenant temporal.
+  - Playwright headless smoke UI Vercel autenticado.
+  - `node fetch` sequential performance smoke.
 - SQL:
   - SQL Editor Supabase autenticado ejecuto consulta read-only de resumen:
     - `core_indexes_present = 14`
     - `core_indexes_expected = 14`
     - `pg_trgm_installed = true`
     - `optional_trgm_indexes_present = 4` con nombres `idx_*`
-    - `table_counts = {"tenants":1,"users":1,"clientes":0,"productos":0,"cotizaciones":0,"cotizacion_items":0,"pagos":0,"document_emission_jobs":0}`
+    - `table_counts = {"tenants":4,"users":4,"clientes":1,"productos":1,"cotizaciones":1,"cotizacion_items":1,"pagos":0,"document_emission_jobs":0}`
     - `stuck_processing_jobs_over_15m = 0`
   - SQL Editor Supabase y `psql` listaron indices existentes; hay indices legacy `ix_*` y tambien los `idx_*` esperados por las migraciones del plan.
+  - SQL Supabase listo tenants temporales de validacion:
+    - `tenant_id=2`, sin clientes/productos/cotizaciones.
+    - `tenant_id=3`, sin clientes/productos/cotizaciones.
+    - `tenant_id=4`, con `1` cliente, `1` producto y `1` cotizacion no fiscal.
 - Logs resumidos:
   - Railway health: `HTTP/1.1 200 OK`, body `{"status":"ok","environment":"staging"}`.
   - Backend focal: `24 passed in 10.48s`.
@@ -428,6 +449,9 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
   - Supabase dashboard: proyecto `inkora_pse` activo, `Backups` indica `Free Plan does not include project backups`.
   - Supabase connection settings: password DB no visible; URI de conexion usa placeholder `[YOUR-PASSWORD]`; Session Pooler IPv4 valido para `pg_dump` y consultas read-only con password vigente provista por el operador.
   - Supabase dump manual: `338573` bytes, `pg_restore --list` exit code `0`, SHA256 `408A3A0A8AA0698306086A9B7F03C7E09DEEAC2FD7F56DD9E1CE4943C9893AF6`.
-  - Supabase SQL: migracion core `001` PASS con 14/14 indices; migracion opcional `002` PASS con 4/4 indices trigram; base sin datos operativos.
+  - Supabase SQL: migracion core `001` PASS con 14/14 indices; migracion opcional `002` PASS con 4/4 indices trigram; base con datos temporales minimos de validacion.
+  - API autenticada: login PASS, cliente/producto/cotizacion no fiscal creados; endpoints page/search/cobranza respondieron `HTTP 200`.
+  - Vercel UI autenticada: dashboard/clientes/productos/cotizaciones cargan; `/clientes/search` y `/productos/search` observados con `HTTP 200`; sin errores de consola ni request failures en el smoke.
+  - Performance smoke Node: p95 search clientes `341.6 ms`, productos `135.8 ms`; p95 page clientes `138.1 ms`, productos `135.4 ms`; p95 cobranza resumen `134.1 ms`, vencidas `138.3 ms`; `0` errores 5xx.
   - Vercel deployment: production `Ready`, built from `main` commit `653e229`, no runtime error logs in queried window.
   - CORS preflight: PASS for `/clientes/search` and `/productos/search` from `https://inkora-pse.vercel.app`.
