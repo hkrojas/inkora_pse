@@ -10,7 +10,7 @@ Declarar estable solo si: migración core aplicada, health OK, endpoints search/
 
 # 2. Estado actual del repo
 
-Branch inspeccionado: `codex/smartpse-backend`, sincronizado con `inkora_pse/main`.
+Branch inspeccionado: main.
 
 Último commit: `5270d8c Optimize catalog autocomplete search`.
 
@@ -312,6 +312,12 @@ railway variables --json \
 ```bash
 curl -i https://<RAILWAY_BACKEND_URL>/health
 ```
+
+Evidencia real ejecutada el 2026-05-08 13:39:26 America/Lima (18:39:26 GMT):
+
+- URL: `https://inkorapse-production.up.railway.app/health`
+- Resultado: `HTTP 200`
+- Body: `{"status":"ok","environment":"staging"}`
 
 Criterio:
 
