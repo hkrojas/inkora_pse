@@ -1,7 +1,7 @@
 # POST DEPLOY VALIDATION RESULTS — Inkora PSE
 
 ## 1. Datos generales
-- Fecha/hora: 2026-05-08 15:34 America/Lima (20:34 GMT)
+- Fecha/hora: 2026-05-08 15:39 America/Lima (20:39 GMT)
 - Repo: `hkrojas/inkora_pse`
 - Branch: `validation/post-deploy`
 - Commit: `653e229 Update post-deploy validation evidence`
@@ -12,7 +12,7 @@
 
 ## 2. Resultado ejecutivo
 - Estado general: PARTIAL
-- Resumen: validación local backend focal PASS, frontend build/lint PASS y Railway health PASS. Backend completo conserva fallas fiscales/test-harness fuera de scope. Supabase, smoke API autenticado, Vercel UI, cola fiscal, logs y performance quedan pendientes por falta de credenciales/token/herramientas.
+- Resumen: validación local backend focal PASS, frontend build/lint PASS y Railway health PASS. Backend completo conserva fallas fiscales/test-harness fuera de scope. Supabase fue identificado por conector, pero SQL requiere reautenticación. Smoke API autenticado, Vercel UI, cola fiscal, logs y performance siguen pendientes por falta de credenciales/token/herramientas.
 - Bloqueadores: no se puede declarar estabilidad end-to-end sin credenciales Supabase, token JWT tenant, acceso Railway/Vercel y validación de cola fiscal.
 - Riesgos no bloqueantes: `pytest` completo falla en 3 tests fuera de scope; `npm ci` reporta 1 vulnerabilidad moderada en dependencias; backend Railway responde con `environment: "staging"` aunque la URL contiene `production`.
 - Próximas acciones: ejecutar validaciones Supabase con owner/admin, obtener token JWT tenant de staging, validar Vercel UI/Network, revisar Railway variables/logs y ejecutar performance smoke con `k6`.
@@ -35,7 +35,7 @@ Resultado:
 C:\Users\HP\Desktop\inkora_smartpse\backend\venv\Scripts\python.exe -m pytest test_tenant_page_endpoints.py test_scalability_indexes.py test_reportes.py -q
 ```
 
-- PASS: `24 passed in 9.60s`.
+- PASS: `24 passed in 10.48s`.
 
 ### Backend completo
 Comando:
@@ -46,7 +46,7 @@ C:\Users\HP\Desktop\inkora_smartpse\backend\venv\Scripts\python.exe -m pytest -q
 
 Resultado:
 
-- PARTIAL: `419 passed, 3 failed, 12 warnings in 95.00s`.
+- PARTIAL: `419 passed, 3 failed, 12 warnings in 91.21s`.
 
 Fallas conocidas fuera de scope:
 
@@ -67,7 +67,7 @@ Resultado:
 - El primer intento falló porque el worktree limpio no tenía `node_modules` y `vite` no estaba disponible.
 - Se ejecutó `npm ci` en `frontend`; no generó cambios versionados.
 - `npm ci` reportó 1 vulnerabilidad moderada.
-- PASS: `vite v6.4.2`, `1670 modules transformed`, `built in 5.02s`.
+- PASS: `vite v6.4.2`, `1670 modules transformed`, `built in 6.11s`.
 
 ### Frontend lint
 Comando:
@@ -85,11 +85,11 @@ Resultado:
 ### 4.1 Backup/PITR
 Resultado: PENDIENTE POR CREDENCIALES
 
-No hay `DATABASE_URL` en el entorno y no hay acceso Supabase confirmado. No se verificó backup/PITR.
+No hay `DATABASE_URL` en el entorno. El conector Supabase listó el proyecto `inkora_pse` (`wiezwkosiuczpnbnvmef`, `ACTIVE_HEALTHY`), pero `execute_sql` falló por autenticación: `ReauthenticationRequired: 401` / `Auth required`. No se verificó backup/PITR.
 
 ### 4.2 Migración core 001
 Resultado: PENDIENTE POR CREDENCIALES
-Evidencia: no se aplicó ni validó en DB real porque falta `DATABASE_URL` y autorización explícita del ambiente.
+Evidencia: no se aplicó ni validó en DB real. El proyecto Supabase `inkora_pse` fue identificado, pero las consultas SQL requieren reautenticación del conector.
 
 Comando pendiente:
 
@@ -99,7 +99,7 @@ psql "$DATABASE_URL" -f backend/migrations/001_scalability_indexes.sql
 
 ### 4.3 Migración opcional 002 pg_trgm
 Resultado: PENDIENTE POR CREDENCIALES
-Evidencia: no se aplicó ni validó en DB real porque falta `DATABASE_URL`, permisos y autorización explícita.
+Evidencia: no se aplicó ni validó en DB real porque falta autorización SQL efectiva; el conector Supabase requiere reautenticación.
 
 Comando pendiente:
 
@@ -109,8 +109,8 @@ psql "$DATABASE_URL" -f backend/migrations/002_optional_pg_trgm_indexes.sql
 
 ### 4.4 Índices visibles
 Resultado: PENDIENTE POR CREDENCIALES
-SQL ejecutado: no ejecutado.
-Salida/resumen: pendiente.
+SQL ejecutado: intento por conector Supabase, bloqueado por `ReauthenticationRequired: 401`.
+Salida/resumen: proyecto `inkora_pse` identificado; índices no consultados.
 
 SQL pendiente:
 
@@ -143,6 +143,7 @@ Resultado: PENDIENTE POR CREDENCIALES
 Observaciones:
 
 - Railway CLI no está instalado en el entorno.
+- El conector Railway también falló porque depende de Railway CLI local: `"railway" no se reconoce como un comando interno o externo`.
 - No se accedió a dashboard.
 - No se imprimieron secretos.
 
@@ -156,8 +157,8 @@ curl.exe -i https://inkorapse-production.up.railway.app/health
 Resultado:
 
 - PASS: `HTTP/1.1 200 OK`
-- Fecha header: `Fri, 08 May 2026 20:34:22 GMT`
-- Railway request id: `QndeM1WxSIGtEIrxwoOzXw`
+- Fecha header: `Fri, 08 May 2026 20:39:17 GMT`
+- Railway request id: `x3HMaioJQdGYJ2AkGbGh5g`
 
 Body:
 
@@ -278,7 +279,9 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
   - No ejecutado por falta de `DATABASE_URL`.
 - Logs resumidos:
   - Health Railway: `HTTP/1.1 200 OK`, body `{"status":"ok","environment":"staging"}`.
-  - Backend focal: `24 passed in 9.60s`.
-  - Backend completo: `419 passed, 3 failed, 12 warnings in 95.00s`.
-  - Frontend build: PASS, `1670 modules transformed`, `built in 5.02s`.
+  - Backend focal: `24 passed in 10.48s`.
+  - Backend completo: `419 passed, 3 failed, 12 warnings in 91.21s`.
+  - Frontend build: PASS, `1670 modules transformed`, `built in 6.11s`.
   - Frontend lint: PASS.
+  - Supabase connector: project `inkora_pse` found, SQL blocked by reauthentication.
+  - Railway connector: blocked by missing Railway CLI.
