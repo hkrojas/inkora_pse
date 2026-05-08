@@ -308,7 +308,6 @@ def search_clientes(
             or_(
                 models.Cliente.numero_documento.ilike(like_term),
                 models.Cliente.razon_social.ilike(like_term),
-                models.Cliente.nombre_comercial.ilike(like_term),
             ),
         )
         .order_by(priority, models.Cliente.razon_social.asc(), models.Cliente.id.asc())

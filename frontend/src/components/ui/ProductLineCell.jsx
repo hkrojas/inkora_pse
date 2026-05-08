@@ -18,8 +18,29 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { RotateCw, X } from 'lucide-react';
+import { productos as productosSvc } from '../../services/productos';
 
 const NARROW = '90px'; // code input fixed width
+const SEARCH_DEBOUNCE_MS = 250;
+const SEARCH_MIN_CHARS = 2;
+const SEARCH_LIMIT = 20;
+
+function productKey(product) {
+  if (product?.id !== undefined && product?.id !== null) return `id:${product.id}`;
+  return `product:${product?.codigo_interno || ''}:${product?.nombre || ''}`;
+}
+
+function mergeProducts(...groups) {
+  const seen = new Set();
+  const merged = [];
+  groups.flat().forEach((product) => {
+    const key = productKey(product);
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(product);
+  });
+  return merged;
+}
 
 function formatPrice(product, incluyeIgv, sym) {
   const amount = incluyeIgv
@@ -39,23 +60,84 @@ export default function ProductLineCell({
   const [activeInput, setActiveInput]   = useState(null); // 'codigo' | 'nombre'
   const [pos, setPos]                   = useState({ top: 0, left: 0, width: 0 });
   const [generating, setGenerating]     = useState(false);
+  const [remoteProducts, setRemoteProducts] = useState([]);
 
   const containerRef = useRef(null);
   const dropdownRef  = useRef(null);
   const codigoRef    = useRef(null);
   const nombreRef    = useRef(null);
+  const searchCacheRef = useRef(new Map());
+  const searchAbortRef = useRef(null);
 
   const isExisting = !!value.producto_id && !value._isNew;
   const isNew      = value._isNew;
 
+  const activeQuery = activeInput === 'codigo' ? value.codigo : value.descripcion;
+
+  const matchedProducts = useCallback((field, query, source = products) => {
+    const q = String(query || '').toLowerCase().trim();
+    if (!q) return [];
+    return source.filter((p) => (
+      field === 'codigo'
+        ? (p.codigo_interno || '').toLowerCase().includes(q)
+        : (p.nombre || '').toLowerCase().includes(q)
+    ));
+  }, [products]);
+
+  useEffect(() => {
+    if (!activeInput || isExisting) {
+      searchAbortRef.current?.abort();
+      setRemoteProducts([]);
+      return undefined;
+    }
+
+    const query = String(activeQuery || '').trim();
+    if (query.length < SEARCH_MIN_CHARS) {
+      searchAbortRef.current?.abort();
+      setRemoteProducts([]);
+      return undefined;
+    }
+
+    const cacheKey = query.toLowerCase();
+    const cached = searchCacheRef.current.get(cacheKey);
+    if (cached) {
+      setRemoteProducts(cached);
+      return undefined;
+    }
+
+    setRemoteProducts([]);
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+
+    const timerId = setTimeout(() => {
+      productosSvc.search(query, SEARCH_LIMIT, { signal: controller.signal })
+        .then((items) => {
+          const results = Array.isArray(items) ? items : [];
+          searchCacheRef.current.set(cacheKey, results);
+          if (!controller.signal.aborted) setRemoteProducts(results);
+        })
+        .catch((error) => {
+          if (!error?.isCanceled && !controller.signal.aborted) setRemoteProducts([]);
+        })
+        .finally(() => {
+          if (searchAbortRef.current === controller) searchAbortRef.current = null;
+        });
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timerId);
+      controller.abort();
+    };
+  }, [activeInput, activeQuery, isExisting]);
+
   // Build filtered list based on which input is active
-  const dropdownItems = activeInput ? products.filter((p) => {
-    const q = (activeInput === 'codigo' ? value.codigo : value.descripcion).toLowerCase();
-    if (!q) return false;
-    return activeInput === 'codigo'
-      ? (p.codigo_interno || '').toLowerCase().includes(q)
-      : (p.nombre || '').toLowerCase().includes(q);
-  }).slice(0, 10) : [];
+  const dropdownItems = activeInput
+    ? mergeProducts(
+      matchedProducts(activeInput, activeQuery, remoteProducts),
+      matchedProducts(activeInput, activeQuery, products),
+    ).slice(0, 10)
+    : [];
 
   // Update dropdown position (anchored to container)
   const openFor = useCallback((field) => {
@@ -89,6 +171,7 @@ export default function ProductLineCell({
     const price = incluyeIgv
       ? Number(product.precio_unitario || 0)
       : Number(product.valor_unitario || product.precio_unitario || 0);
+    setRemoteProducts((current) => mergeProducts([product], current));
     onChange({
       ...value,
       producto_id:         String(product.id),
@@ -104,6 +187,7 @@ export default function ProductLineCell({
 
   const handleClear = () => {
     onChange({ ...value, producto_id: '', codigo: '', descripcion: '', _isNew: false });
+    setRemoteProducts([]);
     setActiveInput(null);
     setTimeout(() => codigoRef.current?.focus(), 0);
   };

@@ -152,6 +152,14 @@ def test_clientes_search_respeta_tenant_query_corta_orden_y_limite(db_session):
         numero_documento="20123456789",
         razon_social="Otro Tenant SAC",
     )
+    _make_cliente(
+        db_session,
+        tenant,
+        5,
+        numero_documento="77777777777",
+        razon_social="Cliente Alias",
+        nombre_comercial="Comercial Andina Invisible",
+    )
     for index in range(10, 70):
         _make_cliente(
             db_session,
@@ -188,7 +196,13 @@ def test_clientes_search_respeta_tenant_query_corta_orden_y_limite(db_session):
         current_user=user,
     )
     assert len(by_name) == 50
-    assert all("Andina" in item.razon_social for item in by_name)
+    assert all(item.nombre_comercial != "Comercial Andina Invisible" for item in by_name)
+    assert clientes_router.search_clientes(
+        q="comercial",
+        limit=20,
+        db=db_session,
+        current_user=user,
+    ) == []
 
 
 def test_productos_page_usa_limit_offset_conteos_y_segmentos(db_session):
@@ -259,6 +273,14 @@ def test_productos_search_respeta_tenant_query_corta_orden_y_limite(db_session):
         codigo_interno="SKU-EXACTO",
         nombre="Producto Otro Tenant",
     )
+    _make_producto(
+        db_session,
+        tenant,
+        5,
+        codigo_interno="DESC-ONLY",
+        nombre="Producto Campo Secundario",
+        descripcion="Papel Andino solo en descripcion",
+    )
     for index in range(10, 70):
         _make_producto(
             db_session,
@@ -296,3 +318,10 @@ def test_productos_search_respeta_tenant_query_corta_orden_y_limite(db_session):
     )
     assert len(by_name) == 50
     assert all("Andino" in item.nombre for item in by_name)
+    assert all(item.codigo_interno != "DESC-ONLY" for item in by_name)
+    assert productos_router.search_productos(
+        q="descripcion",
+        limit=20,
+        db=db_session,
+        current_user=user,
+    ) == []

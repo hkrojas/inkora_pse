@@ -28,6 +28,27 @@ const EMPTY = {
   ubigeo: '',
 };
 
+const SEARCH_DEBOUNCE_MS = 250;
+const SEARCH_MIN_CHARS = 2;
+const SEARCH_LIMIT = 20;
+
+function clientKey(client) {
+  if (client?.id !== undefined && client?.id !== null) return `id:${client.id}`;
+  return `doc:${client?.numero_documento || ''}:${client?.razon_social || ''}`;
+}
+
+function mergeClients(...groups) {
+  const seen = new Set();
+  const merged = [];
+  groups.flat().forEach((client) => {
+    const key = clientKey(client);
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(client);
+  });
+  return merged;
+}
+
 export default function ClientCombobox({
   clients = [],
   value,
@@ -44,11 +65,14 @@ export default function ClientCombobox({
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const [errors, setErrors] = useState({});
   const [lookingUp, setLookingUp] = useState(false);
+  const [remoteClients, setRemoteClients] = useState([]);
 
   const numeroRef = useRef(null);
   const nombreRef = useRef(null);
   const dropdownRef = useRef(null);
   const containerRef = useRef(null);
+  const searchCacheRef = useRef(new Map());
+  const searchAbortRef = useRef(null);
 
   const notify = useCallback((nextForm, nextLocked, nextIsDirty, nextIsNew) => {
     onFormChange?.(nextForm, { isDirty: nextIsDirty, isNew: nextIsNew, id: nextLocked ? value : null });
@@ -56,7 +80,7 @@ export default function ClientCombobox({
 
   useEffect(() => {
     if (!value) return;
-    const found = clients.find((client) => String(client.id) === String(value));
+    const found = mergeClients(clients, remoteClients).find((client) => String(client.id) === String(value));
     if (!found) return;
     const nextForm = normalizeFiscalClientForm(found);
     setForm(nextForm);
@@ -65,10 +89,11 @@ export default function ClientCombobox({
     setIsNew(false);
     setErrors({});
     notify(nextForm, true, false, false);
-  }, [value, clients, notify]);
+  }, [value, clients, remoteClients, notify]);
 
   const fillFromClient = useCallback((client) => {
     const nextForm = normalizeFiscalClientForm(client);
+    setRemoteClients((current) => mergeClients([client], current));
     setForm(nextForm);
     setLocked(true);
     setIsDirty(false);
@@ -78,18 +103,70 @@ export default function ClientCombobox({
     notify(nextForm, true, false, false);
   }, [notify]);
 
-  const matchedClients = useCallback((field, query) => {
+  const matchedClients = useCallback((field, query, source = clients) => {
     if (!query.trim()) return [];
     const low = query.toLowerCase();
-    return clients.filter((client) => (
+    return source.filter((client) => (
       field === 'numero'
         ? String(client.numero_documento || '').toLowerCase().includes(low)
         : String(client.razon_social || '').toLowerCase().includes(low)
     )).slice(0, 12);
   }, [clients]);
 
+  const activeQuery = activeField === 'numero' ? form.numero_documento : form.razon_social;
+
+  useEffect(() => {
+    if (!activeField || locked) {
+      searchAbortRef.current?.abort();
+      setRemoteClients([]);
+      return undefined;
+    }
+
+    const query = String(activeQuery || '').trim();
+    if (query.length < SEARCH_MIN_CHARS) {
+      searchAbortRef.current?.abort();
+      setRemoteClients([]);
+      return undefined;
+    }
+
+    const cacheKey = query.toLowerCase();
+    const cached = searchCacheRef.current.get(cacheKey);
+    if (cached) {
+      setRemoteClients(cached);
+      return undefined;
+    }
+
+    setRemoteClients([]);
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+
+    const timerId = setTimeout(() => {
+      cliSvc.search(query, SEARCH_LIMIT, { signal: controller.signal })
+        .then((items) => {
+          const results = Array.isArray(items) ? items : [];
+          searchCacheRef.current.set(cacheKey, results);
+          if (!controller.signal.aborted) setRemoteClients(results);
+        })
+        .catch((error) => {
+          if (!error?.isCanceled && !controller.signal.aborted) setRemoteClients([]);
+        })
+        .finally(() => {
+          if (searchAbortRef.current === controller) searchAbortRef.current = null;
+        });
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timerId);
+      controller.abort();
+    };
+  }, [activeField, activeQuery, locked]);
+
   const dropdownList = activeField
-    ? matchedClients(activeField, activeField === 'numero' ? form.numero_documento : form.razon_social)
+    ? mergeClients(
+      matchedClients(activeField, activeQuery, remoteClients),
+      matchedClients(activeField, activeQuery, clients),
+    ).slice(0, 12)
     : [];
 
   const openFor = (field) => {
@@ -211,6 +288,19 @@ export default function ClientCombobox({
 
     setLookingUp(true);
     try {
+      let remoteMatches = [];
+      try {
+        remoteMatches = await cliSvc.search(numero, 5);
+      } catch {
+        remoteMatches = [];
+      }
+      const remoteFound = (Array.isArray(remoteMatches) ? remoteMatches : [])
+        .find((client) => String(client.numero_documento || '').trim() === numero);
+      if (remoteFound) {
+        handleSelectClient(remoteFound);
+        return;
+      }
+
       const data = await cliSvc.lookupDocument(numero);
       const nextForm = {
         ...form,

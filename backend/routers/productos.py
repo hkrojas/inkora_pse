@@ -145,7 +145,6 @@ def search_productos(
             or_(
                 models.Producto.codigo_interno.ilike(like_term),
                 models.Producto.nombre.ilike(like_term),
-                models.Producto.descripcion.ilike(like_term),
             ),
         )
         .order_by(priority, models.Producto.nombre.asc(), models.Producto.id.asc())
