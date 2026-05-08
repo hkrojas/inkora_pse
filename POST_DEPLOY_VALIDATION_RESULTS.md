@@ -12,10 +12,10 @@
 
 ## 2. Resultado ejecutivo
 - Estado general: FAIL
-- Resumen: backend focal PASS, frontend build/lint PASS, Railway `/health` PASS, Vercel production deploy PASS y CORS preflight desde Vercel hacia search endpoints PASS. Supabase fue validado desde el dashboard autenticado: el proyecto esta activo, `pg_trgm` esta instalado y la base esta casi vacia, pero no hay backups incluidos y los 14 indices core `idx_*` esperados por el plan no existen.
+- Resumen: backend focal PASS, frontend build/lint PASS, Railway `/health` PASS, Vercel production deploy PASS y CORS preflight desde Vercel hacia search endpoints PASS. Supabase fue validado desde el dashboard autenticado y via `psql`: el proyecto esta activo, `pg_trgm` esta instalado y la base esta casi vacia. Se genero un dump logico manual valido, pero no hay backups/PITR gestionados y los 14 indices core `idx_*` esperados por el plan no existen.
 - Bloqueadores: Supabase Free Plan no incluye backups; migracion core `001_scalability_indexes.sql` no esta aplicada con los nombres esperados; indices opcionales `idx_*_trgm` tampoco existen con los nombres esperados; siguen pendientes token JWT tenant, revision Railway variables/logs/worker y validacion UI autenticada.
 - Riesgos no bloqueantes: `pytest` completo falla en 3 tests fuera de scope; `npm ci` reporta 1 vulnerabilidad moderada en dependencias; backend Railway responde con `environment: "staging"` aunque la URL contiene `production`; Vercel no tiene env vars configuradas y usa el fallback del bundle hacia Railway.
-- Proximas acciones: no aplicar migraciones hasta confirmar backup/PITR o ventana aceptada; aplicar/validar `001_scalability_indexes.sql`; decidir si los indices legacy `ix_*` sustituyen o si se requieren los `idx_*` del plan; proveer token JWT tenant; revisar Railway CLI/dashboard; ejecutar smoke UI autenticado y performance con `k6`.
+- Proximas acciones: no aplicar migraciones hasta confirmar backup/PITR o aceptar explicitamente el riesgo de operar solo con dump logico manual; aplicar/validar `001_scalability_indexes.sql`; decidir si los indices legacy `ix_*` sustituyen o si se requieren los `idx_*` del plan; proveer token JWT tenant; revisar Railway CLI/dashboard; ejecutar smoke UI autenticado y performance con `k6`.
 
 ## 3. Validacion local
 ### Backend focal
@@ -76,24 +76,27 @@ Resultado:
 
 ## 4. Supabase
 ### 4.1 Backup/PITR
-Resultado: FAIL
+Resultado: FAIL para backup/PITR gestionado; PASS para dump logico manual pre-DDL.
 
 Evidencia:
 
 - Dashboard autenticado: `Backups | Database | Supabase`, proyecto `inkora_pse`, branch `main Production`.
 - La pagina `database/backups/scheduled` muestra: `Free Plan does not include project backups. Upgrade to the Pro Plan for up to 7 days of scheduled backups.`
 - El overview tambien mostraba `Last backup: No backups`.
-- Intento de dump manual bloqueado:
+- Dump logico manual pre-DDL:
   - Herramientas locales: `pg_dump` y `pg_restore` disponibles.
-  - Entorno local: `DATABASE_URL` no esta configurado.
+  - Entorno local: `DATABASE_URL` no esta configurado; se uso `PGPASSWORD` temporal en la sesion de PowerShell y se elimino al finalizar.
   - Supabase `Database Settings` indica: `The database password isn't viewable after creation. Resetting it will break any existing connections.`
   - Modal `Connect` muestra URI con placeholder: `postgresql://postgres:[YOUR-PASSWORD]@db.wiezwkosiuczpnbnvmef.supabase.co:5432/postgres`.
-  - Reintento con password provista por el operador:
-    - Direct connection no usable desde esta red local porque el host directo resuelve solo IPv6.
-    - Session pooler IPv4 `aws-1-us-east-1.pooler.supabase.com:5432` responde, pero `pg_dump` falla con `password authentication failed`.
-    - Transaction pooler IPv4 `aws-1-us-east-1.pooler.supabase.com:6543` responde, pero `psql` falla con `password authentication failed`.
+  - Direct connection no usable desde esta red local porque el host directo resuelve solo IPv6.
+  - Session pooler IPv4 `aws-1-us-east-1.pooler.supabase.com:5432` usable con password vigente provista por el operador.
+  - Archivo generado fuera del repo: `C:\Users\HP\Desktop\inkora_backups\inkora_pse_pre_indexes_20260508-165311.dump`.
+  - Tamano: `338573` bytes.
+  - Formato: `CUSTOM`, `Compression: gzip`, `Dumped from database version: 17.6`, `Dumped by pg_dump version: 17.4`.
+  - `pg_restore --list` completo: PASS, exit code `0`, `738` lineas en `C:\Users\HP\Desktop\inkora_backups\inkora_pse_pre_indexes_20260508-165311.list`.
+  - SHA256: `408A3A0A8AA0698306086A9B7F03C7E09DEEAC2FD7F56DD9E1CE4943C9893AF6`.
   - No se reseteo la password porque romperia conexiones existentes y no fue autorizado explicitamente.
-- No se aplicaron migraciones ni DDL.
+- No se aplicaron migraciones ni DDL porque el criterio acordado para PASS exige backup/PITR gestionado, o aceptacion explicita del riesgo antes de tocar DDL solo con dump manual.
 
 ### 4.2 Migracion core 001
 Resultado: FAIL
@@ -101,7 +104,7 @@ Resultado: FAIL
 Evidencia:
 
 - Proyecto identificado: `inkora_pse`, host `db.wiezwkosiuczpnbnvmef.supabase.co`, PostgreSQL `17.6.1.113`.
-- SQL read-only ejecutado desde SQL Editor autenticado.
+- SQL read-only ejecutado desde SQL Editor autenticado y revalidado con `psql` por Session Pooler IPv4.
 - Resultado resumido:
   - `database`: `postgres`
   - `db_user`: `postgres`
@@ -371,8 +374,7 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
 - Deploy estable? FAIL. La parte publica y build/deploy estan sanas, pero Supabase falla criterios obligatorios: no hay backups/PITR incluidos y la migracion core de indices `idx_*` no esta aplicada.
 - Apto para produccion? No. Antes de declarar PASS hay que resolver backups y migraciones/indices en Supabase, ademas de cerrar smoke autenticado y Railway logs/worker.
 - Pendientes obligatorios:
-  - Habilitar backup/PITR o documentar aceptacion explicita del riesgo antes de tocar DDL.
-  - Proveer `DATABASE_URL` real de forma segura o una password DB vigente; la password probada no autentica contra los poolers.
+  - Habilitar backup/PITR o documentar aceptacion explicita del riesgo antes de tocar DDL solo con dump logico manual.
   - Aplicar/validar `backend/migrations/001_scalability_indexes.sql` o reconciliar formalmente los indices legacy `ix_*` contra los `idx_*` requeridos por el plan.
   - Decidir si se aplicara `002_optional_pg_trgm_indexes.sql`; `pg_trgm` existe, pero los indices opcionales tienen nombres legacy `ix_*`.
   - Ejecutar smoke API autenticado con token tenant.
@@ -405,7 +407,9 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
   - `npx --yes vercel@latest api /v9/projects/prj_n0pDzkSeFjBVqZkPryxwxSXTxwlu/env --raw`
   - `npx --yes vercel@latest logs --project inkora-pse --environment production --since 1h --no-branch --limit 20 --json`
   - `npx --yes vercel@latest logs --project inkora-pse --environment production --since 1h --no-branch --level error --limit 20 --json`
-  - `pg_dump`/`pg_restore` precheck local: herramientas presentes, `DATABASE_URL` ausente; pooler IPv4 accesible pero password probada no autentica.
+  - `pg_dump` manual por Session Pooler IPv4, archivo `C:\Users\HP\Desktop\inkora_backups\inkora_pse_pre_indexes_20260508-165311.dump`.
+  - `pg_restore --list C:\Users\HP\Desktop\inkora_backups\inkora_pse_pre_indexes_20260508-165311.dump` con exit code `0`.
+  - `Get-FileHash C:\Users\HP\Desktop\inkora_backups\inkora_pse_pre_indexes_20260508-165311.dump -Algorithm SHA256`.
 - SQL:
   - SQL Editor Supabase autenticado ejecuto consulta read-only de resumen:
     - `core_indexes_present = 0`
@@ -422,7 +426,8 @@ BASE_URL="https://inkorapse-production.up.railway.app" TOKEN="<TOKEN>" k6 run in
   - Frontend build: PASS, `1670 modules transformed`, `built in 6.11s`.
   - Frontend lint: PASS.
   - Supabase dashboard: proyecto `inkora_pse` activo, `Backups` indica `Free Plan does not include project backups`.
-  - Supabase connection settings: password DB no visible; URI de conexion usa placeholder `[YOUR-PASSWORD]`; password probada rechazada por Session/Transaction pooler.
+  - Supabase connection settings: password DB no visible; URI de conexion usa placeholder `[YOUR-PASSWORD]`; Session Pooler IPv4 valido para `pg_dump` y consultas read-only con password vigente provista por el operador.
+  - Supabase dump manual: `338573` bytes, `pg_restore --list` exit code `0`, SHA256 `408A3A0A8AA0698306086A9B7F03C7E09DEEAC2FD7F56DD9E1CE4943C9893AF6`.
   - Supabase SQL: migracion core exacta FAIL por indices `idx_*` ausentes; base sin datos operativos.
   - Vercel deployment: production `Ready`, built from `main` commit `653e229`, no runtime error logs in queried window.
   - CORS preflight: PASS for `/clientes/search` and `/productos/search` from `https://inkora-pse.vercel.app`.
