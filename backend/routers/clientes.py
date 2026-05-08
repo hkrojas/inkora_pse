@@ -5,7 +5,7 @@ from cachetools import TTLCache
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 import crud
@@ -229,6 +229,14 @@ def _cliente_segment_filter(segment: Optional[str]):
     return None
 
 
+def _count_if(condition):
+    return func.sum(case((condition, 1), else_=0))
+
+
+def _int_count(value) -> int:
+    return int(value or 0)
+
+
 @router.get("/clientes/page", response_model=schemas.ClientePageResponse)
 def read_clientes_page(
     skip: int = Query(default=0, ge=0),
@@ -243,27 +251,70 @@ def read_clientes_page(
     if search_filter is not None:
         base = base.filter(search_filter)
 
-    def count_for(filter_expr=None) -> int:
-        query = base.with_entities(func.count(models.Cliente.id))
-        if filter_expr is not None:
-            query = query.filter(filter_expr)
-        return query.scalar() or 0
-
+    counts_row = base.with_entities(
+        func.count(models.Cliente.id).label("all"),
+        _count_if(_cliente_segment_filter("empresa")).label("empresa"),
+        _count_if(_cliente_segment_filter("persona")).label("persona"),
+        _count_if(_cliente_segment_filter("credito")).label("credito"),
+        _count_if(_cliente_segment_filter("incompletos")).label("incompletos"),
+    ).one()
     counts = {
-        "all": count_for(),
-        "empresa": count_for(_cliente_segment_filter("empresa")),
-        "persona": count_for(_cliente_segment_filter("persona")),
-        "credito": count_for(_cliente_segment_filter("credito")),
-        "incompletos": count_for(_cliente_segment_filter("incompletos")),
+        "all": _int_count(counts_row.all),
+        "empresa": _int_count(counts_row.empresa),
+        "persona": _int_count(counts_row.persona),
+        "credito": _int_count(counts_row.credito),
+        "incompletos": _int_count(counts_row.incompletos),
     }
 
     page_query = base
     segment_filter = _cliente_segment_filter(segment)
     if segment_filter is not None:
         page_query = page_query.filter(segment_filter)
-    total = page_query.with_entities(func.count(models.Cliente.id)).scalar() or 0
+    normalized_segment = (segment or "all").strip().lower()
+    total = counts.get(normalized_segment, counts["all"])
     items = page_query.order_by(models.Cliente.razon_social).offset(skip).limit(limit).all()
     return {"items": items, "total": total, "skip": skip, "limit": limit, "counts": counts}
+
+
+@router.get("/clientes/search", response_model=List[schemas.ClienteSearchResponse])
+def search_clientes(
+    q: str = Query(default="", max_length=80),
+    limit: int = Query(default=20, ge=1, le=50),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    term = (q or "").strip()
+    if len(term) < 2:
+        return []
+
+    limit = min(max(int(limit or 20), 1), 50)
+    like_term = f"%{term}%"
+    prefix_term = f"{term}%"
+    term_lower = term.lower()
+    numero_lower = func.lower(func.coalesce(models.Cliente.numero_documento, ""))
+    razon_lower = func.lower(func.coalesce(models.Cliente.razon_social, ""))
+
+    priority = case(
+        (numero_lower == term_lower, 0),
+        (numero_lower.like(prefix_term.lower()), 1),
+        (razon_lower.like(prefix_term.lower()), 2),
+        else_=3,
+    )
+
+    return (
+        db.query(models.Cliente)
+        .filter(
+            models.Cliente.tenant_id == current_user.tenant_id,
+            or_(
+                models.Cliente.numero_documento.ilike(like_term),
+                models.Cliente.razon_social.ilike(like_term),
+                models.Cliente.nombre_comercial.ilike(like_term),
+            ),
+        )
+        .order_by(priority, models.Cliente.razon_social.asc(), models.Cliente.id.asc())
+        .limit(limit)
+        .all()
+    )
 
 
 # ============================================================

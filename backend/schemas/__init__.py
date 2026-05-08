@@ -54,6 +54,7 @@ from schemas.clientes import (
     ClienteCreate,
     ClienteUpdate,
     ClienteResponse,
+    ClienteSearchResponse,
     ClientePageResponse,
 )
 
@@ -61,6 +62,7 @@ from schemas.productos import (
     ProductoBase,
     ProductoCreate,
     ProductoResponse,
+    ProductoSearchResponse,
     ProductoPageResponse,
     InsumoBase,
     InsumoCreate,
@@ -205,9 +207,9 @@ __all__ = [
     "ResetPasswordResponse", "ToggleUserActiveRequest", "Token", "TokenData",
     "ChangePasswordRequest", "CreateUserWithPasswordResponse",
     # clientes
-    "CONDICION_PAGO_VALORES", "ClienteBase", "ClienteCreate", "ClienteUpdate", "ClienteResponse", "ClientePageResponse",
+    "CONDICION_PAGO_VALORES", "ClienteBase", "ClienteCreate", "ClienteUpdate", "ClienteResponse", "ClienteSearchResponse", "ClientePageResponse",
     # productos + MRP
-    "ProductoBase", "ProductoCreate", "ProductoResponse", "ProductoPageResponse",
+    "ProductoBase", "ProductoCreate", "ProductoResponse", "ProductoSearchResponse", "ProductoPageResponse",
     "InsumoBase", "InsumoCreate", "InsumoResponse",
     "RecetaBOMBase", "RecetaBOMCreate", "RecetaBOMResponse",
     "AlertaInventarioResponse", "DashboardStatsResponse",

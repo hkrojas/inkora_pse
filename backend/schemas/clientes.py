@@ -164,6 +164,21 @@ class ClienteResponse(ClienteBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ClienteSearchResponse(BaseModel):
+    id: int
+    tipo_documento: Optional[str] = None
+    numero_documento: Optional[str] = None
+    razon_social: Optional[str] = None
+    nombre_comercial: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    whatsapp: Optional[str] = None
+    direccion: Optional[str] = None
+    ubigeo: Optional[str] = None
+    condicion_pago: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ClientePageResponse(BaseModel):
     items: List[ClienteResponse]
     total: int

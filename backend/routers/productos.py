@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 import crud
@@ -66,6 +66,14 @@ def _producto_segment_filter(segment: Optional[str]):
     return None
 
 
+def _count_if(condition):
+    return func.sum(case((condition, 1), else_=0))
+
+
+def _int_count(value) -> int:
+    return int(value or 0)
+
+
 @router.get("/productos/page", response_model=schemas.ProductoPageResponse)
 def read_productos_page(
     skip: int = Query(default=0, ge=0),
@@ -80,27 +88,70 @@ def read_productos_page(
     if search_filter is not None:
         base = base.filter(search_filter)
 
-    def count_for(filter_expr=None) -> int:
-        query = base.with_entities(func.count(models.Producto.id))
-        if filter_expr is not None:
-            query = query.filter(filter_expr)
-        return query.scalar() or 0
-
+    counts_row = base.with_entities(
+        func.count(models.Producto.id).label("all"),
+        _count_if(_producto_segment_filter("productos")).label("productos"),
+        _count_if(_producto_segment_filter("servicios")).label("servicios"),
+        _count_if(_producto_segment_filter("con_sku")).label("con_sku"),
+        _count_if(_producto_segment_filter("con_precio")).label("con_precio"),
+    ).one()
     counts = {
-        "all": count_for(),
-        "productos": count_for(_producto_segment_filter("productos")),
-        "servicios": count_for(_producto_segment_filter("servicios")),
-        "con_sku": count_for(_producto_segment_filter("con_sku")),
-        "con_precio": count_for(_producto_segment_filter("con_precio")),
+        "all": _int_count(counts_row.all),
+        "productos": _int_count(counts_row.productos),
+        "servicios": _int_count(counts_row.servicios),
+        "con_sku": _int_count(counts_row.con_sku),
+        "con_precio": _int_count(counts_row.con_precio),
     }
 
     page_query = base
     segment_filter = _producto_segment_filter(segment)
     if segment_filter is not None:
         page_query = page_query.filter(segment_filter)
-    total = page_query.with_entities(func.count(models.Producto.id)).scalar() or 0
+    normalized_segment = (segment or "all").strip().lower()
+    total = counts.get(normalized_segment, counts["all"])
     items = page_query.order_by(models.Producto.nombre).offset(skip).limit(limit).all()
     return {"items": items, "total": total, "skip": skip, "limit": limit, "counts": counts}
+
+
+@router.get("/productos/search", response_model=List[schemas.ProductoSearchResponse])
+def search_productos(
+    q: str = Query(default="", max_length=80),
+    limit: int = Query(default=20, ge=1, le=50),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    term = (q or "").strip()
+    if len(term) < 2:
+        return []
+
+    limit = min(max(int(limit or 20), 1), 50)
+    like_term = f"%{term}%"
+    prefix_term = f"{term}%"
+    term_lower = term.lower()
+    codigo_lower = func.lower(func.coalesce(models.Producto.codigo_interno, ""))
+    nombre_lower = func.lower(func.coalesce(models.Producto.nombre, ""))
+
+    priority = case(
+        (codigo_lower == term_lower, 0),
+        (codigo_lower.like(prefix_term.lower()), 1),
+        (nombre_lower.like(prefix_term.lower()), 2),
+        else_=3,
+    )
+
+    return (
+        db.query(models.Producto)
+        .filter(
+            models.Producto.tenant_id == current_user.tenant_id,
+            or_(
+                models.Producto.codigo_interno.ilike(like_term),
+                models.Producto.nombre.ilike(like_term),
+                models.Producto.descripcion.ilike(like_term),
+            ),
+        )
+        .order_by(priority, models.Producto.nombre.asc(), models.Producto.id.asc())
+        .limit(limit)
+        .all()
+    )
 
 
 # ============================================================

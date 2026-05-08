@@ -14,7 +14,6 @@ from services.document_flow_service import (
     DOCUMENT_KIND_FISCAL_DOCUMENT,
     DOCUMENT_STATUS_ISSUED,
 )
-from services.fiscal_balance_service import get_fiscal_document_balance
 
 
 _ZERO = Decimal("0.00")
@@ -23,106 +22,6 @@ _MONEY_QUANT = Decimal("0.01")
 
 def _money(value) -> Decimal:
     return Decimal(str(value if value is not None else _ZERO)).quantize(_MONEY_QUANT)
-
-
-def _is_before_now(value, now: datetime) -> bool:
-    if value is None:
-        return False
-    compare_now = now
-    if value.tzinfo is not None and value.utcoffset() is not None:
-        compare_now = datetime.now(value.tzinfo)
-    return value < compare_now
-
-
-def _accepted_fiscal_documents_query(db: Session, tenant_id: int):
-    return (
-        db.query(models.Cotizacion)
-        .options(joinedload(models.Cotizacion.cliente))
-        .filter(
-            models.Cotizacion.tenant_id == tenant_id,
-            models.Cotizacion.document_kind == DOCUMENT_KIND_FISCAL_DOCUMENT,
-            models.Cotizacion.estado == DOCUMENT_STATUS_ISSUED,
-            models.Cotizacion.tipo_comprobante.in_(("01", "03")),
-        )
-    )
-
-
-def _collection_query(db: Session, tenant_id: int, q: str | None = None):
-    query = _accepted_fiscal_documents_query(db, tenant_id).filter(
-        models.Cotizacion.fecha_vencimiento.isnot(None)
-    )
-
-    term = (q or "").strip()
-    if term:
-        like_term = f"%{term}%"
-        query = query.outerjoin(
-            models.Cliente,
-            models.Cotizacion.cliente_id == models.Cliente.id,
-        ).filter(
-            or_(
-                models.Cliente.razon_social.ilike(like_term),
-                models.Cliente.nombre_comercial.ilike(like_term),
-                models.Cliente.numero_documento.ilike(like_term),
-                models.Cotizacion.internal_order_number.ilike(like_term),
-                models.Cotizacion.serie.ilike(like_term),
-            )
-        )
-
-    return query.order_by(models.Cotizacion.fecha_vencimiento.asc())
-
-
-def _payment_filter_for_fiscal_document(fiscal_document):
-    primary = models.Pago.fiscal_document_id == fiscal_document.id
-    if fiscal_document.source_quote_id is None:
-        return primary
-    return or_(
-        primary,
-        and_(
-            models.Pago.fiscal_document_id.is_(None),
-            models.Pago.source_quote_id == fiscal_document.source_quote_id,
-            models.Pago.tipo == "pago",
-        ),
-    )
-
-
-def _payments_since_for_fiscal_document(
-    db: Session,
-    tenant_id: int,
-    fiscal_document,
-    since: datetime,
-) -> Decimal:
-    value = (
-        db.query(func.sum(models.Pago.monto_pagado))
-        .filter(
-            models.Pago.tenant_id == tenant_id,
-            models.Pago.fecha_pago >= since,
-            _payment_filter_for_fiscal_document(fiscal_document),
-        )
-        .scalar()
-    )
-    return _money(value)
-
-
-def _collection_row_for_fiscal_document(fiscal_document, balance):
-    cliente = fiscal_document.cliente
-    return SimpleNamespace(
-        id=fiscal_document.id,
-        serie=fiscal_document.serie,
-        correlativo=fiscal_document.correlativo,
-        fecha_emision=fiscal_document.fecha_emision,
-        fecha_vencimiento=fiscal_document.fecha_vencimiento,
-        moneda=fiscal_document.moneda,
-        estado=fiscal_document.estado,
-        document_kind=fiscal_document.document_kind,
-        tipo_comprobante=fiscal_document.tipo_comprobante,
-        internal_order_number=fiscal_document.internal_order_number,
-        total_venta=balance.net_total,
-        monto_pagado=balance.payments_total,
-        saldo_pendiente=balance.saldo_pendiente,
-        cliente_nombre=cliente.razon_social if cliente else None,
-        cliente_nombre_alt=cliente.nombre_comercial if cliente else None,
-        cliente_documento=cliente.numero_documento if cliente else None,
-    )
 
 
 def _notes_total_subquery(db: Session, tenant_id: int, document_kind: str, name: str):

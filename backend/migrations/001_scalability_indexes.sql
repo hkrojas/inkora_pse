@@ -48,20 +48,3 @@ ON pagos (tenant_id, source_quote_id);
 -- Cola de emision fiscal
 CREATE INDEX IF NOT EXISTS idx_emission_jobs_claim
 ON document_emission_jobs (status, available_at, priority, created_at);
-
--- Optional trigram indexes for ILIKE search.
--- If the target Postgres role cannot create extensions, run the core indexes
--- above and ask a DB owner to enable pg_trgm before applying this block.
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
-CREATE INDEX IF NOT EXISTS idx_clientes_razon_social_trgm
-ON clientes USING gin (razon_social gin_trgm_ops);
-
-CREATE INDEX IF NOT EXISTS idx_clientes_numero_documento_trgm
-ON clientes USING gin (numero_documento gin_trgm_ops);
-
-CREATE INDEX IF NOT EXISTS idx_productos_nombre_trgm
-ON productos USING gin (nombre gin_trgm_ops);
-
-CREATE INDEX IF NOT EXISTS idx_productos_codigo_interno_trgm
-ON productos USING gin (codigo_interno gin_trgm_ops);

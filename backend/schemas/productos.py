@@ -81,6 +81,19 @@ class ProductoResponse(ProductoBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ProductoSearchResponse(BaseModel):
+    id: int
+    codigo_interno: Optional[str] = None
+    nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    precio_unitario: Decimal
+    valor_unitario: Decimal
+    moneda: str = "PEN"
+    unidad_medida: str = "NIU"
+    tipo_afectacion_igv: str = "10"
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProductoPageResponse(BaseModel):
     items: List[ProductoResponse]
     total: int
