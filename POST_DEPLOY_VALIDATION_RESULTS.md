@@ -14,8 +14,8 @@
 - Estado general: PASS
 - Resumen: backend focal PASS, frontend build/lint PASS, Railway `/health` PASS, Vercel production deploy PASS y CORS preflight desde Vercel hacia search endpoints PASS. Supabase fue validado desde el dashboard autenticado y via `psql`: el proyecto esta activo y `pg_trgm` esta instalado. Se genero un dump logico manual valido, el operador autorizo continuar manualmente sin PITR gestionado, y se aplicaron/validaron las migraciones `001` y `002` con los 14 indices core y 4 indices trigram esperados. Tambien se ejecuto smoke API autenticado, smoke UI Vercel autenticado, performance smoke con runner Node, revision Railway de variables visibles y revision Railway de logs recientes.
 - Bloqueadores: ninguno para la validacion post-deploy operativa.
-- Riesgos no bloqueantes: Supabase Free Plan no incluye backups/PITR gestionados; `pytest` completo falla en 3 tests fuera de scope; `npm ci` reporta 1 vulnerabilidad moderada en dependencias; backend Railway responde con `environment: "staging"` aunque el entorno Railway visible se llama `production`; Vercel no tiene env vars configuradas y usa el fallback del bundle hacia Railway; no se observo un worker fiscal separado en Railway; logs Railway muestran un warning no bloqueante de cache de tipo de cambio SUNAT.
-- Proximas acciones: decidir limpieza de tenants temporales de validacion; evaluar habilitar PITR/Pro aunque el operador haya autorizado esta fase con dump manual; configurar explicitamente `VITE_API_URL` en Vercel para no depender del fallback; evaluar worker fiscal separado antes de carga fiscal real; monitorear warning de tipo de cambio SUNAT.
+- Riesgos no bloqueantes: Supabase Free Plan no incluye backups/PITR gestionados; `pytest` completo falla en 3 tests fuera de scope; `npm ci` reporta 1 vulnerabilidad moderada en dependencias; backend Railway responde con `environment: "staging"` aunque el entorno Railway visible se llama `production`; Vercel ya tiene `VITE_API_URL` explicito en Production y Development, pero Preview no quedo configurado globalmente por requerimiento de rama de Vercel CLI; no se observo un worker fiscal separado en Railway; logs Railway muestran un warning no bloqueante de cache de tipo de cambio SUNAT.
+- Proximas acciones: limpiar tenants temporales solo con autorizacion explicita de borrado; evaluar habilitar PITR/Pro antes de operar con clientes reales; revisar `ENVIRONMENT`/`FISCAL_ENV` de Railway como cambio coordinado, no aislado; evaluar worker fiscal separado antes de carga fiscal real; monitorear warning de tipo de cambio SUNAT.
 
 ## 3. Validacion local
 ### Backend focal
@@ -299,7 +299,7 @@ Errores relevantes:
 
 ## 6. Vercel
 ### 6.1 Variables frontend
-Resultado: PARTIAL
+Resultado: PASS para Production y Development; Preview global pendiente por politica de ramas
 
 Evidencia:
 
@@ -308,8 +308,21 @@ Evidencia:
   - Project ID: `prj_n0pDzkSeFjBVqZkPryxwxSXTxwlu`
   - Latest Production URL: `https://inkora-pse.vercel.app`
   - Node Version: `24.x`
-- `vercel api /v9/projects/prj_n0pDzkSeFjBVqZkPryxwxSXTxwlu/env --raw` devolvio `{"envs":[],"hiddenProductionEnvCount":0}`.
-- El bundle publicado contiene el fallback efectivo a `https://inkorapse-production.up.railway.app`:
+- Inicialmente `vercel api /v9/projects/prj_n0pDzkSeFjBVqZkPryxwxSXTxwlu/env --raw` devolvio `{"envs":[],"hiddenProductionEnvCount":0}`.
+- Ajuste aplicado el 2026-05-08 18:58 America/Lima:
+  - `VITE_API_URL=https://inkorapse-production.up.railway.app` agregado en `Production`.
+  - `VITE_API_URL=https://inkorapse-production.up.railway.app` agregado en `Development`.
+  - Intento de `Preview` global quedo pendiente porque Vercel CLI no interactivo pidio rama especifica y rechazo `main` por ser Production Branch.
+- `vercel env ls` posterior mostro `VITE_API_URL` en `Production` y `Development`.
+- Se ejecuto redeploy production para que Vite embeba la variable:
+  - deployment id: `dpl_7zK8SiRNE1juxE32qBRhFCeUQRP9`
+  - target: `production`
+  - status: `Ready`
+  - alias: `https://inkora-pse.vercel.app`
+  - build desde `main`, commit `1954822`
+  - `vite v6.4.2`, `1670 modules transformed`, `built in 5.13s`
+  - `curl -I https://inkora-pse.vercel.app`: `HTTP/1.1 200 OK`
+- El bundle previo contenia el fallback efectivo a `https://inkorapse-production.up.railway.app`:
 
 ```text
 Ph="https://inkorapse-production.up.railway.app"
@@ -318,9 +331,9 @@ Sl=(zh.VITE_API_URL||Ph).replace(/\/$/,"")
 
 Interpretacion:
 
-- La variable `VITE_API_URL` no esta configurada en Vercel.
-- El frontend desplegado igualmente apunta al backend correcto por fallback de codigo.
-- Esto no se marca PASS completo porque el plan pide validar la variable real, no solo el fallback efectivo.
+- La variable real `VITE_API_URL` ya esta configurada para Production y Development en Vercel.
+- Production fue redeployado despues de configurar la variable.
+- Preview global queda como pendiente recomendado; para evitar ambiguedad, configurar una rama preview concreta cuando exista una rama staging o preview estable.
 
 ### 6.2 Smoke UI
 Login: PASS
@@ -427,13 +440,14 @@ Evidencia:
 - Pendientes obligatorios:
   - Ninguno para esta validacion post-deploy operativa.
 - Pendientes recomendados:
-  - Configurar explicitamente `VITE_API_URL=https://inkorapse-production.up.railway.app` en Vercel para no depender del fallback.
+  - Configurar `VITE_API_URL` para una rama Preview concreta cuando exista staging/preview estable; Production y Development ya quedaron configurados.
   - Instalar/usar `k6` para carga moderada; el smoke secuencial con Node ya paso.
-  - Limpiar o conservar formalmente tenants temporales de validacion `2`, `3` y `4`.
+  - Limpiar tenants temporales de validacion `2`, `3` y `4` solo con autorizacion explicita de borrado.
   - Resolver o aislar formalmente los 3 tests fiscales/test-harness fuera de scope.
   - Revisar vulnerabilidad moderada reportada por `npm ci`.
   - Evaluar worker fiscal separado si se habilitara carga fiscal real.
   - Monitorear warning `sunat_exchange_rate_stale_cache`.
+  - Revisar `ENVIRONMENT` y `FISCAL_ENV` en Railway como cambio conjunto; no cambiar solo `ENVIRONMENT` porque `config.py` exige `FISCAL_ENV=production` cuando `ENVIRONMENT=production`.
 
 ## 10. Evidencia adjunta
 - URLs:
@@ -455,6 +469,9 @@ Evidencia:
   - `npx --yes vercel@latest inspect inkora-pse.vercel.app`
   - `npx --yes vercel@latest inspect inkora-pse.vercel.app --logs`
   - `npx --yes vercel@latest api /v9/projects/prj_n0pDzkSeFjBVqZkPryxwxSXTxwlu/env --raw`
+  - `npx --yes vercel@latest env add VITE_API_URL production --value https://inkorapse-production.up.railway.app --yes --no-sensitive`
+  - `npx --yes vercel@latest env add VITE_API_URL development --value https://inkorapse-production.up.railway.app --yes --no-sensitive`
+  - `npx --yes vercel@latest redeploy inkora-pse.vercel.app --target production`
   - `npx --yes vercel@latest logs --project inkora-pse --environment production --since 1h --no-branch --limit 20 --json`
   - `npx --yes vercel@latest logs --project inkora-pse --environment production --since 1h --no-branch --level error --limit 20 --json`
   - `pg_dump` manual por Session Pooler IPv4, archivo `C:\Users\HP\Desktop\inkora_backups\inkora_pse_pre_indexes_20260508-165311.dump`.
@@ -491,7 +508,9 @@ Evidencia:
   - API autenticada: login PASS, cliente/producto/cotizacion no fiscal creados; endpoints page/search/cobranza respondieron `HTTP 200`.
   - Vercel UI autenticada: dashboard/clientes/productos/cotizaciones cargan; `/clientes/search` y `/productos/search` observados con `HTTP 200`; sin errores de consola ni request failures en el smoke.
   - Performance smoke Node: p95 search clientes `341.6 ms`, productos `135.8 ms`; p95 page clientes `138.1 ms`, productos `135.4 ms`; p95 cobranza resumen `134.1 ms`, vencidas `138.3 ms`; `0` errores 5xx.
-  - Vercel deployment: production `Ready`, built from `main` commit `653e229`, no runtime error logs in queried window.
+  - Vercel deployment inicial: production `Ready`, built from `main` commit `653e229`, no runtime error logs in queried window.
+  - Vercel env posterior: `VITE_API_URL` agregado en Production y Development.
+  - Vercel redeploy posterior: production `Ready`, deployment `dpl_7zK8SiRNE1juxE32qBRhFCeUQRP9`, built from `main` commit `1954822`.
   - CORS preflight: PASS for `/clientes/search` and `/productos/search` from `https://inkora-pse.vercel.app`.
   - Railway dashboard:
     - Servicio `inkora_pse` `Online`, dominio `inkorapse-production.up.railway.app`, region `US East`, `1 Replica`.
