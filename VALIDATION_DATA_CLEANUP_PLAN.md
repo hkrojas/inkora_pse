@@ -18,9 +18,9 @@ Evidencia actual desde `POST_DEPLOY_VALIDATION_RESULTS.md`:
 
 | Tenant | Nombre | RUC | Usuarios | Clientes | Productos | Cotizaciones | Pagos | Jobs fiscales | Otros datos relacionados |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `2` | Pendiente de confirmar por SELECT | Pendiente de confirmar por SELECT | Pendiente de confirmar por SELECT | Reportado como 0 | Reportado como 0 | Reportado como 0 | Pendiente de confirmar por SELECT | Pendiente de confirmar por SELECT | Pendiente de confirmar por dry-run ampliado |
-| `3` | Pendiente de confirmar por SELECT | Pendiente de confirmar por SELECT | Pendiente de confirmar por SELECT | Reportado como 0 | Reportado como 0 | Reportado como 0 | Pendiente de confirmar por SELECT | Pendiente de confirmar por SELECT | Pendiente de confirmar por dry-run ampliado |
-| `4` | Pendiente de confirmar por SELECT | Pendiente de confirmar por SELECT | `validation-20260508172343@inkora.test` reportado | Reportado como 1 | Reportado como 1 | Reportado como 1 no fiscal | Reportado como 0 | Reportado como 0 | Pendiente de confirmar por dry-run ampliado |
+| `2` | `Inkora Validation 20260508172203` | `20508172203` | 1 validation user | 0 | 0 | 0 | 0 | 0 | 1 subscription, 1 audit log |
+| `3` | `Inkora Validation 20260508172256` | `20508172256` | 1 validation user | 0 | 0 | 0 | 0 | 0 | 1 subscription |
+| `4` | `Inkora Validation 20260508172343` | `20508172343` | 1 validation user | 1 | 1 | 1 quotation no fiscal | 0 | 0 | 1 cotizacion item, 1 subscription, 8 audit logs |
 
 Tablas incluidas en el alcance de auditoria:
 
@@ -40,8 +40,31 @@ Tablas incluidas en el alcance de auditoria:
 
 Evidencia SQL real:
 
-- Estado: `PENDIENTE DE EJECUCION EN SUPABASE SQL EDITOR`.
-- Motivo: esta sesion local no tiene credenciales de conexion Postgres configuradas, y no se deben imprimir ni reutilizar secretos.
+- Estado: `DRY-RUN SELECT EJECUTADO EN SUPABASE SQL EDITOR`.
+- Fecha local de ejecucion: 2026-05-08 America/Lima.
+- Rol visible en SQL Editor: `postgres`.
+- Base visible: `Primary database`.
+- No se ejecuto `DELETE`, `TRUNCATE` ni `UPDATE`.
+- El primer intento de dry-run fallo de forma segura porque `users.created_at` no existe en el modelo real. Se corrigio la consulta para usar las columnas reales de `users`.
+
+Resumen del resultado:
+
+- Tenants encontrados:
+  - `tenant_id=2`: `Inkora Validation 20260508172203`, RUC `20508172203`, activo.
+  - `tenant_id=3`: `Inkora Validation 20260508172256`, RUC `20508172256`, activo.
+  - `tenant_id=4`: `Inkora Validation 20260508172343`, RUC `20508172343`, activo.
+- Usuarios temporales:
+  - `validation+20260508172203@inkora.test`, tenant `2`, rol `admin`, activo.
+  - `validation+20260508172256@inkora.test`, tenant `3`, rol `admin`, activo.
+  - `validation-20260508172343@inkora.test`, tenant `4`, rol `admin`, activo.
+- Conteos no cero:
+  - tenant `2`: `subscriptions=1`, `audit_logs_by_validation_users=1`.
+  - tenant `3`: `subscriptions=1`.
+  - tenant `4`: `clientes=1`, `productos=1`, `cotizaciones=1`, `cotizacion_items=1`, `subscriptions=1`, `audit_logs_by_validation_users=8`.
+- `quote_breakdown`: tenant `4` tiene `1` cotizacion `document_kind='quotation'`, `tipo_comprobante='00'`, `estado='pendiente'`.
+- `fiscal_risk`: `[]`.
+- `active_jobs`: `[]`.
+- Las tablas incluidas en el dry-run ampliado que no aparecieron en el resultado tienen `0` filas para los tenants `2`, `3` y `4`.
 
 ## 4. Riesgos
 
