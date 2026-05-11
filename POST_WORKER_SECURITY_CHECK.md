@@ -2,6 +2,7 @@
 
 ## 1. Datos generales
 - Fecha/hora: 2026-05-09 16:32:07 -05:00
+- Actualizacion: 2026-05-10 21:06:12 -05:00
 - Repo: `hkrojas/inkora_pse`
 - Branch: `main`
 - Ultimo commit: `2f8c8ce Record Railway fiscal worker deployment`
@@ -26,17 +27,18 @@ Alcance aplicado:
 ## 3. Tokens revisados
 
 ### Railway token temporal
-- Estado: `PENDIENTE`
+- Estado: `REVOCADO / ROTADO`
 - Evidencia sin valor secreto:
+  - Operador confirmo en esta conversacion: "Todo lo que tenga que ver con credenciales o tokens ya esta".
   - `railway` no esta instalado globalmente en esta maquina.
   - `npx --yes @railway/cli status` devolvio `Unauthorized. Please login with railway login`.
   - `npx --yes @railway/cli deployment list --service inkora_pse_worker --environment production --limit 1 --json` devolvio `Unauthorized. Please login with railway login`.
   - `npx --yes @railway/cli logs --service inkora_pse_worker --environment production --lines 50 --filter '@level:error'` devolvio `Unauthorized. Please login with railway login`.
 - Observaciones:
   - Desde esta sesion no hay autenticacion Railway activa y no se genero un token nuevo.
-  - No puedo confirmar revocacion efectiva en Railway Dashboard sin una sesion autenticada.
-  - El operador debe revocar o rotar manualmente el token temporal usado durante la creacion del worker, segun corresponda: personal token, project token o token de automatizacion.
-  - Despues de revocarlo, registrar en este documento solo evidencia no sensible: fecha/hora, tipo de token, estado revocado/rotado y responsable.
+  - La revocacion/rotacion efectiva queda documentada por confirmacion del operador, sin exponer valor secreto.
+  - No se imprimio ningun token Railway.
+  - Si se requiere auditoria externa, complementar luego con captura o log del dashboard que muestre solo estado, fecha y tipo de token, sin valor secreto.
 
 ### JWT temporal de smoke test
 - Estado: `USUARIO ELIMINADO / EXPIRA NATURALMENTE`
@@ -55,10 +57,10 @@ Alcance aplicado:
 - Comando: `curl.exe -i https://inkorapse-production.up.railway.app/health`
 - HTTP status: `HTTP/1.1 200 OK`
 - Body: `{"status":"ok","environment":"staging"}`
-- Fecha/hora: `2026-05-09 21:29:40 GMT` en header HTTP; `2026-05-09 16:29:40 -05:00` hora local aproximada
+- Fecha/hora: `2026-05-11 02:06:11 GMT` en header HTTP; `2026-05-10 21:06:12 -05:00` hora local aproximada
 - Request id:
-  - `X-Railway-Request-Id: qM0Vi0JgQiqskyynCx5-qw`
-  - `X-Request-Id: 4371e50d-d4b3-4161-910e-aa7302ec8961`
+  - `X-Railway-Request-Id: uDBpJnMtR9SusssYU79b0g`
+  - `X-Request-Id: 106feeac-0d75-4eb4-b90d-6675d66f9d8d`
 - Resultado: `PASS`
 
 ## 5. Estado worker
@@ -80,7 +82,8 @@ Evidencia historica no sensible:
 
 Bloqueo de revalidacion live:
 
-- Railway CLI via `npx` respondio `Unauthorized`.
+- Railway CLI via `npx` respondio previamente `Unauthorized`.
+- En la revalidacion del 2026-05-10, `npx --yes @railway/cli status` fallo por cache local de `npx` con `MODULE_NOT_FOUND`; no se genero token nuevo.
 - Chrome no estaba corriendo y la extension Codex Chrome no esta instalada en el perfil detectado, por lo que no hubo sesion web autenticada reutilizable.
 - No se creo ningun token nuevo para forzar la revision.
 
@@ -128,11 +131,10 @@ ORDER BY coalesce(processing_started_at, locked_at) ASC;
 
 ## 7. Riesgos restantes
 - Tokens no revocados:
-  - Railway token temporal: `PENDIENTE` de confirmacion por operador en Railway Dashboard.
+  - Ninguno reportado por el operador despues de la confirmacion de cierre de credenciales/tokens.
 - Tokens que expiran naturalmente:
   - JWT temporal de smoke test: usuario temporal eliminado; cualquier token stateless previo expira naturalmente salvo rotacion de `SECRET_KEY`.
 - Acciones pendientes:
-  - Confirmar en Railway Dashboard que el token temporal fue revocado o rotado.
   - Revalidar live `inkora_pse_worker`: running/healthy, ultimo deployment successful, sin dominio publico, logs sin errores criticos, sin restarts anomalos, sin DB timeouts y sin errores de import/config.
   - Ejecutar las dos consultas SQL de cola fiscal desde Supabase SQL Editor o `psql` autenticado.
 - Observaciones:
@@ -141,12 +143,12 @@ ORDER BY coalesce(processing_started_at, locked_at) ASC;
 
 ## 8. Conclusion
 - Estado general: `PARTIAL`
-- Se puede considerar cerrada la fase worker: `NO`, falta evidencia de revocacion/rotacion del token Railway temporal y revalidacion live del worker/cola fiscal desde una sesion autenticada.
+- Se puede considerar cerrada la fase worker: `NO`, los tokens quedan cerrados por confirmacion del operador, pero falta revalidacion live del worker/cola fiscal desde una sesion autenticada.
 
 Resumen:
 
 - API health: `PASS`.
 - JWT temporal: `USUARIO ELIMINADO / EXPIRA NATURALMENTE`.
-- Railway token temporal: `PENDIENTE`.
+- Railway token temporal: `REVOCADO / ROTADO` por confirmacion del operador.
 - Worker: `PARTIAL`, con deployment historico `SUCCESS` y sin dominio publico documentado.
 - Cola fiscal: `PARTIAL`, con evidencia historica `document_emission_jobs = 0`, pero sin consulta live en esta sesion.
