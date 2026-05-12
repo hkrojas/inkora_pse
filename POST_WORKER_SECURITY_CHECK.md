@@ -2,7 +2,7 @@
 
 ## 1. Datos generales
 - Fecha/hora: 2026-05-09 16:32:07 -05:00
-- Actualizacion: 2026-05-12 09:37:53 -05:00
+- Actualizacion: 2026-05-12 09:44:11 -05:00
 - Repo: `hkrojas/inkora_pse`
 - Branch: `main`
 - Ultimo commit: `2f8c8ce Record Railway fiscal worker deployment`
@@ -57,10 +57,10 @@ Alcance aplicado:
 - Comando: `curl.exe -i https://inkorapse-production.up.railway.app/health`
 - HTTP status: `HTTP/1.1 200 OK`
 - Body: `{"status":"ok","environment":"staging"}`
-- Fecha/hora: `2026-05-12 14:38:21 GMT` en header HTTP; `2026-05-12 09:38:21 -05:00` hora local aproximada
+- Fecha/hora: `2026-05-12 14:44:11 GMT` en header HTTP; `2026-05-12 09:44:11 -05:00` hora local aproximada
 - Request id:
-  - `X-Railway-Request-Id: tZnmngUjQQm-80u5jVra_w`
-  - `X-Request-Id: 898b1d5d-2267-4f8c-b95e-44d1df706535`
+  - `X-Railway-Request-Id: SCJygytnSyGNq816H4GxDA`
+  - `X-Request-Id: 4e0ef1c4-7798-4cee-aad1-fea41e78dcae`
 - Resultado: `PASS`
 
 ## 5. Estado worker
@@ -85,6 +85,7 @@ Bloqueo de revalidacion live:
 - Railway CLI via `npx --yes @railway/cli@latest status` respondio `Unauthorized` el 2026-05-12.
 - La variable local de autenticacion Railway no esta presente en el entorno local.
 - El conector Railway local tambien fallo porque `railway` no esta instalado globalmente.
+- El conector Railway no pudo listar servicios, deployments ni logs por el mismo bloqueo de CLI global ausente.
 - Chrome no estaba corriendo y la extension Codex Chrome no esta instalada en el perfil detectado, por lo que no hubo sesion web autenticada reutilizable.
 - No se creo ningun token nuevo para forzar la revision.
 
@@ -101,6 +102,7 @@ Evidencia historica no sensible:
 Intento live:
 
 - `DATABASE_URL` no esta presente en el entorno local.
+- La variable local de password para `psql` no esta presente en el entorno local.
 - La variable local de autenticacion Railway no esta presente en el entorno local.
 - `supabase` CLI no esta instalado.
 - `psql` esta disponible, pero no se ejecuto consulta remota porque no hay cadena de conexion en entorno y no se leyo `.env`.
