@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 
 import crud
@@ -12,7 +12,21 @@ import models
 from api_dependencies import get_current_user, get_db_tenant
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
 from routers import guias as guias_router
+from services import secret_box
 from services.facturacion_service import FacturacionException
+
+
+def _test_request(path: str = "/guias-remision/1/emitir") -> Request:
+    return Request({
+        "type": "http",
+        "method": "POST",
+        "path": path,
+        "headers": [],
+        "query_string": b"",
+        "server": ("testserver", 80),
+        "client": ("testclient", 50000),
+        "scheme": "http",
+    })
 
 
 def _make_user_and_guia(db_session, suffix: str):
@@ -22,9 +36,9 @@ def _make_user_and_guia(db_session, suffix: str):
     tenant.smartpse_usuario_secundaria = "AB3KPQR9"
     tenant.smartpse_token_acceso = "MX7TNVQG"
     tenant.smartpse_gre_sol_username = "SOLUSER"
-    tenant.smartpse_gre_sol_password_enc = "sol-password-demo"
+    tenant.smartpse_gre_sol_password_enc = secret_box.encrypt_secret("sol-password-demo")
     tenant.smartpse_gre_client_id = "client-id"
-    tenant.smartpse_gre_client_secret_enc = "client-secret"
+    tenant.smartpse_gre_client_secret_enc = secret_box.encrypt_secret("client-secret")
     subscription = models.Subscription(
         tenant_id=tenant.id,
         status=models.SUBSCRIPTION_STATUS_ACTIVE,
@@ -118,6 +132,7 @@ def test_emitir_guia_propaga_error_fiscal_con_gre_configurada(db_session):
     ):
         with pytest.raises(HTTPException) as exc:
             guias_router.emitir_guia_remision_endpoint(
+                _test_request(f"/guias-remision/{guia.id}/emitir"),
                 guia.id,
                 db_session,
                 user,

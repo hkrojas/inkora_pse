@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import crud
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
-from services import facturacion_service, smartpse_client
+from services import facturacion_service, secret_box, smartpse_client
 
 
 def _make_user_with_apisperu(db_session, suffix: str):
@@ -40,6 +40,10 @@ def _make_user_with_apisperu(db_session, suffix: str):
     tenant.smartpse_environment = "demo"
     tenant.smartpse_usuario_secundaria = "AB3KPQR9"
     tenant.smartpse_token_acceso = "MX7TNVQG"
+    tenant.smartpse_gre_sol_username = "SOLUSER"
+    tenant.smartpse_gre_sol_password_enc = secret_box.encrypt_secret("sol-password-demo")
+    tenant.smartpse_gre_client_id = "client-id"
+    tenant.smartpse_gre_client_secret_enc = secret_box.encrypt_secret("client-secret")
     db_session.commit()
     db_session.refresh(tenant)
     return tenant, user
@@ -73,7 +77,7 @@ class _FakeSmartPSEClient:
         self.process_calls = []
         self.consult_calls = []
 
-    def process_xml(self, tenant, nombre_archivo, xml_content, *, demo=False):
+    def process_xml(self, tenant, nombre_archivo, xml_content, *, demo=False, **_kwargs):
         self.process_calls.append((tenant, nombre_archivo, xml_content, demo))
         response = self.process_responses.pop(0)
         if isinstance(response, Exception):
@@ -403,7 +407,7 @@ class TestApisPeruDocumentosMatrix:
         assert result["pending"] is True
         assert result["ticket"] == "summary-2"
 
-    def test_guia_remision_usa_despatch_send_y_status(self, db_session):
+    def test_guia_remision_usa_despatch_send_y_retorna_ticket(self, db_session):
         user, guia = _make_guia(db_session, "MX08")
         fake_client = _FakeSmartPSEClient(
             [_smartpse_pending("despatch-1", tag="DespatchAdvice")],
@@ -416,8 +420,9 @@ class TestApisPeruDocumentosMatrix:
         _, filename, xml_content, _ = fake_client.process_calls[0]
         assert filename.startswith(f"{_filename_ruc(guia.tenant)}-09-")
         assert b"DespatchAdvice" in xml_content
-        assert fake_client.consult_calls[0][1] == filename
+        assert fake_client.consult_calls == []
         assert result["success"] is True
+        assert result["pending"] is True
         assert result["ticket"] == "despatch-1"
 
     def test_guia_publica_extiende_payload_con_campos_gre_opcionales(self, db_session):

@@ -761,6 +761,7 @@ def emitir_comprobante(
 def emitir_nota(
     request: Request,
     nota_data: schemas.NotaCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_document_emitter),
     _emission_check: models.User = Depends(require_emission_allowed),

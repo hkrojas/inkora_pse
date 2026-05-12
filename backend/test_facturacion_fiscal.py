@@ -24,7 +24,7 @@ import crud
 import models
 import schemas
 from conftest import make_cliente, make_tenant, make_user, make_quote_via_crud
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException, Request
 from routers import facturacion
 from services import calculations
 from services import emission_queue_service
@@ -38,6 +38,19 @@ from services.fiscal_balance_service import (
     get_credit_note_available_amount,
     get_fiscal_document_balance,
 )
+
+
+def _test_request(path: str = "/facturacion/notas/emitir") -> Request:
+    return Request({
+        "type": "http",
+        "method": "POST",
+        "path": path,
+        "headers": [],
+        "query_string": b"",
+        "server": ("testserver", 80),
+        "client": ("testclient", 50000),
+        "scheme": "http",
+    })
 
 
 # ==========================================
@@ -431,12 +444,14 @@ class TestNotasParcialesFiscalBalance:
 
         with pytest.raises(HTTPException) as exc:
             facturacion.emitir_nota(
+                _test_request(),
                 schemas.NotaCreate(
                     comprobante_afectado_id=other_fiscal.id,
                     tipo_nota="credito",
                     cod_motivo="01",
                     descripcion_motivo="Nota de otro tenant",
                 ),
+                BackgroundTasks(),
                 db=db_session,
                 current_user=user,
                 _emission_check=user,
