@@ -2,10 +2,10 @@
 
 ## 1. Datos generales
 - Fecha/hora: 2026-05-09 16:32:07 -05:00
-- Actualizacion: 2026-05-12 10:18:00 -05:00
+- Actualizacion: 2026-05-12 10:24:50 -05:00
 - Repo: `hkrojas/inkora_pse`
 - Branch: `main`
-- Ultimo commit: `2f8c8ce Record Railway fiscal worker deployment`
+- Ultimo commit validado antes de esta actualizacion: `4f14124 Document Railway staged worker changes`
 - Worker service: `inkora_pse_worker`
 - API URL: `https://inkorapse-production.up.railway.app`
 
@@ -77,18 +77,19 @@ Evidencia live no sensible:
 - Railway Dashboard abierto en navegador integrado: proyecto `truthful-flexibility`, environment `production`.
 - Servicio: `inkora_pse_worker`.
 - Service ID visible en URL: `17a2668a-d2dc-4f77-a13e-b651ba1adbe5`.
-- Deployment activo visible: `b8d0208a-3bcf-4ea0-a4fa-9709cc294438`.
-- Commit/deployment label visible: `Record Railway fiscal worker deployment`.
+- Deployment activo visible: `79dd1d9c-26e4-43db-affb-43c9763df2a3`.
+- Commit/deployment label visible: `Document Railway staged worker changes`.
 - Estado visible: `Active`.
 - Resultado visible: `Deployment successful`.
 - Networking visible: `Unexposed service`.
 - Region/replicas visibles: `US East`, `1 Replica`.
-- Fecha visible del deployment: `May 9, 2026, 3:05 PM GMT-5`.
-- Deploy logs visibles:
-  - `Starting Container`.
-  - `GET /health HTTP/1.1` con status `200`.
+- Fecha visible del deployment: `May 12, 2026`, creado por GitHub despues del push de documentacion.
+- Deploy logs visibles del deployment activo:
+  - `May 12 2026 10:18:11 Starting Container`.
+  - `May 12 2026 10:18:11 "GET /health HTTP/1.1" 200`.
 - No se abrio ni inspecciono la vista de variables.
-- No se ejecuto deploy ni se aplicaron cambios.
+- No se presiono `Deploy Changes` en Railway.
+- El deployment activo nuevo fue disparado por el push de GitHub a `main`.
 
 Evidencia historica no sensible:
 
@@ -106,13 +107,14 @@ Notas de acceso y observaciones:
 - El conector Railway no pudo listar servicios, deployments ni logs por el mismo bloqueo de CLI global ausente.
 - Chrome no estaba corriendo y la extension Codex Chrome no esta instalada en el perfil detectado, por lo que no hubo sesion web autenticada reutilizable.
 - La revalidacion live del worker se completo con la sesion autenticada del navegador integrado.
-- Railway muestra cambios staged pendientes (`Apply 5 changes` / `Deploy`) en la UI. No se aplicaron ni descartaron.
-- Detalle revisado de staged changes:
+- Railway mostro cambios staged pendientes (`Apply 5 changes` / `Deploy`) en la UI. Se revisaron y descartaron desde Railway UI, sin aplicar deploy manual.
+- Detalle revisado de staged changes descartados:
   - `Branch`: `main` -> `main`.
   - `Repo`: `hkrojas/inkora_pse` -> `hkrojas/inkora_pse`.
   - `Root Directory`: `backend` -> `backend`.
   - `Start Command`: wrapper con healthcheck interno `/health` -> `python run_emission_worker.py`.
-- No desplegar esos staged changes sin revisar antes el impacto del cambio de Start Command. El wrapper actual existe porque Railway aplica el healthcheck `/health` al servicio worker.
+- Resultado posterior: Railway ya no muestra `Apply changes`, `changes to apply` ni `Deploy Changes`.
+- Observacion: se descarto especialmente el cambio de `Start Command` porque eliminaba el wrapper de healthcheck usado por el worker.
 
 ## 6. Cola fiscal
 - Jobs por estado: `{}`
@@ -174,7 +176,7 @@ SELECT
 - Tokens que expiran naturalmente:
   - JWT temporal de smoke test: usuario temporal eliminado; cualquier token stateless previo expira naturalmente salvo rotacion de `SECRET_KEY`.
 - Acciones pendientes:
-  - Revisar en una tarea separada los cambios staged visibles en Railway (`Apply 5 changes`) antes de cualquier deploy futuro, especialmente el cambio de Start Command que eliminaria el wrapper de healthcheck.
+  - Ninguna para el cierre post-worker actual.
 - Observaciones:
   - No se debe crear un token temporal nuevo solo para cerrar este documento si el operador puede confirmar la revocacion desde dashboard.
   - No se debe ejecutar emision fiscal real en esta fase.
