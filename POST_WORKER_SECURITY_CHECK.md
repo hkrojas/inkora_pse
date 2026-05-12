@@ -2,7 +2,7 @@
 
 ## 1. Datos generales
 - Fecha/hora: 2026-05-09 16:32:07 -05:00
-- Actualizacion: 2026-05-12 10:08:25 -05:00
+- Actualizacion: 2026-05-12 10:18:00 -05:00
 - Repo: `hkrojas/inkora_pse`
 - Branch: `main`
 - Ultimo commit: `2f8c8ce Record Railway fiscal worker deployment`
@@ -106,7 +106,13 @@ Notas de acceso y observaciones:
 - El conector Railway no pudo listar servicios, deployments ni logs por el mismo bloqueo de CLI global ausente.
 - Chrome no estaba corriendo y la extension Codex Chrome no esta instalada en el perfil detectado, por lo que no hubo sesion web autenticada reutilizable.
 - La revalidacion live del worker se completo con la sesion autenticada del navegador integrado.
-- Railway muestra cambios staged pendientes (`Apply 5 changes` / `Deploy`) en la UI. No se tocaron. Revisar esos cambios en una tarea separada antes de cualquier deploy futuro.
+- Railway muestra cambios staged pendientes (`Apply 5 changes` / `Deploy`) en la UI. No se aplicaron ni descartaron.
+- Detalle revisado de staged changes:
+  - `Branch`: `main` -> `main`.
+  - `Repo`: `hkrojas/inkora_pse` -> `hkrojas/inkora_pse`.
+  - `Root Directory`: `backend` -> `backend`.
+  - `Start Command`: wrapper con healthcheck interno `/health` -> `python run_emission_worker.py`.
+- No desplegar esos staged changes sin revisar antes el impacto del cambio de Start Command. El wrapper actual existe porque Railway aplica el healthcheck `/health` al servicio worker.
 
 ## 6. Cola fiscal
 - Jobs por estado: `{}`
@@ -168,7 +174,7 @@ SELECT
 - Tokens que expiran naturalmente:
   - JWT temporal de smoke test: usuario temporal eliminado; cualquier token stateless previo expira naturalmente salvo rotacion de `SECRET_KEY`.
 - Acciones pendientes:
-  - Revisar en una tarea separada los cambios staged visibles en Railway (`Apply 5 changes`) antes de cualquier deploy futuro.
+  - Revisar en una tarea separada los cambios staged visibles en Railway (`Apply 5 changes`) antes de cualquier deploy futuro, especialmente el cambio de Start Command que eliminaria el wrapper de healthcheck.
 - Observaciones:
   - No se debe crear un token temporal nuevo solo para cerrar este documento si el operador puede confirmar la revocacion desde dashboard.
   - No se debe ejecutar emision fiscal real en esta fase.
