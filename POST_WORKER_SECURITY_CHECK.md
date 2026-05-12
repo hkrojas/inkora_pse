@@ -2,7 +2,7 @@
 
 ## 1. Datos generales
 - Fecha/hora: 2026-05-09 16:32:07 -05:00
-- Actualizacion: 2026-05-12 09:44:11 -05:00
+- Actualizacion: 2026-05-12 10:01:23 -05:00
 - Repo: `hkrojas/inkora_pse`
 - Branch: `main`
 - Ultimo commit: `2f8c8ce Record Railway fiscal worker deployment`
@@ -90,47 +90,57 @@ Bloqueo de revalidacion live:
 - No se creo ningun token nuevo para forzar la revision.
 
 ## 6. Cola fiscal
-- Jobs por estado: no revalidado live por falta de credenciales DB en esta sesion
-- Jobs processing colgados: no revalidado live por falta de credenciales DB en esta sesion
-- Resultado: `PARTIAL`
+- Jobs por estado: `{}`
+- Jobs processing colgados: `0`
+- Resultado: `PASS`
+
+Evidencia live no sensible:
+
+- Supabase Dashboard abierto en navegador integrado: `project/wiezwkosiuczpnbnvmef`.
+- SQL Editor ejecuto una consulta agregada de solo lectura el `2026-05-12 10:01 -05:00`.
+- Resultado:
+  - `total_jobs = 0`.
+  - `jobs_by_status = {}`.
+  - `stuck_processing_over_15m = 0`.
 
 Evidencia historica no sensible:
 
 - `VALIDATION_DATA_CLEANUP_RESULTS.md` documento `document_emission_jobs = 0` despues de eliminar tenants temporales `2`, `3` y `4`.
 - `RAILWAY_FISCAL_WORKER_RESULTS.md` indica que no se ejecuto emision fiscal real durante la creacion del worker.
 
-Intento live:
+Notas de acceso local:
 
 - `DATABASE_URL` no esta presente en el entorno local.
 - La variable local de password para `psql` no esta presente en el entorno local.
 - La variable local de autenticacion Railway no esta presente en el entorno local.
 - `supabase` CLI no esta instalado.
-- `psql` esta disponible, pero no se ejecuto consulta remota porque no hay cadena de conexion en entorno y no se leyo `.env`.
+- `psql` esta disponible, pero la consulta live se ejecuto desde el SQL Editor autenticado del navegador integrado, sin leer `.env`.
 
-SQL que debe ejecutar el operador en Supabase SQL Editor o una sesion `psql` autenticada, sin borrar jobs:
-
-```sql
-SELECT status, count(*) AS total
-FROM document_emission_jobs
-GROUP BY status
-ORDER BY status;
-```
+SQL agregado ejecutado en Supabase SQL Editor, sin borrar jobs ni imprimir errores:
 
 ```sql
-SELECT id,
-       tenant_id,
-       resource_type,
-       resource_id,
-       action,
-       status,
-       attempts,
-       locked_at,
-       processing_started_at,
-       left(last_error, 300) AS error
-FROM document_emission_jobs
-WHERE status = 'processing'
-  AND coalesce(processing_started_at, locked_at) < now() - interval '15 minutes'
-ORDER BY coalesce(processing_started_at, locked_at) ASC;
+WITH jobs_by_status AS (
+  SELECT status, count(*)::bigint AS total
+  FROM document_emission_jobs
+  GROUP BY status
+),
+stuck AS (
+  SELECT count(*)::bigint AS total
+  FROM document_emission_jobs
+  WHERE status = 'processing'
+    AND coalesce(processing_started_at, locked_at) < now() - interval '15 minutes'
+),
+queue_total AS (
+  SELECT count(*)::bigint AS total
+  FROM document_emission_jobs
+)
+SELECT
+  (SELECT total FROM queue_total) AS total_jobs,
+  COALESCE(
+    (SELECT jsonb_object_agg(status, total ORDER BY status) FROM jobs_by_status),
+    '{}'::jsonb
+  ) AS jobs_by_status,
+  (SELECT total FROM stuck) AS stuck_processing_over_15m;
 ```
 
 ## 7. Riesgos restantes
@@ -140,14 +150,13 @@ ORDER BY coalesce(processing_started_at, locked_at) ASC;
   - JWT temporal de smoke test: usuario temporal eliminado; cualquier token stateless previo expira naturalmente salvo rotacion de `SECRET_KEY`.
 - Acciones pendientes:
   - Revalidar live `inkora_pse_worker`: running/healthy, ultimo deployment successful, sin dominio publico, logs sin errores criticos, sin restarts anomalos, sin DB timeouts y sin errores de import/config.
-  - Ejecutar las dos consultas SQL de cola fiscal desde Supabase SQL Editor o `psql` autenticado.
 - Observaciones:
   - No se debe crear un token temporal nuevo solo para cerrar este documento si el operador puede confirmar la revocacion desde dashboard.
   - No se debe ejecutar emision fiscal real en esta fase.
 
 ## 8. Conclusion
 - Estado general: `PARTIAL`
-- Se puede considerar cerrada la fase worker: `NO`, los tokens quedan cerrados por confirmacion del operador, pero falta revalidacion live del worker/cola fiscal desde una sesion autenticada.
+- Se puede considerar cerrada la fase worker: `NO`, los tokens y la cola fiscal quedan cerrados, pero falta revalidacion live del worker desde una sesion Railway autenticada.
 
 Resumen:
 
@@ -155,4 +164,4 @@ Resumen:
 - JWT temporal: `USUARIO ELIMINADO / EXPIRA NATURALMENTE`.
 - Railway token temporal: `REVOCADO / ROTADO` por confirmacion del operador.
 - Worker: `PARTIAL`, con deployment historico `SUCCESS` y sin dominio publico documentado.
-- Cola fiscal: `PARTIAL`, con evidencia historica `document_emission_jobs = 0`, pero sin consulta live en esta sesion.
+- Cola fiscal: `PASS`, `total_jobs = 0`, `jobs_by_status = {}`, `stuck_processing_over_15m = 0`.
