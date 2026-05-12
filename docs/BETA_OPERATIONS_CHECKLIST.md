@@ -8,6 +8,7 @@ El objetivo es separar claramente la beta operativa de la produccion fiscal, man
 | Item | Prioridad | Estado esperado | Responsable sugerido | Verificacion |
 |---|---:|---|---|---|
 | Beta controlada | P0 | Solo tenants piloto autorizados, con datos ficticios o consentimiento explicito | Founder / Ops | Lista de tenants beta aprobada |
+| Beta prepago 20 usuarios | P0 | Maximo 20 usuarios nominales, tenants identificados, soporte unico y fiscal real bloqueado | Founder / Ops | Lista de usuarios y reglas beta firmadas |
 | Produccion fiscal | P0 | Separada de beta; no activar `FISCAL_ENV=production` sin go fiscal explicito | Founder / Fiscal / Tech lead | Aprobacion escrita antes del cambio |
 | Emision real | P0 | Desactivada hasta prueba controlada | Fiscal / Backend | Worker y credenciales revisadas |
 | Datos reales | P0 | No cargar clientes reales hasta validar rollback, logs y soporte | Ops | Checklist firmado por responsable |
@@ -19,6 +20,7 @@ El objetivo es separar claramente la beta operativa de la produccion fiscal, man
 | `ENVIRONMENT` | P0 | `staging` para beta controlada; `production` solo al pasar a produccion | DevOps | Revisar runtime |
 | `APP_ENV` | P0 | Igual a `ENVIRONMENT` | DevOps | Revisar runtime |
 | `FISCAL_ENV` | P0 | `beta` durante beta controlada | Tech lead | Revisar runtime |
+| Worker service | P0 | `inkora_pse_worker` separado, sin dominio publico y monitoreado | Backend / Ops | Railway service, deployment y logs |
 | `DATABASE_URL` | P0 | Apunta a DB beta/staging autorizada; nunca hardcodeada | DevOps | URL redacted |
 | `SECRET_KEY` | P0 | Fuerte, unico por entorno, fuera del repo | DevOps | Secret manager |
 | `BACKEND_URL` | P0 | URL real del backend; no `localhost` en staging/production | DevOps | `/health` |
@@ -51,7 +53,7 @@ Regla: secretos reales, tokens, passwords, certificados, claves SOL, URLs firmad
 |---|---:|---|---|---|
 | APISPeru beta | P0 | Credenciales y URLs de beta/sandbox | Fiscal / Backend | Config redacted |
 | SUNAT directo | P1 | No activar salvo prueba especifica | Fiscal / Backend | Config redacted |
-| Worker fiscal | P0 | Encendido solo con monitoreo y tenant autorizado | Backend / Ops | Logs worker |
+| Worker fiscal | P0 | Encendido como servicio separado, sin dominio publico, con monitoreo y tenant autorizado | Backend / Ops | Logs worker y cola fiscal |
 | Retries | P0 | No duplican comprobantes; errores no retryable quedan terminales | Backend | Suite emission jobs |
 | Notas credito/debito | P0 | Parciales, limite acumulado y revalidacion pre-emision | Backend / Fiscal | Suite fiscal |
 | Bajas | P1 | Probar primero con datos ficticios | Fiscal | Runbook manual |
@@ -68,10 +70,10 @@ No probar con clientes reales todavia: emision fiscal real, anulaciones reales, 
 | Backup logico | P0 | Dump y TOC restaurables antes de cambios | DevOps | `pg_restore --list` |
 | Integrity dry-run | P0 | Sin bloqueantes ni advertencias no justificadas | Backend / Ops | `python backend/migrate_beta_integrity.py --dry-run` |
 | Integrity apply | P0 | Ejecutado solo con backup y autorizacion | Backend / Ops | Reporte apply |
-| Alembic current | P0 | `0001_prebeta_baseline (head)` | Backend | `alembic current` |
-| Alembic heads | P0 | `0001_prebeta_baseline (head)` | Backend | `alembic heads` |
+| Alembic current | P0 | `0006_prod_security_perf (head)` | Backend | `alembic current` o `SELECT version_num FROM alembic_version` |
+| Alembic heads | P0 | `0006_prod_security_perf (head)` | Backend | `alembic heads` |
 | Rollback | P0 | Restauracion documentada y responsable asignado | DevOps | Ensayo en entorno aparte |
-| Cambios futuros | P0 | Todo cambio de esquema posterior a `0001_prebeta_baseline` va por Alembic | Backend | Revision PR |
+| Cambios futuros | P0 | Todo cambio de esquema posterior a `0006_prod_security_perf` va por Alembic | Backend | Revision PR |
 
 Regla: no crear nuevos `migrate_*.py` para cambios de esquema despues del baseline. Los scripts legacy quedan como bootstrap historico/pre-Alembic.
 
@@ -116,7 +118,7 @@ Regla: no crear nuevos `migrate_*.py` para cambios de esquema despues del baseli
 |---|---|---|
 | Tenant piloto | Tenant beta aprobado, subscription activa y datos controlados | Tenant ambiguo, sin subscription o con datos reales no autorizados |
 | Fiscal | `FISCAL_ENV=beta`, proveedor beta/sandbox y emision real bloqueada hasta prueba controlada | Credenciales productivas o worker sin monitoreo |
-| DB | Backup validado, integrity limpio, Alembic baseline en head | Sin backup o dry-run con bloqueantes |
+| DB | Backup validado, integrity limpio, Alembic en `0006_prod_security_perf` | Sin backup o dry-run con bloqueantes |
 | Seguridad | Superadmin protegido, legacy frozen oculto, legacy fiscal `410` | Rutas frozen visibles en staging/production |
 | Frontend | Lint/build/smoke verde | Pantalla blanca, chunks rotos, API incorrecta |
 | Logs | Sin secretos ni payloads sensibles | Tokens/passwords/certificados en logs |
