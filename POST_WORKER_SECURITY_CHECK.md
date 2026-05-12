@@ -2,7 +2,7 @@
 
 ## 1. Datos generales
 - Fecha/hora: 2026-05-09 16:32:07 -05:00
-- Actualizacion: 2026-05-10 21:06:12 -05:00
+- Actualizacion: 2026-05-12 09:37:53 -05:00
 - Repo: `hkrojas/inkora_pse`
 - Branch: `main`
 - Ultimo commit: `2f8c8ce Record Railway fiscal worker deployment`
@@ -57,10 +57,10 @@ Alcance aplicado:
 - Comando: `curl.exe -i https://inkorapse-production.up.railway.app/health`
 - HTTP status: `HTTP/1.1 200 OK`
 - Body: `{"status":"ok","environment":"staging"}`
-- Fecha/hora: `2026-05-11 02:06:11 GMT` en header HTTP; `2026-05-10 21:06:12 -05:00` hora local aproximada
+- Fecha/hora: `2026-05-12 14:38:21 GMT` en header HTTP; `2026-05-12 09:38:21 -05:00` hora local aproximada
 - Request id:
-  - `X-Railway-Request-Id: uDBpJnMtR9SusssYU79b0g`
-  - `X-Request-Id: 106feeac-0d75-4eb4-b90d-6675d66f9d8d`
+  - `X-Railway-Request-Id: tZnmngUjQQm-80u5jVra_w`
+  - `X-Request-Id: 898b1d5d-2267-4f8c-b95e-44d1df706535`
 - Resultado: `PASS`
 
 ## 5. Estado worker
@@ -82,8 +82,9 @@ Evidencia historica no sensible:
 
 Bloqueo de revalidacion live:
 
-- Railway CLI via `npx` respondio previamente `Unauthorized`.
-- En la revalidacion del 2026-05-10, `npx --yes @railway/cli status` fallo por cache local de `npx` con `MODULE_NOT_FOUND`; no se genero token nuevo.
+- Railway CLI via `npx --yes @railway/cli@latest status` respondio `Unauthorized` el 2026-05-12.
+- La variable local de autenticacion Railway no esta presente en el entorno local.
+- El conector Railway local tambien fallo porque `railway` no esta instalado globalmente.
 - Chrome no estaba corriendo y la extension Codex Chrome no esta instalada en el perfil detectado, por lo que no hubo sesion web autenticada reutilizable.
 - No se creo ningun token nuevo para forzar la revision.
 
@@ -100,6 +101,7 @@ Evidencia historica no sensible:
 Intento live:
 
 - `DATABASE_URL` no esta presente en el entorno local.
+- La variable local de autenticacion Railway no esta presente en el entorno local.
 - `supabase` CLI no esta instalado.
 - `psql` esta disponible, pero no se ejecuto consulta remota porque no hay cadena de conexion en entorno y no se leyo `.env`.
 
