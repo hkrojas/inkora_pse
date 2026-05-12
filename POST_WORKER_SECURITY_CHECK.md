@@ -2,7 +2,7 @@
 
 ## 1. Datos generales
 - Fecha/hora: 2026-05-09 16:32:07 -05:00
-- Actualizacion: 2026-05-12 10:01:23 -05:00
+- Actualizacion: 2026-05-12 10:08:25 -05:00
 - Repo: `hkrojas/inkora_pse`
 - Branch: `main`
 - Ultimo commit: `2f8c8ce Record Railway fiscal worker deployment`
@@ -65,12 +65,30 @@ Alcance aplicado:
 
 ## 5. Estado worker
 - Servicio: `inkora_pse_worker`
-- Estado: `PARTIAL`
-- Deployment: `SUCCESS` documentado en `RAILWAY_FISCAL_WORKER_RESULTS.md`
-- Dominio publico: `sin dominio publico` documentado en `RAILWAY_FISCAL_WORKER_RESULTS.md`
-- Logs recientes: no revalidados live por falta de autenticacion Railway en esta sesion
-- Restarts: no revalidados live por falta de autenticacion Railway en esta sesion
-- Resultado: `PARTIAL`
+- Estado: `Active`
+- Deployment: `Deployment successful`
+- Dominio publico: `Unexposed service`
+- Logs recientes: deploy logs visibles sin errores criticos; muestran `Starting Container` y healthcheck interno `GET /health` con `200`
+- Restarts: sin restarts anomalos visibles en el deployment activo
+- Resultado: `PASS`
+
+Evidencia live no sensible:
+
+- Railway Dashboard abierto en navegador integrado: proyecto `truthful-flexibility`, environment `production`.
+- Servicio: `inkora_pse_worker`.
+- Service ID visible en URL: `17a2668a-d2dc-4f77-a13e-b651ba1adbe5`.
+- Deployment activo visible: `b8d0208a-3bcf-4ea0-a4fa-9709cc294438`.
+- Commit/deployment label visible: `Record Railway fiscal worker deployment`.
+- Estado visible: `Active`.
+- Resultado visible: `Deployment successful`.
+- Networking visible: `Unexposed service`.
+- Region/replicas visibles: `US East`, `1 Replica`.
+- Fecha visible del deployment: `May 9, 2026, 3:05 PM GMT-5`.
+- Deploy logs visibles:
+  - `Starting Container`.
+  - `GET /health HTTP/1.1` con status `200`.
+- No se abrio ni inspecciono la vista de variables.
+- No se ejecuto deploy ni se aplicaron cambios.
 
 Evidencia historica no sensible:
 
@@ -80,14 +98,15 @@ Evidencia historica no sensible:
 - `serviceDomains: []` y `customDomains: []`.
 - Healthcheck documentado: `[1/1] Healthcheck succeeded`.
 
-Bloqueo de revalidacion live:
+Notas de acceso y observaciones:
 
 - Railway CLI via `npx --yes @railway/cli@latest status` respondio `Unauthorized` el 2026-05-12.
 - La variable local de autenticacion Railway no esta presente en el entorno local.
 - El conector Railway local tambien fallo porque `railway` no esta instalado globalmente.
 - El conector Railway no pudo listar servicios, deployments ni logs por el mismo bloqueo de CLI global ausente.
 - Chrome no estaba corriendo y la extension Codex Chrome no esta instalada en el perfil detectado, por lo que no hubo sesion web autenticada reutilizable.
-- No se creo ningun token nuevo para forzar la revision.
+- La revalidacion live del worker se completo con la sesion autenticada del navegador integrado.
+- Railway muestra cambios staged pendientes (`Apply 5 changes` / `Deploy`) en la UI. No se tocaron. Revisar esos cambios en una tarea separada antes de cualquier deploy futuro.
 
 ## 6. Cola fiscal
 - Jobs por estado: `{}`
@@ -149,19 +168,19 @@ SELECT
 - Tokens que expiran naturalmente:
   - JWT temporal de smoke test: usuario temporal eliminado; cualquier token stateless previo expira naturalmente salvo rotacion de `SECRET_KEY`.
 - Acciones pendientes:
-  - Revalidar live `inkora_pse_worker`: running/healthy, ultimo deployment successful, sin dominio publico, logs sin errores criticos, sin restarts anomalos, sin DB timeouts y sin errores de import/config.
+  - Revisar en una tarea separada los cambios staged visibles en Railway (`Apply 5 changes`) antes de cualquier deploy futuro.
 - Observaciones:
   - No se debe crear un token temporal nuevo solo para cerrar este documento si el operador puede confirmar la revocacion desde dashboard.
   - No se debe ejecutar emision fiscal real en esta fase.
 
 ## 8. Conclusion
-- Estado general: `PARTIAL`
-- Se puede considerar cerrada la fase worker: `NO`, los tokens y la cola fiscal quedan cerrados, pero falta revalidacion live del worker desde una sesion Railway autenticada.
+- Estado general: `PASS`
+- Se puede considerar cerrada la fase worker: `SI`, para el alcance de seguridad post-worker: tokens cerrados, API sana, worker activo/sin dominio publico y cola fiscal vacia.
 
 Resumen:
 
 - API health: `PASS`.
 - JWT temporal: `USUARIO ELIMINADO / EXPIRA NATURALMENTE`.
 - Railway token temporal: `REVOCADO / ROTADO` por confirmacion del operador.
-- Worker: `PARTIAL`, con deployment historico `SUCCESS` y sin dominio publico documentado.
+- Worker: `PASS`, `Active`, `Deployment successful`, `Unexposed service`, `1 Replica`, healthcheck interno `200`.
 - Cola fiscal: `PASS`, `total_jobs = 0`, `jobs_by_status = {}`, `stuck_processing_over_15m = 0`.
