@@ -2,10 +2,13 @@
 
 ## 1. Datos generales
 
-- Fecha/hora local: `2026-05-12 18:45:03 -05:00`
+- Fecha/hora local: `2026-05-12 18:49:19 -05:00`
 - Repo: `hkrojas/inkora_pse`
 - Branch: `main`
-- Commit base del bloque operativo: `f8531ff Fix backend beta pass regressions`
+- Commits de implementacion local:
+  - `f8531ff Fix backend beta pass regressions`
+  - `e6a2e53 Document beta prepaid pass gate`
+  - `1a41aa1 Add beta demo smoke e2e`
 - API URL: `https://inkorapse-production.up.railway.app`
 - Worker service: `inkora_pse_worker`
 - Alcance: demo completa para beta prepago controlada, maximo 20 usuarios nominales, sin SUNAT real.
@@ -15,8 +18,8 @@
 | Criterio | Estado | Evidencia sin secretos |
 |---|---|---|
 | Backend tests | PASS | `422 passed, 12 warnings` con `python -m pytest -q` en `backend`. |
-| Frontend lint/build | PENDING | Se ejecuta en el Bloque 3. |
-| E2E demo | PENDING | Se agrega y ejecuta en el Bloque 3; requiere credenciales E2E del tenant beta. |
+| Frontend lint/build | PASS | `npm run lint` y `npm run build` ejecutados en `frontend`. |
+| E2E demo | CREATED / PENDING RUN | `frontend/e2e/beta-demo-smoke.spec.js` creado y listado por Playwright; requiere credenciales E2E para ejecucion real. |
 | API health | PASS | `HTTP/1.1 200 OK`, body `{"status":"ok","environment":"staging"}`. |
 | API request id | PASS | `X-Railway-Request-Id: 6PJfRRBfQ--OZslEqmzx2A`; `X-Request-Id: 4e74d997-efc7-4da2-8426-19dd1a534344`. |
 | Worker fiscal | PASS | Evidencia autenticada en `POST_WORKER_SECURITY_CHECK.md`: servicio activo, deployment successful, sin dominio publico, healthcheck interno 200. |
@@ -26,7 +29,7 @@
 | Alembic head local | PASS | `alembic heads` devuelve `0006_prod_security_perf (head)`. |
 | Alembic head Supabase | PENDING | Requiere `SELECT version_num FROM alembic_version;` en Supabase SQL Editor o `psql` autenticado. |
 | SUNAT real | PASS | No se ejecuto emision fiscal real. Beta usa `ENVIRONMENT=staging` y `FISCAL_ENV=beta`. |
-| Secret hygiene | PASS parcial | No se imprimieron secretos; escaneo final se ejecuta en el Bloque 4. |
+| Secret hygiene | PASS | `Select-String` con patrones sensibles no encontro coincidencias en reporte, checklist ni spec E2E. |
 
 ## 3. Validaciones ejecutadas
 
@@ -86,6 +89,71 @@ Resultado:
 0006_prod_security_perf (head)
 ```
 
+### Frontend lint
+
+```powershell
+cd C:\Users\HP\Desktop\inkora_pse_main_security\frontend
+npm run lint
+```
+
+Resultado:
+
+```text
+eslint src --ext .js,.jsx
+exit code 0
+```
+
+### Frontend build
+
+```powershell
+npm run build
+```
+
+Resultado:
+
+```text
+vite v6.4.2 building for production...
+1670 modules transformed.
+built in 21.89s
+```
+
+### Playwright E2E demo
+
+```powershell
+npx playwright test e2e/beta-demo-smoke.spec.js --list
+```
+
+Resultado:
+
+```text
+[setup] auth.setup.js: login tenant por UI
+[chromium] beta-demo-smoke.spec.js: demo beta prepago sin SUNAT real / tenant recorre el launch scope sin errores criticos ni mutaciones fiscales
+Total: 2 tests in 2 files
+```
+
+Ejecucion real no realizada porque faltan variables locales:
+
+```text
+E2E_TENANT_EMAIL: false
+E2E_TENANT_PASSWORD: false
+E2E_API_URL: false
+E2E_BASE_URL: false
+```
+
+### NPM audit
+
+```powershell
+npm audit --audit-level=moderate
+```
+
+Resultado:
+
+```text
+1 moderate severity vulnerability
+postcss <8.5.10 - GHSA-qx2v-qp2m-jg93
+fix available via npm audit fix
+```
+
 ## 4. Consultas Supabase requeridas
 
 Estas consultas son de solo lectura. No borran jobs ni imprimen secretos.
@@ -126,14 +194,14 @@ Estado actual:
 ## 6. Riesgos restantes
 
 - Completar cifrado de credenciales fiscales legacy antes de SUNAT real.
-- Ejecutar E2E demo y frontend lint/build en Bloque 3.
+- Ejecutar E2E demo real cuando existan credenciales E2E del tenant beta.
 - Confirmar `alembic_version` live en Supabase.
 - Repetir backup justo antes de onboarding beta si se cargaran datos reales.
-- Triage de vulnerabilidad moderada npm.
+- Triage de vulnerabilidad moderada npm: `postcss <8.5.10`.
 - Prueba de carga antes de ampliar fuera de 20 usuarios nominales.
 
 ## 7. Conclusion
 
 - Estado general actual: PARTIAL.
 - Se puede considerar PASS de backend y operacion base.
-- Falta para PASS final de beta prepago: frontend lint/build, E2E demo, escaneo de secretos y confirmacion live de `alembic_version`.
+- Falta para PASS final de beta prepago: E2E demo real y confirmacion live de `alembic_version`.
