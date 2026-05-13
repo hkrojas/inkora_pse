@@ -2,7 +2,7 @@
 
 ## 1. Datos generales
 
-- Fecha/hora local: `2026-05-12 19:51:18 -05:00`
+- Fecha/hora local: `2026-05-12 20:44:28 -05:00`
 - Repo: `hkrojas/inkora_pse`
 - Branch: `main`
 - Commits de implementacion local:
@@ -29,7 +29,7 @@
 | Backup verificable | PASS operativo | Dump logico existente fuera del repo validado con `pg_restore --list`: `738` lineas. |
 | Backup hash | PASS | SHA256 `408A3A0A8AA0698306086A9B7F03C7E09DEEAC2FD7F56DD9E1CE4943C9893AF6`. |
 | Alembic head local | PASS | `alembic heads` devuelve `0006_prod_security_perf (head)`. |
-| Alembic head Supabase | PENDING | Requiere `SELECT version_num FROM alembic_version;` en Supabase SQL Editor o `psql` autenticado. |
+| Alembic head Supabase | PASS | SQL Editor Supabase: `0006_prod_security_perf`. |
 | SUNAT real | PASS | No se ejecuto emision fiscal real. Beta usa `ENVIRONMENT=staging` y `FISCAL_ENV=beta`. |
 | Secret hygiene | PASS | `Select-String` con patrones sensibles no encontro coincidencias en reporte, checklist ni spec E2E. |
 
@@ -188,8 +188,9 @@ FROM alembic_version;
 
 Estado actual:
 
-- Cola fiscal: PASS por evidencia autenticada previa del mismo cierre operativo.
-- `alembic_version` live: PENDING hasta ejecutar la tercera consulta en Supabase SQL Editor o `psql` autenticado.
+- Cola fiscal: PASS por SQL Editor Supabase: `total_jobs = 0`, `jobs_by_status = {}`, `stuck_processing_over_15m = 0`.
+- `alembic_version` live: PASS por SQL Editor Supabase: `0006_prod_security_perf`.
+- Fecha/hora de ejecucion: `2026-05-12 20:44:28 -05:00`.
 
 ## 5. Reglas de beta prepago
 
@@ -206,7 +207,6 @@ Estado actual:
 
 - Completar cifrado de credenciales fiscales legacy antes de SUNAT real.
 - Ejecutar E2E demo real cuando existan credenciales E2E del tenant beta.
-- Confirmar `alembic_version` live en Supabase.
 - Repetir backup justo antes de onboarding beta si se cargaran datos reales.
 - Vulnerabilidad moderada npm cerrada con `postcss 8.5.14` en `package-lock.json`.
 - Prueba de carga antes de ampliar fuera de 20 usuarios nominales.
@@ -215,4 +215,4 @@ Estado actual:
 
 - Estado general actual: PARTIAL.
 - Se puede considerar PASS de backend y operacion base.
-- Falta para PASS final de beta prepago: E2E demo real y confirmacion live de `alembic_version`.
+- Falta para PASS final de beta prepago: E2E demo real con credenciales del tenant beta.
