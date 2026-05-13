@@ -2,13 +2,14 @@
 
 ## 1. Datos generales
 
-- Fecha/hora local: `2026-05-12 18:49:19 -05:00`
+- Fecha/hora local: `2026-05-12 19:43:16 -05:00`
 - Repo: `hkrojas/inkora_pse`
 - Branch: `main`
 - Commits de implementacion local:
   - `f8531ff Fix backend beta pass regressions`
   - `e6a2e53 Document beta prepaid pass gate`
   - `1a41aa1 Add beta demo smoke e2e`
+  - Bloque final: upgrade lockfile `postcss` para cerrar audit npm.
 - API URL: `https://inkorapse-production.up.railway.app`
 - Worker service: `inkora_pse_worker`
 - Alcance: demo completa para beta prepago controlada, maximo 20 usuarios nominales, sin SUNAT real.
@@ -149,9 +150,7 @@ npm audit --audit-level=moderate
 Resultado:
 
 ```text
-1 moderate severity vulnerability
-postcss <8.5.10 - GHSA-qx2v-qp2m-jg93
-fix available via npm audit fix
+found 0 vulnerabilities
 ```
 
 ## 4. Consultas Supabase requeridas
@@ -197,7 +196,7 @@ Estado actual:
 - Ejecutar E2E demo real cuando existan credenciales E2E del tenant beta.
 - Confirmar `alembic_version` live en Supabase.
 - Repetir backup justo antes de onboarding beta si se cargaran datos reales.
-- Triage de vulnerabilidad moderada npm: `postcss <8.5.10`.
+- Vulnerabilidad moderada npm cerrada con `postcss 8.5.14` en `package-lock.json`.
 - Prueba de carga antes de ampliar fuera de 20 usuarios nominales.
 
 ## 7. Conclusion
