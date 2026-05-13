@@ -2,14 +2,15 @@
 
 ## 1. Datos generales
 
-- Fecha/hora local: `2026-05-12 19:43:16 -05:00`
+- Fecha/hora local: `2026-05-12 19:51:18 -05:00`
 - Repo: `hkrojas/inkora_pse`
 - Branch: `main`
 - Commits de implementacion local:
   - `f8531ff Fix backend beta pass regressions`
   - `e6a2e53 Document beta prepaid pass gate`
   - `1a41aa1 Add beta demo smoke e2e`
-  - Bloque final: upgrade lockfile `postcss` para cerrar audit npm.
+  - `0a166e1 Resolve frontend audit finding`
+- Publicacion remota: `main` empujado a `inkora_pse/main` hasta `0a166e1`.
 - API URL: `https://inkorapse-production.up.railway.app`
 - Worker service: `inkora_pse_worker`
 - Alcance: demo completa para beta prepago controlada, maximo 20 usuarios nominales, sin SUNAT real.
@@ -22,7 +23,7 @@
 | Frontend lint/build | PASS | `npm run lint` y `npm run build` ejecutados en `frontend`. |
 | E2E demo | CREATED / PENDING RUN | `frontend/e2e/beta-demo-smoke.spec.js` creado y listado por Playwright; requiere credenciales E2E para ejecucion real. |
 | API health | PASS | `HTTP/1.1 200 OK`, body `{"status":"ok","environment":"staging"}`. |
-| API request id | PASS | `X-Railway-Request-Id: 6PJfRRBfQ--OZslEqmzx2A`; `X-Request-Id: 4e74d997-efc7-4da2-8426-19dd1a534344`. |
+| API request id | PASS | Post-push: `X-Railway-Request-Id: unFuNe8VSz2h4THog4a9AQ`; `X-Request-Id: fc361a67-9313-4d31-98e2-c7bf9586f5dd`. |
 | Worker fiscal | PASS | Evidencia autenticada en `POST_WORKER_SECURITY_CHECK.md`: servicio activo, deployment successful, sin dominio publico, healthcheck interno 200. |
 | Cola fiscal | PASS | Evidencia autenticada en `POST_WORKER_SECURITY_CHECK.md`: `total_jobs = 0`, `jobs_by_status = {}`, `stuck_processing_over_15m = 0`. |
 | Backup verificable | PASS operativo | Dump logico existente fuera del repo validado con `pg_restore --list`: `738` lineas. |
@@ -60,6 +61,17 @@ HTTP/1.1 200 OK
 Date: Tue, 12 May 2026 23:43:57 GMT
 X-Railway-Request-Id: 6PJfRRBfQ--OZslEqmzx2A
 X-Request-Id: 4e74d997-efc7-4da2-8426-19dd1a534344
+
+{"status":"ok","environment":"staging"}
+```
+
+Post-push:
+
+```text
+HTTP/1.1 200 OK
+Date: Wed, 13 May 2026 00:50:51 GMT
+X-Railway-Request-Id: unFuNe8VSz2h4THog4a9AQ
+X-Request-Id: fc361a67-9313-4d31-98e2-c7bf9586f5dd
 
 {"status":"ok","environment":"staging"}
 ```
