@@ -69,6 +69,42 @@ function StatusDot({ ok }) {
   );
 }
 
+function getSmartPseCpeStatusMeta(tenant) {
+  const hasCredentials = Boolean(tenant?.has_smartpse_credentials);
+  const status = String(tenant?.smartpse_status || 'unchecked').toLowerCase();
+
+  if (!hasCredentials) {
+    return {
+      badgeVariant: 'default',
+      label: 'pendiente',
+      description: 'Pendiente de aprovisionamiento CPE en Smart PSE.',
+      canCheck: false,
+    };
+  }
+  if (status === 'ok') {
+    return {
+      badgeVariant: 'success',
+      label: 'ok',
+      description: 'Credenciales CPE activas para emitir por Smart PSE.',
+      canCheck: true,
+    };
+  }
+  if (status === 'invalid') {
+    return {
+      badgeVariant: 'danger',
+      label: 'invalido',
+      description: 'Credenciales CPE rechazadas por Smart PSE.',
+      canCheck: true,
+    };
+  }
+  return {
+    badgeVariant: 'default',
+    label: 'sin verificar',
+    description: 'Credenciales CPE guardadas, pendientes de verificacion.',
+    canCheck: true,
+  };
+}
+
 function ValidationNotice({ result }) {
   if (!result) return null;
 
@@ -104,25 +140,18 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
-  const [tokenValidationLoading, setTokenValidationLoading] = useState(false);
-  const [tokenValidationResult, setTokenValidationResult] = useState(null);
   const [form, setForm] = useState({
     business_name: tenant.business_name || '',
     business_ruc: tenant.business_ruc || '',
     business_address: tenant.business_address || '',
     is_active: tenant.is_active ?? true,
-    apisperu_token: '',
-    apisperu_url: '',
   });
+  const smartPseMeta = getSmartPseCpeStatusMeta(tenant);
 
   const setField = (key) => (event) => {
     const rawValue =
       event.target.type === 'checkbox' ? event.target.checked : event.target.value;
     const value = key === 'business_ruc' ? sanitizeRuc(rawValue) : rawValue;
-
-    if (key === 'business_ruc' || key === 'apisperu_token' || key === 'apisperu_url') {
-      setTokenValidationResult(null);
-    }
 
     setForm((current) => ({ ...current, [key]: value }));
   };
@@ -148,55 +177,11 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
     }
   };
 
-  const handleValidateToken = async () => {
-    const token = form.apisperu_token.trim();
-
-    if (!token) {
-      toast('Ingresa un token de ApisPeru para validarlo', 'error');
-      return null;
-    }
-
-    setTokenValidationLoading(true);
-    try {
-      const result = await svc.validateApisPeruToken({
-        token,
-        api_url: form.apisperu_url.trim() || undefined,
-        business_ruc: form.business_ruc.trim() || undefined,
-      });
-
-      setTokenValidationResult(result);
-      toast(
-        result.valid ? 'Token validado correctamente' : result.message,
-        result.valid ? 'success' : 'error',
-      );
-      return result;
-    } catch (error) {
-      const fallback = {
-        valid: false,
-        message: error.message || 'No se pudo validar el token de ApisPeru.',
-        provider_detail: null,
-      };
-      setTokenValidationResult(fallback);
-      toast(fallback.message, 'error');
-      return fallback;
-    } finally {
-      setTokenValidationLoading(false);
-    }
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     setSaving(true);
 
     try {
-      if (form.apisperu_token.trim()) {
-        const validation = tokenValidationResult?.valid
-          ? tokenValidationResult
-          : await handleValidateToken();
-
-        if (!validation?.valid) return;
-      }
-
       const payload = {};
 
       if (form.business_name !== (tenant.business_name || '')) {
@@ -210,12 +195,6 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
       }
       if (form.is_active !== (tenant.is_active ?? true)) {
         payload.is_active = form.is_active;
-      }
-      if (form.apisperu_token.trim()) {
-        payload.apisperu_token = form.apisperu_token.trim();
-      }
-      if (form.apisperu_url.trim()) {
-        payload.apisperu_url = form.apisperu_url.trim();
       }
 
       if (Object.keys(payload).length === 0) {
@@ -315,54 +294,24 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
 
         <section className="ink-card p-6">
           <SectionHeader
-            kicker="ApisPeru"
-            title="Token de empresa"
-            copy="Si cargas un token nuevo, el backend lo valida antes de persistirlo y rechaza el cambio si no coincide con el RUC."
+            kicker="Smart PSE CPE"
+            title="Estado de aprovisionamiento"
+            copy="Las credenciales CPE se gestionan desde Smart PSE. El tenant solo ve estados operativos, nunca secretos."
           />
 
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="label mb-0">Estado actual</span>
-            <StatusDot ok={tenant.has_apisperu_token} />
-          </div>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-            <div>
-              <label className="label">Nuevo token</label>
-              <input
-                className="input font-mono text-xs"
-                value={form.apisperu_token}
-                onChange={setField('apisperu_token')}
-                placeholder="apis-token-xxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-              />
-              <p className="mt-2 text-xs text-[var(--text-secondary)]">
-                Deja el campo vacio para mantener el token actual.
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="ink-inline-alert ink-inline-alert-info">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">Estado actual</p>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">{smartPseMeta.description}</p>
+              <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+                Ambiente: {tenant.smartpse_environment || 'demo'} · Ultima verificacion: {formatDateTime(tenant.smartpse_checked_at)}
               </p>
             </div>
 
-            <div className="flex items-end">
-              <button
-                type="button"
-                onClick={handleValidateToken}
-                disabled={tokenValidationLoading || !form.apisperu_token.trim()}
-                className="btn-secondary whitespace-nowrap"
-              >
-                {tokenValidationLoading ? 'Validando...' : 'Probar token'}
-              </button>
+            <div className="flex flex-col items-start justify-center gap-2 border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-4">
+              <StatusDot ok={tenant.has_smartpse_credentials} />
+              <Badge variant={smartPseMeta.badgeVariant}>{smartPseMeta.label}</Badge>
             </div>
-          </div>
-
-          <div className="mt-4">
-            <label className="label">URL ApisPeru</label>
-            <input
-              className="input text-xs"
-              value={form.apisperu_url}
-              onChange={setField('apisperu_url')}
-              placeholder="https://facturacion.apisperu.com/api/v1"
-            />
-          </div>
-
-          <div className="mt-4">
-            <ValidationNotice result={tokenValidationResult} />
           </div>
         </section>
 
@@ -396,22 +345,14 @@ function CreateTenantModal({ onClose, onCreated }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
-  const [tokenValidationLoading, setTokenValidationLoading] = useState(false);
-  const [tokenValidationResult, setTokenValidationResult] = useState(null);
   const [form, setForm] = useState({
     business_name: '',
     business_ruc: '',
     business_address: '',
-    apisperu_token: '',
-    apisperu_url: '',
   });
 
   const setField = (key) => (event) => {
     const value = key === 'business_ruc' ? sanitizeRuc(event.target.value) : event.target.value;
-
-    if (key === 'business_ruc' || key === 'apisperu_token' || key === 'apisperu_url') {
-      setTokenValidationResult(null);
-    }
 
     setForm((current) => ({ ...current, [key]: value }));
   };
@@ -437,42 +378,6 @@ function CreateTenantModal({ onClose, onCreated }) {
     }
   };
 
-  const handleValidateToken = async () => {
-    const token = form.apisperu_token.trim();
-
-    if (!token) {
-      toast('Ingresa un token de ApisPeru para validarlo', 'error');
-      return null;
-    }
-
-    setTokenValidationLoading(true);
-    try {
-      const result = await svc.validateApisPeruToken({
-        token,
-        api_url: form.apisperu_url.trim() || undefined,
-        business_ruc: form.business_ruc.trim() || undefined,
-      });
-
-      setTokenValidationResult(result);
-      toast(
-        result.valid ? 'Token validado correctamente' : result.message,
-        result.valid ? 'success' : 'error',
-      );
-      return result;
-    } catch (error) {
-      const fallback = {
-        valid: false,
-        message: error.message || 'No se pudo validar el token de ApisPeru.',
-        provider_detail: null,
-      };
-      setTokenValidationResult(fallback);
-      toast(fallback.message, 'error');
-      return fallback;
-    } finally {
-      setTokenValidationLoading(false);
-    }
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -483,14 +388,6 @@ function CreateTenantModal({ onClose, onCreated }) {
 
     setSaving(true);
     try {
-      if (form.apisperu_token.trim()) {
-        const validation = tokenValidationResult?.valid
-          ? tokenValidationResult
-          : await handleValidateToken();
-
-        if (!validation?.valid) return;
-      }
-
       const payload = {
         business_name: form.business_name.trim(),
         business_ruc: form.business_ruc.trim(),
@@ -499,16 +396,16 @@ function CreateTenantModal({ onClose, onCreated }) {
       if (form.business_address.trim()) {
         payload.business_address = form.business_address.trim();
       }
-      if (form.apisperu_token.trim()) {
-        payload.apisperu_token = form.apisperu_token.trim();
-      }
-      if (form.apisperu_url.trim()) {
-        payload.apisperu_url = form.apisperu_url.trim();
-      }
 
       const created = await svc.createTenant(payload);
-      toast('Tenant creado correctamente');
-      onCreated(created);
+      let tenantForList = created;
+      try {
+        tenantForList = await svc.provisionSmartPseTenant(created.id, { environment: 'demo' });
+        toast('Tenant creado y Smart PSE CPE aprovisionado');
+      } catch (provisionError) {
+        toast(`Tenant creado. Smart PSE CPE queda pendiente: ${provisionError.message}`, 'error');
+      }
+      onCreated(tenantForList);
       onClose();
     } catch (error) {
       toast(error.message, 'error');
@@ -524,7 +421,7 @@ function CreateTenantModal({ onClose, onCreated }) {
           <SectionHeader
             kicker="Onboarding"
             title="Crear empresa operativa"
-            copy="El alta fiscal parte por la identidad basica. El token de ApisPeru sigue siendo opcional."
+            copy="El alta fiscal parte por la identidad basica. Al crear el tenant se aprovisiona Smart PSE CPE en ambiente demo."
           />
 
           <div className="space-y-4">
@@ -534,6 +431,7 @@ function CreateTenantModal({ onClose, onCreated }) {
                 className="input"
                 value={form.business_name}
                 onChange={setField('business_name')}
+                aria-label="Razon social"
                 required
               />
             </div>
@@ -545,6 +443,7 @@ function CreateTenantModal({ onClose, onCreated }) {
                   className="input font-mono"
                   value={form.business_ruc}
                   onChange={setField('business_ruc')}
+                  aria-label="RUC"
                   maxLength={11}
                   required
                 />
@@ -568,6 +467,7 @@ function CreateTenantModal({ onClose, onCreated }) {
                 className="input"
                 value={form.business_address}
                 onChange={setField('business_address')}
+                aria-label="Direccion fiscal"
               />
             </div>
           </div>
@@ -575,46 +475,16 @@ function CreateTenantModal({ onClose, onCreated }) {
 
         <section className="ink-card p-6">
           <SectionHeader
-            kicker="ApisPeru"
-            title="Token inicial"
-            copy="Puedes guardarlo ahora o dejarlo para despues. Si lo envias, se valida antes de crear el tenant."
+            kicker="Smart PSE CPE"
+            title="Aprovisionamiento demo"
+            copy="El panel creara la empresa en Smart PSE y guardara solo el estado operativo visible para el superadmin."
           />
 
-          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-            <div>
-              <label className="label">Token de empresa</label>
-              <input
-                className="input font-mono text-xs"
-                value={form.apisperu_token}
-                onChange={setField('apisperu_token')}
-                placeholder="apis-token-xxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-              />
-            </div>
-
-            <div className="flex items-end">
-              <button
-                type="button"
-                onClick={handleValidateToken}
-                disabled={tokenValidationLoading || !form.apisperu_token.trim()}
-                className="btn-secondary whitespace-nowrap"
-              >
-                {tokenValidationLoading ? 'Validando...' : 'Probar token'}
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <label className="label">URL ApisPeru</label>
-            <input
-              className="input text-xs"
-              value={form.apisperu_url}
-              onChange={setField('apisperu_url')}
-              placeholder="https://facturacion.apisperu.com/api/v1"
-            />
-          </div>
-
-          <div className="mt-4">
-            <ValidationNotice result={tokenValidationResult} />
+          <div className="ink-inline-alert ink-inline-alert-info">
+            <p className="text-sm font-semibold text-[var(--text-primary)]">Ambiente demo</p>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              El payload de creacion solo incluye identidad fiscal. Luego se solicita el aprovisionamiento CPE con Smart PSE.
+            </p>
           </div>
         </section>
 
@@ -624,7 +494,7 @@ function CreateTenantModal({ onClose, onCreated }) {
           </button>
           <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
             {saving ? <Spinner size="sm" /> : null}
-            Crear tenant
+            Crear y aprovisionar
           </button>
         </div>
       </form>
@@ -1548,7 +1418,7 @@ function TenantFiscalFlagsModal({ tenant, onClose }) {
       <div className="ink-inline-alert ink-inline-alert-warning mb-5">
         <p className="text-xs">
           Estos controles habilitan funciones fiscales sensibles por tenant. Facturas y boletas siguen controladas por suscripcion,
-          token ApisPeru y limites de emision; estos flags son para notas, guias y operaciones con mayor riesgo fiscal.
+          credenciales Smart PSE CPE y limites de emision; estos flags son para notas, guias y operaciones con mayor riesgo fiscal.
         </p>
       </div>
 
@@ -1676,7 +1546,7 @@ export default function SuperadminPage() {
   const [viewingErrorsOf, setViewingErrorsOf] = useState(null);
   const [viewingLimitsOf, setViewingLimitsOf] = useState(null);
   const [viewingFiscalFlagsOf, setViewingFiscalFlagsOf] = useState(null);
-  const [checkingTokenId, setCheckingTokenId] = useState(null);
+  const [checkingSmartPseId, setCheckingSmartPseId] = useState(null);
   const [editingGreOf, setEditingGreOf] = useState(null);
   const [checkingGreId, setCheckingGreId] = useState(null);
   const [tenantSearch, setTenantSearch] = useState('');
@@ -1761,26 +1631,37 @@ export default function SuperadminPage() {
     refreshTenantPage();
   };
 
-  const handleCheckTokenHealth = async (tenant) => {
-    setCheckingTokenId(tenant.id);
+  const handleCheckSmartPseCpe = async (tenant) => {
+    const cpeMeta = getSmartPseCpeStatusMeta(tenant);
+    if (!cpeMeta.canCheck) {
+      toast('Primero aprovisiona Smart PSE CPE para este tenant.', 'error');
+      return;
+    }
+
+    setCheckingSmartPseId(tenant.id);
     try {
-      const result = await svc.checkTokenHealth(tenant.id);
+      const result = await svc.checkSmartPseTenant(tenant.id);
       setTenants((current) =>
         current.map((t) =>
           t.id === tenant.id
-            ? { ...t, apisperu_token_status: result.status, apisperu_token_checked_at: result.checked_at }
+            ? {
+                ...t,
+                has_smartpse_credentials: true,
+                smartpse_status: result.valid ? 'ok' : 'invalid',
+                smartpse_checked_at: new Date().toISOString(),
+              }
             : t,
         ),
       );
       toast(
-        result.status === 'ok' ? 'Token válido ✓' : `Token inválido: ${result.message}`,
-        result.status === 'ok' ? 'success' : 'error',
+        result.valid ? 'Smart PSE CPE validado' : result.message,
+        result.valid ? 'success' : 'error',
       );
     } catch (err) {
       toast(err.message, 'error');
     } finally {
       refreshTenantPage();
-      setCheckingTokenId(null);
+      setCheckingSmartPseId(null);
     }
   };
 
@@ -1975,7 +1856,7 @@ export default function SuperadminPage() {
                 <th>Empresa</th>
                 <th>RUC</th>
                 <th>Plan</th>
-                <th>ApisPeru</th>
+                <th>Smart PSE CPE</th>
                 <th>Smart PSE GRE</th>
                 <th>Estado</th>
                 <th>Acciones</th>
@@ -1983,9 +1864,7 @@ export default function SuperadminPage() {
             </thead>
             <tbody>
               {visibleTenants.map((tenant) => {
-                const tokenStatus = tenant.apisperu_token_status;
-                const tokenStatusVariant = tokenStatus === 'ok' ? 'success' : tokenStatus === 'invalid' ? 'danger' : 'default';
-                const tokenStatusLabel = tokenStatus === 'ok' ? 'ok' : tokenStatus === 'invalid' ? 'inválido' : 'sin verificar';
+                const cpeMeta = getSmartPseCpeStatusMeta(tenant);
                 const greMeta = getSmartPseGreStatusMeta(tenant);
                 const initials = tenant.business_name
                   .split(' ')
@@ -2019,25 +1898,28 @@ export default function SuperadminPage() {
                       </Badge>
                     </td>
 
-                    <td data-label="ApisPeru">
+                    <td data-label="Smart PSE CPE">
                       <div className="flex flex-col gap-1.5">
-                        <StatusDot ok={tenant.has_apisperu_token} />
-                        {tenant.has_apisperu_token && (
-                          <div className="flex items-center gap-1.5">
-                            <Badge variant={tokenStatusVariant}>{tokenStatusLabel}</Badge>
+                        <StatusDot ok={tenant.has_smartpse_credentials} />
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant={cpeMeta.badgeVariant}>{cpeMeta.label}</Badge>
+                          {cpeMeta.canCheck && (
                             <button
                               type="button"
-                              title="Verificar token ahora"
-                              aria-label={`Verificar token ApisPeru de ${tenant.business_name}`}
-                              aria-busy={checkingTokenId === tenant.id}
-                              disabled={checkingTokenId === tenant.id}
-                              onClick={() => handleCheckTokenHealth(tenant)}
+                              title="Verificar Smart PSE CPE"
+                              aria-label={`Verificar Smart PSE CPE de ${tenant.business_name}`}
+                              aria-busy={checkingSmartPseId === tenant.id}
+                              disabled={checkingSmartPseId === tenant.id}
+                              onClick={() => handleCheckSmartPseCpe(tenant)}
                               className="superadmin-token-check"
                             >
                               <RefreshCw className="h-3 w-3 superadmin-token-check-icon" />
                             </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
+                        <span className="text-[10px] text-[var(--text-tertiary)]">
+                          {tenant.smartpse_environment || 'demo'} - {formatDateTime(tenant.smartpse_checked_at)}
+                        </span>
                       </div>
                     </td>
 

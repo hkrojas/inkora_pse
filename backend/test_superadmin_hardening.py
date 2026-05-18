@@ -213,6 +213,36 @@ def test_frontend_superadmin_visibility_usa_solo_is_superadmin():
             assert pattern not in text
 
 
+def test_frontend_superadmin_onboarding_usa_smartpse_first():
+    page_text = (ROOT / "frontend" / "src" / "pages" / "SuperadminPage.jsx").read_text(
+        encoding="utf-8"
+    )
+    service_text = (ROOT / "frontend" / "src" / "services" / "superadmin.js").read_text(
+        encoding="utf-8"
+    )
+
+    forbidden_page_patterns = [
+        "validateApisPeruToken",
+        "checkTokenHealth",
+        "handleCheckTokenHealth",
+        "has_apisperu_token",
+        "Token inicial",
+        "URL ApisPeru",
+        "ApisPeru",
+    ]
+    required_patterns = [
+        "provisionSmartPseTenant",
+        "checkSmartPseTenant",
+        "Smart PSE CPE",
+        "has_smartpse_credentials",
+    ]
+
+    for pattern in forbidden_page_patterns:
+        assert pattern not in page_text
+    for pattern in required_patterns:
+        assert pattern in page_text or pattern in service_text
+
+
 def test_superadmin_tenants_page_escala_filtra_y_no_expone_secretos_gre(db_session):
     tenant = make_tenant(db_session, "PG00")
     tenant.business_name = "Empresa Demo 0000 SAC"

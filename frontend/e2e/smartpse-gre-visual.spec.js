@@ -9,11 +9,37 @@ const tenant = {
   business_address: 'Av. Los Pinos 123',
   plan_type: 'founder',
   is_active: true,
-  has_apisperu_token: true,
-  apisperu_token_status: 'ok',
+  has_smartpse_credentials: true,
+  smartpse_status: 'ok',
+  smartpse_checked_at: '2026-05-05T16:00:00Z',
+  smartpse_environment: 'demo',
   has_smartpse_gre_credentials: true,
   smartpse_gre_status: 'ok',
   smartpse_gre_checked_at: '2026-05-05T16:00:00Z',
+};
+
+const createdTenant = {
+  id: 22,
+  business_name: 'DEMO SMART PSE SAC',
+  business_ruc: '20609999991',
+  business_address: 'Av. Demo 456',
+  plan_type: 'founder',
+  is_active: true,
+  has_smartpse_credentials: false,
+  smartpse_status: 'unchecked',
+  smartpse_checked_at: null,
+  smartpse_environment: 'demo',
+  has_smartpse_gre_credentials: false,
+  smartpse_gre_status: 'unchecked',
+  smartpse_gre_checked_at: null,
+};
+
+const provisionedTenant = {
+  ...createdTenant,
+  has_smartpse_credentials: true,
+  smartpse_status: 'ok',
+  smartpse_checked_at: '2026-05-05T16:10:00Z',
+  smartpse_environment: 'demo',
 };
 
 const user = {
@@ -65,7 +91,9 @@ async function createVisualContext(browser, baseURL, role = 'tenant', options = 
   await page.route(`${API_ORIGIN}/**`, async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/\/$/, '');
-    const payload = getApiPayload(path, role);
+    if (options.onRequest) await options.onRequest(route.request());
+
+    const payload = getApiPayload(path, role, route.request());
 
     if (payload) {
       await route.fulfill({
@@ -86,7 +114,8 @@ async function createVisualContext(browser, baseURL, role = 'tenant', options = 
   return { context, page };
 }
 
-function getApiPayload(path, role) {
+function getApiPayload(path, role, request) {
+  const method = request.method();
   if (path === '/users/me') {
     return role === 'superadmin'
       ? { ...user, rol: 'superadmin', is_superadmin: true, tenant_id: null }
@@ -99,8 +128,6 @@ function getApiPayload(path, role) {
       ...tenant,
       has_sunat_credentials: true,
       has_sunat_cert: true,
-      has_smartpse_credentials: true,
-      smartpse_status: 'ok',
     };
   }
   if (path === '/clientes' || path === '/cotizaciones') return [];
@@ -133,16 +160,85 @@ function getApiPayload(path, role) {
       },
     };
   }
+  if (path === '/superadmin/tenants' && method === 'POST') return createdTenant;
+  if (path === `/superadmin/tenants/${createdTenant.id}/smartpse/provision` && method === 'POST') {
+    return provisionedTenant;
+  }
+  if (path === `/superadmin/tenants/${tenant.id}/smartpse/check` && method === 'POST') {
+    return {
+      valid: true,
+      message: 'Credenciales Smart PSE aceptadas.',
+      provider_status_code: 200,
+      provider_detail: 'ok',
+    };
+  }
   return null;
 }
 
 test.describe('Smart PSE GRE QA visual', () => {
+  test('superadmin crea tenant y aprovisiona Smart PSE CPE sin ApisPeru', async ({ browser, baseURL }) => {
+    const requests = [];
+    const { context, page } = await createVisualContext(browser, baseURL, 'superadmin', {
+      onRequest: async (request) => {
+        const url = new URL(request.url());
+        if (!url.pathname.startsWith('/superadmin')) return;
+        let body = null;
+        try {
+          body = request.postDataJSON();
+        } catch {
+          body = null;
+        }
+        requests.push({ method: request.method(), path: url.pathname.replace(/\/$/, ''), body });
+      },
+    });
+
+    try {
+      await page.goto('/superadmin');
+      await expect(page.getByRole('columnheader', { name: /Smart PSE CPE/i })).toBeVisible();
+      await expect(page.getByText(/ApisPeru/i)).toHaveCount(0);
+
+      await page.getByRole('button', { name: /Nuevo tenant/i }).first().click();
+      await expect(page.locator('form').getByText('Smart PSE CPE', { exact: true })).toBeVisible();
+      await expect(page.getByText(/ApisPeru/i)).toHaveCount(0);
+
+      await page.getByLabel(/Razon social/i).fill(createdTenant.business_name);
+      await page.getByLabel(/^RUC/i).fill(createdTenant.business_ruc);
+      await page.getByLabel(/Direccion fiscal/i).fill(createdTenant.business_address);
+      await page.getByRole('button', { name: /Crear y aprovisionar/i }).click();
+
+      await expect.poll(() =>
+        requests.some((entry) => entry.path === `/superadmin/tenants/${createdTenant.id}/smartpse/provision`),
+      ).toBe(true);
+
+      const createRequest = requests.find((entry) => entry.path === '/superadmin/tenants' && entry.method === 'POST');
+      expect(createRequest.body).toMatchObject({
+        business_name: createdTenant.business_name,
+        business_ruc: createdTenant.business_ruc,
+        business_address: createdTenant.business_address,
+      });
+      expect(createRequest.body).not.toHaveProperty('apisperu_token');
+      expect(createRequest.body).not.toHaveProperty('apisperu_url');
+
+      const provisionRequest = requests.find(
+        (entry) => entry.path === `/superadmin/tenants/${createdTenant.id}/smartpse/provision`,
+      );
+      expect(provisionRequest.body).toEqual({ environment: 'demo' });
+
+      await page.getByRole('button', { name: /Verificar Smart PSE CPE/i }).first().click();
+      await expect.poll(() =>
+        requests.some((entry) => entry.path === `/superadmin/tenants/${tenant.id}/smartpse/check`),
+      ).toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
   test('superadmin abre modal GRE sin exponer secretos guardados', async ({ browser, baseURL }) => {
     const { context, page } = await createVisualContext(browser, baseURL, 'superadmin');
 
     try {
       await page.goto('/superadmin');
-      await expect(page.getByRole('heading', { name: /superadmin/i })).toBeVisible();
+      await expect(page.locator('h2.page-title', { hasText: 'Superadmin' })).toBeVisible();
 
       const firstGreButton = page.getByRole('button', { name: /^GRE$/ }).first();
       await expect(firstGreButton).toBeVisible();
@@ -206,7 +302,7 @@ test.describe('Smart PSE GRE QA visual', () => {
     const superadmin = await createVisualContext(browser, baseURL, 'superadmin', { viewport });
     try {
       await superadmin.page.goto('/superadmin');
-      await expect(superadmin.page.getByRole('heading', { name: /superadmin/i })).toBeVisible();
+      await expect(superadmin.page.locator('h2.page-title', { hasText: 'Superadmin' })).toBeVisible();
       await superadmin.page.getByRole('button', { name: /^GRE$/ }).first().click();
       await expect(superadmin.page.getByText(/Smart PSE GRE \//i)).toBeVisible();
       await expectPageWithoutHorizontalOverflow(superadmin.page);

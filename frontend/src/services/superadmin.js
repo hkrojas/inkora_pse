@@ -10,6 +10,9 @@ export const superadmin = {
   deleteTenant:         (id)            => api.delete(`/superadmin/tenants/${id}`),
   consultarDocumento:   (numero)        => api.get(`/consultar-documento/${numero}`),
   validateApisPeruToken:(data)          => api.post('/superadmin/validate/apisperu-token', data),
+  validateSmartPseCredentials: (data)   => api.post('/superadmin/validate/smartpse-credentials', data),
+  provisionSmartPseTenant: (tenantId, data) => api.post(`/superadmin/tenants/${tenantId}/smartpse/provision`, data),
+  checkSmartPseTenant:  (tenantId)      => api.post(`/superadmin/tenants/${tenantId}/smartpse/check`),
   updateSmartPseGreCredentials: (tenantId, data) => api.put(`/superadmin/tenants/${tenantId}/smartpse/gre-credentials`, data),
   checkSmartPseGreCredentials:  (tenantId)       => api.post(`/superadmin/tenants/${tenantId}/smartpse/gre-credentials/check`),
 
