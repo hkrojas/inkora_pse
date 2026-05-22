@@ -1871,7 +1871,7 @@ export default function SuperadminPage() {
           </div>
 
           <div className="ink-table-scroll">
-          <table className="ink-table superadmin-tenants-table">
+            <table className="ink-table superadmin-tenants-table">
             <thead>
               <tr>
                 <th>Empresa</th>
@@ -2035,7 +2035,7 @@ export default function SuperadminPage() {
                 );
               })}
             </tbody>
-          </table>
+            </table>
           </div>
 
           {tenantPageCount > 1 && (
