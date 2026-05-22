@@ -11,6 +11,7 @@ export default function Drawer({
   children,
   footer,
   icon,
+  size = 'default',
 }) {
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
@@ -57,7 +58,7 @@ export default function Drawer({
         onClick={onClose}
       />
       <aside
-        className={cn('ink-drawer', animating && 'is-open')}
+        className={cn('ink-drawer', size === 'wide' && 'ink-drawer--wide', animating && 'is-open')}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="ink-drawer-header">

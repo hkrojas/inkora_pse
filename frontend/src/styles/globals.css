@@ -5885,6 +5885,10 @@ textarea.input:focus,
   transform: translateX(0);
 }
 
+.ink-drawer--wide {
+  width: min(1040px, calc(100vw - 28px));
+}
+
 .ink-drawer-header {
   display: flex;
   align-items: flex-start;

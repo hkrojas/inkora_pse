@@ -235,7 +235,7 @@ test.describe('Smart PSE GRE QA visual', () => {
     }
   });
 
-  test('superadmin abre modal GRE sin exponer secretos guardados', async ({ browser, baseURL }) => {
+  test('superadmin abre drawer GRE sin exponer secretos guardados', async ({ browser, baseURL }) => {
     const { context, page } = await createVisualContext(browser, baseURL, 'superadmin');
 
     try {
@@ -246,7 +246,9 @@ test.describe('Smart PSE GRE QA visual', () => {
       await expect(firstGreButton).toBeVisible();
       await firstGreButton.click();
 
-      await expect(page.getByText(/Smart PSE GRE \//i)).toBeVisible();
+      const drawer = page.locator('.ink-drawer.is-open');
+      await expect(drawer).toBeVisible();
+      await expect(drawer.getByRole('heading', { name: /Smart PSE GRE/i })).toBeVisible();
       await expect(page.getByText(/credenciales SUNAT para guias/i)).toBeVisible();
       await expect(page.getByText(/los campos no se precargan/i)).toBeVisible();
 
@@ -306,7 +308,8 @@ test.describe('Smart PSE GRE QA visual', () => {
       await superadmin.page.goto('/superadmin');
       await expect(superadmin.page.getByRole('heading', { name: /Superadmin operativo/i })).toBeVisible();
       await superadmin.page.getByRole('button', { name: /^GRE$/ }).first().click();
-      await expect(superadmin.page.getByText(/Smart PSE GRE \//i)).toBeVisible();
+      await expect(superadmin.page.locator('.ink-drawer.is-open')).toBeVisible();
+      await expect(superadmin.page.getByRole('heading', { name: /Smart PSE GRE/i })).toBeVisible();
       await expectPageWithoutHorizontalOverflow(superadmin.page);
     } finally {
       await superadmin.context.close();

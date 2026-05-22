@@ -235,7 +235,13 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
   };
 
   return (
-    <Modal open={Boolean(tenant)} onClose={onClose} title={`Editar tenant / ${tenant.business_name}`} size="lg">
+    <Drawer
+      open={Boolean(tenant)}
+      onClose={onClose}
+      title="Editar tenant"
+      subtitle={tenant.business_name}
+      icon={<PencilLine size={18} />}
+    >
       <form onSubmit={handleSubmit} className="space-y-6">
         <section className="card-raw" data-label="empresa">
           <SectionHeader
@@ -338,7 +344,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
           </div>
         </div>
       </form>
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -596,7 +602,13 @@ function TenantGreCredentialsModal({ tenant, onClose, onSaved }) {
   };
 
   return (
-    <Modal open={Boolean(tenant)} onClose={onClose} title={`Smart PSE GRE / ${tenant.business_name}`} size="lg">
+    <Drawer
+      open={Boolean(tenant)}
+      onClose={onClose}
+      title="Smart PSE GRE"
+      subtitle={tenant.business_name}
+      icon={<Truck size={18} />}
+    >
       <div className="space-y-6">
         <section className="card-raw" data-label="smart-pse-gre">
           <SectionHeader
@@ -705,7 +717,7 @@ function TenantGreCredentialsModal({ tenant, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -786,7 +798,13 @@ function CreateUserModal({ tenant, onClose, onCreated }) {
   }
 
   return (
-    <Modal open={true} onClose={onClose} title={`Nuevo usuario / ${tenant.business_name}`} size="md">
+    <Drawer
+      open={true}
+      onClose={onClose}
+      title="Nuevo usuario"
+      subtitle={tenant.business_name}
+      icon={<UserPlus size={18} />}
+    >
       <form onSubmit={handleSubmit} className="space-y-6">
         <section className="card-raw" data-label="usuario">
           <SectionHeader
@@ -841,7 +859,7 @@ function CreateUserModal({ tenant, onClose, onCreated }) {
           </button>
         </div>
       </form>
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -908,7 +926,14 @@ function TenantUsersModal({ tenant, onClose }) {
   };
 
   return (
-    <Modal open={true} onClose={onClose} title={`Usuarios · ${tenant.business_name}`} size="xl">
+    <Drawer
+      open={true}
+      onClose={onClose}
+      title="Usuarios"
+      subtitle={tenant.business_name}
+      icon={<Users size={18} />}
+      size="wide"
+    >
       {tempPassword && (
         <div className="ink-inline-alert ink-inline-alert-warning mb-4">
           <div>
@@ -1030,7 +1055,7 @@ function TenantUsersModal({ tenant, onClose }) {
           onCreated={() => { setAddingUser(false); loadUsers(); }}
         />
       )}
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -1188,7 +1213,14 @@ function TenantLimitsModal({ tenant, onClose }) {
   }));
 
   return (
-    <Modal open={true} onClose={onClose} title={`Límites de emisión · ${tenant.business_name}`} size="xl">
+    <Drawer
+      open={true}
+      onClose={onClose}
+      title="Límites de emisión"
+      subtitle={tenant.business_name}
+      icon={<Gauge size={18} />}
+      size="wide"
+    >
 
       {/* Regla de negocio */}
       <div className="ink-inline-alert ink-inline-alert-info mb-5">
@@ -1372,7 +1404,7 @@ function TenantLimitsModal({ tenant, onClose }) {
       <div className="mt-5 flex justify-end border-t border-[var(--border-subtle)] pt-4">
         <button type="button" onClick={onClose} className="btn-secondary">Cerrar</button>
       </div>
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -1427,7 +1459,14 @@ function TenantFiscalFlagsModal({ tenant, onClose }) {
   };
 
   return (
-    <Modal open={true} onClose={onClose} title={`Flags fiscales beta · ${tenant.business_name}`} size="xl">
+    <Drawer
+      open={true}
+      onClose={onClose}
+      title="Flags fiscales beta"
+      subtitle={tenant.business_name}
+      icon={<SlidersHorizontal size={18} />}
+      size="wide"
+    >
       <div className="ink-inline-alert ink-inline-alert-warning mb-5">
         <p className="text-xs">
           Estos controles habilitan funciones fiscales sensibles por tenant. Facturas y boletas siguen controladas por suscripcion,
@@ -1485,7 +1524,7 @@ function TenantFiscalFlagsModal({ tenant, onClose }) {
           {saving ? 'Guardando...' : 'Guardar flags'}
         </button>
       </div>
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -1507,7 +1546,14 @@ function TenantErrorsModal({ tenant, onClose }) {
   };
 
   return (
-    <Modal open={true} onClose={onClose} title={`Errores de emisión · ${tenant.business_name}`} size="xl">
+    <Drawer
+      open={true}
+      onClose={onClose}
+      title="Errores de emisión"
+      subtitle={tenant.business_name}
+      icon={<AlertCircle size={18} />}
+      size="wide"
+    >
       {loading ? (
         <div className="flex justify-center py-10">
           <Spinner size="lg" label="Cargando errores" />
@@ -1543,7 +1589,7 @@ function TenantErrorsModal({ tenant, onClose }) {
       <div className="mt-4 flex justify-end border-t border-[var(--border-subtle)] pt-4">
         <button type="button" onClick={onClose} className="btn-secondary">Cerrar</button>
       </div>
-    </Modal>
+    </Drawer>
   );
 }
 
