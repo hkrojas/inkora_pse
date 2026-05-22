@@ -131,6 +131,15 @@ function getApiPayload(path, role, request) {
     };
   }
   if (path === '/clientes' || path === '/cotizaciones') return [];
+  if (path === '/clientes/page') return { items: [], total: 0 };
+  if (path === '/facturas-emitidas/page') return { items: [], total: 0 };
+  if (path === '/notas/page') {
+    return {
+      items: [],
+      total: 0,
+      counts: { all: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 },
+    };
+  }
   if (path === '/guias-remision') {
     return {
       items: [smartPseGuide],
@@ -295,6 +304,28 @@ test.describe('Smart PSE GRE QA visual', () => {
       await expect(page.getByText(/^Credenciales SOL$/i)).toHaveCount(0);
       await expect(page.getByLabel(/usuario sol/i)).toHaveCount(0);
       await expect(page.getByLabel(/client secret/i)).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('formularios de guia y nota nueva abren como drawer lateral', async ({ browser, baseURL }) => {
+    const { context, page } = await createVisualContext(browser, baseURL);
+
+    try {
+      await page.goto('/guias');
+      await page.getByRole('button', { name: /Nueva gu[ií]a/i }).first().click();
+      await expect(page.locator('.ink-drawer.is-open')).toBeVisible();
+      await expect(page.locator('.ink-drawer.is-open').getByRole('heading', { name: /Nueva gu[ií]a de remisi[oó]n/i })).toBeVisible();
+      await expect(page.locator('.modal-panel')).toHaveCount(0);
+      await page.locator('.ink-drawer-close').click();
+      await expect(page.locator('.ink-drawer.is-open')).toHaveCount(0);
+
+      await page.goto('/notas');
+      await page.getByRole('button', { name: /Nueva nota/i }).click();
+      await expect(page.locator('.ink-drawer.is-open')).toBeVisible();
+      await expect(page.locator('.ink-drawer.is-open').getByRole('heading', { name: /Nueva nota de cr[eé]dito \/ d[eé]bito/i })).toBeVisible();
+      await expect(page.locator('.modal-panel')).toHaveCount(0);
     } finally {
       await context.close();
     }

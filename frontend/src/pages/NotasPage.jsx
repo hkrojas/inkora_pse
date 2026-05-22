@@ -15,7 +15,7 @@ import { api } from '../lib/utils/api';
 import { useToast } from '../components/ui/Toast';
 import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
-import Modal from '../components/ui/Modal';
+import Drawer from '../components/ui/Drawer';
 import Spinner from '../components/ui/Spinner';
 import { PageError } from '../components/ui/PageState';
 import Badge from '../components/ui/Badge';
@@ -634,7 +634,13 @@ export default function NotasPage() {
         )}
       </article>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nueva Nota de Credito / Debito">
+      <Drawer
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="Nueva nota de crédito / débito"
+        subtitle="Ajuste fiscal sobre comprobante aceptado"
+        icon={<FileText size={18} />}
+      >
         <div className="space-y-4">
           <div>
             <label className="label">Tipo de nota</label>
@@ -712,7 +718,7 @@ export default function NotasPage() {
             </button>
           </div>
         </div>
-      </Modal>
+      </Drawer>
 
       <ConfirmEmitDialog
         open={confirmOpen}

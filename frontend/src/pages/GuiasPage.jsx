@@ -8,7 +8,7 @@ import Spinner from '../components/ui/Spinner';
 import { PageError } from '../components/ui/PageState';
 import EmptyState from '../components/ui/EmptyState';
 import Badge from '../components/ui/Badge';
-import Modal from '../components/ui/Modal';
+import Drawer from '../components/ui/Drawer';
 import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
 import { FieldError } from '../components/ui/FieldError';
@@ -968,7 +968,14 @@ export default function GuiasPage() {
         )}
       </article>
 
-      <Modal open={modal} onClose={() => setModal(false)} title="Nueva guía de remisión" size="xl">
+      <Drawer
+        open={modal}
+        onClose={() => setModal(false)}
+        title="Nueva guía de remisión"
+        subtitle="Emisión GRE Smart PSE"
+        icon={<Truck size={18} />}
+        size="wide"
+      >
         <NuevaGuiaForm
           onSave={handleSave}
           onCancel={() => setModal(false)}
@@ -976,7 +983,7 @@ export default function GuiasPage() {
           clientes={clientes}
           cotizaciones={cotizaciones}
         />
-      </Modal>
+      </Drawer>
     </div>
   );
 }
