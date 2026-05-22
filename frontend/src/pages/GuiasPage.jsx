@@ -231,7 +231,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 
       {/* ── Tab: General ── */}
       {tab === 'general' && (
-        <div className="guide-form-grid">
+        <div className="guide-form-grid guide-form-panel">
           <div>
             <label className="label">Motivo de traslado</label>
             <CustomSelect value={form.motivo_traslado} onChange={set('motivo_traslado')} options={MOTIVO_OPTS} />
@@ -291,7 +291,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 
       {/* ── Tab: Ruta ── */}
       {tab === 'ruta' && (
-        <div className="guide-form-grid">
+        <div className="guide-form-grid guide-form-panel">
           {/* Partida */}
           <div className="guide-form-section">
             <div className="guide-form-section-title">
@@ -332,7 +332,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 
       {/* ── Tab: Bienes ── */}
       {tab === 'bienes' && (
-        <div className="guide-form-body">
+        <div className="guide-form-body guide-form-panel">
           <FieldError message={errors.items} />
           <div className="guide-items-table">
             <div className="ink-table-scroll">
@@ -380,7 +380,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 
       {/* ── Tab: Transportista ── */}
       {tab === 'transportista' && (
-        <div className="guide-form-grid">
+        <div className="guide-form-grid guide-form-panel">
           <div className="guide-form-alert guide-form-field--full">
             <AlertCircle size={14} />
             Modalidad pública requiere datos del transportista para SUNAT.
@@ -408,11 +408,11 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 
       {/* Footer */}
       <div className="modal-footer guide-form-footer">
-        <button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button>
+        <button type="button" onClick={onCancel} className="btn-secondary guide-form-cancel">Cancelar</button>
         <div className="guide-form-actions">
           {tab !== tabs[tabs.length - 1].id && (
-            <button type="button" onClick={() => setTab(tabs[tabs.findIndex((t) => t.id === tab) + 1].id)} className="btn-secondary">
-              Siguiente <ChevronDown size={13} style={{ transform: 'rotate(-90deg)' }} />
+            <button type="button" onClick={() => setTab(tabs[tabs.findIndex((t) => t.id === tab) + 1].id)} className="btn-secondary guide-form-next">
+              Siguiente <ChevronDown size={13} className="guide-form-next-icon" />
             </button>
           )}
           <button type="submit" disabled={saving} className="btn-primary guide-form-submit">

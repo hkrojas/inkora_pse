@@ -322,7 +322,7 @@ test.describe('Smart PSE GRE QA visual', () => {
       await expect(page.locator('.ink-drawer.is-open')).toHaveCount(0);
 
       await page.goto('/notas');
-      await page.getByRole('button', { name: /Nueva nota/i }).click();
+      await page.getByRole('button', { name: /Nueva nota/i }).first().click();
       await expect(page.locator('.ink-drawer.is-open')).toBeVisible();
       await expect(page.locator('.ink-drawer.is-open').getByRole('heading', { name: /Nueva nota de cr[eé]dito \/ d[eé]bito/i })).toBeVisible();
       await expect(page.locator('.modal-panel')).toHaveCount(0);
