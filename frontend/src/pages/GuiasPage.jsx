@@ -974,7 +974,6 @@ export default function GuiasPage() {
         title="Nueva guía de remisión"
         subtitle="Emisión GRE Smart PSE"
         icon={<Truck size={18} />}
-        size="wide"
       >
         <NuevaGuiaForm
           onSave={handleSave}
