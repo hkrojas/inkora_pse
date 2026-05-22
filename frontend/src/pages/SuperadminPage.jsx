@@ -1715,68 +1715,67 @@ export default function SuperadminPage() {
       value: tenantMetrics.total,
       note: 'Base total registrada en la plataforma.',
       icon: Building2,
+      tone: 'neutral',
     },
     {
       label: 'Tenants activos',
       value: tenantMetrics.active,
       note: 'Empresas habilitadas para operar.',
       icon: ShieldCheck,
+      tone: 'success',
     },
     {
       label: 'Smart PSE GRE',
       value: tenantMetrics.smartpse_gre,
       note: 'Tenants listos para guias con credenciales cifradas.',
       icon: Truck,
+      tone: 'brand',
     },
     {
       label: 'GRE pendientes',
       value: tenantMetrics.smartpse_gre_pending,
-      note: 'Empresas que aun requieren configuracion SUNAT GRE.',
+      note: 'Empresas que aun requieren configuracion Smart PSE GRE.',
       icon: KeyRound,
+      tone: tenantMetrics.smartpse_gre_pending > 0 ? 'warning' : 'success',
     },
   ];
   const showMetricSkeleton = loading && tenantTotal === 0 && tenants.length === 0;
 
   return (
     <div className="page-shell page-shell--dense superadmin-shell">
-      <div className="page-header">
-        <div className="page-header-copy">
+      <section className="superadmin-command-panel">
+        <div className="superadmin-command-copy">
           <p className="page-kicker">Control interno</p>
-          <h2 className="page-title">Superadmin</h2>
+          <h2 className="page-title">Operacion de tenants</h2>
           <p className="page-subtitle">
-            Gestion de tenants, credenciales GRE Smart PSE y alta de usuarios operativos sin salir del panel interno.
+            Altas, estados Smart PSE y gobierno de usuarios en una vista operativa compacta.
           </p>
+
+          <div className="superadmin-status-strip" aria-label="Reglas operativas beta">
+            <span>
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Smart PSE CPE demo
+            </span>
+            <span>
+              <Truck className="h-3.5 w-3.5" />
+              GRE cifrado
+            </span>
+            <span>
+              <ShieldOff className="h-3.5 w-3.5" />
+              Sin secretos visibles
+            </span>
+          </div>
         </div>
 
-        <div className="page-actions">
+        <div className="superadmin-command-aside">
           <button onClick={() => setCreating(true)} className="btn-primary flex items-center gap-2">
             <Plus className="h-4 w-4" />
             Nuevo tenant
           </button>
-        </div>
-      </div>
 
-      <section className="card-raw" data-label="control">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_320px]">
-          <div>
-            <p className="page-kicker">Base operativa</p>
-            <h3 className="superadmin-section-title mt-2">
-              El frente interno ahora usa la misma gramatica visual de Inkora.
-            </h3>
-            <p className="superadmin-hero-note">
-              Aqui concentras altas, cambios fiscales y administracion inicial por tenant. La prioridad sigue siendo
-              claridad operativa, no volumen visual.
-            </p>
-            <div className="raw-lines mt-6" aria-hidden="true">
-              <div />
-              <div />
-              <div />
-            </div>
-          </div>
-
-          <div className="ink-card p-4">
+          <div className="superadmin-guardrail">
             <p className="label">Observacion</p>
-            <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+            <p>
               Las credenciales GRE se guardan cifradas desde backend. El tenant solo ve estados, nunca usuario SOL,
               clave ni secretos SUNAT.
             </p>
@@ -1784,14 +1783,16 @@ export default function SuperadminPage() {
         </div>
       </section>
 
-      <div className="ink-metric-grid md:grid-cols-2 xl:grid-cols-4">
+      <div className="ink-metric-grid superadmin-metric-grid md:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => {
           const Icon = metric.icon;
           return (
-            <div key={metric.label} className="ink-metric-card">
+            <div key={metric.label} className={`ink-metric-card superadmin-metric-card superadmin-metric-card--${metric.tone}`}>
               <div className="flex items-center justify-between gap-3">
                 <span className="ink-metric-label">{metric.label}</span>
-                <Icon className="h-4 w-4 text-[var(--text-brand)]" />
+                <span className="superadmin-metric-icon">
+                  <Icon className="h-4 w-4" />
+                </span>
               </div>
               <div className="ink-metric-value">
                 {showMetricSkeleton ? (
@@ -1816,11 +1817,11 @@ export default function SuperadminPage() {
           description="Crea el primer tenant para iniciar la operacion multiempresa."
         />
       ) : (
-        <div className="ink-table-card">
-          <div className="ink-card-header">
+        <div className="ink-table-card superadmin-table-card">
+          <div className="ink-card-header superadmin-table-header">
             <div>
               <h3 className="ink-card-title">Tenants registrados</h3>
-              <p className="ink-card-subtitle">{tenantTotal} empresa{tenantTotal !== 1 ? 's' : ''} · Alta, edición fiscal y gestión de usuarios.</p>
+              <p className="ink-card-subtitle">{tenantTotal} empresa{tenantTotal !== 1 ? 's' : ''} - Alta, edicion fiscal y gestion de usuarios.</p>
             </div>
             <button onClick={() => setCreating(true)} className="btn-secondary flex items-center gap-1.5">
               <Plus className="h-3.5 w-3.5" />
@@ -1828,7 +1829,7 @@ export default function SuperadminPage() {
             </button>
           </div>
 
-          <div className="toolbar px-4 pb-4">
+          <div className="superadmin-filter-bar">
             <label className="search-box">
               <Search size={16} />
               <input
@@ -1863,7 +1864,8 @@ export default function SuperadminPage() {
             </div>
           </div>
 
-          <table className="ink-table">
+          <div className="ink-table-scroll">
+          <table className="ink-table superadmin-tenants-table">
             <thead>
               <tr>
                 <th>Empresa</th>
@@ -2028,6 +2030,7 @@ export default function SuperadminPage() {
               })}
             </tbody>
           </table>
+          </div>
 
           {tenantPageCount > 1 && (
             <div className="ink-table-footer">
