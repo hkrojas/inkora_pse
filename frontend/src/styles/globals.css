@@ -9932,7 +9932,39 @@ textarea.input:focus,
   gap: 16px;
   align-items: start;
 }
-.side-stack { display: grid; gap: 16px; }
+.dashboard-main-stack,
+.side-stack {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.dashboard-main-stack .panel + .panel,
+.side-stack .panel + .panel {
+  margin-top: 0;
+}
+
+@media (max-width: 1180px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .side-stack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .dashboard-grid,
+  .dashboard-main-stack,
+  .side-stack {
+    gap: 14px;
+  }
+
+  .side-stack {
+    grid-template-columns: 1fr;
+  }
+}
 
 /* Panels */
 .panel {

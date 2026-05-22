@@ -336,7 +336,8 @@ export default function Dashboard() {
       </section>
 
       <section className="dashboard-grid ink-enter-5">
-        <article className="panel">
+        <div className="dashboard-main-stack">
+          <article className="panel">
           <div className="panel-header">
             <div>
               <h3>Actividad reciente</h3>
@@ -403,7 +404,61 @@ export default function Dashboard() {
               <span>Gestionar deuda vencida</span>
             </button>
           </div>
-        </article>
+          </article>
+
+          <article className="panel ink-enter-6">
+            <div className="panel-header">
+              <div>
+                <h3>Seguimiento de cobranza</h3>
+                <p>Clientes con documentos por vencer o vencidos.</p>
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Documento</th>
+                    <th>Monto</th>
+                    <th>Vencimiento</th>
+                    <th>Dias atraso</th>
+                    <th>Estado</th>
+                    <th>Accion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(overdueDocs.length ? overdueDocs.slice(0, 4) : [null]).map((doc, index) => {
+                    if (!doc) {
+                      return (
+                        <tr key={`overdue-empty-${index}`}>
+                          <td colSpan={7} style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px 16px' }}>
+                            No hay documentos vencidos para mostrar.
+                          </td>
+                        </tr>
+                      );
+                    }
+                    const lateDays = getDaysLate(doc);
+                    const status = getStatusMeta(lateDays > 0 ? 'vencido' : 'por vencer');
+                    const daysColor = lateDays ? (lateDays > 10 ? '#dc2626' : '#c76f13') : undefined;
+                    return (
+                      <tr key={doc.id ?? `${formatDocNumber(doc)}-due-${index}`}>
+                        <td>{getDocClient(doc)}</td>
+                        <td>{formatDocNumber(doc)}</td>
+                        <td>{getDocAmount(doc).toLocaleString('es-PE', { style: 'currency', currency: doc.moneda || 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td>{formatShortDate(doc.fecha_vencimiento || doc.fecha_emision)}</td>
+                        <td style={daysColor ? { color: daysColor, fontWeight: 800 } : undefined}>{lateDays ? `${lateDays} dias` : '-'}</td>
+                        <td><span className={`status ${status.tone}`}>{status.label}</span></td>
+                        <td>
+                          <button type="button" className="view-btn" onClick={() => navigate('/cobranza')}>Recordar</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </div>
 
         <aside className="side-stack">
           <article className="panel">
@@ -475,59 +530,6 @@ export default function Dashboard() {
           </article>
         </aside>
       </section>
-
-      <article className="panel ink-enter-6" style={{ marginTop: '16px' }}>
-        <div className="panel-header">
-          <div>
-            <h3>Seguimiento de cobranza</h3>
-            <p>Clientes con documentos por vencer o vencidos.</p>
-          </div>
-        </div>
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Cliente</th>
-                <th>Documento</th>
-                <th>Monto</th>
-                <th>Vencimiento</th>
-                <th>Dias atraso</th>
-                <th>Estado</th>
-                <th>Accion</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(overdueDocs.length ? overdueDocs.slice(0, 4) : [null]).map((doc, index) => {
-                if (!doc) {
-                  return (
-                    <tr key={`overdue-empty-${index}`}>
-                      <td colSpan={7} style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px 16px' }}>
-                        No hay documentos vencidos para mostrar.
-                      </td>
-                    </tr>
-                  );
-                }
-                const lateDays = getDaysLate(doc);
-                const status = getStatusMeta(lateDays > 0 ? 'vencido' : 'por vencer');
-                const daysColor = lateDays ? (lateDays > 10 ? '#dc2626' : '#c76f13') : undefined;
-                return (
-                  <tr key={doc.id ?? `${formatDocNumber(doc)}-due-${index}`}>
-                    <td>{getDocClient(doc)}</td>
-                    <td>{formatDocNumber(doc)}</td>
-                    <td>{getDocAmount(doc).toLocaleString('es-PE', { style: 'currency', currency: doc.moneda || 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td>{formatShortDate(doc.fecha_vencimiento || doc.fecha_emision)}</td>
-                    <td style={daysColor ? { color: daysColor, fontWeight: 800 } : undefined}>{lateDays ? `${lateDays} dias` : '-'}</td>
-                    <td><span className={`status ${status.tone}`}>{status.label}</span></td>
-                    <td>
-                      <button type="button" className="view-btn" onClick={() => navigate('/cobranza')}>Recordar</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </article>
     </div>
   );
 }

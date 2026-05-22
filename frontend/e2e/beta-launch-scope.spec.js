@@ -90,6 +90,42 @@ test.describe('beta launch scope', () => {
     }
   });
 
+  test('dashboard apila seguimiento sin hueco entre tarjetas principales', async ({ browser, baseURL }) => {
+    const { context, page } = await createBetaContext(browser, baseURL);
+
+    try {
+      for (const viewport of [
+        { width: 1366, height: 900 },
+        { width: 390, height: 844 },
+      ]) {
+        await page.setViewportSize(viewport);
+        await page.goto('/dashboard');
+
+        const activityPanel = page.getByRole('heading', { name: /Actividad reciente/i }).locator('xpath=ancestor::article[1]');
+        const followPanel = page.getByRole('heading', { name: /Seguimiento de cobranza/i }).locator('xpath=ancestor::article[1]');
+
+        await expect(activityPanel).toBeVisible();
+        await expect(followPanel).toBeVisible();
+
+        const gap = await page.evaluate(() => {
+          const activity = document
+            .evaluate("//h3[contains(., 'Actividad reciente')]/ancestor::article[1]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)
+            .singleNodeValue;
+          const follow = document
+            .evaluate("//h3[contains(., 'Seguimiento de cobranza')]/ancestor::article[1]", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)
+            .singleNodeValue;
+          if (!activity || !follow) return Number.POSITIVE_INFINITY;
+          return follow.getBoundingClientRect().top - activity.getBoundingClientRect().bottom;
+        });
+
+        expect(gap).toBeGreaterThanOrEqual(0);
+        expect(gap).toBeLessThanOrEqual(24);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
   test('urls fiscales avanzadas quedan bloqueadas sin cargar flujos reales', async ({ browser, baseURL }) => {
     const apiRequests = [];
     const { context, page } = await createBetaContext(browser, baseURL, {
