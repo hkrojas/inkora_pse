@@ -1829,7 +1829,7 @@ export default function SuperadminPage() {
               <h3 className="ink-card-title">Tenants registrados</h3>
               <p className="ink-card-subtitle">{tenantTotal} empresa{tenantTotal !== 1 ? 's' : ''} - Alta, edicion fiscal y gestion de usuarios.</p>
             </div>
-            <button onClick={() => setCreating(true)} className="btn-secondary flex items-center gap-1.5">
+            <button onClick={() => setCreating(true)} className="btn-secondary superadmin-add-tenant-btn">
               <Plus className="h-3.5 w-3.5" />
               Nuevo tenant
             </button>
@@ -1893,16 +1893,16 @@ export default function SuperadminPage() {
                   .map((w) => w[0]?.toUpperCase() || '')
                   .join('');
                 return (
-                  <tr key={tenant.id}>
+                  <tr key={tenant.id} className="superadmin-tenant-row">
                     <td data-label="Empresa">
-                      <div className="flex items-center gap-3">
+                      <div className="superadmin-tenant-identity">
                         {/* Avatar inicial */}
                         <div className="superadmin-avatar">
                           {initials}
                         </div>
-                        <div>
-                          <p className="font-semibold text-sm text-[var(--text-primary)] leading-tight">{tenant.business_name}</p>
-                          <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5">
+                        <div className="superadmin-tenant-copy">
+                          <p className="superadmin-tenant-name">{tenant.business_name}</p>
+                          <p className="superadmin-tenant-address">
                             {tenant.business_address || 'Sin dirección fiscal'}
                           </p>
                         </div>
@@ -1920,9 +1920,11 @@ export default function SuperadminPage() {
                     </td>
 
                     <td data-label="Smart PSE CPE">
-                      <div className="flex flex-col gap-1.5">
-                        <StatusDot ok={tenant.has_smartpse_credentials} />
-                        <div className="flex items-center gap-1.5">
+                      <div className="superadmin-status-panel">
+                        <div className="superadmin-status-caption">
+                          <StatusDot ok={tenant.has_smartpse_credentials} />
+                        </div>
+                        <div className="superadmin-status-line">
                           <Badge variant={cpeMeta.badgeVariant}>{cpeMeta.label}</Badge>
                           {cpeMeta.canCheck && (
                             <button
@@ -1938,16 +1940,18 @@ export default function SuperadminPage() {
                             </button>
                           )}
                         </div>
-                        <span className="text-[10px] text-[var(--text-tertiary)]">
+                        <span className="superadmin-status-meta">
                           {tenant.smartpse_environment || 'demo'} - {formatDateTime(tenant.smartpse_checked_at)}
                         </span>
                       </div>
                     </td>
 
                     <td data-label="Smart PSE GRE">
-                      <div className="flex flex-col gap-1.5">
-                        <StatusDot ok={tenant.has_smartpse_gre_credentials} />
-                        <div className="flex items-center gap-1.5">
+                      <div className="superadmin-status-panel">
+                        <div className="superadmin-status-caption">
+                          <StatusDot ok={tenant.has_smartpse_gre_credentials} />
+                        </div>
+                        <div className="superadmin-status-line">
                           <Badge variant={greMeta.badgeVariant}>{greMeta.label}</Badge>
                           {greMeta.canCheck && (
                             <button
@@ -1963,7 +1967,7 @@ export default function SuperadminPage() {
                             </button>
                           )}
                         </div>
-                        <span className="text-[10px] text-[var(--text-tertiary)]">
+                        <span className="superadmin-status-meta">
                           {formatDateTime(tenant.smartpse_gre_checked_at)}
                         </span>
                       </div>
@@ -1989,7 +1993,9 @@ export default function SuperadminPage() {
                         <button
                           type="button"
                           onClick={() => setViewingUsersOf(tenant)}
-                          className="superadmin-toolbar-btn"
+                          title="Usuarios"
+                          aria-label={`Usuarios de ${tenant.business_name}`}
+                          className="superadmin-toolbar-btn superadmin-toolbar-btn--icon"
                         >
                           <Users className="h-3 w-3" />
                           Usuarios
@@ -1998,7 +2004,9 @@ export default function SuperadminPage() {
                         <button
                           type="button"
                           onClick={() => setViewingErrorsOf(tenant)}
-                          className="superadmin-toolbar-btn superadmin-toolbar-btn--warning"
+                          title="Errores"
+                          aria-label={`Errores fiscales de ${tenant.business_name}`}
+                          className="superadmin-toolbar-btn superadmin-toolbar-btn--icon superadmin-toolbar-btn--warning"
                         >
                           <AlertCircle className="h-3 w-3" />
                           Errores
@@ -2007,7 +2015,9 @@ export default function SuperadminPage() {
                         <button
                           type="button"
                           onClick={() => setEditingGreOf(tenant)}
-                          className="superadmin-toolbar-btn superadmin-toolbar-btn--accent"
+                          title="Smart PSE GRE"
+                          aria-label="GRE"
+                          className="superadmin-toolbar-btn superadmin-toolbar-btn--icon superadmin-toolbar-btn--accent"
                         >
                           <Truck className="h-3 w-3" />
                           GRE
@@ -2016,7 +2026,9 @@ export default function SuperadminPage() {
                         <button
                           type="button"
                           onClick={() => setViewingLimitsOf(tenant)}
-                          className="superadmin-toolbar-btn superadmin-toolbar-btn--accent"
+                          title="Limites"
+                          aria-label={`Limites de ${tenant.business_name}`}
+                          className="superadmin-toolbar-btn superadmin-toolbar-btn--icon superadmin-toolbar-btn--accent"
                         >
                           <Gauge className="h-3 w-3" />
                           Límites
@@ -2024,7 +2036,9 @@ export default function SuperadminPage() {
                         <button
                           type="button"
                           onClick={() => setViewingFiscalFlagsOf(tenant)}
-                          className="superadmin-toolbar-btn"
+                          title="Flags fiscales"
+                          aria-label={`Flags fiscales de ${tenant.business_name}`}
+                          className="superadmin-toolbar-btn superadmin-toolbar-btn--icon"
                         >
                           <SlidersHorizontal className="h-3 w-3" />
                           Flags

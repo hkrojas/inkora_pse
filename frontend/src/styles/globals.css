@@ -1472,50 +1472,62 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  min-width: 300px;
-  max-width: 420px;
+  gap: 9px;
+  min-width: 210px;
+  max-width: 230px;
 }
 
 .superadmin-toolbar-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 32px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 86%, #fff);
+  border-radius: 13px;
+  background: #fff;
   color: var(--color-text-muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 800;
   line-height: 1;
-  padding: 0 11px;
-  transition: background .18s var(--ease-out), border-color .18s var(--ease-out), color .18s var(--ease-out), transform .18s var(--ease-out);
+  padding: 0 12px;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, .04);
+  transition: background .18s var(--ease-out), border-color .18s var(--ease-out), color .18s var(--ease-out), transform .18s var(--ease-out), box-shadow .18s var(--ease-out);
   white-space: nowrap;
 }
 
 .superadmin-toolbar-btn:hover {
-  transform: translateY(-1px);
-  border-color: var(--color-border-strong);
-  background: var(--color-surface-soft);
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary-soft) 32%, #fff);
   color: var(--color-text);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, .08);
 }
 
 .superadmin-toolbar-btn--brand {
-  background: var(--color-primary-soft);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
-  color: var(--color-primary-text);
+  background: #12351c;
+  border-color: #12351c;
+  color: #fff;
+  box-shadow: 0 10px 20px rgba(18, 53, 28, .18);
+  min-width: 92px;
+  justify-content: center;
+}
+
+.superadmin-toolbar-btn--brand:hover {
+  background: #0f2d18;
+  border-color: #0f2d18;
+  color: #fff;
 }
 
 .superadmin-toolbar-btn--accent {
-  background: color-mix(in srgb, var(--color-primary-soft) 58%, var(--color-surface));
+  background: color-mix(in srgb, var(--color-primary-soft) 72%, #fff);
+  border-color: color-mix(in srgb, var(--color-primary) 22%, var(--color-border));
   color: var(--color-primary-text);
 }
 
 .superadmin-toolbar-btn--warning {
-  background: var(--color-warning-soft);
+  background: color-mix(in srgb, var(--color-warning-soft) 76%, #fff);
   border-color: color-mix(in srgb, var(--color-warning) 28%, var(--color-border));
   color: var(--color-warning-text);
 }
@@ -1526,76 +1538,272 @@
   color: var(--color-danger-text);
 }
 
+.superadmin-toolbar-btn--icon {
+  width: 38px;
+  min-width: 38px;
+  padding: 0;
+  flex: 0 0 38px;
+  font-size: 0;
+  gap: 0;
+  justify-content: center;
+}
+
+.superadmin-toolbar-btn--icon svg {
+  width: 14px;
+  height: 14px;
+}
+
 .superadmin-table-card {
-  border-radius: 22px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-border) 82%, #fff);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 96% 0%, rgba(141, 198, 63, .16), transparent 24%),
+    linear-gradient(180deg, #fff 0%, #f8faf8 100%);
+  box-shadow: 0 22px 55px rgba(15, 23, 42, .10);
+}
+
+.superadmin-table-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  background: linear-gradient(90deg, #0d2d17 0%, var(--color-primary) 42%, #d8f58d 100%);
 }
 
 .superadmin-table-header {
   align-items: center;
-  padding: 24px 26px 18px;
+  border-bottom: 0;
+  padding: 30px 30px 22px;
+}
+
+.superadmin-table-header .ink-card-title {
+  color: #101613;
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.superadmin-table-header .ink-card-subtitle {
+  margin-top: 7px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.superadmin-add-tenant-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  border-radius: 16px;
+  border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 88%, #fff);
+  color: #13220f;
+  font-weight: 900;
+  padding: 0 20px;
+  box-shadow: 0 14px 30px rgba(141, 198, 63, .24);
+}
+
+.superadmin-add-tenant-btn:hover {
+  background: color-mix(in srgb, var(--color-primary) 94%, #fff);
+  border-color: var(--color-primary);
 }
 
 .superadmin-filter-bar {
   display: grid;
-  grid-template-columns: minmax(360px, 1fr) minmax(160px, auto) minmax(160px, auto) auto;
-  gap: 18px;
+  grid-template-columns: minmax(360px, 1fr) minmax(150px, auto) minmax(150px, auto) auto;
+  gap: 16px;
   align-items: end;
-  border-bottom: 1px solid var(--color-border);
-  background: linear-gradient(180deg, #fff 0%, #fbfcfd 100%);
-  padding: 24px 26px 20px;
+  margin: 0 26px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 86%, #fff);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .78);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85), 0 12px 24px rgba(15, 23, 42, .05);
+  padding: 18px;
 }
 
 .superadmin-filter-bar .search-box {
-  height: 56px;
+  height: 54px;
+  border-radius: 17px;
+  background: #fff;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, .03);
+}
+
+.superadmin-filter-bar .document-list-filter span {
+  margin-bottom: 8px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 
 .superadmin-filter-bar .sort-text {
   align-self: center;
-  border: 1px solid var(--color-border);
-  border-radius: 16px;
-  background: var(--color-surface-soft);
-  padding: 14px 16px;
+  min-height: 54px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 90%, #fff);
+  border-radius: 17px;
+  background: linear-gradient(180deg, #fff 0%, var(--color-surface-soft) 100%);
+  color: var(--color-text-muted);
+  padding: 15px 18px;
 }
 
 .superadmin-tenants-table {
-  min-width: 1360px;
+  width: 100%;
+  min-width: 0;
+  border-collapse: separate;
+  border-spacing: 0 12px;
+  table-layout: fixed;
 }
 
+.superadmin-tenants-table th,
+.superadmin-tenants-table td {
+  box-sizing: border-box;
+}
+
+.superadmin-tenants-table th:nth-child(1) { width: 21%; }
+.superadmin-tenants-table th:nth-child(2) { width: 12%; }
+.superadmin-tenants-table th:nth-child(3) { width: 10%; }
+.superadmin-tenants-table th:nth-child(4) { width: 15%; }
+.superadmin-tenants-table th:nth-child(5) { width: 15%; }
+.superadmin-tenants-table th:nth-child(6) { width: 10%; }
+.superadmin-tenants-table th:nth-child(7) { width: 17%; }
+
 .superadmin-tenants-table thead th {
-  padding: 15px 24px;
+  border-bottom: 0;
+  background: transparent;
+  padding: 22px 18px 6px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  letter-spacing: .09em;
 }
 
 .superadmin-tenants-table tbody td {
-  padding: 24px 24px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 82%, #fff);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 82%, #fff);
+  background: rgba(255, 255, 255, .94);
+  padding: 18px;
   vertical-align: top;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, .05);
+}
+
+.superadmin-tenants-table tbody tr:hover td {
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+  background: #fbfef6;
+}
+
+.superadmin-tenants-table tbody tr:hover td:first-child {
+  box-shadow: inset 4px 0 0 var(--color-primary), 0 12px 24px rgba(15, 23, 42, .05);
 }
 
 .superadmin-tenants-table tbody td:first-child {
-  min-width: 270px;
+  min-width: 0;
+  border-left: 1px solid color-mix(in srgb, var(--color-border) 82%, #fff);
+  border-radius: 18px 0 0 18px;
+  box-shadow: inset 4px 0 0 color-mix(in srgb, var(--color-primary) 32%, transparent), 0 12px 24px rgba(15, 23, 42, .05);
+}
+
+.superadmin-tenants-table tbody td:nth-child(2) {
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.superadmin-tenants-table tbody td:nth-child(3),
+.superadmin-tenants-table tbody td:nth-child(6) {
+  min-width: 0;
+  vertical-align: middle;
 }
 
 .superadmin-tenants-table tbody td:nth-child(4),
 .superadmin-tenants-table tbody td:nth-child(5) {
-  min-width: 220px;
+  min-width: 0;
 }
 
 .superadmin-tenants-table tbody td:last-child {
-  min-width: 330px;
+  min-width: 0;
+  border-right: 1px solid color-mix(in srgb, var(--color-border) 82%, #fff);
+  border-radius: 0 18px 18px 0;
+}
+
+.superadmin-tenant-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
 }
 
 .superadmin-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  border-radius: 14px;
-  background: var(--color-surface-soft);
-  color: var(--color-text-muted);
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, #fff);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 32% 22%, rgba(255, 255, 255, .85), transparent 34%),
+    linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 92%, #fff), #eef9d7);
+  color: #163015;
   font-size: 12px;
   font-weight: 900;
-  letter-spacing: .04em;
+  letter-spacing: .05em;
+  box-shadow: 0 10px 22px rgba(141, 198, 63, .22);
+}
+
+.superadmin-tenant-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.superadmin-tenant-name {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 14.5px;
+  font-weight: 900;
+  line-height: 1.14;
+}
+
+.superadmin-tenant-address {
+  margin: 0;
+  max-width: 210px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.superadmin-status-panel {
+  display: grid;
+  gap: 8px;
+  min-height: 90px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 82%, #fff);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .92), rgba(249, 251, 247, .92));
+  padding: 12px;
+}
+
+.superadmin-status-caption,
+.superadmin-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.superadmin-status-caption {
+  color: var(--color-text);
+  font-size: 11.5px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.superadmin-status-meta {
+  color: var(--color-text-muted);
+  font-size: 10.5px;
+  line-height: 1.25;
 }
 
 .superadmin-shell .page-head {
