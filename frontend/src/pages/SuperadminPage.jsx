@@ -19,6 +19,7 @@ import {
 import { Navigate } from 'react-router-dom';
 import { superadmin as svc } from '../services/superadmin';
 import Modal from '../components/ui/Modal';
+import Drawer from '../components/ui/Drawer';
 import Spinner from '../components/ui/Spinner';
 import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
@@ -415,8 +416,30 @@ function CreateTenantModal({ onClose, onCreated }) {
   };
 
   return (
-    <Modal open={true} onClose={onClose} title="Nuevo tenant" size="lg">
-      <form onSubmit={handleSubmit} className="space-y-6">
+    <Drawer
+      open={true}
+      onClose={onClose}
+      title="Nuevo tenant"
+      subtitle="Alta operativa Smart PSE CPE"
+      icon={<Building2 size={18} />}
+      footer={(
+        <>
+          <button type="button" onClick={onClose} className="btn-secondary">
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            form="new-tenant-form"
+            disabled={saving}
+            className="btn-primary flex items-center gap-2"
+          >
+            {saving ? <Spinner size="sm" /> : null}
+            Crear y aprovisionar
+          </button>
+        </>
+      )}
+    >
+      <form id="new-tenant-form" onSubmit={handleSubmit} className="space-y-6">
         <section className="card-raw" data-label="alta">
           <SectionHeader
             kicker="Onboarding"
@@ -487,18 +510,8 @@ function CreateTenantModal({ onClose, onCreated }) {
             </p>
           </div>
         </section>
-
-        <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border-subtle)] pt-4">
-          <button type="button" onClick={onClose} className="btn-secondary">
-            Cancelar
-          </button>
-          <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
-            {saving ? <Spinner size="sm" /> : null}
-            Crear y aprovisionar
-          </button>
-        </div>
       </form>
-    </Modal>
+    </Drawer>
   );
 }
 

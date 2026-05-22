@@ -568,7 +568,7 @@ export default function ReversionesPage() {
               <p>Cabecera de envio</p>
             </div>
             <p className="drawer-editor-section-intro">
-              APISPeru espera correlativo numerico, fecha de generacion y fecha de comunicacion.
+              El proveedor fiscal espera correlativo numerico, fecha de generacion y fecha de comunicacion.
             </p>
             <div className="responsive-form-grid-1-1-2">
               <div>
@@ -583,7 +583,7 @@ export default function ReversionesPage() {
                 <label className="label">Correlativo <span style={{ color: 'var(--color-error)' }}>*</span></label>
                 <input className="input" value={form.correlativo} onChange={setInput('correlativo')} placeholder="00001" required />
                 <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                  Ingresa solo el numero. APISPeru arma el prefijo RR.
+                  Ingresa solo el numero. El proveedor fiscal arma el prefijo RR.
                 </p>
               </div>
             </div>

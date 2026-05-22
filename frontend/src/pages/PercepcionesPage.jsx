@@ -496,7 +496,7 @@ export default function PercepcionesPage() {
               description={
                 hasActiveFilters
                   ? 'Ajusta la busqueda o el rango de fechas.'
-                  : 'Emite la primera percepcion usando datos validados para APISPeru/SUNAT.'
+                  : 'Emite la primera percepcion usando datos validados para el proveedor fiscal/SUNAT.'
               }
               action={
                 hasActiveFilters ? (
@@ -615,7 +615,7 @@ export default function PercepcionesPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title="Nueva percepcion"
-        subtitle="Registra un comprobante tipo 40 con los campos exigidos por APISPeru y SUNAT."
+        subtitle="Registra un comprobante tipo 40 con los campos exigidos por el proveedor fiscal y SUNAT."
         icon={<Eye size={22} />}
         footer={(
           <>
@@ -656,7 +656,7 @@ export default function PercepcionesPage() {
               <p>Cliente sujeto a percepcion</p>
             </div>
             <p className="drawer-editor-section-intro">
-              APISPeru recibe este bloque como proveedor en su contrato, pero representa al cliente percibido.
+              El proveedor fiscal recibe este bloque en su contrato, pero representa al cliente percibido.
             </p>
             <div className="responsive-form-grid-120-1-2">
               <div>
@@ -710,7 +710,7 @@ export default function PercepcionesPage() {
               </button>
             </div>
             <p className="drawer-editor-section-intro">
-              APISPeru espera numDoc con formato SERIE-CORRELATIVO y al menos un cobro asociado.
+              El proveedor fiscal espera numDoc con formato SERIE-CORRELATIVO y al menos un cobro asociado.
             </p>
             <div className="drawer-editor-list">
               {form.detalles.map((detalle, index) => (

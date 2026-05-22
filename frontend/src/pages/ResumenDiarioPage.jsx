@@ -560,7 +560,7 @@ export default function ResumenDiarioPage() {
               <p>Cabecera operativa</p>
             </div>
             <p className="drawer-editor-section-intro">
-              Define la fecha de generacion, el corte del resumen y el correlativo numerico que APISPeru enviara a SUNAT.
+              Define la fecha de generacion, el corte del resumen y el correlativo numerico que enviara el proveedor fiscal.
             </p>
             <div className="responsive-form-grid-1-1-2">
               <div>
@@ -575,7 +575,7 @@ export default function ResumenDiarioPage() {
                 <label className="label">Correlativo <span style={{ color: 'var(--color-error)' }}>*</span></label>
                 <input className="input" value={form.correlativo} onChange={setInput('correlativo')} placeholder="00001" required />
                 <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                  Ingresa solo el correlativo numerico. APISPeru arma el RC con la fecha.
+                  Ingresa solo el correlativo numerico. El proveedor fiscal arma el RC con la fecha.
                 </p>
               </div>
             </div>
@@ -637,7 +637,7 @@ export default function ResumenDiarioPage() {
           </div>
 
           <div className="proto-alert warning drawer-editor-note" style={{ fontSize: 12 }}>
-            <strong>Nota:</strong> El resumen diario se guarda primero en Inkora y luego se marca como enviado o rechazado segun la respuesta de APISPeru.
+            <strong>Nota:</strong> El resumen diario se guarda primero en Inkora y luego se marca como enviado o rechazado segun la respuesta del proveedor fiscal.
           </div>
         </form>
       </Drawer>

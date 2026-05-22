@@ -432,7 +432,7 @@ function ClienteForm({ initial = EMPTY_FORM, onSave, onCancel, saving }) {
           Contacto
         </h4>
         <p className="mb-4 text-[12px] text-[var(--color-text-muted)]">
-          Datos comerciales opcionales. No son exigidos por ApisPeru para identificar al receptor fiscal.
+          Datos comerciales opcionales para identificar al receptor fiscal y facilitar el seguimiento.
         </p>
         <div className="grid gap-4 md:grid-cols-2">
           <FormField label="Persona de contacto" icon={User}>

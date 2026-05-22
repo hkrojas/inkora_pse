@@ -198,6 +198,8 @@ test.describe('Smart PSE GRE QA visual', () => {
       await expect(page.getByText(/ApisPeru/i)).toHaveCount(0);
 
       await page.getByRole('button', { name: /Nuevo tenant/i }).first().click();
+      await expect(page.locator('.ink-drawer')).toBeVisible();
+      await expect(page.locator('.modal-panel')).toHaveCount(0);
       await expect(page.locator('form').getByText('Smart PSE CPE', { exact: true })).toBeVisible();
       await expect(page.getByText(/ApisPeru/i)).toHaveCount(0);
 

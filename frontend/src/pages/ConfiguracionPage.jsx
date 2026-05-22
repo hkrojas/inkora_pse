@@ -700,10 +700,11 @@ export default function ConfiguracionPage() {
   const bankCount = paymentMethods.filter((method) => method.tipo !== 'wallet').length;
   const walletCount = paymentMethods.filter((method) => method.tipo === 'wallet').length;
   const fiscalReady = Boolean(tenantData?.has_sunat_credentials && tenantData?.has_sunat_cert);
+  const hasSmartPseCpeCredentials = Boolean(tenantData?.has_smartpse_credentials);
   const collectionsReady = Boolean(phone && paymentMethods.length > 0);
   const setupStatus = fiscalReady && collectionsReady ? 'Lista para operar' : 'Requiere revision';
   const fiscalConfiguredCount = [
-    tenantData?.has_apisperu_token,
+    hasSmartPseCpeCredentials,
     tenantData?.has_sunat_credentials,
     tenantData?.has_sunat_cert,
     true,
@@ -1058,11 +1059,11 @@ export default function ConfiguracionPage() {
             <div className="credential-status-grid">
               <FiscalStatusTile
                 icon={BadgeCheck}
-                tone={tenantData?.has_apisperu_token ? 'ok' : 'missing'}
-                label="Token ApisPeru"
-                value="Consulta RUC / DNI"
+                tone={hasSmartPseCpeCredentials ? 'ok' : 'missing'}
+                label="Smart PSE CPE"
+                value="Proveedor fiscal demo"
               >
-                <StatusBadge ok={tenantData?.has_apisperu_token} labelOk="Configurado" labelNo="No configurado" />
+                <StatusBadge ok={hasSmartPseCpeCredentials} labelOk="Configurado" labelNo="No configurado" />
               </FiscalStatusTile>
               <FiscalStatusTile
                 icon={RadioTower}

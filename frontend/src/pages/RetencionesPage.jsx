@@ -455,7 +455,7 @@ export default function RetencionesPage() {
               description={
                 hasActiveFilters
                   ? 'Ajusta la busqueda o el rango de fechas.'
-                  : 'Emite la primera retencion usando datos validados para APISPeru/SUNAT.'
+                  : 'Emite la primera retencion usando datos validados para el proveedor fiscal/SUNAT.'
               }
               action={
                 hasActiveFilters ? (
@@ -573,7 +573,7 @@ export default function RetencionesPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title="Nueva retencion"
-        subtitle="Registra un comprobante tipo 20 con los campos exigidos por APISPeru y SUNAT."
+        subtitle="Registra un comprobante tipo 20 con los campos exigidos por el proveedor fiscal y SUNAT."
         icon={<HandCoins size={22} />}
         footer={(
           <>
@@ -664,7 +664,7 @@ export default function RetencionesPage() {
               </button>
             </div>
             <p className="drawer-editor-section-intro">
-              APISPeru espera numDoc con formato SERIE-CORRELATIVO y al menos un pago asociado.
+              El proveedor fiscal espera numDoc con formato SERIE-CORRELATIVO y al menos un pago asociado.
             </p>
             <div className="drawer-editor-list">
               {form.detalles.map((detalle, index) => (
