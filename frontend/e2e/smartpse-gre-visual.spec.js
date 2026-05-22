@@ -240,7 +240,7 @@ test.describe('Smart PSE GRE QA visual', () => {
 
     try {
       await page.goto('/superadmin');
-      await expect(page.locator('h2.page-title', { hasText: 'Operacion de tenants' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /Superadmin operativo/i })).toBeVisible();
 
       const firstGreButton = page.getByRole('button', { name: /^GRE$/ }).first();
       await expect(firstGreButton).toBeVisible();
@@ -304,7 +304,7 @@ test.describe('Smart PSE GRE QA visual', () => {
     const superadmin = await createVisualContext(browser, baseURL, 'superadmin', { viewport });
     try {
       await superadmin.page.goto('/superadmin');
-      await expect(superadmin.page.locator('h2.page-title', { hasText: 'Operacion de tenants' })).toBeVisible();
+      await expect(superadmin.page.getByRole('heading', { name: /Superadmin operativo/i })).toBeVisible();
       await superadmin.page.getByRole('button', { name: /^GRE$/ }).first().click();
       await expect(superadmin.page.getByText(/Smart PSE GRE \//i)).toBeVisible();
       await expectPageWithoutHorizontalOverflow(superadmin.page);

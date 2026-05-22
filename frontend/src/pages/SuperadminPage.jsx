@@ -1742,70 +1742,76 @@ export default function SuperadminPage() {
   const showMetricSkeleton = loading && tenantTotal === 0 && tenants.length === 0;
 
   return (
-    <div className="page-shell page-shell--dense superadmin-shell">
-      <section className="superadmin-command-panel">
-        <div className="superadmin-command-copy">
-          <p className="page-kicker">Control interno</p>
-          <h2 className="page-title">Operacion de tenants</h2>
-          <p className="page-subtitle">
-            Altas, estados Smart PSE y gobierno de usuarios en una vista operativa compacta.
+    <div className="dashboard-page superadmin-shell">
+      <div className="page-head ink-enter-1">
+        <div>
+          <p className="eyebrow">Control interno</p>
+          <h2 style={{ margin: 0, fontSize: '28px', lineHeight: 1, letterSpacing: '-.06em' }}>
+            Superadmin operativo
+          </h2>
+          <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontSize: '14px' }}>
+            Altas, estados Smart PSE y gobierno de usuarios con la misma lectura operativa de Inkora.
           </p>
-
-          <div className="superadmin-status-strip" aria-label="Reglas operativas beta">
-            <span>
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Smart PSE CPE demo
-            </span>
-            <span>
-              <Truck className="h-3.5 w-3.5" />
-              GRE cifrado
-            </span>
-            <span>
-              <ShieldOff className="h-3.5 w-3.5" />
-              Sin secretos visibles
-            </span>
-          </div>
         </div>
-
-        <div className="superadmin-command-aside">
-          <button onClick={() => setCreating(true)} className="btn-primary flex items-center gap-2">
+        <div className="page-actions">
+          <button type="button" onClick={() => setCreating(true)} className="btn flex items-center gap-2">
             <Plus className="h-4 w-4" />
             Nuevo tenant
           </button>
+        </div>
+      </div>
 
-          <div className="superadmin-guardrail">
-            <p className="label">Observacion</p>
-            <p>
-              Las credenciales GRE se guardan cifradas desde backend. El tenant solo ve estados, nunca usuario SOL,
-              clave ni secretos SUNAT.
-            </p>
-          </div>
+      <section className="attention superadmin-attention ink-enter-2">
+        <div className="attention-title">
+          <span className="attention-title-badge">
+            <ShieldCheck size={16} />
+          </span>
+          <h3>Gobierno interno</h3>
+          <p>Controla altas, credenciales cifradas y validaciones sin exponer secretos al tenant.</p>
+        </div>
+        <div className="attention-card superadmin-attention-card">
+          <strong>Demo</strong>
+          <span className="attention-card-text">Smart PSE CPE queda aprovisionado en ambiente controlado.</span>
+          <div className="attention-card-link">Sin SUNAT real</div>
+        </div>
+        <div className="attention-card superadmin-attention-card">
+          <strong>{tenantMetrics.smartpse_gre}</strong>
+          <span className="attention-card-text">Tenants con GRE Smart PSE listo y credenciales cifradas.</span>
+          <div className="attention-card-link">GRE seguro</div>
+        </div>
+        <div className="attention-card superadmin-attention-card">
+          <strong>{tenantMetrics.active}</strong>
+          <span className="attention-card-text">Empresas activas para operar dentro del alcance beta.</span>
+          <div className="attention-card-link">Operativos</div>
+        </div>
+        <div className="attention-card superadmin-attention-card">
+          <strong>0</strong>
+          <span className="attention-card-text">Secretos visibles para tenants: usuario SOL, clave o token.</span>
+          <div className="attention-card-link">Sin exposición</div>
         </div>
       </section>
 
-      <div className="ink-metric-grid superadmin-metric-grid md:grid-cols-2 xl:grid-cols-4">
+      <section className="metrics-grid">
         {metrics.map((metric) => {
-          const Icon = metric.icon;
+          const badgeClass = metric.tone === 'warning' ? 'warn' : metric.tone === 'neutral' ? 'neutral' : '';
           return (
-            <div key={metric.label} className={`ink-metric-card superadmin-metric-card superadmin-metric-card--${metric.tone}`}>
-              <div className="flex items-center justify-between gap-3">
-                <span className="ink-metric-label">{metric.label}</span>
-                <span className="superadmin-metric-icon">
-                  <Icon className="h-4 w-4" />
-                </span>
+            <article key={metric.label} className="metric-card">
+              <div className="metric-top">
+                <div className="metric-label">{metric.label}</div>
+                <span className={`metric-badge ${badgeClass}`}>{metric.tone === 'warning' ? 'Revisar' : 'Ok'}</span>
               </div>
-              <div className="ink-metric-value">
+              <div className="metric-value">
                 {showMetricSkeleton ? (
                   <span className="ink-metric-skeleton" aria-label="Cargando metrica" />
                 ) : (
                   metric.value
                 )}
               </div>
-              <p className="ink-metric-note">{metric.note}</p>
-            </div>
+              <div className="metric-sub">{metric.note}</div>
+            </article>
           );
         })}
-      </div>
+      </section>
 
       {loading ? (
         <div className="flex justify-center py-20">
@@ -1817,8 +1823,8 @@ export default function SuperadminPage() {
           description="Crea el primer tenant para iniciar la operacion multiempresa."
         />
       ) : (
-        <div className="ink-table-card superadmin-table-card">
-          <div className="ink-card-header superadmin-table-header">
+        <div className="panel superadmin-table-card">
+          <div className="panel-header superadmin-table-header">
             <div>
               <h3 className="ink-card-title">Tenants registrados</h3>
               <p className="ink-card-subtitle">{tenantTotal} empresa{tenantTotal !== 1 ? 's' : ''} - Alta, edicion fiscal y gestion de usuarios.</p>
