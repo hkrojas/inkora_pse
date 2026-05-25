@@ -143,6 +143,7 @@ export default function AppLayout() {
   const isRetencionesRoute = location.pathname === '/retenciones';
   const isPercepcionesRoute = location.pathname === '/percepciones';
   const isConfiguracionRoute = location.pathname.startsWith('/configuracion');
+  const isSuperadminRoute = location.pathname === '/superadmin';
 
   return (
     <div
@@ -160,6 +161,7 @@ export default function AppLayout() {
         isRetencionesRoute && 'app-route-retenciones',
         isPercepcionesRoute && 'app-route-percepciones',
         isConfiguracionRoute && 'app-route-configuracion',
+        isSuperadminRoute && 'app-route-superadmin',
         isCobranzaRoute && 'app-route-cobranza',
         isComprobantesNuevoRoute && 'app-route-comprobantes-nuevo',
         isFacturasRoute && 'app-route-facturas',

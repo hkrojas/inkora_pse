@@ -10362,6 +10362,193 @@ textarea.input:focus,
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
 }
 
+/* Superadmin dark mode pass - scoped to /superadmin */
+.dark .app-route-superadmin .app-topbar,
+[data-theme='dark'] .app-route-superadmin .app-topbar {
+  background: rgba(15, 26, 16, 0.94) !important;
+  border-bottom-color: rgba(141, 198, 63, 0.16) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+}
+
+.dark .app-route-superadmin .app-topbar h1,
+[data-theme='dark'] .app-route-superadmin .app-topbar h1 {
+  color: var(--color-text) !important;
+}
+
+.dark .app-route-superadmin .app-topbar .rounded-\[14px\],
+[data-theme='dark'] .app-route-superadmin .app-topbar .rounded-\[14px\],
+.dark .app-route-superadmin .app-sunat-pill,
+[data-theme='dark'] .app-route-superadmin .app-sunat-pill,
+.dark .app-route-superadmin .app-topbar .h-\[42px\],
+[data-theme='dark'] .app-route-superadmin .app-topbar .h-\[42px\] {
+  background: rgba(255, 255, 255, 0.055) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: var(--color-text-muted) !important;
+}
+
+.dark .superadmin-shell,
+[data-theme='dark'] .superadmin-shell {
+  color: var(--color-text);
+}
+
+.dark .superadmin-shell .superadmin-table-card.panel,
+[data-theme='dark'] .superadmin-shell .superadmin-table-card.panel {
+  background:
+    radial-gradient(circle at 96% 0%, rgba(141, 198, 63, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.026)),
+    var(--color-surface);
+  border-color: rgba(141, 198, 63, 0.18);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+}
+
+.dark .superadmin-shell .superadmin-table-header,
+[data-theme='dark'] .superadmin-shell .superadmin-table-header {
+  background:
+    radial-gradient(circle at 100% -40%, rgba(141, 198, 63, 0.13), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.02));
+}
+
+.dark .superadmin-shell .superadmin-table-header .ink-card-title,
+.dark .superadmin-shell .superadmin-tenant-name,
+.dark .superadmin-shell .superadmin-status-caption,
+[data-theme='dark'] .superadmin-shell .superadmin-table-header .ink-card-title,
+[data-theme='dark'] .superadmin-shell .superadmin-tenant-name,
+[data-theme='dark'] .superadmin-shell .superadmin-status-caption {
+  color: var(--color-text);
+}
+
+.dark .superadmin-shell .superadmin-table-header .ink-card-subtitle,
+.dark .superadmin-shell .superadmin-tenant-address,
+.dark .superadmin-shell .superadmin-status-meta,
+.dark .superadmin-shell .superadmin-tenants-table thead th,
+.dark .superadmin-shell .superadmin-filter-bar .document-list-filter span,
+.dark .superadmin-shell .superadmin-filter-bar .sort-text,
+[data-theme='dark'] .superadmin-shell .superadmin-table-header .ink-card-subtitle,
+[data-theme='dark'] .superadmin-shell .superadmin-tenant-address,
+[data-theme='dark'] .superadmin-shell .superadmin-status-meta,
+[data-theme='dark'] .superadmin-shell .superadmin-tenants-table thead th,
+[data-theme='dark'] .superadmin-shell .superadmin-filter-bar .document-list-filter span,
+[data-theme='dark'] .superadmin-shell .superadmin-filter-bar .sort-text {
+  color: var(--color-text-muted);
+}
+
+.dark .superadmin-shell .superadmin-filter-bar,
+[data-theme='dark'] .superadmin-shell .superadmin-filter-bar {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.032)),
+    var(--color-surface-soft);
+  border-color: rgba(141, 198, 63, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
+.dark .superadmin-shell .superadmin-filter-bar .search-box,
+.dark .superadmin-shell .superadmin-filter-bar .ink-select-trigger,
+.dark .superadmin-shell .superadmin-filter-bar .sort-text,
+[data-theme='dark'] .superadmin-shell .superadmin-filter-bar .search-box,
+[data-theme='dark'] .superadmin-shell .superadmin-filter-bar .ink-select-trigger,
+[data-theme='dark'] .superadmin-shell .superadmin-filter-bar .sort-text {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(141, 198, 63, 0.16);
+}
+
+.dark .superadmin-shell .superadmin-filter-bar .search-box input,
+[data-theme='dark'] .superadmin-shell .superadmin-filter-bar .search-box input {
+  color: var(--color-text);
+}
+
+.dark .superadmin-shell .superadmin-filter-bar .search-box input::placeholder,
+[data-theme='dark'] .superadmin-shell .superadmin-filter-bar .search-box input::placeholder {
+  color: var(--color-text-soft);
+}
+
+.dark .superadmin-shell .superadmin-filter-bar .sort-text strong,
+[data-theme='dark'] .superadmin-shell .superadmin-filter-bar .sort-text strong {
+  color: var(--color-text);
+}
+
+.dark .superadmin-shell .superadmin-tenants-table tbody td,
+[data-theme='dark'] .superadmin-shell .superadmin-tenants-table tbody td {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.03)),
+    var(--color-surface);
+  border-color: rgba(141, 198, 63, 0.14);
+  color: var(--color-text);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
+.dark .superadmin-shell .superadmin-tenants-table tbody tr:hover td,
+[data-theme='dark'] .superadmin-shell .superadmin-tenants-table tbody tr:hover td {
+  background:
+    linear-gradient(180deg, rgba(141, 198, 63, 0.1), rgba(141, 198, 63, 0.055)),
+    var(--color-surface-soft);
+  border-color: rgba(141, 198, 63, 0.32);
+}
+
+.dark .superadmin-shell .superadmin-tenants-table tbody tr:hover td:first-child,
+[data-theme='dark'] .superadmin-shell .superadmin-tenants-table tbody tr:hover td:first-child {
+  box-shadow: inset 4px 0 0 var(--color-primary), 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+.dark .superadmin-shell .superadmin-status-panel,
+[data-theme='dark'] .superadmin-shell .superadmin-status-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+    var(--color-surface-soft);
+  border-color: rgba(141, 198, 63, 0.14);
+}
+
+.dark .superadmin-shell .superadmin-token-check,
+.dark .superadmin-shell .superadmin-toolbar-btn,
+[data-theme='dark'] .superadmin-shell .superadmin-token-check,
+[data-theme='dark'] .superadmin-shell .superadmin-toolbar-btn {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(141, 198, 63, 0.16);
+  color: var(--color-text-muted);
+  box-shadow: none;
+}
+
+.dark .superadmin-shell .superadmin-token-check:hover:not(:disabled),
+.dark .superadmin-shell .superadmin-toolbar-btn:hover,
+[data-theme='dark'] .superadmin-shell .superadmin-token-check:hover:not(:disabled),
+[data-theme='dark'] .superadmin-shell .superadmin-toolbar-btn:hover {
+  background: rgba(141, 198, 63, 0.13);
+  border-color: rgba(141, 198, 63, 0.34);
+  color: var(--color-text);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+.dark .superadmin-shell .superadmin-toolbar-btn--brand,
+[data-theme='dark'] .superadmin-shell .superadmin-toolbar-btn--brand {
+  background: #8dc63f;
+  border-color: #8dc63f;
+  color: #102012;
+  box-shadow: 0 14px 28px rgba(141, 198, 63, 0.18);
+}
+
+.dark .superadmin-shell .superadmin-toolbar-btn--warning,
+[data-theme='dark'] .superadmin-shell .superadmin-toolbar-btn--warning {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.26);
+  color: #fde68a;
+}
+
+.dark .superadmin-shell .superadmin-toolbar-btn--accent,
+[data-theme='dark'] .superadmin-shell .superadmin-toolbar-btn--accent {
+  background: rgba(141, 198, 63, 0.12);
+  border-color: rgba(141, 198, 63, 0.24);
+  color: #b7f478;
+}
+
+.dark .superadmin-shell .superadmin-avatar,
+[data-theme='dark'] .superadmin-shell .superadmin-avatar {
+  border-color: rgba(141, 198, 63, 0.28);
+  background:
+    radial-gradient(circle at 32% 22%, rgba(255, 255, 255, 0.2), transparent 34%),
+    linear-gradient(135deg, rgba(183, 244, 120, 0.95), rgba(141, 198, 63, 0.7));
+  color: #102012;
+  box-shadow: 0 10px 24px rgba(141, 198, 63, 0.18);
+}
+
 /* Clientes dark mode pass - scoped to /clientes */
 .dark .app-route-clientes .app-topbar,
 [data-theme='dark'] .app-route-clientes .app-topbar {

@@ -82,10 +82,11 @@ async function createVisualContext(browser, baseURL, role = 'tenant', options = 
     viewport: options.viewport,
     storageState: { cookies: [], origins: [] },
   });
-  await context.addInitScript(() => {
+  await context.addInitScript(({ theme }) => {
     localStorage.setItem('token', 'visual-qa-token');
+    if (theme) localStorage.setItem('inkora-theme', theme);
     sessionStorage.removeItem('token');
-  });
+  }, { theme: options.theme || null });
   const page = await context.newPage();
 
   await page.route(`${API_ORIGIN}/**`, async (route) => {
@@ -265,6 +266,45 @@ test.describe('Smart PSE GRE QA visual', () => {
       await expect(page.getByLabel(/clave sol/i)).toHaveValue('');
       await expect(page.getByLabel(/client id sunat/i)).toHaveValue('');
       await expect(page.getByLabel(/client secret sunat/i)).toHaveValue('');
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('superadmin dark mode mantiene contraste en topbar y tabla', async ({ browser, baseURL }) => {
+    const { context, page } = await createVisualContext(browser, baseURL, 'superadmin', { theme: 'dark' });
+
+    try {
+      await page.goto('/superadmin');
+      await expect(page.locator('html')).toHaveClass(/dark/);
+      await expect(page.getByRole('heading', { name: /Superadmin operativo/i })).toBeVisible();
+      await expect(page.getByRole('columnheader', { name: /Smart PSE CPE/i })).toBeVisible();
+
+      const samples = await page.evaluate(() => {
+        const channelAverage = (color) => {
+          const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+          if (!match) return 255;
+          return (Number(match[1]) + Number(match[2]) + Number(match[3])) / 3;
+        };
+        const readStyle = (selector, property = 'backgroundColor') => {
+          const element = document.querySelector(selector);
+          return element ? getComputedStyle(element)[property] : 'rgb(255, 255, 255)';
+        };
+
+        return {
+          topbarBg: channelAverage(readStyle('.app-route-superadmin .app-topbar')),
+          filterBg: channelAverage(readStyle('.superadmin-filter-bar')),
+          rowBg: channelAverage(readStyle('.superadmin-tenants-table tbody td')),
+          titleColor: channelAverage(readStyle('.app-route-superadmin .app-topbar h1', 'color')),
+          tenantNameColor: channelAverage(readStyle('.superadmin-tenant-name', 'color')),
+        };
+      });
+
+      expect(samples.topbarBg).toBeLessThan(90);
+      expect(samples.filterBg).toBeLessThan(110);
+      expect(samples.rowBg).toBeLessThan(110);
+      expect(samples.titleColor).toBeGreaterThan(160);
+      expect(samples.tenantNameColor).toBeGreaterThan(160);
     } finally {
       await context.close();
     }
