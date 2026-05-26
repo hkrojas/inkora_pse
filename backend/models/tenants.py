@@ -98,6 +98,13 @@ class Tenant(Base):
     retenciones_fiscales = relationship("RetencionFiscal", back_populates="tenant")
     percepciones_fiscales = relationship("PercepcionFiscal", back_populates="tenant")
 
+    @property
+    def payment_qr_filename(self):
+        for method in self.bank_accounts or []:
+            if isinstance(method, dict) and method.get("tipo") == "payment_qr_image":
+                return method.get("url") or method.get("payment_qr_filename")
+        return None
+
 
 # ==========================================
 # USER

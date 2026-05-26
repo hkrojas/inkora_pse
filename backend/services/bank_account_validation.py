@@ -71,6 +71,9 @@ def validate_and_normalize_bank_accounts(methods: Any) -> Any:
             raise ValueError(f"Cuenta bancaria {index + 1}: formato invalido.")
 
         raw_type = _key(raw_method.get("tipo"))
+        if raw_type == "payment_qr_image":
+            continue
+
         is_wallet = raw_type == "wallet" or bool(_text(raw_method.get("proveedor")))
 
         if is_wallet:

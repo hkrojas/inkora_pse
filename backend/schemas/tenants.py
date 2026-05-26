@@ -101,6 +101,7 @@ class TenantResponse(TenantSummaryResponse):
     business_address: Optional[str] = None
     business_phone: Optional[str] = None
     logo_filename: Optional[str] = None
+    payment_qr_filename: Optional[str] = None
     primary_color: Optional[str] = None
     pdf_note_1: Optional[str] = None
     pdf_note_1_color: Optional[str] = None

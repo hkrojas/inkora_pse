@@ -7,6 +7,8 @@ const tenant = {
   business_name: 'PAPELERIA GRAFICA Y PUBLICITARIA SAC.',
   business_ruc: '20606751509',
   business_address: 'Av. Los Pinos 123',
+  logo_filename: 'https://assets.test/logo-inkora.png',
+  payment_qr_filename: 'https://assets.test/qr-cobro.png',
   plan_type: 'founder',
   is_active: true,
   has_smartpse_credentials: true,
@@ -130,6 +132,9 @@ function getApiPayload(path, role, request) {
       has_sunat_credentials: true,
       has_sunat_cert: true,
     };
+  }
+  if (path === '/users/upload-payment-qr' && method === 'POST') {
+    return { url: 'https://assets.test/qr-cobro-actualizado.png' };
   }
   if (path === '/clientes' || path === '/cotizaciones') return [];
   if (path === '/clientes/page') return { items: [], total: 0 };
@@ -344,6 +349,36 @@ test.describe('Smart PSE GRE QA visual', () => {
       await expect(page.getByText(/^Credenciales SOL$/i)).toHaveCount(0);
       await expect(page.getByLabel(/usuario sol/i)).toHaveCount(0);
       await expect(page.getByLabel(/client secret/i)).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('configuracion muestra logo y QR de cobro del tenant', async ({ browser, baseURL }) => {
+    const { context, page } = await createVisualContext(browser, baseURL);
+
+    try {
+      await page.goto('/configuracion');
+      await expect(page.getByRole('img', { name: /Logo PAPELERIA/i }).first()).toBeVisible();
+      await expect(page.getByRole('img', { name: /QR de cobro PAPELERIA/i }).first()).toBeVisible();
+
+      const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser'),
+        page.getByRole('button', { name: /Subir QR de cobro/i }).click(),
+      ]);
+      await fileChooser.setFiles({
+        name: 'qr-cobro.png',
+        mimeType: 'image/png',
+        buffer: Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+          'base64',
+        ),
+      });
+
+      await expect(page.getByRole('img', { name: /QR de cobro PAPELERIA/i }).first()).toHaveAttribute(
+        'src',
+        /qr-cobro-actualizado\.png/,
+      );
     } finally {
       await context.close();
     }

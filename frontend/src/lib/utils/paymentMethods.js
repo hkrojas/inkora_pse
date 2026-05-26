@@ -32,6 +32,8 @@ export function normalizePaymentMethod(method) {
   if (!method || typeof method !== 'object') return null;
 
   const rawType = toText(method.tipo).toLowerCase();
+  if (rawType === 'payment_qr_image') return null;
+
   const isWallet = rawType === 'wallet' || Boolean(method.proveedor);
 
   if (isWallet) {

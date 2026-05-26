@@ -353,3 +353,44 @@ async def upload_logo(
             "No se pudo subir el logo.",
             exc,
         )
+
+
+@router.post("/users/upload-payment-qr")
+@limiter.limit("10/minute")
+async def upload_payment_qr(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_admin),
+):
+    try:
+        ext, validated_file_content = await read_validated_upload(
+            file,
+            allowed_extensions={"png", "jpg", "jpeg", "webp"},
+            allowed_content_types={"image/png", "image/jpeg", "image/webp"},
+            max_size_bytes=settings.MAX_LOGO_UPLOAD_BYTES,
+        )
+
+        unique_filename = f"payment_qr_{uuid.uuid4()}.{ext}"
+        public_url = await run_in_threadpool(
+            storage_service.upload_to_storage,
+            validated_file_content,
+            "payment_qrs",
+            unique_filename,
+            file.content_type or "",
+            return_public_url=True,
+        )
+
+        crud.update_tenant_payment_qr(db, current_user.tenant_id, public_url)
+
+        return {"url": public_url}
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise_internal_server_error(
+            "upload_payment_qr",
+            "No se pudo subir el QR de cobro.",
+            exc,
+        )

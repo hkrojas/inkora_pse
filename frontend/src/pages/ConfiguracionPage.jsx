@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { tenant as svc } from '../services/tenant';
-import { Sun, Moon, Monitor, Building2, ShieldCheck, User, Palette, CreditCard, AlertTriangle, Eye, EyeOff, KeyRound, Phone, Landmark, Smartphone, WalletCards, LockKeyhole, FileCheck2, BadgeCheck, FileKey2, RadioTower, ImageUp } from 'lucide-react';
+import { Sun, Moon, Monitor, Building2, ShieldCheck, User, Palette, CreditCard, AlertTriangle, Eye, EyeOff, KeyRound, Phone, Landmark, Smartphone, WalletCards, LockKeyhole, FileCheck2, BadgeCheck, FileKey2, RadioTower, ImageUp, QrCode } from 'lucide-react';
 import Spinner from '../components/ui/Spinner';
 import CustomSelect from '../components/ui/CustomSelect';
 import FormField from '../components/ui/FormField';
@@ -512,12 +512,15 @@ export default function ConfiguracionPage() {
   const toast = useToast();
   const [searchParams] = useSearchParams();
   const logoInputRef = useRef(null);
+  const paymentQrInputRef = useRef(null);
   const initialTab = searchParams.get('tab') || 'empresa';
   const [tenantData, setTenantData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingPaymentQr, setUploadingPaymentQr] = useState(false);
   const [logoError, setLogoError] = useState(null);
+  const [paymentQrError, setPaymentQrError] = useState(null);
   const [businessName, setBusinessName] = useState('');
   const [businessAddress, setBusinessAddress] = useState('');
   const [businessErrors, setBusinessErrors] = useState({});
@@ -633,6 +636,42 @@ export default function ConfiguracionPage() {
       toast(err.message || 'No se pudo subir el logo.', 'error');
     } finally {
       setUploadingLogo(false);
+    }
+  };
+
+  const handlePaymentQrChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!LOGO_ALLOWED_TYPES.includes(file.type)) {
+      setPaymentQrError('Formato no permitido. Usa PNG, JPG, JPEG o WEBP.');
+      toast('Formato de QR no permitido.', 'error');
+      return;
+    }
+
+    if (file.size > LOGO_MAX_SIZE_BYTES) {
+      setPaymentQrError('El QR no debe superar 2 MB.');
+      toast('El QR excede el tamano maximo permitido.', 'error');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    setPaymentQrError(null);
+    setUploadingPaymentQr(true);
+    try {
+      const response = await svc.uploadPaymentQr(formData);
+      setTenantData((current) => ({
+        ...(current || {}),
+        payment_qr_filename: response.url,
+      }));
+      toast('QR de cobro actualizado');
+    } catch (err) {
+      setPaymentQrError(err.message || 'No se pudo subir el QR de cobro.');
+      toast(err.message || 'No se pudo subir el QR de cobro.', 'error');
+    } finally {
+      setUploadingPaymentQr(false);
     }
   };
 
@@ -898,6 +937,46 @@ export default function ConfiguracionPage() {
                       ) : (
                         <>
                           <ImageUp size={15} /> Subir logo
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="settings-logo-upload-card settings-payment-qr-card">
+                  <div className="settings-logo-upload-preview settings-payment-qr-preview">
+                    {tenantData?.payment_qr_filename ? (
+                      <img src={tenantData.payment_qr_filename} alt={`QR de cobro ${companyName}`} />
+                    ) : (
+                      <QrCode size={30} strokeWidth={1.8} />
+                    )}
+                  </div>
+                  <div className="settings-logo-upload-copy">
+                    <p>QR de cobro</p>
+                    <span>Imagen única para pagos por Yape, Plin u otra billetera compatible. Queda visible aquí y lista para documentos comerciales.</span>
+                    {paymentQrError && <strong>{paymentQrError}</strong>}
+                  </div>
+                  <div className="settings-logo-upload-actions">
+                    <input
+                      ref={paymentQrInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handlePaymentQrChange}
+                      className="sr-only"
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => paymentQrInputRef.current?.click()}
+                      disabled={uploadingPaymentQr}
+                    >
+                      {uploadingPaymentQr ? (
+                        <>
+                          <Spinner size="sm" /> Subiendo...
+                        </>
+                      ) : (
+                        <>
+                          <ImageUp size={15} /> Subir QR de cobro
                         </>
                       )}
                     </button>

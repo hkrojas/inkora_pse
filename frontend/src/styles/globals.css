@@ -15585,6 +15585,20 @@ textarea.input:focus,
   padding: 8px;
 }
 
+.settings-payment-qr-preview {
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.7), transparent 34%),
+    linear-gradient(135deg, rgba(141,198,63,.18), rgba(31,77,39,.08)),
+    #fff;
+  color: #1f5b31;
+}
+
+.settings-payment-qr-preview img {
+  padding: 6px;
+  object-fit: contain;
+}
+
 .settings-logo-upload-copy p {
   margin: 0 0 4px;
   color: var(--color-text);

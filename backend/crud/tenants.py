@@ -10,6 +10,30 @@ import schemas
 # TENANTS
 # ==========================================
 
+PAYMENT_QR_METHOD_TYPE = "payment_qr_image"
+
+
+def _is_payment_qr_method(method) -> bool:
+    return isinstance(method, dict) and method.get("tipo") == PAYMENT_QR_METHOD_TYPE
+
+
+def _payment_qr_method(url: str) -> dict:
+    return {"tipo": PAYMENT_QR_METHOD_TYPE, "url": url}
+
+
+def _merge_payment_qr_method(existing_methods, incoming_methods):
+    qr_method = next((method for method in existing_methods or [] if _is_payment_qr_method(method)), None)
+    if not qr_method:
+        return incoming_methods
+
+    clean_incoming = [
+        method
+        for method in incoming_methods or []
+        if not _is_payment_qr_method(method)
+    ]
+    return [*clean_incoming, qr_method]
+
+
 def get_tenant(db: Session, tenant_id: int):
     return db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
 
@@ -40,9 +64,28 @@ def update_tenant(db: Session, tenant_id: int, data: schemas.TenantUpdate):
     db_tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
     if db_tenant:
         for key, value in data.model_dump(exclude_unset=True).items():
+            if key == "bank_accounts":
+                value = _merge_payment_qr_method(db_tenant.bank_accounts, value)
             setattr(db_tenant, key, value)
         db.commit()
         db.refresh(db_tenant)
+    return db_tenant
+
+
+def update_tenant_payment_qr(db: Session, tenant_id: int, public_url: str):
+    db_tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if not db_tenant:
+        return None
+
+    payment_methods = [
+        method
+        for method in db_tenant.bank_accounts or []
+        if not _is_payment_qr_method(method)
+    ]
+    payment_methods.append(_payment_qr_method(public_url))
+    db_tenant.bank_accounts = payment_methods
+    db.commit()
+    db.refresh(db_tenant)
     return db_tenant
 
 

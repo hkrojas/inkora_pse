@@ -278,6 +278,30 @@ def test_tenant_admin_update_permite_identidad_visible_y_bloquea_ruc():
         schemas.TenantAdminUpdate(business_name=" ", business_address="Av")
 
 
+def test_update_tenant_preserva_qr_de_cobro_al_guardar_medios(db_session):
+    tenant = _create_tenant(db_session, "27")
+    tenant.bank_accounts = [
+        {"tipo": "payment_qr_image", "url": "https://cdn.test/qr-cobro.png"},
+        {"tipo": "wallet", "proveedor": "Yape", "numero": "999888777"},
+    ]
+    db_session.commit()
+
+    payload = schemas.TenantAdminUpdate(
+        bank_accounts=[
+            {
+                "tipo": "wallet",
+                "proveedor": "Plin",
+                "numero": "999111222",
+            }
+        ]
+    )
+
+    updated = crud.update_tenant(db_session, tenant.id, payload)
+
+    assert {"tipo": "payment_qr_image", "url": "https://cdn.test/qr-cobro.png"} in updated.bank_accounts
+    assert {"tipo": "wallet", "proveedor": "Plin", "titular": "", "numero": "999111222", "nota": ""} in updated.bank_accounts
+
+
 def test_usuario_inactivo_queda_bloqueado_para_roles_sensibles(db_session):
     tenant = _create_tenant(db_session, "17", is_active=False)
     suspended_admin = _create_user(
