@@ -63,6 +63,20 @@ export function normalizePaymentMethods(methods) {
     .filter(Boolean);
 }
 
+export function getPaymentQrImageUrl(tenantData) {
+  const directUrl = toText(tenantData?.payment_qr_filename);
+  if (directUrl) return directUrl;
+
+  if (!Array.isArray(tenantData?.bank_accounts)) return '';
+  const qrEntry = tenantData.bank_accounts.find((method) => (
+    method
+    && typeof method === 'object'
+    && toText(method.tipo).toLowerCase() === 'payment_qr_image'
+  ));
+
+  return toText(qrEntry?.url || qrEntry?.payment_qr_filename);
+}
+
 export function hasPaymentMethodContent(method) {
   const normalized = normalizePaymentMethod(method);
   if (!normalized) return false;

@@ -4,7 +4,7 @@ import ColorPickerField from '../components/ui/ColorPickerField';
 import { useToast } from '../components/ui/Toast';
 import { tenant as tenantSvc } from '../services/tenant';
 import { useAuth } from '../context/AuthContext';
-import { getPaymentMethodPreview, normalizePaymentMethods } from '../lib/utils/paymentMethods';
+import { getPaymentMethodPreview, getPaymentQrImageUrl, normalizePaymentMethods } from '../lib/utils/paymentMethods';
 import FiscalDocPreview from '../components/documents/FiscalDocPreview';
 import {
   DEFAULT_NOTE_1_COLOR,
@@ -80,7 +80,10 @@ function getSafeColor(value, fallback) {
 }
 
 function formatMoney(value) {
-  return Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 });
+  return Number(value || 0).toLocaleString('es-PE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatQuantity(value) {
@@ -240,12 +243,22 @@ function PdfPreviewSheet({ tenantData }) {
     },
   ].filter((line) => line.text?.trim());
   const paymentMethods = normalizePaymentMethods(tenantData?.bank_accounts);
+  const paymentQrUrl = getPaymentQrImageUrl(tenantData);
   const items = SAMPLE_ITEMS.map((item) => {
     const quantity = Number(item.cantidad) || 0;
     const unitPrice = Number(item.precio_unitario) || 0;
     const total = quantity * unitPrice;
     const igv = (total * 0.18) / 1.18;
-    return { ...item, quantity, unitPrice, total, igv };
+    const subtotal = total - igv;
+    return {
+      ...item,
+      quantity,
+      unitPrice,
+      valorUnitario: quantity > 0 ? subtotal / quantity : 0,
+      subtotal,
+      total,
+      igv,
+    };
   });
   const totalGeneral = items.reduce((acc, item) => acc + item.total, 0);
   const totalIgv = items.reduce((acc, item) => acc + item.igv, 0);
@@ -255,8 +268,12 @@ function PdfPreviewSheet({ tenantData }) {
     <div style={{ background: '#e5e7eb', padding: '16px', display: 'flex', justifyContent: 'center' }}>
       <div className="cotizacion-preview-sheet" style={{ '--quote-preview-accent': accentColor, width: '794px', minHeight: '1123px', background: '#fff', boxShadow: '0 2px 16px rgba(0,0,0,0.18)', padding: '32px 36px', display: 'flex', flexDirection: 'column' }}>
         <div className="cotizacion-preview-header">
-          <div className="cotizacion-preview-logo">
-            <div className="cotizacion-preview-logo-fallback">{companyName}</div>
+          <div className="cotizacion-preview-logo-block">
+            {tenantData?.logo_filename ? (
+              <img className="cotizacion-preview-logo-img" src={tenantData.logo_filename} alt={`Logo ${companyName}`} />
+            ) : (
+              <div className="cotizacion-preview-logo-fallback">{companyName}</div>
+            )}
           </div>
 
           <div className="cotizacion-preview-company">
@@ -272,6 +289,8 @@ function PdfPreviewSheet({ tenantData }) {
             <div className="cotizacion-preview-docbox-number">N° 0037</div>
           </div>
         </div>
+
+        <div className="cotizacion-preview-section-line" />
 
         <div className="cotizacion-preview-client">
           <div className="cotizacion-preview-client-grid">
@@ -292,24 +311,32 @@ function PdfPreviewSheet({ tenantData }) {
           </div>
         </div>
 
+        <div className="cotizacion-preview-section-line" />
+
         <div className="cotizacion-preview-table-wrap">
           <table className="cotizacion-preview-table">
             <thead>
               <tr>
-                <th>Descripcion</th>
+                <th>Nro.</th>
                 <th>Cantidad</th>
-                <th>P.Unit</th>
-                <th>IGV</th>
-                <th>Precio</th>
+                <th>Codigo</th>
+                <th>Descripcion</th>
+                <th>V/U</th>
+                <th>P/U</th>
+                <th>Subtotal</th>
+                <th>Total</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item, index) => (
                 <tr key={`${item.descripcion}-${index}`}>
+                  <td>{index + 1}</td>
+                  <td>{`${formatQuantity(item.quantity)} ${item.unidad}`}</td>
+                  <td>{item.codigo}</td>
                   <td>{item.descripcion}</td>
-                  <td>{formatQuantity(item.quantity)}</td>
+                  <td>S/ {formatMoney(item.valorUnitario)}</td>
                   <td>S/ {formatMoney(item.unitPrice)}</td>
-                  <td>S/ {formatMoney(item.igv)}</td>
+                  <td>S/ {formatMoney(item.subtotal)}</td>
                   <td>S/ {formatMoney(item.total)}</td>
                 </tr>
               ))}
@@ -338,36 +365,57 @@ function PdfPreviewSheet({ tenantData }) {
         </div>
 
         <div className="cotizacion-preview-footer">
-          {observationLines.map((line, index) => (
-            <div
-              key={`pdf-design-note-${index}`}
-              className={`cotizacion-preview-note ${line.bold ? 'cotizacion-preview-note--primary' : ''}`}
-              style={{ color: line.color }}
-            >
-              {line.text}
-            </div>
-          ))}
+          <div className="cotizacion-preview-qr-frame">
+            {paymentQrUrl ? (
+              <img src={paymentQrUrl} alt={`QR de cobro ${companyName}`} />
+            ) : (
+              <span>QR DE COBRO</span>
+            )}
+          </div>
 
-          {paymentMethods.length > 0 && (
-            <div className="cotizacion-preview-bank">
-              <div className="cotizacion-preview-bank-title">Datos para la Transferencia</div>
-              <div className="cotizacion-preview-bank-line">Beneficiario: {companyName.toUpperCase()}</div>
-              {paymentMethods.map((method, index) => {
-                const preview = getPaymentMethodPreview(method);
-                if (!preview) return null;
-                return (
-                  <div key={`${preview.title}-${index}`} className="cotizacion-preview-bank-item">
-                    <div className="cotizacion-preview-bank-name">{preview.title}</div>
-                    {preview.lines.map((line, lineIndex) => (
-                      <div key={`${preview.title}-${lineIndex}`} className="cotizacion-preview-bank-line">
-                        {line}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <div className="cotizacion-preview-footer-divider" />
+
+          <div className="cotizacion-preview-footer-copy">
+            <strong>Escanea para pagar esta cotizacion.</strong>
+            <p>QR compatible con la billetera digital configurada por la empresa.</p>
+            <p><span>Condicion de pago:</span> Credito a 30 dias</p>
+
+            {observationLines.map((line, index) => (
+              <p
+                key={`pdf-design-note-${index}`}
+                className={`cotizacion-preview-note ${line.bold ? 'cotizacion-preview-note--primary' : ''}`}
+                style={{ color: line.color }}
+              >
+                {line.text}
+              </p>
+            ))}
+
+            {paymentMethods.length > 0 && (
+              <div className="cotizacion-preview-bank">
+                <div className="cotizacion-preview-bank-title">Datos para la transferencia</div>
+                <div className="cotizacion-preview-bank-line">Beneficiario: {companyName.toUpperCase()}</div>
+                {paymentMethods.slice(0, 2).map((method, index) => {
+                  const preview = getPaymentMethodPreview(method);
+                  if (!preview) return null;
+                  return (
+                    <div key={`${preview.title}-${index}`} className="cotizacion-preview-bank-item">
+                      <div className="cotizacion-preview-bank-name">{preview.title}</div>
+                      {preview.lines.map((line, lineIndex) => (
+                        <div key={`${preview.title}-${lineIndex}`} className="cotizacion-preview-bank-line">
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="cotizacion-preview-bottom">
+          <span>Documento comercial sin valor fiscal.</span>
+          <span>{companyEmail || companyPhone || companyName}</span>
         </div>
       </div>
     </div>

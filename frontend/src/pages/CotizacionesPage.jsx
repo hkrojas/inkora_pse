@@ -22,7 +22,7 @@ import ClientCombobox from '../components/ui/ClientCombobox';
 import ProductLineCell from '../components/ui/ProductLineCell';
 import { FieldError } from '../components/ui/FieldError';
 import { useToast } from '../components/ui/Toast';
-import { getPaymentMethodPreview, normalizePaymentMethods } from '../lib/utils/paymentMethods';
+import { getPaymentMethodPreview, getPaymentQrImageUrl, normalizePaymentMethods } from '../lib/utils/paymentMethods';
 import { BASE_URL } from '../lib/utils/config';
 import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/peruPhoneValidation';
 import {
@@ -412,6 +412,7 @@ function CotizacionPreviewSheet({
   const companyPhone = tenantData?.business_phone || '';
   const companyEmail = user?.business_email || user?.email || '';
   const paymentMethods = normalizePaymentMethods(tenantData?.bank_accounts);
+  const paymentQrUrl = getPaymentQrImageUrl(tenantData);
   const validItems = items
     .filter((item) => item.descripcion?.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0)
     .map((item) => {
@@ -419,19 +420,28 @@ function CotizacionPreviewSheet({
       const unitPrice = Number(item.precio_unitario) || 0;
       const lineTotal = quantity * unitPrice;
       const itemIgv = item.tipo_afectacion_igv === '10' ? (lineTotal * 0.18) / 1.18 : 0;
+      const subtotal = lineTotal - itemIgv;
       return {
+        codigo: item.codigo || item.codigo_producto || '',
         descripcion: item.descripcion.trim(),
         cantidad: quantity,
+        unidad: item.unidad_medida === 'NIU' ? 'UND' : (item.unidad_medida || 'UND'),
+        valor_unitario: quantity > 0 ? subtotal / quantity : 0,
         precio_unitario: unitPrice,
         igv: itemIgv,
+        subtotal,
         total: lineTotal,
       };
     });
   const displayItems = validItems.length > 0 ? validItems : [{
+    codigo: '',
     descripcion: 'Sin items agregados',
     cantidad: 0,
+    unidad: 'UND',
+    valor_unitario: 0,
     precio_unitario: 0,
     igv: 0,
+    subtotal: 0,
     total: 0,
   }];
   const todayLabel = formatPreviewDate(new Date(), '');
@@ -439,14 +449,18 @@ function CotizacionPreviewSheet({
   const amountInWords = amountToWords(totalGeneral, moneda);
   const displayObservationLines = (observationLines || []).filter((line) => line?.text?.trim());
   const currencySymbol = moneda === 'USD' ? '$' : 'S/';
+  const formatPreviewMoney = (value) => Number(value || 0).toLocaleString('es-PE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
   return (
     <div style={{ background: 'var(--border-subtle)', padding: '16px', display: 'flex', justifyContent: 'center' }}>
       <div className="cotizacion-preview-sheet" style={{ '--quote-preview-accent': accentColor, width: '794px', minHeight: '1123px', background: '#fff', boxShadow: '0 2px 16px rgba(0,0,0,0.18)', padding: '32px 36px', display: 'flex', flexDirection: 'column' }}>
         <div className="cotizacion-preview-header">
-          <div className="cotizacion-preview-logo">
+          <div className="cotizacion-preview-logo-block">
             {tenantData?.logo_filename ? (
-              <img src={tenantData.logo_filename} alt={`Logo ${companyName}`} />
+              <img className="cotizacion-preview-logo-img" src={tenantData.logo_filename} alt={`Logo ${companyName}`} />
             ) : (
               <div className="cotizacion-preview-logo-fallback">{companyName}</div>
             )}
@@ -465,6 +479,8 @@ function CotizacionPreviewSheet({
             <div className="cotizacion-preview-docbox-number">N° 0000</div>
           </div>
         </div>
+
+        <div className="cotizacion-preview-section-line" />
 
         <div className="cotizacion-preview-client">
           <div className="cotizacion-preview-client-grid">
@@ -485,25 +501,33 @@ function CotizacionPreviewSheet({
           </div>
         </div>
 
+        <div className="cotizacion-preview-section-line" />
+
         <div className="cotizacion-preview-table-wrap">
           <table className="cotizacion-preview-table">
             <thead>
               <tr>
-                <th>Descripcion</th>
+                <th>Nro.</th>
                 <th>Cantidad</th>
-                <th>P.Unit</th>
-                <th>IGV</th>
-                <th>Precio</th>
+                <th>Codigo</th>
+                <th>Descripcion</th>
+                <th>V/U</th>
+                <th>P/U</th>
+                <th>Subtotal</th>
+                <th>Total</th>
               </tr>
             </thead>
             <tbody>
               {displayItems.map((item, index) => (
                 <tr key={`${item.descripcion}-${index}`}>
+                  <td>{index + 1}</td>
+                  <td>{`${formatPreviewQuantity(item.cantidad)} ${item.unidad}`}</td>
+                  <td>{item.codigo || `ITEM-${String(index + 1).padStart(3, '0')}`}</td>
                   <td>{item.descripcion}</td>
-                  <td>{formatPreviewQuantity(item.cantidad)}</td>
-                  <td>{`${currencySymbol} ${fmt(item.precio_unitario)}`}</td>
-                  <td>{`${currencySymbol} ${fmt(item.igv)}`}</td>
-                  <td>{`${currencySymbol} ${fmt(item.total)}`}</td>
+                  <td>{`${currencySymbol} ${formatPreviewMoney(item.valor_unitario)}`}</td>
+                  <td>{`${currencySymbol} ${formatPreviewMoney(item.precio_unitario)}`}</td>
+                  <td>{`${currencySymbol} ${formatPreviewMoney(item.subtotal)}`}</td>
+                  <td>{`${currencySymbol} ${formatPreviewMoney(item.total)}`}</td>
                 </tr>
               ))}
             </tbody>
@@ -513,62 +537,79 @@ function CotizacionPreviewSheet({
         <div className="cotizacion-preview-totals">
           <div className="cotizacion-preview-total-row">
             <span>Total Gravado</span>
-            <span>{`${currencySymbol} ${fmt(subtotalGravado)}`}</span>
+            <span>{`${currencySymbol} ${formatPreviewMoney(subtotalGravado)}`}</span>
           </div>
           <div className="cotizacion-preview-total-row">
             <span>Total IGV</span>
-            <span>{`${currencySymbol} ${fmt(igv)}`}</span>
+            <span>{`${currencySymbol} ${formatPreviewMoney(igv)}`}</span>
           </div>
           <div className="cotizacion-preview-total-row is-strong">
             <span>Importe Total</span>
-            <span>{`${currencySymbol} ${fmt(totalGeneral)}`}</span>
+            <span>{`${currencySymbol} ${formatPreviewMoney(totalGeneral)}`}</span>
           </div>
         </div>
 
         <div className="cotizacion-preview-amount">
           <div className="cotizacion-preview-amount-line">
-            IMPORTE TOTAL A PAGAR {currencySymbol} {fmt(totalGeneral)}
+            IMPORTE TOTAL A PAGAR {currencySymbol} {formatPreviewMoney(totalGeneral)}
           </div>
           <div className="cotizacion-preview-amount-line">{amountInWords}</div>
         </div>
 
         <div className="cotizacion-preview-footer">
-          <div className="cotizacion-preview-footer-meta">
-            <span>Condicion de pago:</span> {getCondicionPagoLabel(condicion)}
+          <div className="cotizacion-preview-qr-frame">
+            {paymentQrUrl ? (
+              <img src={paymentQrUrl} alt={`QR de cobro ${companyName}`} />
+            ) : (
+              <span>QR DE COBRO</span>
+            )}
           </div>
 
-          {displayObservationLines.map((line, index) => (
-            <div
-              key={`preview-note-${index}`}
-              className={`cotizacion-preview-note ${line.bold ? 'cotizacion-preview-note--primary' : ''}`}
-              style={{ color: line.color }}
-            >
-              {line.text}
-            </div>
-          ))}
+          <div className="cotizacion-preview-footer-divider" />
 
-          {paymentMethods.length > 0 && (
-            <div className="cotizacion-preview-bank">
-              <div className="cotizacion-preview-bank-title">Datos para la Transferencia</div>
-              <div className="cotizacion-preview-bank-line">
-                Beneficiario: {companyName.toUpperCase()}
+          <div className="cotizacion-preview-footer-copy">
+            <strong>Escanea para pagar esta cotizacion.</strong>
+            <p>QR compatible con la billetera digital configurada por la empresa.</p>
+            <p><span>Condicion de pago:</span> {getCondicionPagoLabel(condicion)}</p>
+
+            {displayObservationLines.map((line, index) => (
+              <p
+                key={`preview-note-${index}`}
+                className={`cotizacion-preview-note ${line.bold ? 'cotizacion-preview-note--primary' : ''}`}
+                style={{ color: line.color }}
+              >
+                {line.text}
+              </p>
+            ))}
+
+            {paymentMethods.length > 0 && (
+              <div className="cotizacion-preview-bank">
+                <div className="cotizacion-preview-bank-title">Datos para la transferencia</div>
+                <div className="cotizacion-preview-bank-line">
+                  Beneficiario: {companyName.toUpperCase()}
+                </div>
+                {paymentMethods.slice(0, 2).map((method, index) => {
+                  const preview = getPaymentMethodPreview(method);
+                  if (!preview) return null;
+                  return (
+                    <div key={`${preview.title}-${index}`} className="cotizacion-preview-bank-item">
+                      <div className="cotizacion-preview-bank-name">{preview.title}</div>
+                      {preview.lines.map((line, lineIndex) => (
+                        <div key={`${preview.title}-${lineIndex}`} className="cotizacion-preview-bank-line">
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
-              {paymentMethods.map((method, index) => {
-                const preview = getPaymentMethodPreview(method);
-                if (!preview) return null;
-                return (
-                  <div key={`${preview.title}-${index}`} className="cotizacion-preview-bank-item">
-                    <div className="cotizacion-preview-bank-name">{preview.title}</div>
-                    {preview.lines.map((line, lineIndex) => (
-                      <div key={`${preview.title}-${lineIndex}`} className="cotizacion-preview-bank-line">
-                        {line}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+            )}
+          </div>
+        </div>
+
+        <div className="cotizacion-preview-bottom">
+          <span>Documento comercial sin valor fiscal.</span>
+          <span>{companyEmail || companyPhone || companyName}</span>
         </div>
       </div>
     </div>
