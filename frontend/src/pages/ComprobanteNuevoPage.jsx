@@ -300,6 +300,7 @@ function PreviewModal({ open, onClose, form, totals, tenantData }) {
     address: tenantData?.business_address || '—',
     phone: tenantData?.business_phone || '',
     email: tenantData?.business_email || '',
+    logoUrl: tenantData?.logo_filename || '',
   };
 
   return (

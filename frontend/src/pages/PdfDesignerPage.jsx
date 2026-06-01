@@ -265,8 +265,8 @@ function PdfPreviewSheet({ tenantData }) {
   const subtotalGravado = totalGeneral - totalIgv;
 
   return (
-    <div style={{ background: '#e5e7eb', padding: '16px', display: 'flex', justifyContent: 'center' }}>
-      <div className="cotizacion-preview-sheet" style={{ '--quote-preview-accent': accentColor, width: '794px', minHeight: '1123px', background: '#fff', boxShadow: '0 2px 16px rgba(0,0,0,0.18)', padding: '32px 36px', display: 'flex', flexDirection: 'column' }}>
+    <div className="document-preview-canvas">
+      <div className="cotizacion-preview-sheet" style={{ '--quote-preview-accent': accentColor }}>
         <div className="cotizacion-preview-header">
           <div className="cotizacion-preview-logo-block">
             {tenantData?.logo_filename ? (
@@ -278,15 +278,16 @@ function PdfPreviewSheet({ tenantData }) {
 
           <div className="cotizacion-preview-company">
             <div className="cotizacion-preview-company-name">{companyName.toUpperCase()}</div>
+            {companyRuc && <div className="cotizacion-preview-company-meta">RUC {companyRuc}</div>}
             <div className="cotizacion-preview-company-meta">{companyAddress}</div>
             {companyEmail && <div className="cotizacion-preview-company-meta">{companyEmail}</div>}
             {companyPhone && <div className="cotizacion-preview-company-meta">{companyPhone}</div>}
           </div>
 
           <div className="cotizacion-preview-docbox">
-            {companyRuc && <div className="cotizacion-preview-docbox-ruc">RUC {companyRuc}</div>}
-            <div className="cotizacion-preview-docbox-title">COTIZACION</div>
+            <div className="cotizacion-preview-docbox-title">COTIZACIÓN</div>
             <div className="cotizacion-preview-docbox-number">COT-000037</div>
+            {companyRuc && <div className="cotizacion-preview-docbox-ruc">RUC: {companyRuc}</div>}
           </div>
         </div>
 
@@ -373,9 +374,9 @@ function PdfPreviewSheet({ tenantData }) {
           <div className="cotizacion-preview-footer-divider" />
 
           <div className="cotizacion-preview-footer-copy">
-            <strong>Escanea para pagar esta cotizacion.</strong>
+            <strong>Escanea para pagar esta cotización.</strong>
             <p>QR compatible con la billetera digital configurada por la empresa.</p>
-            <p><span>Condicion de pago:</span> Credito a 30 dias</p>
+            <p><span>Condición de pago:</span> Crédito a 30 días</p>
 
             {observationLines.map((line, index) => (
               <p
@@ -424,7 +425,7 @@ function FiscalDesignerPreview({ tenantData }) {
   return (
     <FiscalDocPreview
       accentColor={accentColor}
-      company={SAMPLE_COMPANY}
+      company={{ ...SAMPLE_COMPANY, logoUrl: tenantData?.logo_filename || '' }}
       client={{ razon_social: SAMPLE_CLIENT.razon_social, tipo_documento_label: 'RUC', numero_documento: SAMPLE_CLIENT.numero_documento, direccion: SAMPLE_CLIENT.direccion }}
       docInfo={{ tipoLabel: 'FACTURA', serie: 'FFA1', numero: '000001', fecha_emision: '20/04/2026', fecha_vencimiento: '', moneda_texto: 'SOLES', condicion_pago_label: 'CONTADO', medio_pago: 'EFECTIVO', observaciones: '' }}
       items={SAMPLE_FISCAL_ITEMS}

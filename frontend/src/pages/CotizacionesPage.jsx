@@ -453,8 +453,8 @@ function CotizacionPreviewSheet({
   });
 
   return (
-    <div style={{ background: 'var(--border-subtle)', padding: '16px', display: 'flex', justifyContent: 'center' }}>
-      <div className="cotizacion-preview-sheet" style={{ '--quote-preview-accent': accentColor, width: '794px', minHeight: '1123px', background: '#fff', boxShadow: '0 2px 16px rgba(0,0,0,0.18)', padding: '32px 36px', display: 'flex', flexDirection: 'column' }}>
+    <div className="document-preview-canvas">
+      <div className="cotizacion-preview-sheet" style={{ '--quote-preview-accent': accentColor }}>
         <div className="cotizacion-preview-header">
           <div className="cotizacion-preview-logo-block">
             {tenantData?.logo_filename ? (
@@ -466,15 +466,16 @@ function CotizacionPreviewSheet({
 
           <div className="cotizacion-preview-company">
             <div className="cotizacion-preview-company-name">{companyName.toUpperCase()}</div>
+            {companyRuc && <div className="cotizacion-preview-company-meta">RUC {companyRuc}</div>}
             <div className="cotizacion-preview-company-meta">{companyAddress}</div>
             {companyEmail && <div className="cotizacion-preview-company-meta">{companyEmail}</div>}
             {companyPhone && <div className="cotizacion-preview-company-meta">{companyPhone}</div>}
           </div>
 
           <div className="cotizacion-preview-docbox">
-            {companyRuc && <div className="cotizacion-preview-docbox-ruc">RUC {companyRuc}</div>}
-            <div className="cotizacion-preview-docbox-title">COTIZACION</div>
+            <div className="cotizacion-preview-docbox-title">COTIZACIÓN</div>
             <div className="cotizacion-preview-docbox-number">COT-000000</div>
+            {companyRuc && <div className="cotizacion-preview-docbox-ruc">RUC: {companyRuc}</div>}
           </div>
         </div>
 
@@ -561,9 +562,9 @@ function CotizacionPreviewSheet({
           <div className="cotizacion-preview-footer-divider" />
 
           <div className="cotizacion-preview-footer-copy">
-            <strong>Escanea para pagar esta cotizacion.</strong>
+            <strong>Escanea para pagar esta cotización.</strong>
             <p>QR compatible con la billetera digital configurada por la empresa.</p>
-            <p><span>Condicion de pago:</span> {getCondicionPagoLabel(condicion)}</p>
+            <p><span>Condición de pago:</span> {getCondicionPagoLabel(condicion)}</p>
 
             {displayObservationLines.map((line, index) => (
               <p
@@ -1429,7 +1430,7 @@ return (
       <Modal
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
-        title="Vista previa de cotizacion"
+        title="Vista previa de cotización"
         size="xl"
       >
         <div style={{ margin: '-24px', overflow: 'auto', maxHeight: '82vh' }}>
