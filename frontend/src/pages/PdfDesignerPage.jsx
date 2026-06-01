@@ -286,7 +286,7 @@ function PdfPreviewSheet({ tenantData }) {
           <div className="cotizacion-preview-docbox">
             {companyRuc && <div className="cotizacion-preview-docbox-ruc">RUC {companyRuc}</div>}
             <div className="cotizacion-preview-docbox-title">COTIZACION</div>
-            <div className="cotizacion-preview-docbox-number">N° 0037</div>
+            <div className="cotizacion-preview-docbox-number">COT-000037</div>
           </div>
         </div>
 
@@ -294,20 +294,18 @@ function PdfPreviewSheet({ tenantData }) {
 
         <div className="cotizacion-preview-client">
           <div className="cotizacion-preview-client-grid">
-            <div className="cotizacion-preview-client-label">Senores:</div>
+            <div className="cotizacion-preview-client-label">Señores:</div>
             <div className="cotizacion-preview-client-value">{SAMPLE_CLIENT.razon_social}</div>
-            <div className="cotizacion-preview-client-label">Emision:</div>
+            <div className="cotizacion-preview-client-label">Emisión:</div>
             <div className="cotizacion-preview-client-value">26/10/2025</div>
 
             <div className="cotizacion-preview-client-label">RUC:</div>
             <div className="cotizacion-preview-client-value">{SAMPLE_CLIENT.numero_documento}</div>
-            <div className="cotizacion-preview-client-label">Vencimiento:</div>
-            <div className="cotizacion-preview-client-value">26/11/2025</div>
-
-            <div className="cotizacion-preview-client-label">Direccion:</div>
-            <div className="cotizacion-preview-client-value">{SAMPLE_CLIENT.direccion}</div>
             <div className="cotizacion-preview-client-label">Moneda:</div>
             <div className="cotizacion-preview-client-value">SOLES</div>
+
+            <div className="cotizacion-preview-client-label">Dirección:</div>
+            <div className="cotizacion-preview-client-value">{SAMPLE_CLIENT.direccion}</div>
           </div>
         </div>
 
@@ -317,10 +315,10 @@ function PdfPreviewSheet({ tenantData }) {
           <table className="cotizacion-preview-table">
             <thead>
               <tr>
-                <th>Nro.</th>
+                <th>N°</th>
                 <th>Cantidad</th>
-                <th>Codigo</th>
-                <th>Descripcion</th>
+                <th>Código</th>
+                <th>Descripción</th>
                 <th>V/U</th>
                 <th>P/U</th>
                 <th>Subtotal</th>
@@ -346,21 +344,20 @@ function PdfPreviewSheet({ tenantData }) {
 
         <div className="cotizacion-preview-totals">
           <div className="cotizacion-preview-total-row">
-            <span>Total Gravado</span>
+            <span>OP. GRAVADAS:</span>
             <span>S/ {formatMoney(subtotalGravado)}</span>
           </div>
           <div className="cotizacion-preview-total-row">
-            <span>Total IGV</span>
+            <span>IGV (18%):</span>
             <span>S/ {formatMoney(totalIgv)}</span>
           </div>
           <div className="cotizacion-preview-total-row is-strong">
-            <span>Importe Total</span>
+            <span>IMPORTE TOTAL:</span>
             <span>S/ {formatMoney(totalGeneral)}</span>
           </div>
         </div>
 
         <div className="cotizacion-preview-amount">
-          <div className="cotizacion-preview-amount-line">IMPORTE TOTAL A PAGAR S/ {formatMoney(totalGeneral)}</div>
           <div className="cotizacion-preview-amount-line">{amountToWords(totalGeneral)}</div>
         </div>
 

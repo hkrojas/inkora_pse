@@ -398,7 +398,6 @@ function CotizacionPreviewSheet({
   cliente,
   moneda,
   condicion,
-  fechaVenc,
   items,
   observationLines,
   subtotalGravado,
@@ -445,7 +444,6 @@ function CotizacionPreviewSheet({
     total: 0,
   }];
   const todayLabel = formatPreviewDate(new Date(), '');
-  const dueDateLabel = formatPreviewDate(fechaVenc, todayLabel);
   const amountInWords = amountToWords(totalGeneral, moneda);
   const displayObservationLines = (observationLines || []).filter((line) => line?.text?.trim());
   const currencySymbol = moneda === 'USD' ? '$' : 'S/';
@@ -476,7 +474,7 @@ function CotizacionPreviewSheet({
           <div className="cotizacion-preview-docbox">
             {companyRuc && <div className="cotizacion-preview-docbox-ruc">RUC {companyRuc}</div>}
             <div className="cotizacion-preview-docbox-title">COTIZACION</div>
-            <div className="cotizacion-preview-docbox-number">N° 0000</div>
+            <div className="cotizacion-preview-docbox-number">COT-000000</div>
           </div>
         </div>
 
@@ -484,20 +482,18 @@ function CotizacionPreviewSheet({
 
         <div className="cotizacion-preview-client">
           <div className="cotizacion-preview-client-grid">
-            <div className="cotizacion-preview-client-label">Senores:</div>
+            <div className="cotizacion-preview-client-label">Señores:</div>
             <div className="cotizacion-preview-client-value">{cliente.razon_social}</div>
-            <div className="cotizacion-preview-client-label">Emision:</div>
+            <div className="cotizacion-preview-client-label">Emisión:</div>
             <div className="cotizacion-preview-client-value">{todayLabel}</div>
 
             <div className="cotizacion-preview-client-label">{getTipoDocumentoClienteLabel(cliente.tipo_documento)}:</div>
             <div className="cotizacion-preview-client-value">{cliente.numero_documento || '-'}</div>
-            <div className="cotizacion-preview-client-label">Vencimiento:</div>
-            <div className="cotizacion-preview-client-value">{condicion === 'contado' ? todayLabel : dueDateLabel}</div>
-
-            <div className="cotizacion-preview-client-label">Direccion:</div>
-            <div className="cotizacion-preview-client-value">{cliente.direccion || '-'}</div>
             <div className="cotizacion-preview-client-label">Moneda:</div>
             <div className="cotizacion-preview-client-value">{getMonedaTexto(moneda)}</div>
+
+            <div className="cotizacion-preview-client-label">Dirección:</div>
+            <div className="cotizacion-preview-client-value">{cliente.direccion || '-'}</div>
           </div>
         </div>
 
@@ -507,10 +503,10 @@ function CotizacionPreviewSheet({
           <table className="cotizacion-preview-table">
             <thead>
               <tr>
-                <th>Nro.</th>
+                <th>N°</th>
                 <th>Cantidad</th>
-                <th>Codigo</th>
-                <th>Descripcion</th>
+                <th>Código</th>
+                <th>Descripción</th>
                 <th>V/U</th>
                 <th>P/U</th>
                 <th>Subtotal</th>
@@ -536,23 +532,20 @@ function CotizacionPreviewSheet({
 
         <div className="cotizacion-preview-totals">
           <div className="cotizacion-preview-total-row">
-            <span>Total Gravado</span>
+            <span>OP. GRAVADAS:</span>
             <span>{`${currencySymbol} ${formatPreviewMoney(subtotalGravado)}`}</span>
           </div>
           <div className="cotizacion-preview-total-row">
-            <span>Total IGV</span>
+            <span>IGV (18%):</span>
             <span>{`${currencySymbol} ${formatPreviewMoney(igv)}`}</span>
           </div>
           <div className="cotizacion-preview-total-row is-strong">
-            <span>Importe Total</span>
+            <span>IMPORTE TOTAL:</span>
             <span>{`${currencySymbol} ${formatPreviewMoney(totalGeneral)}`}</span>
           </div>
         </div>
 
         <div className="cotizacion-preview-amount">
-          <div className="cotizacion-preview-amount-line">
-            IMPORTE TOTAL A PAGAR {currencySymbol} {formatPreviewMoney(totalGeneral)}
-          </div>
           <div className="cotizacion-preview-amount-line">{amountInWords}</div>
         </div>
 
@@ -1446,7 +1439,6 @@ return (
             cliente={previewClient}
             moneda={moneda}
             condicion={condicion}
-            fechaVenc={fechaVenc}
             items={items}
             observationLines={observationLines}
             subtotalGravado={subtotalGravado}
