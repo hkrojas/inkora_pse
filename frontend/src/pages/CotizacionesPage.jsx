@@ -278,8 +278,10 @@ function getCondicionPagoLabel(value) {
   return CONDICIONES_PAGO.find((option) => option.value === value)?.label || 'Contado';
 }
 
-function getTipoDocumentoClienteLabel(value) {
-  return getFiscalDocLabel(value);
+function getTipoDocumentoClienteLabel(value, numeroDocumento = '') {
+  const digits = String(numeroDocumento || '').replace(/\D/g, '');
+  if (value === '6' || digits.length === 11) return 'RUC';
+  return 'DNI';
 }
 
 function getMonedaTexto(moneda) {
@@ -474,7 +476,7 @@ function CotizacionPreviewSheet({
 
           <div className="cotizacion-preview-docbox">
             <div className="cotizacion-preview-docbox-title">COTIZACIÓN</div>
-            <div className="cotizacion-preview-docbox-number">COT-000000</div>
+            <div className="cotizacion-preview-docbox-number">COT-000001</div>
             {companyRuc && <div className="cotizacion-preview-docbox-ruc">RUC: {companyRuc}</div>}
           </div>
         </div>
@@ -488,7 +490,7 @@ function CotizacionPreviewSheet({
             <div className="cotizacion-preview-client-label">Emisión:</div>
             <div className="cotizacion-preview-client-value">{todayLabel}</div>
 
-            <div className="cotizacion-preview-client-label">{getTipoDocumentoClienteLabel(cliente.tipo_documento)}:</div>
+            <div className="cotizacion-preview-client-label">{getTipoDocumentoClienteLabel(cliente.tipo_documento, cliente.numero_documento)}:</div>
             <div className="cotizacion-preview-client-value">{cliente.numero_documento || '-'}</div>
             <div className="cotizacion-preview-client-label">Moneda:</div>
             <div className="cotizacion-preview-client-value">{getMonedaTexto(moneda)}</div>
