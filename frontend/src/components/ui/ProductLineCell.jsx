@@ -17,7 +17,7 @@
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { RotateCw, X } from 'lucide-react';
+import { Loader2, RotateCw, X } from 'lucide-react';
 import { productos as productosSvc } from '../../services/productos';
 
 const NARROW = '90px'; // code input fixed width
@@ -42,6 +42,16 @@ function mergeProducts(...groups) {
   return merged;
 }
 
+function productMatchesQuery(product, query) {
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  if (!normalizedQuery) return false;
+  return [
+    product?.codigo_interno,
+    product?.nombre,
+    product?.descripcion,
+  ].some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
+}
+
 function formatPrice(product, incluyeIgv, sym) {
   const amount = incluyeIgv
     ? Number(product.precio_unitario || 0)
@@ -61,6 +71,8 @@ export default function ProductLineCell({
   const [pos, setPos]                   = useState({ top: 0, left: 0, width: 0 });
   const [generating, setGenerating]     = useState(false);
   const [remoteProducts, setRemoteProducts] = useState([]);
+  const [searchingProducts, setSearchingProducts] = useState(false);
+  const [searchedQuery, setSearchedQuery] = useState('');
 
   const containerRef = useRef(null);
   const dropdownRef  = useRef(null);
@@ -74,20 +86,18 @@ export default function ProductLineCell({
 
   const activeQuery = activeInput === 'codigo' ? value.codigo : value.descripcion;
 
-  const matchedProducts = useCallback((field, query, source = products) => {
+  const matchedProducts = useCallback((query, source = products) => {
     const q = String(query || '').toLowerCase().trim();
     if (!q) return [];
-    return source.filter((p) => (
-      field === 'codigo'
-        ? (p.codigo_interno || '').toLowerCase().includes(q)
-        : (p.nombre || '').toLowerCase().includes(q)
-    ));
+    return source.filter((p) => productMatchesQuery(p, q));
   }, [products]);
 
   useEffect(() => {
     if (!activeInput || isExisting) {
       searchAbortRef.current?.abort();
       setRemoteProducts([]);
+      setSearchingProducts(false);
+      setSearchedQuery('');
       return undefined;
     }
 
@@ -95,6 +105,8 @@ export default function ProductLineCell({
     if (query.length < SEARCH_MIN_CHARS) {
       searchAbortRef.current?.abort();
       setRemoteProducts([]);
+      setSearchingProducts(false);
+      setSearchedQuery('');
       return undefined;
     }
 
@@ -102,10 +114,14 @@ export default function ProductLineCell({
     const cached = searchCacheRef.current.get(cacheKey);
     if (cached) {
       setRemoteProducts(cached);
+      setSearchingProducts(false);
+      setSearchedQuery(query);
       return undefined;
     }
 
     setRemoteProducts([]);
+    setSearchingProducts(true);
+    setSearchedQuery('');
     searchAbortRef.current?.abort();
     const controller = new AbortController();
     searchAbortRef.current = controller;
@@ -115,12 +131,19 @@ export default function ProductLineCell({
         .then((items) => {
           const results = Array.isArray(items) ? items : [];
           searchCacheRef.current.set(cacheKey, results);
-          if (!controller.signal.aborted) setRemoteProducts(results);
+          if (!controller.signal.aborted) {
+            setRemoteProducts(results);
+            setSearchedQuery(query);
+          }
         })
         .catch((error) => {
-          if (!error?.isCanceled && !controller.signal.aborted) setRemoteProducts([]);
+          if (!error?.isCanceled && !controller.signal.aborted) {
+            setRemoteProducts([]);
+            setSearchedQuery(query);
+          }
         })
         .finally(() => {
+          if (!controller.signal.aborted) setSearchingProducts(false);
           if (searchAbortRef.current === controller) searchAbortRef.current = null;
         });
     }, SEARCH_DEBOUNCE_MS);
@@ -131,13 +154,19 @@ export default function ProductLineCell({
     };
   }, [activeInput, activeQuery, isExisting]);
 
-  // Build filtered list based on which input is active
+  const currentSearchQuery = String(activeQuery || '').trim();
+  const remoteResultsMatchCurrentQuery = searchedQuery.trim().toLowerCase() === currentSearchQuery.toLowerCase();
   const dropdownItems = activeInput
     ? mergeProducts(
-      matchedProducts(activeInput, activeQuery, remoteProducts),
-      matchedProducts(activeInput, activeQuery, products),
+      remoteResultsMatchCurrentQuery ? remoteProducts : [],
+      matchedProducts(activeQuery, products),
     ).slice(0, 10)
     : [];
+  const canShowSearchMenu = activeInput && !isExisting && currentSearchQuery.length >= SEARCH_MIN_CHARS;
+  const showNoSearchResults = canShowSearchMenu
+    && !searchingProducts
+    && remoteResultsMatchCurrentQuery
+    && dropdownItems.length === 0;
 
   // Update dropdown position (anchored to container)
   const openFor = useCallback((field) => {
@@ -301,29 +330,39 @@ export default function ProductLineCell({
       )}
 
       {/* ── Dropdown portal ── */}
-      {activeInput && dropdownItems.length > 0 && createPortal(
+      {canShowSearchMenu && createPortal(
         <div
           ref={dropdownRef}
-          style={{ position: 'absolute', top: pos.top, left: pos.left, width: pos.width, background: 'var(--bg-surface)', border: '1.5px solid var(--brand-200)', boxShadow: 'var(--shadow-brut-md)', zIndex: 9999, maxHeight: '240px', overflowY: 'auto' }}
+          className="ink-combobox-menu dropdown-enter"
+          style={{ top: pos.top, left: pos.left, width: pos.width }}
         >
+          {searchingProducts && (
+            <div className="ink-combobox-feedback">
+              <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+              Buscando productos...
+            </div>
+          )}
+          {showNoSearchResults && (
+            <div className="ink-combobox-feedback ink-combobox-feedback--empty">
+              No hay productos registrados con ese codigo o nombre.
+            </div>
+          )}
           {dropdownItems.map((p) => (
             <button
               key={p.id}
               type="button"
               onMouseDown={(e) => { e.preventDefault(); handleSelectProduct(p); }}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '8px 14px', border: 'none', borderBottom: '1px solid var(--border-hair)', background: 'var(--bg-surface)', cursor: 'pointer', textAlign: 'left', gap: '12px' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-surface-2)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-surface)'; }}
+              className="ink-combobox-option"
             >
-              <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', fontWeight: 700, color: 'var(--brand-600)', flexShrink: 0, minWidth: '68px' }}>
-                  {p.codigo_interno || '—'}
+              <div className="ink-combobox-option-copy ink-product-option-copy">
+                <span className="ink-product-option-code">
+                  {p.codigo_interno || '-'}
                 </span>
-                <span style={{ fontSize: '13px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span className="ink-combobox-option-title ink-product-option-title">
                   {p.nombre}
                 </span>
               </div>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: 'var(--text-tertiary)', flexShrink: 0 }}>
+              <span className="ink-combobox-pill">
                 {formatPrice(p, incluyeIgv, sym)}
               </span>
             </button>

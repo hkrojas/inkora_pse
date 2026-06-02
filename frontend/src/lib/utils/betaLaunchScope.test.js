@@ -90,3 +90,17 @@ test('quote client selector searches tenant clients live by document or name', (
     'remote client search results should not be narrowed again by the active input field',
   );
 });
+
+test('quote product lines search tenant products live by code or name', () => {
+  const productLineSource = readSource('../../components/ui/ProductLineCell.jsx');
+
+  assert.match(productLineSource, /productosSvc\.search\(query,\s*SEARCH_LIMIT/);
+  assert.match(productLineSource, /AbortController/);
+  assert.match(productLineSource, /productMatchesQuery/);
+  assert.match(productLineSource, /setSearchingProducts\(true\)/);
+  assert.doesNotMatch(
+    productLineSource,
+    /matchedProducts\(activeInput,\s*activeQuery,\s*remoteProducts\)/,
+    'remote product search results should not be narrowed again by the active input field',
+  );
+});

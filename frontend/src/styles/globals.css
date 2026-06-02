@@ -2208,6 +2208,29 @@
   color: var(--color-text-soft);
 }
 
+.ink-product-option-copy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ink-product-option-code {
+  min-width: 68px;
+  flex-shrink: 0;
+  color: var(--color-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ink-product-option-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pdf-color-picker-control {
   display: flex;
   gap: 8px;
