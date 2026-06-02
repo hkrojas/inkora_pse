@@ -56,6 +56,19 @@ function mergeClients(...groups) {
   return merged;
 }
 
+function clientMatchesQuery(client, query) {
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  if (!normalizedQuery) return false;
+  return [
+    client?.numero_documento,
+    client?.razon_social,
+    client?.nombre_comercial,
+    client?.email,
+    client?.telefono,
+    client?.whatsapp,
+  ].some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
+}
+
 export default function ClientCombobox({
   clients = [],
   value,
@@ -73,6 +86,8 @@ export default function ClientCombobox({
   const [errors, setErrors] = useState({});
   const [lookingUp, setLookingUp] = useState(false);
   const [remoteClients, setRemoteClients] = useState([]);
+  const [searchingClients, setSearchingClients] = useState(false);
+  const [searchedQuery, setSearchedQuery] = useState('');
 
   const numeroRef = useRef(null);
   const nombreRef = useRef(null);
@@ -110,14 +125,9 @@ export default function ClientCombobox({
     notify(nextForm, true, false, false);
   }, [notify]);
 
-  const matchedClients = useCallback((field, query, source = clients) => {
+  const matchedClients = useCallback((query, source = clients) => {
     if (!query.trim()) return [];
-    const low = query.toLowerCase();
-    return source.filter((client) => (
-      field === 'numero'
-        ? String(client.numero_documento || '').toLowerCase().includes(low)
-        : String(client.razon_social || '').toLowerCase().includes(low)
-    )).slice(0, 12);
+    return source.filter((client) => clientMatchesQuery(client, query)).slice(0, 12);
   }, [clients]);
 
   const activeQuery = activeField === 'numero' ? form.numero_documento : form.razon_social;
@@ -126,6 +136,8 @@ export default function ClientCombobox({
     if (!activeField || locked) {
       searchAbortRef.current?.abort();
       setRemoteClients([]);
+      setSearchingClients(false);
+      setSearchedQuery('');
       return undefined;
     }
 
@@ -133,6 +145,8 @@ export default function ClientCombobox({
     if (query.length < SEARCH_MIN_CHARS) {
       searchAbortRef.current?.abort();
       setRemoteClients([]);
+      setSearchingClients(false);
+      setSearchedQuery('');
       return undefined;
     }
 
@@ -140,10 +154,14 @@ export default function ClientCombobox({
     const cached = searchCacheRef.current.get(cacheKey);
     if (cached) {
       setRemoteClients(cached);
+      setSearchingClients(false);
+      setSearchedQuery(query);
       return undefined;
     }
 
     setRemoteClients([]);
+    setSearchingClients(true);
+    setSearchedQuery('');
     searchAbortRef.current?.abort();
     const controller = new AbortController();
     searchAbortRef.current = controller;
@@ -153,12 +171,19 @@ export default function ClientCombobox({
         .then((items) => {
           const results = Array.isArray(items) ? items : [];
           searchCacheRef.current.set(cacheKey, results);
-          if (!controller.signal.aborted) setRemoteClients(results);
+          if (!controller.signal.aborted) {
+            setRemoteClients(results);
+            setSearchedQuery(query);
+          }
         })
         .catch((error) => {
-          if (!error?.isCanceled && !controller.signal.aborted) setRemoteClients([]);
+          if (!error?.isCanceled && !controller.signal.aborted) {
+            setRemoteClients([]);
+            setSearchedQuery(query);
+          }
         })
         .finally(() => {
+          if (!controller.signal.aborted) setSearchingClients(false);
           if (searchAbortRef.current === controller) searchAbortRef.current = null;
         });
     }, SEARCH_DEBOUNCE_MS);
@@ -169,12 +194,19 @@ export default function ClientCombobox({
     };
   }, [activeField, activeQuery, locked]);
 
+  const currentSearchQuery = String(activeQuery || '').trim();
+  const remoteResultsMatchCurrentQuery = searchedQuery.trim().toLowerCase() === currentSearchQuery.toLowerCase();
   const dropdownList = activeField
     ? mergeClients(
-      matchedClients(activeField, activeQuery, remoteClients),
-      matchedClients(activeField, activeQuery, clients),
+      remoteResultsMatchCurrentQuery ? remoteClients : [],
+      matchedClients(activeQuery, clients),
     ).slice(0, 12)
     : [];
+  const canShowSearchMenu = activeField && !locked && currentSearchQuery.length >= SEARCH_MIN_CHARS;
+  const showNoSearchResults = canShowSearchMenu
+    && !searchingClients
+    && remoteResultsMatchCurrentQuery
+    && dropdownList.length === 0;
 
   const openFor = (field) => {
     const ref = field === 'numero' ? numeroRef : nombreRef;
@@ -510,7 +542,7 @@ export default function ClientCombobox({
 
       {errors._ && <p className="client-combobox-error mb-1">{errors._}</p>}
 
-      {activeField && dropdownList.length > 0 && createPortal(
+      {canShowSearchMenu && createPortal(
         <div
           ref={dropdownRef}
           className="ink-combobox-menu dropdown-enter"
@@ -520,6 +552,17 @@ export default function ClientCombobox({
             width: Math.max(dropdownPos.width, 320),
           }}
         >
+          {searchingClients && (
+            <div className="ink-combobox-feedback">
+              <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+              Buscando clientes...
+            </div>
+          )}
+          {showNoSearchResults && (
+            <div className="ink-combobox-feedback ink-combobox-feedback--empty">
+              No hay clientes registrados con ese documento o nombre.
+            </div>
+          )}
           {dropdownList.map((client) => {
             const isFreq = (quoteCountByClient[client.id] || 0) >= 3;
             const isRecent = recentClientIds.includes(client.id);

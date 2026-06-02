@@ -76,3 +76,17 @@ test('pdf designer keeps a styled side preview layout', () => {
   assert.match(stylesSource, /\.pdf-designer-preview-panel\s*\{/);
   assert.match(stylesSource, /\.pdf-designer-preview-stage\s*\{/);
 });
+
+test('quote client selector searches tenant clients live by document or name', () => {
+  const comboboxSource = readSource('../../components/ui/ClientCombobox.jsx');
+
+  assert.match(comboboxSource, /cliSvc\.search\(query,\s*SEARCH_LIMIT/);
+  assert.match(comboboxSource, /AbortController/);
+  assert.match(comboboxSource, /clientMatchesQuery/);
+  assert.match(comboboxSource, /setSearchingClients\(true\)/);
+  assert.doesNotMatch(
+    comboboxSource,
+    /matchedClients\(activeField,\s*activeQuery,\s*remoteClients\)/,
+    'remote client search results should not be narrowed again by the active input field',
+  );
+});
