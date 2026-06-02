@@ -28,6 +28,7 @@ import CustomSelect from '../components/ui/CustomSelect';
 import { useAuth } from '../context/AuthContext';
 import { getSmartPseGreStatusMeta } from '../lib/utils/fiscalStatus';
 import { getPageCount } from '../lib/utils/queryParams';
+import { getLookupAddress, getLookupName } from '../lib/utils/documentLookup';
 
 const SUPERADMIN_PAGE_SIZE = 25;
 const DEFAULT_TENANT_METRICS = {
@@ -56,8 +57,8 @@ function sanitizeRuc(value) {
 
 function getTenantLookupFields(data) {
   return {
-    business_name: data?.razon_social || '',
-    business_address: data?.direccion && data.direccion !== '-' ? data.direccion : '',
+    business_name: getLookupName(data),
+    business_address: getLookupAddress(data),
   };
 }
 

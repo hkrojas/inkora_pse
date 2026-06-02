@@ -29,6 +29,13 @@ import { PageError } from '../components/ui/PageState';
 import { useToast } from '../components/ui/Toast';
 import useDebouncedValue from '../hooks/useDebouncedValue';
 import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/peruPhoneValidation';
+import {
+  getLookupAddress,
+  getLookupCommercialName,
+  getLookupDocumentType,
+  getLookupName,
+  getLookupUbigeo,
+} from '../lib/utils/documentLookup';
 
 const DOC_TYPE_OPTIONS = [
   { value: '6', label: 'RUC' },
@@ -125,14 +132,6 @@ function getClientDisplayName(item = {}) {
     item.cliente_nombre ||
     item.email ||
     'Cliente sin nombre'
-  );
-}
-
-function getLookupName(data = {}) {
-  return (
-    data.razon_social ||
-    data.nombre ||
-    [data.nombres, data.apellido_paterno, data.apellido_materno].filter(Boolean).join(' ').trim()
   );
 }
 
@@ -272,16 +271,16 @@ function ClienteForm({ initial = EMPTY_FORM, onSave, onCancel, saving }) {
     try {
       const data = await svc.lookupDocument(numero);
       const resolvedName = getLookupName(data);
-      const resolvedAddress = data.direccion && data.direccion !== '-' ? data.direccion : '';
-      const resolvedDocumentType = data.tipo === 'DNI' ? '1' : data.tipo === 'RUC' ? '6' : form.tipo_documento;
+      const resolvedAddress = getLookupAddress(data);
+      const resolvedDocumentType = getLookupDocumentType(data, form.tipo_documento);
 
       setForm((current) => ({
         ...current,
         tipo_documento: resolvedDocumentType,
         razon_social: resolvedName || current.razon_social,
-        nombre_comercial: data.nombre_comercial || current.nombre_comercial,
+        nombre_comercial: getLookupCommercialName(data) || current.nombre_comercial,
         direccion: resolvedAddress || current.direccion,
-        ubigeo: normalizeUbigeo(data.ubigeo || current.ubigeo || ''),
+        ubigeo: normalizeUbigeo(getLookupUbigeo(data) || current.ubigeo || ''),
       }));
 
       setLookupHint(resolvedName ? 'Datos fiscales encontrados y completados.' : 'Consulta realizada. Completa el nombre manualmente.');

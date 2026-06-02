@@ -26,6 +26,13 @@ import { getPaymentMethodPreview, getPaymentQrImageUrl, normalizePaymentMethods 
 import { BASE_URL } from '../lib/utils/config';
 import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/peruPhoneValidation';
 import {
+  getLookupAddress,
+  getLookupCommercialName,
+  getLookupDocumentType,
+  getLookupName,
+  getLookupUbigeo,
+} from '../lib/utils/documentLookup';
+import {
   FISCAL_DOC_TYPE_OPTIONS,
   buildFiscalClientErrors,
   getFiscalDocLabel,
@@ -668,13 +675,14 @@ function NuevoClienteModal({ onClose, onCreated, initialName = '' }) {
     setLookup(true);
     try {
       const data = await cliSvc.lookupDocument(form.numero_documento);
+      const resolvedName = getLookupName(data);
       const nextForm = {
         ...form,
-        tipo_documento: data.tipo === 'DNI' ? '1' : data.tipo === 'RUC' ? '6' : form.tipo_documento,
-        razon_social: data.razon_social || data.nombre || form.razon_social,
-        nombre_comercial: data.nombre_comercial || form.nombre_comercial,
-        direccion: data.direccion && data.direccion !== '-' ? data.direccion : form.direccion,
-        ubigeo: normalizeFiscalUbigeo(data.ubigeo || form.ubigeo),
+        tipo_documento: getLookupDocumentType(data, form.tipo_documento),
+        razon_social: resolvedName || form.razon_social,
+        nombre_comercial: getLookupCommercialName(data) || form.nombre_comercial,
+        direccion: getLookupAddress(data) || form.direccion,
+        ubigeo: normalizeFiscalUbigeo(getLookupUbigeo(data) || form.ubigeo),
       };
       setForm(nextForm);
       validateForm(nextForm);

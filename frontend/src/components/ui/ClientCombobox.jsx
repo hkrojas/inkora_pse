@@ -16,6 +16,13 @@ import {
   normalizeFiscalDocumentNumber,
   normalizeFiscalUbigeo,
 } from '../../lib/utils/fiscalClientValidation';
+import {
+  getLookupAddress,
+  getLookupCommercialName,
+  getLookupDocumentType,
+  getLookupName,
+  getLookupUbigeo,
+} from '../../lib/utils/documentLookup';
 
 const EMPTY = {
   tipo_documento: '6',
@@ -302,19 +309,23 @@ export default function ClientCombobox({
       }
 
       const data = await cliSvc.lookupDocument(numero);
+      const resolvedName = getLookupName(data);
       const nextForm = {
         ...form,
-        tipo_documento: data.tipo === 'DNI' ? '1' : data.tipo === 'RUC' ? '6' : form.tipo_documento,
-        razon_social: data.razon_social || data.nombre || form.razon_social,
-        nombre_comercial: data.nombre_comercial || form.nombre_comercial,
-        direccion: data.direccion && data.direccion !== '-' ? data.direccion : form.direccion,
-        ubigeo: normalizeFiscalUbigeo(data.ubigeo || form.ubigeo),
+        tipo_documento: getLookupDocumentType(data, form.tipo_documento),
+        razon_social: resolvedName || form.razon_social,
+        nombre_comercial: getLookupCommercialName(data) || form.nombre_comercial,
+        direccion: getLookupAddress(data) || form.direccion,
+        ubigeo: normalizeFiscalUbigeo(getLookupUbigeo(data) || form.ubigeo),
       };
       setForm(nextForm);
       validate(nextForm);
       notify(nextForm, locked, isDirty, isNew);
-    } catch {
-      // keep the form editable; backend already exposes lookup detail elsewhere
+    } catch (error) {
+      setErrors((current) => ({
+        ...current,
+        numero_documento: error?.message || 'No se pudo consultar el documento.',
+      }));
     } finally {
       setLookingUp(false);
     }

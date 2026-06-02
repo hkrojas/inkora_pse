@@ -42,37 +42,75 @@ def _extract_provider_detail(response: httpx.Response) -> str:
     return f"HTTP {response.status_code}"
 
 
+def _provider_payload(data: dict) -> dict:
+    nested = data.get("data") if isinstance(data, dict) else None
+    return nested if isinstance(nested, dict) else data
+
+
+def _first_non_empty(data: dict, *keys: str, default: str = ""):
+    for key in keys:
+        value = data.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+        if value not in ("", [], {}):
+            return value
+    return default
+
+
 def _build_ruc_result(data: dict, numero: str) -> dict:
+    payload = _provider_payload(data)
     return {
         "tipo": "RUC",
-        "documento": data.get("ruc", numero),
-        "razon_social": data.get("razonSocial", ""),
-        "nombre_comercial": data.get("nombreComercial", ""),
-        "direccion": data.get("direccion", "-"),
-        "departamento": data.get("departamento", ""),
-        "provincia": data.get("provincia", ""),
-        "distrito": data.get("distrito", ""),
-        "ubigeo": data.get("ubigeo", ""),
-        "estado": data.get("estado", ""),
-        "condicion": data.get("condicion", ""),
-        "telefonos": data.get("telefonos", []),
-        "capital": data.get("capital", ""),
+        "documento": _first_non_empty(payload, "ruc", "documento", "numeroDocumento", "numero_documento", default=numero),
+        "razon_social": _first_non_empty(
+            payload,
+            "razonSocial",
+            "razon_social",
+            "nombre_o_razon_social",
+            "nombreORazonSocial",
+            "nombre",
+            "denominacion",
+        ),
+        "nombre_comercial": _first_non_empty(payload, "nombreComercial", "nombre_comercial"),
+        "direccion": _first_non_empty(
+            payload,
+            "direccion",
+            "direccionFiscal",
+            "direccion_fiscal",
+            "domicilioFiscal",
+            "domicilio_fiscal",
+            default="-",
+        ),
+        "departamento": _first_non_empty(payload, "departamento"),
+        "provincia": _first_non_empty(payload, "provincia"),
+        "distrito": _first_non_empty(payload, "distrito"),
+        "ubigeo": _first_non_empty(payload, "ubigeo", "ubigeoSunat", "ubigeo_sunat"),
+        "estado": _first_non_empty(payload, "estado", "estadoContribuyente", "estado_contribuyente"),
+        "condicion": _first_non_empty(payload, "condicion", "condicionDomicilio", "condicion_domicilio"),
+        "telefonos": payload.get("telefonos") or payload.get("telefono") or [],
+        "capital": _first_non_empty(payload, "capital"),
     }
 
 
 def _build_dni_result(data: dict, numero: str) -> dict:
-    nombres = data.get("nombres", "")
-    ap_paterno = data.get("apellidoPaterno", "")
-    ap_materno = data.get("apellidoMaterno", "")
-    nombre_completo = f"{nombres} {ap_paterno} {ap_materno}".strip()
+    payload = _provider_payload(data)
+    nombres = _first_non_empty(payload, "nombres", "nombre")
+    ap_paterno = _first_non_empty(payload, "apellidoPaterno", "apellido_paterno", "ap_paterno")
+    ap_materno = _first_non_empty(payload, "apellidoMaterno", "apellido_materno", "ap_materno")
+    nombre_completo = (
+        f"{nombres} {ap_paterno} {ap_materno}".strip()
+        or _first_non_empty(payload, "nombre_completo", "nombreCompleto", "razon_social")
+    )
     return {
         "tipo": "DNI",
-        "documento": data.get("dni", numero),
+        "documento": _first_non_empty(payload, "dni", "documento", "numeroDocumento", "numero_documento", default=numero),
         "razon_social": nombre_completo,
         "nombres": nombres,
         "apellido_paterno": ap_paterno,
         "apellido_materno": ap_materno,
-        "cod_verifica": data.get("codVerifica", ""),
+        "cod_verifica": _first_non_empty(payload, "codVerifica", "cod_verifica"),
         "direccion": "-",
         "estado": "ACTIVO",
         "condicion": "HABIDO",
