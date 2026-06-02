@@ -55,6 +55,61 @@ export function getCropPercentStyle(crop, imageSize) {
   };
 }
 
+export function getImagePointerPosition(pointer, imageRect, imageSize) {
+  const rectWidth = toPositiveNumber(imageRect?.width);
+  const rectHeight = toPositiveNumber(imageRect?.height);
+  const imageWidth = toPositiveNumber(imageSize?.width);
+  const imageHeight = toPositiveNumber(imageSize?.height);
+  if (!rectWidth || !rectHeight || !imageWidth || !imageHeight) return { x: 0, y: 0 };
+
+  return {
+    x: Math.round(clamp(((Number(pointer?.clientX) - Number(imageRect?.left || 0)) / rectWidth) * imageWidth, 0, imageWidth)),
+    y: Math.round(clamp(((Number(pointer?.clientY) - Number(imageRect?.top || 0)) / rectHeight) * imageHeight, 0, imageHeight)),
+  };
+}
+
+export function moveSquareCropByPointer(crop, startPoint, nextPoint, imageSize) {
+  const startX = Number(startPoint?.x) || 0;
+  const startY = Number(startPoint?.y) || 0;
+  const nextX = Number(nextPoint?.x) || 0;
+  const nextY = Number(nextPoint?.y) || 0;
+  return constrainSquareCrop({
+    ...crop,
+    x: Number(crop?.x || 0) + (nextX - startX),
+    y: Number(crop?.y || 0) + (nextY - startY),
+  }, imageSize);
+}
+
+export function resizeSquareCropFromHandle(crop, handle, pointer, imageSize, minSize = 1) {
+  const current = constrainSquareCrop(crop, imageSize);
+  const min = Math.max(1, Math.round(toPositiveNumber(minSize) || 1));
+  const pointerX = Number(pointer?.x) || 0;
+  const pointerY = Number(pointer?.y) || 0;
+  let next = current;
+
+  if (handle === 'nw') {
+    const anchorX = current.x + current.size;
+    const anchorY = current.y + current.size;
+    const size = Math.max(min, anchorX - pointerX, anchorY - pointerY);
+    next = { x: anchorX - size, y: anchorY - size, size };
+  } else if (handle === 'ne') {
+    const anchorX = current.x;
+    const anchorY = current.y + current.size;
+    const size = Math.max(min, pointerX - anchorX, anchorY - pointerY);
+    next = { x: anchorX, y: anchorY - size, size };
+  } else if (handle === 'sw') {
+    const anchorX = current.x + current.size;
+    const anchorY = current.y;
+    const size = Math.max(min, anchorX - pointerX, pointerY - anchorY);
+    next = { x: anchorX - size, y: anchorY, size };
+  } else {
+    const size = Math.max(min, pointerX - current.x, pointerY - current.y);
+    next = { x: current.x, y: current.y, size };
+  }
+
+  return constrainSquareCrop(next, imageSize);
+}
+
 export function buildCroppedImageFileName(originalName = 'payment-qr') {
   const baseName = String(originalName || 'payment-qr')
     .replace(/\.[^.]+$/, '')

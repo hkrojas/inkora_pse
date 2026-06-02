@@ -104,3 +104,13 @@ test('quote product lines search tenant products live by code or name', () => {
     'remote product search results should not be narrowed again by the active input field',
   );
 });
+
+test('payment QR cropper supports direct drag and corner resize', () => {
+  const cropperSource = readSource('../../components/settings/PaymentQrCropper.jsx');
+
+  assert.match(cropperSource, /getImagePointerPosition/);
+  assert.match(cropperSource, /moveSquareCropByPointer/);
+  assert.match(cropperSource, /resizeSquareCropFromHandle/);
+  assert.match(cropperSource, /onPointerDown/);
+  assert.match(cropperSource, /settings-qr-crop-handle/);
+});

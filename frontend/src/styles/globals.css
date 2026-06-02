@@ -16159,6 +16159,8 @@ textarea.input:focus,
   border-radius: 18px;
   background: #fff;
   box-shadow: 0 16px 38px rgba(15,23,42,.16);
+  user-select: none;
+  touch-action: none;
 }
 
 .settings-qr-crop-image-wrap img {
@@ -16177,14 +16179,56 @@ textarea.input:focus,
     0 0 0 999px rgba(15,23,42,.36),
     0 0 0 1px rgba(255,255,255,.94) inset,
     0 18px 40px rgba(15,23,42,.22);
-  pointer-events: none;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
 }
 
-.settings-qr-crop-box span {
+.settings-qr-crop-box.is-active {
+  cursor: grabbing;
+}
+
+.settings-qr-crop-guides {
   position: absolute;
   inset: 8px;
   border: 1px dashed rgba(255,255,255,.86);
   border-radius: 8px;
+  pointer-events: none;
+}
+
+.settings-qr-crop-handle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: var(--color-primary);
+  box-shadow: 0 5px 14px rgba(15,23,42,.26);
+  pointer-events: auto;
+}
+
+.settings-qr-crop-handle--nw {
+  top: -10px;
+  left: -10px;
+  cursor: nwse-resize;
+}
+
+.settings-qr-crop-handle--ne {
+  top: -10px;
+  right: -10px;
+  cursor: nesw-resize;
+}
+
+.settings-qr-crop-handle--sw {
+  bottom: -10px;
+  left: -10px;
+  cursor: nesw-resize;
+}
+
+.settings-qr-crop-handle--se {
+  right: -10px;
+  bottom: -10px;
+  cursor: nwse-resize;
 }
 
 .settings-qr-crop-empty {
