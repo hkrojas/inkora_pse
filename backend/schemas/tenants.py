@@ -1,5 +1,6 @@
 """schemas/tenants.py — Tenant schemas."""
 from datetime import datetime
+import re
 from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
@@ -22,6 +23,20 @@ class TenantCreate(TenantBase):
     @classmethod
     def validate_business_phone(cls, value: Optional[str]) -> Optional[str]:
         return normalize_and_validate_optional_peru_mobile(value, "Telefono de contacto")
+
+
+HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _normalize_optional_hex_color(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+    if not HEX_COLOR_RE.fullmatch(normalized):
+        raise ValueError("El color debe usar formato hexadecimal #RRGGBB.")
+    return normalized.upper()
 
 
 class TenantUpdate(StrictInputModel):
@@ -51,6 +66,11 @@ class TenantUpdate(StrictInputModel):
     @classmethod
     def validate_business_phone(cls, value: Optional[str]) -> Optional[str]:
         return normalize_and_validate_optional_peru_mobile(value, "Telefono de contacto")
+
+    @field_validator("primary_color", "pdf_note_1_color", mode="before")
+    @classmethod
+    def validate_pdf_colors(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_optional_hex_color(value)
 
 
 def _normalize_optional_business_text(value: Optional[str]) -> Optional[str]:
@@ -87,6 +107,11 @@ class TenantAdminUpdate(StrictInputModel):
     @classmethod
     def validate_business_phone(cls, value: Optional[str]) -> Optional[str]:
         return normalize_and_validate_optional_peru_mobile(value, "Telefono de contacto")
+
+    @field_validator("primary_color", "pdf_note_1_color", mode="before")
+    @classmethod
+    def validate_pdf_colors(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_optional_hex_color(value)
 
 
 class TenantSummaryResponse(BaseModel):

@@ -14832,6 +14832,58 @@ textarea.input:focus,
   color: var(--color-text-muted);
 }
 
+.dark .configuracion-page .settings-pdf-colors-panel,
+[data-theme='dark'] .configuracion-page .settings-pdf-colors-panel {
+  background:
+    radial-gradient(circle at 100% -20%, color-mix(in srgb, var(--settings-pdf-primary) 18%, transparent), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025)),
+    var(--color-surface);
+}
+
+.dark .configuracion-page .settings-pdf-colors-copy .settings-section-title,
+[data-theme='dark'] .configuracion-page .settings-pdf-colors-copy .settings-section-title {
+  border-bottom-color: rgba(141, 198, 63, 0.14);
+}
+
+.dark .configuracion-page .settings-pdf-color-swatches > div,
+[data-theme='dark'] .configuracion-page .settings-pdf-color-swatches > div {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.028)),
+    rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.dark .configuracion-page .settings-pdf-mini-preview,
+[data-theme='dark'] .configuracion-page .settings-pdf-mini-preview {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025)),
+    #0d2212;
+  border-color: color-mix(in srgb, var(--settings-pdf-primary) 38%, rgba(255, 255, 255, 0.1));
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.dark .configuracion-page .settings-pdf-mini-head > div,
+.dark .configuracion-page .settings-pdf-mini-head > span,
+.dark .configuracion-page .settings-pdf-mini-row,
+.dark .configuracion-page .settings-pdf-mini-total,
+[data-theme='dark'] .configuracion-page .settings-pdf-mini-head > div,
+[data-theme='dark'] .configuracion-page .settings-pdf-mini-head > span,
+[data-theme='dark'] .configuracion-page .settings-pdf-mini-row,
+[data-theme='dark'] .configuracion-page .settings-pdf-mini-total {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: color-mix(in srgb, var(--settings-pdf-primary) 30%, rgba(255, 255, 255, 0.1));
+}
+
+.dark .configuracion-page .settings-pdf-mini-head > div,
+[data-theme='dark'] .configuracion-page .settings-pdf-mini-head > div {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--settings-pdf-primary) 82%, #fff) 0 28%, transparent 28%),
+    linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+}
+
 .dark .configuracion-page .settings-toggle,
 [data-theme='dark'] .configuracion-page .settings-toggle {
   background: rgba(255, 255, 255, 0.08);
@@ -17086,6 +17138,203 @@ textarea.input:focus,
   background-size: 18px 18px, 23px 23px;
 }
 
+.settings-pdf-colors-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, .78fr) minmax(320px, 1fr);
+  gap: 24px;
+  align-items: stretch;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 100% -20%, color-mix(in srgb, var(--settings-pdf-primary) 12%, transparent), transparent 36%),
+    linear-gradient(180deg, #fff 0%, #fbfcfd 100%);
+}
+
+.settings-pdf-colors-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.settings-pdf-colors-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-pdf-colors-copy .settings-section-title {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-pdf-color-swatches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-pdf-color-swatches > div {
+  min-height: 82px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--color-border);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,250,252,.94)),
+    var(--color-surface);
+  box-shadow: 0 10px 22px rgba(15,23,42,.045);
+}
+
+.settings-pdf-color-swatches span {
+  display: block;
+  width: 30px;
+  height: 30px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.45),
+    0 8px 18px rgba(15,23,42,.14);
+}
+
+.settings-pdf-color-swatches small {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.settings-pdf-color-swatches strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.settings-pdf-colors-link {
+  align-self: flex-start;
+  min-height: 42px;
+  padding: 0 16px;
+  gap: 8px;
+  text-decoration: none;
+}
+
+.settings-pdf-mini-preview {
+  min-height: 260px;
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--settings-pdf-primary) 24%, var(--color-border));
+  background: #fff;
+  box-shadow:
+    0 18px 40px rgba(15,23,42,.07),
+    inset 0 0 0 1px rgba(255,255,255,.75);
+}
+
+.settings-pdf-mini-head {
+  display: grid;
+  grid-template-columns: 1fr 130px;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.settings-pdf-mini-head > div,
+.settings-pdf-mini-head > span {
+  min-height: 70px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--settings-pdf-primary) 25%, #c9d4e5);
+}
+
+.settings-pdf-mini-head > div {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--settings-pdf-primary) 88%, #fff) 0 28%, transparent 28%),
+    linear-gradient(180deg, #fff, #f8faff);
+}
+
+.settings-pdf-mini-head > span {
+  display: grid;
+  place-items: center;
+  color: var(--settings-pdf-primary);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.settings-pdf-mini-line {
+  height: 3px;
+  margin: 18px 0 14px;
+  border-radius: 999px;
+  background: var(--settings-pdf-primary);
+}
+
+.settings-pdf-mini-table {
+  display: grid;
+  grid-template-columns: 44px 1fr 90px;
+  min-height: 42px;
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+  background: var(--settings-pdf-primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.settings-pdf-mini-table span,
+.settings-pdf-mini-row span {
+  display: grid;
+  place-items: center;
+  border-right: 1px solid color-mix(in srgb, #fff 52%, var(--settings-pdf-primary));
+}
+
+.settings-pdf-mini-table span:last-child,
+.settings-pdf-mini-row span:last-child {
+  border-right: 0;
+}
+
+.settings-pdf-mini-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 90px;
+  min-height: 38px;
+  border: 1px solid #c9d4e5;
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+}
+
+.settings-pdf-mini-row span {
+  background:
+    linear-gradient(90deg, rgba(15,23,42,.08), rgba(15,23,42,.08)) center / 64% 7px no-repeat;
+}
+
+.settings-pdf-mini-total {
+  width: min(240px, 62%);
+  margin: 18px 0 0 auto;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--settings-pdf-primary) 25%, #c9d4e5);
+  background: #fff;
+}
+
+.settings-pdf-mini-total span {
+  display: block;
+  color: var(--settings-pdf-primary);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.settings-pdf-mini-total strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--settings-pdf-primary);
+  font-size: 24px;
+  line-height: 1;
+  text-align: right;
+}
+
+.settings-pdf-mini-note {
+  margin-top: 18px;
+  color: var(--settings-pdf-note);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .settings-company-edit-form > .settings-contact-field {
   position: relative;
   max-width: 560px;
@@ -17559,6 +17808,10 @@ textarea.input:focus,
   .settings-command-card {
     grid-template-columns: 1fr;
   }
+
+  .settings-pdf-colors-panel {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -17648,6 +17901,20 @@ textarea.input:focus,
 
   .settings-appearance-panel .theme-btn {
     min-height: 146px;
+  }
+
+  .settings-pdf-color-swatches,
+  .settings-pdf-mini-head {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-pdf-mini-total {
+    width: 100%;
+  }
+
+  .settings-pdf-colors-link {
+    width: 100%;
+    justify-content: center;
   }
 
   .settings-section-badges {

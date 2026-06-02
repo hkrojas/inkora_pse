@@ -57,3 +57,11 @@ test('tenant-facing beta copy does not name APISPeru as the visible provider', (
     assert.doesNotMatch(source, /APISPeru|ApisPeru/i, `${filePath} still mentions APISPeru`);
   }
 });
+
+test('settings exposes the PDF color designer entry point', () => {
+  const settingsSource = readSource('../../pages/ConfiguracionPage.jsx');
+
+  assert.match(settingsSource, /Colores de documentos PDF/);
+  assert.match(settingsSource, /to=['"]\/diseno-pdf['"]/);
+  assert.match(settingsSource, /Editar colores PDF/);
+});

@@ -1921,7 +1921,7 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
     )
     header_container.hAlign = "LEFT"
 
-    color_strip = colors.HexColor("#1747C8")
+    color_strip = color_principal
     strip_label_style.textColor = color_strip
     strip = Table(
         [[

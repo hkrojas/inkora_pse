@@ -279,13 +279,23 @@ const TAB_DESCRIPTIONS = {
   fiscal: 'SUNAT y certificados',
   cuenta: 'Usuario actual',
   seguridad: 'Acceso seguro',
-  apariencia: 'Tema visual',
+  apariencia: 'Tema y PDFs',
 };
 
 const TAB_ICONS = { empresa: Building2, fiscal: ShieldCheck, cuenta: User, seguridad: KeyRound, apariencia: Palette };
+const DEFAULT_PDF_PRIMARY_COLOR = '#004AAD';
+const DEFAULT_PDF_NOTE_COLOR = '#FF0000';
+const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
 
-function AparienciaPanel() {
+function getSafePdfColor(value, fallback) {
+  const normalized = String(value || '').trim();
+  return HEX_COLOR_PATTERN.test(normalized) ? normalized.toUpperCase() : fallback;
+}
+
+function AparienciaPanel({ tenantData }) {
   const { theme, setTheme, resolvedTheme, noise, setNoise } = useTheme();
+  const documentPrimaryColor = getSafePdfColor(tenantData?.primary_color, DEFAULT_PDF_PRIMARY_COLOR);
+  const documentNoteColor = getSafePdfColor(tenantData?.pdf_note_1_color, DEFAULT_PDF_NOTE_COLOR);
 
   const themeOptions = [
     { value: 'light', label: 'Claro', Icon: Sun },
@@ -347,6 +357,66 @@ function AparienciaPanel() {
         </div>
         <div className={`preview-mock settings-texture-preview mt-4${resolvedTheme === 'dark' ? ' dark-mock' : ''}${noise ? ' is-active' : ''}`}>
           {noise ? 'Grain activado' : 'Sin grain'}
+        </div>
+      </div>
+
+      <div
+        className="appearance-card settings-panel settings-pdf-colors-panel"
+        style={{
+          '--settings-pdf-primary': documentPrimaryColor,
+          '--settings-pdf-note': documentNoteColor,
+        }}
+      >
+        <div className="settings-pdf-colors-copy">
+          <div className="settings-section-title settings-section-title--stacked">
+            <div className="settings-icon-box">
+              <FileCheck2 size={15} />
+            </div>
+            <div>
+              <h3>Colores de documentos PDF</h3>
+              <p>Personaliza la plantilla usada en cotizaciones, facturas, boletas, guias y documentos comerciales.</p>
+            </div>
+          </div>
+
+          <div className="settings-pdf-color-swatches">
+            <div>
+              <span style={{ background: documentPrimaryColor }} />
+              <small>Principal</small>
+              <strong>{documentPrimaryColor}</strong>
+            </div>
+            <div>
+              <span style={{ background: documentNoteColor }} />
+              <small>Nota</small>
+              <strong>{documentNoteColor}</strong>
+            </div>
+          </div>
+
+          <Link to="/diseno-pdf" className="btn-primary settings-pdf-colors-link">
+            <Palette size={15} /> Editar colores PDF
+          </Link>
+        </div>
+
+        <div className="settings-pdf-mini-preview" aria-hidden="true">
+          <div className="settings-pdf-mini-head">
+            <div />
+            <span>COTIZACION</span>
+          </div>
+          <div className="settings-pdf-mini-line" />
+          <div className="settings-pdf-mini-table">
+            <span>N</span>
+            <span>DESCRIPCION</span>
+            <span>TOTAL</span>
+          </div>
+          <div className="settings-pdf-mini-row">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="settings-pdf-mini-total">
+            <span>IMPORTE TOTAL</span>
+            <strong>S/ 0.00</strong>
+          </div>
+          <div className="settings-pdf-mini-note">Nota destacada del documento</div>
         </div>
       </div>
     </div>
@@ -1270,7 +1340,7 @@ export default function ConfiguracionPage() {
 
       {activeTab === 'apariencia' && (
         <div className={`settings-tab-panel settings-tab-panel--${tabDirection}`}>
-          <AparienciaPanel />
+          <AparienciaPanel tenantData={tenantData} />
         </div>
       )}
 
