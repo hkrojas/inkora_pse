@@ -5,6 +5,7 @@ import { Sun, Moon, Monitor, Building2, ShieldCheck, User, Palette, CreditCard, 
 import Spinner from '../components/ui/Spinner';
 import CustomSelect from '../components/ui/CustomSelect';
 import FormField from '../components/ui/FormField';
+import PaymentQrCropper from '../components/settings/PaymentQrCropper';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -521,6 +522,7 @@ export default function ConfiguracionPage() {
   const [uploadingPaymentQr, setUploadingPaymentQr] = useState(false);
   const [logoError, setLogoError] = useState(null);
   const [paymentQrError, setPaymentQrError] = useState(null);
+  const [paymentQrCropFile, setPaymentQrCropFile] = useState(null);
   const [businessName, setBusinessName] = useState('');
   const [businessAddress, setBusinessAddress] = useState('');
   const [businessErrors, setBusinessErrors] = useState({});
@@ -639,6 +641,28 @@ export default function ConfiguracionPage() {
     }
   };
 
+  const uploadPaymentQrFile = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    setPaymentQrError(null);
+    setUploadingPaymentQr(true);
+    try {
+      const response = await svc.uploadPaymentQr(formData);
+      setTenantData((current) => ({
+        ...(current || {}),
+        payment_qr_filename: response.url,
+      }));
+      toast('QR de cobro actualizado');
+    } catch (err) {
+      const message = err.message || 'No se pudo subir el QR de cobro.';
+      setPaymentQrError(message);
+      toast(message, 'error');
+      throw err;
+    } finally {
+      setUploadingPaymentQr(false);
+    }
+  };
+
   const handlePaymentQrChange = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -656,22 +680,16 @@ export default function ConfiguracionPage() {
       return;
     }
 
-    const formData = new FormData();
-    formData.append('file', file);
     setPaymentQrError(null);
-    setUploadingPaymentQr(true);
+    setPaymentQrCropFile(file);
+  };
+
+  const handlePaymentQrCropConfirm = async (croppedFile) => {
     try {
-      const response = await svc.uploadPaymentQr(formData);
-      setTenantData((current) => ({
-        ...(current || {}),
-        payment_qr_filename: response.url,
-      }));
-      toast('QR de cobro actualizado');
-    } catch (err) {
-      setPaymentQrError(err.message || 'No se pudo subir el QR de cobro.');
-      toast(err.message || 'No se pudo subir el QR de cobro.', 'error');
-    } finally {
-      setUploadingPaymentQr(false);
+      await uploadPaymentQrFile(croppedFile);
+      setPaymentQrCropFile(null);
+    } catch {
+      // uploadPaymentQrFile already shows the user-facing error.
     }
   };
 
@@ -953,7 +971,7 @@ export default function ConfiguracionPage() {
                   </div>
                   <div className="settings-logo-upload-copy">
                     <p>QR de cobro</p>
-                    <span>Imagen única para pagos por Yape, Plin u otra billetera compatible. Queda visible aquí y lista para documentos comerciales.</span>
+                    <span>Sube una captura o imagen del QR. Antes de guardarlo podras recortar solo el codigo para los documentos comerciales.</span>
                     {paymentQrError && <strong>{paymentQrError}</strong>}
                   </div>
                   <div className="settings-logo-upload-actions">
@@ -976,7 +994,7 @@ export default function ConfiguracionPage() {
                         </>
                       ) : (
                         <>
-                          <ImageUp size={15} /> Subir QR de cobro
+                          <ImageUp size={15} /> Subir captura QR
                         </>
                       )}
                     </button>
@@ -1255,6 +1273,16 @@ export default function ConfiguracionPage() {
           <AparienciaPanel />
         </div>
       )}
+
+      <PaymentQrCropper
+        open={Boolean(paymentQrCropFile)}
+        file={paymentQrCropFile}
+        uploading={uploadingPaymentQr}
+        onCancel={() => {
+          if (!uploadingPaymentQr) setPaymentQrCropFile(null);
+        }}
+        onConfirm={handlePaymentQrCropConfirm}
+      />
     </div>
   );
 }
