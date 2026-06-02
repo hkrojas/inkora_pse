@@ -65,3 +65,14 @@ test('settings exposes the PDF color designer entry point', () => {
   assert.match(settingsSource, /to=['"]\/diseno-pdf['"]/);
   assert.match(settingsSource, /Editar colores PDF/);
 });
+
+test('pdf designer keeps a styled side preview layout', () => {
+  const designerSource = readSource('../../pages/PdfDesignerPage.jsx');
+  const stylesSource = readSource('../../styles/globals.css');
+
+  assert.match(designerSource, /pdf-designer-preview-panel/);
+  assert.match(designerSource, /pdf-designer-preview-tabs/);
+  assert.match(stylesSource, /\.pdf-designer-grid\s*\{/);
+  assert.match(stylesSource, /\.pdf-designer-preview-panel\s*\{/);
+  assert.match(stylesSource, /\.pdf-designer-preview-stage\s*\{/);
+});

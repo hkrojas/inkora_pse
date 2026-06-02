@@ -599,40 +599,20 @@ export default function PdfDesignerPage() {
                 <p className="page-kicker" style={{ margin: 0 }}>Vista previa</p>
                 <h2 className="pdf-designer-panel-title">Cambios en tiempo real</h2>
               </div>
-              <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-surface-2)', borderRadius: 0, padding: '3px' }}>
+              <div className="pdf-designer-preview-tabs">
                 <button
                   type="button"
                   onClick={() => setPreviewTab('cotizacion')}
-                  style={{
-                    padding: '4px 12px',
-                    fontSize: '11px',
-                    fontWeight: previewTab === 'cotizacion' ? 700 : 400,
-                    borderRadius: '4px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: previewTab === 'cotizacion' ? 'var(--bg-surface)' : 'transparent',
-                    color: previewTab === 'cotizacion' ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                    boxShadow: previewTab === 'cotizacion' ? 'var(--shadow-brut-sm)' : 'none',
-                    transition: 'all 0.15s',
-                  }}
+                  className={`pdf-designer-preview-tab${previewTab === 'cotizacion' ? ' is-active' : ''}`}
+                  aria-pressed={previewTab === 'cotizacion'}
                 >
                   Cotización
                 </button>
                 <button
                   type="button"
                   onClick={() => setPreviewTab('fiscal')}
-                  style={{
-                    padding: '4px 12px',
-                    fontSize: '11px',
-                    fontWeight: previewTab === 'fiscal' ? 700 : 400,
-                    borderRadius: '4px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: previewTab === 'fiscal' ? 'var(--bg-surface)' : 'transparent',
-                    color: previewTab === 'fiscal' ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                    boxShadow: previewTab === 'fiscal' ? 'var(--shadow-brut-sm)' : 'none',
-                    transition: 'all 0.15s',
-                  }}
+                  className={`pdf-designer-preview-tab${previewTab === 'fiscal' ? ' is-active' : ''}`}
+                  aria-pressed={previewTab === 'fiscal'}
                 >
                   Factura / Boleta
                 </button>
