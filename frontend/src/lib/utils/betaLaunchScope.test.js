@@ -114,3 +114,23 @@ test('payment QR cropper supports direct drag and corner resize', () => {
   assert.match(cropperSource, /onPointerDown/);
   assert.match(cropperSource, /settings-qr-crop-handle/);
 });
+
+test('payment QR cropper stays above app chrome and fits the viewport', () => {
+  const stylesSource = readSource('../../styles/globals.css');
+
+  assert.match(
+    stylesSource,
+    /\.settings-qr-crop-overlay\s*\{[\s\S]*z-index:\s*(?:[1-9]\d{3,}|1000)/,
+    'cropper overlay must sit above the app topbar and sidebar',
+  );
+  assert.match(
+    stylesSource,
+    /\.settings-qr-crop-overlay\s*\{[\s\S]*overflow:\s*auto/,
+    'cropper overlay should scroll if the viewport is short',
+  );
+  assert.match(
+    stylesSource,
+    /\.settings-qr-crop-panel\s*\{[\s\S]*100dvh/,
+    'cropper panel should use the dynamic viewport height',
+  );
+});
