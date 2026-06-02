@@ -12,6 +12,31 @@ function firstNonEmpty(data = {}, keys = []) {
   return '';
 }
 
+function normalizeText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getLookupLocationParts(data = {}) {
+  return [
+    firstNonEmpty(data, ['departamento', 'department']),
+    firstNonEmpty(data, ['provincia', 'province']),
+    firstNonEmpty(data, ['distrito', 'district']),
+  ].map(normalizeText).filter(Boolean);
+}
+
+function stripTrailingLocation(address, locationParts) {
+  if (!address || !locationParts.length) return address;
+
+  const looseSuffix = locationParts
+    .map((part) => `(?:-|,)?\\s*${escapeRegExp(part)}`)
+    .join('\\s*');
+  return address.replace(new RegExp(`\\s*${looseSuffix}\\s*$`, 'i'), '').trim();
+}
+
 export function getLookupName(data = {}) {
   const directName = firstNonEmpty(data, [
     'razon_social',
@@ -37,14 +62,21 @@ export function getLookupCommercialName(data = {}) {
 }
 
 export function getLookupAddress(data = {}) {
-  const address = firstNonEmpty(data, [
+  const rawAddress = firstNonEmpty(data, [
     'direccion',
     'direccion_fiscal',
     'direccionFiscal',
     'domicilio_fiscal',
     'domicilioFiscal',
   ]);
-  return address && address !== '-' ? address : '';
+  const address = normalizeText(rawAddress);
+  if (!address || address === '-') return '';
+
+  const locationParts = getLookupLocationParts(data);
+  if (!locationParts.length) return address;
+
+  const addressWithoutSuffix = stripTrailingLocation(address, locationParts);
+  return [addressWithoutSuffix || address, ...locationParts].join(' - ');
 }
 
 export function getLookupUbigeo(data = {}) {
