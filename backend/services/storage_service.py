@@ -100,6 +100,7 @@ def upload_to_storage(
     *,
     return_public_url: bool = False,
     allow_overwrite: bool = True,
+    bucket_name: str | None = None,
 ):
     """
     Sube un archivo al bucket configurado de forma sincrona.
@@ -113,7 +114,9 @@ def upload_to_storage(
         raise ValueError("El archivo debe incluir un content_type valido.")
 
     client = get_supabase_client()
-    bucket = settings.SUPABASE_STORAGE_BUCKET
+    bucket = (bucket_name or settings.SUPABASE_STORAGE_BUCKET).strip()
+    if not bucket:
+        raise ValueError("El bucket de storage es obligatorio.")
     path = build_storage_path(folder_name, filename)
 
     import time
@@ -163,35 +166,54 @@ def check_storage_ready() -> dict:
             "ok": False,
             "configured": False,
             "bucket": settings.SUPABASE_STORAGE_BUCKET,
+            "public_assets_bucket": settings.SUPABASE_PUBLIC_ASSETS_BUCKET,
         }
 
     client = get_supabase_client()
     bucket = settings.SUPABASE_STORAGE_BUCKET
-    bucket_accessible = False
-    bucket_error = None
-    objects_listable = False
-    list_error = None
+    public_assets_bucket = settings.SUPABASE_PUBLIC_ASSETS_BUCKET
 
-    try:
-        client.storage.get_bucket(bucket)
-        bucket_accessible = True
-    except Exception as exc:
-        bucket_error = type(exc).__name__
+    def inspect_bucket(bucket_id: str) -> dict:
+        bucket_accessible = False
+        bucket_error = None
+        objects_listable = False
+        list_error = None
 
-    if bucket_accessible:
         try:
-            client.storage.from_(bucket).list("", {"limit": 1})
-            objects_listable = True
+            client.storage.get_bucket(bucket_id)
+            bucket_accessible = True
         except Exception as exc:
-            list_error = type(exc).__name__
+            bucket_error = type(exc).__name__
+
+        if bucket_accessible:
+            try:
+                client.storage.from_(bucket_id).list("", {"limit": 1})
+                objects_listable = True
+            except Exception as exc:
+                list_error = type(exc).__name__
+
+        return {
+            "bucket_accessible": bucket_accessible,
+            "bucket_error": bucket_error,
+            "objects_listable": objects_listable,
+            "list_error": list_error,
+        }
+
+    private_bucket_status = inspect_bucket(bucket)
+    public_assets_bucket_status = inspect_bucket(public_assets_bucket)
 
     return {
-        "ok": bucket_accessible,
+        "ok": (
+            private_bucket_status["bucket_accessible"]
+            and public_assets_bucket_status["bucket_accessible"]
+        ),
         "configured": True,
         "bucket": bucket,
+        "public_assets_bucket": public_assets_bucket,
         "uses_server_key": bool(settings.SUPABASE_SERVICE_ROLE_KEY.strip()),
-        "bucket_accessible": bucket_accessible,
-        "bucket_error": bucket_error,
-        "objects_listable": objects_listable,
-        "list_error": list_error,
+        **private_bucket_status,
+        "public_assets_bucket_accessible": public_assets_bucket_status["bucket_accessible"],
+        "public_assets_bucket_error": public_assets_bucket_status["bucket_error"],
+        "public_assets_objects_listable": public_assets_bucket_status["objects_listable"],
+        "public_assets_list_error": public_assets_bucket_status["list_error"],
     }

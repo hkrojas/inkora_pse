@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api_dependencies import get_current_user, get_db, get_db_tenant
+from config import settings
 from conftest import make_tenant, make_user
 from routers import tenants as tenants_router
 
@@ -19,6 +20,10 @@ def _client_for_user(db_session, user):
     return TestClient(app)
 
 
+def test_tenant_asset_upload_limit_is_25mb():
+    assert settings.MAX_LOGO_UPLOAD_BYTES == 25 * 1024 * 1024
+
+
 def test_upload_payment_qr_updates_tenant_payment_qr_without_500(db_session, monkeypatch):
     tenant = make_tenant(db_session, "QR01")
     admin = make_user(db_session, tenant, email="qr-admin@test.com", rol="admin")
@@ -33,6 +38,7 @@ def test_upload_payment_qr_updates_tenant_payment_qr_without_500(db_session, mon
         *,
         return_public_url=False,
         allow_overwrite=True,
+        bucket_name=None,
     ):
         captured.update(
             {
@@ -42,9 +48,10 @@ def test_upload_payment_qr_updates_tenant_payment_qr_without_500(db_session, mon
                 "content_type": content_type,
                 "return_public_url": return_public_url,
                 "allow_overwrite": allow_overwrite,
+                "bucket_name": bucket_name,
             }
         )
-        return f"https://cdn.test/{folder_name}/{filename}"
+        return f"https://cdn.test/{bucket_name}/{folder_name}/{filename}"
 
     monkeypatch.setattr(tenants_router.storage_service, "upload_to_storage", fake_upload_to_storage)
 
@@ -59,10 +66,11 @@ def test_upload_payment_qr_updates_tenant_payment_qr_without_500(db_session, mon
     assert captured["content_type"] == "image/png"
     assert captured["return_public_url"] is True
     assert captured["allow_overwrite"] is False
+    assert captured["bucket_name"] == "inkora-public-assets"
 
     body = response.json()
     db_session.refresh(tenant)
-    assert body["url"].startswith("https://cdn.test/payment_qrs/payment_qr_")
+    assert body["url"].startswith("https://cdn.test/inkora-public-assets/payment_qrs/payment_qr_")
     assert tenant.payment_qr_filename == body["url"]
 
 
@@ -80,6 +88,7 @@ def test_upload_logo_updates_tenant_logo_without_500(db_session, monkeypatch):
         *,
         return_public_url=False,
         allow_overwrite=True,
+        bucket_name=None,
     ):
         captured.update(
             {
@@ -89,9 +98,10 @@ def test_upload_logo_updates_tenant_logo_without_500(db_session, monkeypatch):
                 "content_type": content_type,
                 "return_public_url": return_public_url,
                 "allow_overwrite": allow_overwrite,
+                "bucket_name": bucket_name,
             }
         )
-        return f"https://cdn.test/{folder_name}/{filename}"
+        return f"https://cdn.test/{bucket_name}/{folder_name}/{filename}"
 
     monkeypatch.setattr(tenants_router.storage_service, "upload_to_storage", fake_upload_to_storage)
 
@@ -106,8 +116,9 @@ def test_upload_logo_updates_tenant_logo_without_500(db_session, monkeypatch):
     assert captured["content_type"] == "image/png"
     assert captured["return_public_url"] is True
     assert captured["allow_overwrite"] is False
+    assert captured["bucket_name"] == "inkora-public-assets"
 
     body = response.json()
     db_session.refresh(tenant)
-    assert body["url"].startswith("https://cdn.test/logos/logo_")
+    assert body["url"].startswith("https://cdn.test/inkora-public-assets/logos/logo_")
     assert tenant.logo_filename == body["url"]

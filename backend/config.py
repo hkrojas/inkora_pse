@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     SUPABASE_STORAGE_BUCKET: str = "printflow-archivos"
+    SUPABASE_PUBLIC_ASSETS_BUCKET: str = "inkora-public-assets"
 
     # App / runtime
     BACKEND_URL: str = "http://localhost:8000"
@@ -71,7 +72,7 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("CORS_ALLOW_ORIGINS", "CORS_ALLOW_ORIGINS_RAW"),
     )
-    MAX_LOGO_UPLOAD_BYTES: int = 2 * 1024 * 1024
+    MAX_LOGO_UPLOAD_BYTES: int = 25 * 1024 * 1024
     MAX_AI_UPLOAD_BYTES: int = 10 * 1024 * 1024
 
     model_config = SettingsConfigDict(
