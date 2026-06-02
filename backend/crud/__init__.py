@@ -35,6 +35,7 @@ from crud.tenants import (
     get_tenant_by_ruc,
     create_tenant,
     update_tenant,
+    update_tenant_payment_qr,
     get_all_tenants,
     get_tenants_page,
     update_tenant_saas,
