@@ -115,6 +115,19 @@ test('payment QR cropper supports direct drag and corner resize', () => {
   assert.match(cropperSource, /settings-qr-crop-handle/);
 });
 
+test('payment QR cropper uses the page body overlay with drag crop and zoom controls', () => {
+  const cropperSource = readSource('../../components/settings/PaymentQrCropper.jsx');
+  const stylesSource = readSource('../../styles/globals.css');
+
+  assert.match(cropperSource, /createPortal/);
+  assert.match(cropperSource, /document\.body/);
+  assert.match(cropperSource, /setZoom/);
+  assert.match(cropperSource, /settings-qr-crop-zoom-control/);
+  assert.match(stylesSource, /\.settings-qr-crop-toolbar\s*\{/);
+  assert.doesNotMatch(cropperSource, /settings-qr-crop-controls/);
+  assert.doesNotMatch(cropperSource, /Tamano del recorte|Posicion horizontal|Posicion vertical/);
+});
+
 test('payment QR cropper stays above app chrome and fits the viewport', () => {
   const stylesSource = readSource('../../styles/globals.css');
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Crop, QrCode, RotateCcw, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Crop, QrCode, RotateCcw, X, ZoomIn } from 'lucide-react';
 import Spinner from '../ui/Spinner';
 import {
   constrainSquareCrop,
@@ -12,6 +13,11 @@ import {
 } from '../../lib/utils/imageCrop';
 
 const RESIZE_HANDLES = ['nw', 'ne', 'sw', 'se'];
+const BASE_PREVIEW_MAX_WIDTH = 620;
+const BASE_PREVIEW_MAX_HEIGHT = 440;
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 2.4;
+const ZOOM_STEP = 0.05;
 
 export default function PaymentQrCropper({
   file,
@@ -26,6 +32,7 @@ export default function PaymentQrCropper({
   const [crop, setCrop] = useState({ x: 0, y: 0, size: 0 });
   const [interaction, setInteraction] = useState(null);
   const [error, setError] = useState(null);
+  const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
     if (!open || !file) {
@@ -33,6 +40,7 @@ export default function PaymentQrCropper({
       setImageSize({ width: 0, height: 0 });
       setCrop({ x: 0, y: 0, size: 0 });
       setInteraction(null);
+      setZoom(1);
       return undefined;
     }
 
@@ -51,13 +59,18 @@ export default function PaymentQrCropper({
   );
   const maxSize = Math.min(imageSize.width, imageSize.height);
   const minSize = maxSize ? Math.min(maxSize, Math.max(64, Math.round(maxSize * 0.28))) : 1;
-  const maxX = Math.max(0, imageSize.width - crop.size);
-  const maxY = Math.max(0, imageSize.height - crop.size);
   const canEdit = Boolean(maxSize && previewUrl);
 
-  const updateCrop = (partial) => {
-    setCrop((current) => constrainSquareCrop({ ...current, ...partial }, imageSize));
-  };
+  const baseDisplayWidth = useMemo(() => {
+    if (!imageSize.width || !imageSize.height) return 0;
+    const widthLimit = Math.min(imageSize.width, BASE_PREVIEW_MAX_WIDTH);
+    const heightLimit = Math.round(imageSize.width * (BASE_PREVIEW_MAX_HEIGHT / imageSize.height));
+    return Math.max(1, Math.min(widthLimit, heightLimit));
+  }, [imageSize]);
+
+  const imageRenderStyle = baseDisplayWidth
+    ? { width: `${Math.round(baseDisplayWidth * zoom)}px`, maxWidth: 'none', maxHeight: 'none' }
+    : undefined;
 
   const getPointerPosition = useCallback((event) => {
     const rect = imageRef.current?.getBoundingClientRect();
@@ -122,6 +135,7 @@ export default function PaymentQrCropper({
     setImageSize(nextSize);
     setCrop(getInitialSquareCrop(width, height));
     setInteraction(null);
+    setZoom(1);
   };
 
   const resetCrop = () => {
@@ -150,7 +164,7 @@ export default function PaymentQrCropper({
     }
   };
 
-  return (
+  const modal = (
     <div className="settings-qr-crop-overlay" role="dialog" aria-modal="true" aria-label="Recortar QR de cobro">
       <div className="settings-qr-crop-panel">
         <div className="settings-qr-crop-header">
@@ -168,83 +182,65 @@ export default function PaymentQrCropper({
 
         <div className="settings-qr-crop-body">
           <div className="settings-qr-crop-stage">
-            {previewUrl ? (
-              <div className="settings-qr-crop-image-wrap">
-                <img ref={imageRef} src={previewUrl} alt="Captura de QR para recortar" onLoad={handleImageLoad} />
-                {canEdit && (
-                  <div
-                    className={`settings-qr-crop-box${interaction ? ' is-active' : ''}`}
-                    style={cropStyle}
-                    role="button"
-                    tabIndex={0}
-                    aria-label="Mover area de recorte del QR"
-                    onPointerDown={(event) => startCropInteraction(event, 'move')}
-                  >
-                    <span className="settings-qr-crop-guides" />
-                    {RESIZE_HANDLES.map((handle) => (
-                      <span
-                        key={handle}
-                        className={`settings-qr-crop-handle settings-qr-crop-handle--${handle}`}
-                        aria-hidden="true"
-                        onPointerDown={(event) => {
-                          event.stopPropagation();
-                          startCropInteraction(event, 'resize', handle);
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="settings-qr-crop-empty">
-                <QrCode size={34} />
-              </div>
-            )}
-          </div>
-
-          <aside className="settings-qr-crop-controls">
-            <div>
-              <span className="settings-qr-crop-kicker">Vista final</span>
-              <strong>Solo el cuadro seleccionado se guardara</strong>
-              <p>Mueve el cuadro con el mouse y cambia su tamano desde las esquinas. Los controles son ajuste fino.</p>
+            <div className="settings-qr-crop-stage-inner">
+              {previewUrl ? (
+                <div className="settings-qr-crop-image-wrap">
+                  <img
+                    ref={imageRef}
+                    src={previewUrl}
+                    alt="Captura de QR para recortar"
+                    style={imageRenderStyle}
+                    onLoad={handleImageLoad}
+                  />
+                  {canEdit && (
+                    <div
+                      className={`settings-qr-crop-box${interaction ? ' is-active' : ''}`}
+                      style={cropStyle}
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Mover area de recorte del QR"
+                      onPointerDown={(event) => startCropInteraction(event, 'move')}
+                    >
+                      <span className="settings-qr-crop-guides" />
+                      {RESIZE_HANDLES.map((handle) => (
+                        <span
+                          key={handle}
+                          className={`settings-qr-crop-handle settings-qr-crop-handle--${handle}`}
+                          aria-hidden="true"
+                          onPointerDown={(event) => {
+                            event.stopPropagation();
+                            startCropInteraction(event, 'resize', handle);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="settings-qr-crop-empty">
+                  <QrCode size={34} />
+                </div>
+              )}
             </div>
+          </div>
+        </div>
 
-            <label>
-              <span>Tamano del recorte</span>
+        <div className="settings-qr-crop-footer">
+          <div className="settings-qr-crop-toolbar">
+            <label className="settings-qr-crop-zoom-control">
+              <span>
+                <ZoomIn size={15} /> Zoom <strong>{Math.round(zoom * 100)}%</strong>
+              </span>
               <input
                 type="range"
-                min={minSize}
-                max={maxSize || 1}
-                value={crop.size || minSize}
+                min={MIN_ZOOM}
+                max={MAX_ZOOM}
+                step={ZOOM_STEP}
+                value={zoom}
                 disabled={!canEdit || uploading}
-                onChange={(event) => updateCrop({ size: Number(event.target.value) })}
+                onChange={(event) => setZoom(Number(event.target.value))}
               />
             </label>
-
-            <label>
-              <span>Posicion horizontal</span>
-              <input
-                type="range"
-                min="0"
-                max={maxX || 0}
-                value={crop.x || 0}
-                disabled={!canEdit || uploading}
-                onChange={(event) => updateCrop({ x: Number(event.target.value) })}
-              />
-            </label>
-
-            <label>
-              <span>Posicion vertical</span>
-              <input
-                type="range"
-                min="0"
-                max={maxY || 0}
-                value={crop.y || 0}
-                disabled={!canEdit || uploading}
-                onChange={(event) => updateCrop({ y: Number(event.target.value) })}
-              />
-            </label>
-
             <div className="settings-qr-crop-toolrow">
               <button type="button" className="btn-secondary" onClick={resetCrop} disabled={!canEdit || uploading}>
                 <RotateCcw size={15} /> Centrar
@@ -253,28 +249,30 @@ export default function PaymentQrCropper({
                 <Crop size={15} /> Completo
               </button>
             </div>
+          </div>
 
-            {error && <p className="settings-qr-crop-error">{error}</p>}
-          </aside>
-        </div>
+          {error && <p className="settings-qr-crop-error">{error}</p>}
 
-        <div className="settings-qr-crop-footer">
-          <button type="button" className="btn-secondary" onClick={onCancel} disabled={uploading}>
-            Cancelar
-          </button>
-          <button type="button" className="btn-primary" onClick={handleConfirm} disabled={!canEdit || uploading}>
-            {uploading ? (
-              <>
-                <Spinner size="sm" /> Guardando...
-              </>
-            ) : (
-              <>
-                <Crop size={16} /> Guardar QR limpio
-              </>
-            )}
-          </button>
+          <div className="settings-qr-crop-actions">
+            <button type="button" className="btn-secondary" onClick={onCancel} disabled={uploading}>
+              Cancelar
+            </button>
+            <button type="button" className="btn-primary" onClick={handleConfirm} disabled={!canEdit || uploading}>
+              {uploading ? (
+                <>
+                  <Spinner size="sm" /> Guardando...
+                </>
+              ) : (
+                <>
+                  <Crop size={16} /> Guardar QR limpio
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
