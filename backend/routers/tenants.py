@@ -335,6 +335,7 @@ async def upload_logo(
             unique_filename,
             file.content_type or "",
             return_public_url=True,
+            allow_overwrite=False,
         )
 
         tenant = crud.get_tenant(db, current_user.tenant_id)
@@ -379,6 +380,7 @@ async def upload_payment_qr(
             unique_filename,
             file.content_type or "",
             return_public_url=True,
+            allow_overwrite=False,
         )
 
         crud.update_tenant_payment_qr(db, current_user.tenant_id, public_url)

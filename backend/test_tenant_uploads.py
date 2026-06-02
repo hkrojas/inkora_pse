@@ -32,6 +32,7 @@ def test_upload_payment_qr_updates_tenant_payment_qr_without_500(db_session, mon
         content_type,
         *,
         return_public_url=False,
+        allow_overwrite=True,
     ):
         captured.update(
             {
@@ -40,6 +41,7 @@ def test_upload_payment_qr_updates_tenant_payment_qr_without_500(db_session, mon
                 "filename": filename,
                 "content_type": content_type,
                 "return_public_url": return_public_url,
+                "allow_overwrite": allow_overwrite,
             }
         )
         return f"https://cdn.test/{folder_name}/{filename}"
@@ -56,8 +58,56 @@ def test_upload_payment_qr_updates_tenant_payment_qr_without_500(db_session, mon
     assert captured["filename"].startswith("payment_qr_")
     assert captured["content_type"] == "image/png"
     assert captured["return_public_url"] is True
+    assert captured["allow_overwrite"] is False
 
     body = response.json()
     db_session.refresh(tenant)
     assert body["url"].startswith("https://cdn.test/payment_qrs/payment_qr_")
     assert tenant.payment_qr_filename == body["url"]
+
+
+def test_upload_logo_updates_tenant_logo_without_500(db_session, monkeypatch):
+    tenant = make_tenant(db_session, "LG01")
+    admin = make_user(db_session, tenant, email="logo-admin@test.com", rol="admin")
+    client = _client_for_user(db_session, admin)
+    captured = {}
+
+    def fake_upload_to_storage(
+        file_bytes,
+        folder_name,
+        filename,
+        content_type,
+        *,
+        return_public_url=False,
+        allow_overwrite=True,
+    ):
+        captured.update(
+            {
+                "file_bytes": file_bytes,
+                "folder_name": folder_name,
+                "filename": filename,
+                "content_type": content_type,
+                "return_public_url": return_public_url,
+                "allow_overwrite": allow_overwrite,
+            }
+        )
+        return f"https://cdn.test/{folder_name}/{filename}"
+
+    monkeypatch.setattr(tenants_router.storage_service, "upload_to_storage", fake_upload_to_storage)
+
+    response = client.post(
+        "/users/upload-logo",
+        files={"file": ("logo.png", b"\x89PNG\r\n\x1a\nlogo", "image/png")},
+    )
+
+    assert response.status_code == 200
+    assert captured["folder_name"] == "logos"
+    assert captured["filename"].startswith("logo_")
+    assert captured["content_type"] == "image/png"
+    assert captured["return_public_url"] is True
+    assert captured["allow_overwrite"] is False
+
+    body = response.json()
+    db_session.refresh(tenant)
+    assert body["url"].startswith("https://cdn.test/logos/logo_")
+    assert tenant.logo_filename == body["url"]

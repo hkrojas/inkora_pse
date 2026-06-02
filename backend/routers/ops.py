@@ -36,9 +36,13 @@ def readiness(_: None = Depends(_require_ops_token)):
     try:
         storage = storage_service.check_storage_ready()
         checks["storage"] = {
-            "ok": bool(storage["configured"]),
+            "ok": bool(storage["ok"]),
             "bucket": storage["bucket"],
             "uses_server_key": storage.get("uses_server_key", False),
+            "bucket_accessible": storage.get("bucket_accessible", False),
+            "objects_listable": storage.get("objects_listable", False),
+            "bucket_error": storage.get("bucket_error"),
+            "list_error": storage.get("list_error"),
         }
     except Exception as exc:
         checks["storage"] = {"ok": False, "error": type(exc).__name__}

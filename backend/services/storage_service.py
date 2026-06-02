@@ -99,6 +99,7 @@ def upload_to_storage(
     content_type: str,
     *,
     return_public_url: bool = False,
+    allow_overwrite: bool = True,
 ):
     """
     Sube un archivo al bucket configurado de forma sincrona.
@@ -118,13 +119,28 @@ def upload_to_storage(
     import time
 
     started_at = time.perf_counter()
+    file_options = {"content-type": content_type}
+    if allow_overwrite:
+        file_options["upsert"] = "true"
+
     try:
         client.storage.from_(bucket).upload(
             path=path,
             file=file_bytes,
-            file_options={"content-type": content_type, "x-upsert": "true"},
+            file_options=file_options,
         )
-    finally:
+    except Exception:
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        logger.exception(
+            "storage_upload_failed",
+            extra={
+                "event": "storage_upload_failed",
+                "duration_ms": duration_ms,
+                "context": f"bucket={bucket} path={path} bytes={len(file_bytes)}",
+            },
+        )
+        raise
+    else:
         duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
         logger.info(
             "storage_upload_completed",
@@ -143,10 +159,39 @@ def upload_to_storage(
 
 def check_storage_ready() -> dict:
     if not settings.has_supabase_storage:
-        return {"configured": False, "bucket": settings.SUPABASE_STORAGE_BUCKET}
-    get_supabase_client()
+        return {
+            "ok": False,
+            "configured": False,
+            "bucket": settings.SUPABASE_STORAGE_BUCKET,
+        }
+
+    client = get_supabase_client()
+    bucket = settings.SUPABASE_STORAGE_BUCKET
+    bucket_accessible = False
+    bucket_error = None
+    objects_listable = False
+    list_error = None
+
+    try:
+        client.storage.get_bucket(bucket)
+        bucket_accessible = True
+    except Exception as exc:
+        bucket_error = type(exc).__name__
+
+    if bucket_accessible:
+        try:
+            client.storage.from_(bucket).list("", {"limit": 1})
+            objects_listable = True
+        except Exception as exc:
+            list_error = type(exc).__name__
+
     return {
+        "ok": bucket_accessible,
         "configured": True,
-        "bucket": settings.SUPABASE_STORAGE_BUCKET,
+        "bucket": bucket,
         "uses_server_key": bool(settings.SUPABASE_SERVICE_ROLE_KEY.strip()),
+        "bucket_accessible": bucket_accessible,
+        "bucket_error": bucket_error,
+        "objects_listable": objects_listable,
+        "list_error": list_error,
     }
