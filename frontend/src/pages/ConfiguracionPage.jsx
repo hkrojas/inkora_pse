@@ -119,7 +119,8 @@ function ReadOnlyField({ label, value }) {
 
 const BUSINESS_NAME_MAX_LENGTH = 180;
 const BUSINESS_ADDRESS_MAX_LENGTH = 250;
-const LOGO_MAX_SIZE_BYTES = 2 * 1024 * 1024;
+const TENANT_ASSET_MAX_SIZE_MB = 25;
+const LOGO_MAX_SIZE_BYTES = TENANT_ASSET_MAX_SIZE_MB * 1024 * 1024;
 const LOGO_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
 function normalizeBusinessText(value) {
@@ -687,7 +688,7 @@ export default function ConfiguracionPage() {
     }
 
     if (file.size > LOGO_MAX_SIZE_BYTES) {
-      setLogoError('El logo no debe superar 2 MB.');
+      setLogoError(`El logo no debe superar ${TENANT_ASSET_MAX_SIZE_MB} MB.`);
       toast('El logo excede el tamano maximo permitido.', 'error');
       return;
     }
@@ -745,7 +746,7 @@ export default function ConfiguracionPage() {
     }
 
     if (file.size > LOGO_MAX_SIZE_BYTES) {
-      setPaymentQrError('El QR no debe superar 2 MB.');
+      setPaymentQrError(`El QR no debe superar ${TENANT_ASSET_MAX_SIZE_MB} MB.`);
       toast('El QR excede el tamano maximo permitido.', 'error');
       return;
     }
@@ -1001,7 +1002,7 @@ export default function ConfiguracionPage() {
                   </div>
                   <div className="settings-logo-upload-copy">
                     <p>Logo de empresa</p>
-                    <span>Se usa en cotizaciones, comprobantes, guias y PDFs comerciales. PNG, JPG o WEBP hasta 2 MB.</span>
+                    <span>Se usa en cotizaciones, comprobantes, guias y PDFs comerciales. PNG, JPG o WEBP hasta {TENANT_ASSET_MAX_SIZE_MB} MB.</span>
                     {logoError && <strong>{logoError}</strong>}
                   </div>
                   <div className="settings-logo-upload-actions">
