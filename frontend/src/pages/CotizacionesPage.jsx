@@ -1838,7 +1838,7 @@ export default function CotizacionesPage() {
               }
             />
           ) : (
-            <div className="records-card">
+            <div className="records-card cotizaciones-history-card">
               <div className="panel-header">
                 <div>
                   <h3>Historial comercial</h3>
@@ -1848,7 +1848,7 @@ export default function CotizacionesPage() {
                   <span>{filteredHistory.length} registros visibles</span>
                 </div>
               </div>
-              <div className="ink-table-scroll">
+              <div className="ink-table-scroll cotizaciones-history-scroll">
               <table className="ink-table cotizaciones-history-table">
                 <thead>
                   <tr>
@@ -1873,31 +1873,31 @@ export default function CotizacionesPage() {
                     const canDelete = !hasLinked && item.estado !== 'anulada';
                     return (
                       <tr key={item.id} className="ink-tr">
-                        <td className="ink-td">
+                        <td className="ink-td" data-label="F. emision">
                           <span className="font-mono-label text-[10px] uppercase">
                             {item.fecha_emision ? new Date(item.fecha_emision).toLocaleDateString('es-PE') : '--'}
                           </span>
                         </td>
-                        <td className="ink-td font-mono-label text-xs">
+                        <td className="ink-td font-mono-label text-xs" data-label="N orden">
                           {item.internal_order_number || `#${item.id}`}
                         </td>
-                        <td className="ink-td">
+                        <td className="ink-td" data-label="Cliente">
                           <div className="flex flex-col">
                             <span className="font-bold text-xs uppercase">{item.cliente?.razon_social || '--'}</span>
                             <span className="text-[10px] text-[var(--text-tertiary)]">{item.cliente?.numero_documento || ''}</span>
                           </div>
                         </td>
-                        <td className="ink-td text-center font-mono-label text-[10px]">{sym}</td>
-                        <td className="ink-td text-right font-bold font-mono-label text-xs">{sym} {fmt(item.total_venta)}</td>
-                        <td className="ink-td text-right font-mono-label text-xs text-[var(--text-tertiary)]">
+                        <td className="ink-td text-center font-mono-label text-[10px]" data-label="M.">{sym}</td>
+                        <td className="ink-td text-right font-bold font-mono-label text-xs" data-label="Total">{sym} {fmt(item.total_venta)}</td>
+                        <td className="ink-td text-right font-mono-label text-xs text-[var(--text-tertiary)]" data-label="Saldo">
                           {sym} {fmt(item.saldo_pendiente)}
                         </td>
-                        <td className="ink-td">
+                        <td className="ink-td" data-label="Pago">
                           <Badge variant={statusBadge(item.payment_status)}>
                             {item.payment_status || 'pendiente'}
                           </Badge>
                         </td>
-                        <td className="ink-td">
+                        <td className="ink-td" data-label="Comprobante">
                           {hasLinked ? (
                             <div className="flex items-center gap-2 flex-wrap">
                               <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: 'var(--color-primary)' }}>
@@ -1914,64 +1914,83 @@ export default function CotizacionesPage() {
                             <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>Sin emitir</span>
                           )}
                         </td>
-                        <td className="ink-td">
+                        <td className="ink-td" data-label="Acciones">
                           <div className="history-actions-desktop">
-                            <div className="history-actions-cluster">
-                              <Link
-                                to={`/cotizaciones/${item.id}`}
-                                className="row-action-icon row-action-icon--brand"
-                                title="Ver detalle"
-                              >
-                                <Eye className="h-3 w-3" />
-                              </Link>
+                            <Link
+                              to={`/cotizaciones/${item.id}`}
+                              className="history-action-button history-action-button--brand"
+                              aria-label="Ver detalle de cotizacion"
+                            >
+                              <Eye className="h-4 w-4" />
+                              <span>Ver</span>
+                            </Link>
+                            <button
+                              type="button"
+                              className="history-action-button history-action-button--info"
+                              onClick={() => handleOpenPdf(item)}
+                              aria-label="Descargar PDF de cotizacion"
+                            >
+                              <Download className="h-4 w-4" />
+                              <span>PDF</span>
+                            </button>
+                            {!hasLinked && (
                               <button
                                 type="button"
-                                title="Duplicar cotizacion"
-                                className="row-action-icon row-action-icon--neutral"
-                                onClick={() => handleDuplicateQuote(item)}
+                                className="history-action-button history-action-button--accent"
+                                onClick={() => setEmitirDoc(item)}
+                                aria-label="Emitir factura o boleta desde esta cotizacion"
                               >
-                                <Copy className="h-3 w-3" />
+                                <Receipt className="h-4 w-4" />
+                                <span>Emitir</span>
                               </button>
-                              <button
-                                type="button"
-                                title="Descargar PDF"
-                                className="row-action-icon row-action-icon--info"
-                                onClick={() => handleOpenPdf(item)}
-                              >
-                                <Download className="h-3 w-3" />
-                              </button>
-                              <button
-                                type="button"
-                                title="Copiar enlace publico"
-                                className="row-action-icon row-action-icon--info"
-                                onClick={() => handleCopyShareLink(item)}
-                              >
-                                <Share2 className="h-3 w-3" />
-                              </button>
-                            </div>
-                            <div className="history-actions-divider" />
-                            <div className="history-actions-cluster">
-                              {!hasLinked && (
-                                <button
-                                  type="button"
-                                  title="Emitir factura o boleta"
-                                  className="row-action-icon row-action-icon--accent"
-                                  onClick={() => setEmitirDoc(item)}
-                                >
-                                  <Receipt className="h-3 w-3" />
+                            )}
+                            <details className="history-actions-more">
+                              <summary className="history-action-button history-action-button--neutral" aria-label="Mas acciones">
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span>Mas</span>
+                              </summary>
+                              <div className="history-actions-more-menu">
+                                <button type="button" className="history-actions-mobile-item" onClick={() => handleDuplicateQuote(item)}>
+                                  <Copy className="h-3.5 w-3.5" />
+                                  Duplicar
                                 </button>
-                              )}
-                              {canDelete && (
-                                <button
-                                  type="button"
-                                  title="Eliminar cotizacion"
-                                  className="row-action-icon row-action-icon--danger"
-                                  onClick={() => handleDeleteQuote(item)}
-                                >
-                                  <Trash2 className="h-3 w-3" />
+                                <button type="button" className="history-actions-mobile-item" onClick={() => handleCopyShareLink(item)}>
+                                  <Share2 className="h-3.5 w-3.5" />
+                                  Copiar enlace
                                 </button>
-                              )}
-                            </div>
+                                {waLink && (
+                                  <a href={waLink} target="_blank" rel="noreferrer" className="history-actions-mobile-item">
+                                    <MessageCircle className="h-3.5 w-3.5" />
+                                    WhatsApp
+                                  </a>
+                                )}
+                                {emailLink && (
+                                  <a href={emailLink} className="history-actions-mobile-item">
+                                    <Mail className="h-3.5 w-3.5" />
+                                    Correo
+                                  </a>
+                                )}
+                                {waLink && emailLink && (
+                                  <button
+                                    type="button"
+                                    className="history-actions-mobile-item"
+                                    onClick={() => {
+                                      window.open(waLink, '_blank', 'noopener,noreferrer');
+                                      window.setTimeout(() => window.open(emailLink, '_blank', 'noopener,noreferrer'), 80);
+                                    }}
+                                  >
+                                    <Send className="h-3.5 w-3.5" />
+                                    WhatsApp + correo
+                                  </button>
+                                )}
+                                {canDelete && (
+                                  <button type="button" className="history-actions-mobile-item is-danger" onClick={() => handleDeleteQuote(item)}>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Eliminar
+                                  </button>
+                                )}
+                              </div>
+                            </details>
                           </div>
 
                           <details className="history-actions-mobile">
