@@ -11,6 +11,7 @@ bcrypt==3.2.0
 python-jose[cryptography]
 cryptography
 requests
+cachetools
 python-multipart
 python-dateutil
 reportlab
