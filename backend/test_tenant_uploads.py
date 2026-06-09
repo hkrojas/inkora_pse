@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 from api_dependencies import get_current_user, get_db, get_db_tenant
 from config import settings
-from conftest import make_tenant, make_user
+from conftest import make_cliente, make_cotizacion, make_tenant, make_user
 from routers import tenants as tenants_router
 
 
@@ -72,6 +72,39 @@ def test_upload_payment_qr_updates_tenant_payment_qr_without_500(db_session, mon
     db_session.refresh(tenant)
     assert body["url"].startswith("https://cdn.test/inkora-public-assets/payment_qrs/payment_qr_")
     assert tenant.payment_qr_filename == body["url"]
+
+
+def test_upload_payment_qr_invalidates_cached_quotation_pdfs(db_session, monkeypatch):
+    tenant = make_tenant(db_session, "QR02")
+    admin = make_user(db_session, tenant, email="qr-admin-2@test.com", rol="admin")
+    cliente = make_cliente(db_session, tenant, "QR02")
+    quote = make_cotizacion(db_session, tenant, admin, cliente)
+    quote.sunat_pdf_url = "supabase-private://inkora-private/cotizaciones/tenant_1/COT-000001.pdf"
+    db_session.commit()
+    client = _client_for_user(db_session, admin)
+
+    def fake_upload_to_storage(
+        file_bytes,
+        folder_name,
+        filename,
+        content_type,
+        *,
+        return_public_url=False,
+        allow_overwrite=True,
+        bucket_name=None,
+    ):
+        return f"https://cdn.test/{bucket_name}/{folder_name}/{filename}"
+
+    monkeypatch.setattr(tenants_router.storage_service, "upload_to_storage", fake_upload_to_storage)
+
+    response = client.post(
+        "/users/upload-payment-qr",
+        files={"file": ("qr-cobro.png", b"\x89PNG\r\n\x1a\nqr", "image/png")},
+    )
+
+    assert response.status_code == 200
+    db_session.refresh(quote)
+    assert quote.sunat_pdf_url is None
 
 
 def test_upload_logo_updates_tenant_logo_without_500(db_session, monkeypatch):

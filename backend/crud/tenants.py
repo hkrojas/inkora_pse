@@ -89,6 +89,20 @@ def update_tenant_payment_qr(db: Session, tenant_id: int, public_url: str):
     return db_tenant
 
 
+def invalidate_tenant_quotation_pdfs(db: Session, tenant_id: int) -> int:
+    updated = (
+        db.query(models.Cotizacion)
+        .filter(
+            models.Cotizacion.tenant_id == tenant_id,
+            models.Cotizacion.document_kind == "quotation",
+            models.Cotizacion.sunat_pdf_url.isnot(None),
+        )
+        .update({models.Cotizacion.sunat_pdf_url: None}, synchronize_session=False)
+    )
+    db.commit()
+    return updated
+
+
 def get_all_tenants(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Tenant).order_by(models.Tenant.id.desc()).offset(skip).limit(limit).all()
 

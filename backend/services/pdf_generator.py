@@ -161,6 +161,23 @@ def _normalize_payment_methods(payment_methods) -> list[dict]:
     return normalized
 
 
+def _get_payment_qr_image_url(payment_methods) -> str:
+    if not isinstance(payment_methods, list):
+        return ""
+
+    for entry in payment_methods:
+        if not isinstance(entry, dict):
+            continue
+        entry_type = str(entry.get("tipo") or "").strip().lower()
+        if entry_type != "payment_qr_image":
+            continue
+        qr_url = str(entry.get("url") or entry.get("payment_qr_filename") or "").strip()
+        if qr_url:
+            return qr_url
+
+    return ""
+
+
 def _build_payment_methods_text(payment_methods, beneficiary_name: str = "") -> str:
     normalized_methods = _normalize_payment_methods(payment_methods)
     if not normalized_methods:
@@ -885,6 +902,42 @@ def _build_generated_qr_flowable(qr_content: str, target_size: float, col_width:
         )
     )
     return qr_table
+
+
+def _build_uploaded_payment_qr_flowable(payment_methods, target_size: float, col_width: float):
+    qr_url = _get_payment_qr_image_url(payment_methods)
+    if not qr_url:
+        return None
+
+    try:
+        content = None
+        if qr_url.startswith("http"):
+            content = _load_remote_logo_bytes(qr_url)
+        elif os.path.exists(qr_url):
+            with open(qr_url, "rb") as image_file:
+                content = image_file.read()
+
+        if not content:
+            return None
+
+        qr_image_obj = Image(io.BytesIO(content), width=target_size, height=target_size)
+        qr_table = Table([[qr_image_obj]], colWidths=[col_width])
+        qr_table.setStyle(
+            TableStyle(
+                [
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        return qr_table
+    except Exception as err:
+        print(f"Error cargando QR de cobro en PDF: {err}")
+        return None
 
 
 def _build_logo_block(company_data: dict, color_principal, width: float, name_style: ParagraphStyle):
@@ -2321,8 +2374,15 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         qr_summary_text = _resolve_qr_visible_summary(document_data)
         bottom_left_text = "Puedes descargar el XML, CDR y representación impresa desde nuestro portal."
     else:
-        qr_content, wallet = _build_quote_wallet_qr_content(company_data["bank_accounts"], company_data["name"])
-        qr_flowable = _build_generated_qr_flowable(qr_content, 1.75 * inch, qr_col_width)
+        wallet = _pick_wallet_payment_method(company_data["bank_accounts"])
+        qr_flowable = _build_uploaded_payment_qr_flowable(
+            company_data["bank_accounts"],
+            1.75 * inch,
+            qr_col_width,
+        )
+        if not qr_flowable:
+            qr_content, wallet = _build_quote_wallet_qr_content(company_data["bank_accounts"], company_data["name"])
+            qr_flowable = _build_generated_qr_flowable(qr_content, 1.75 * inch, qr_col_width)
         provider = (wallet or {}).get("proveedor") or "billetera digital"
         qr_title = Paragraph(
             f"Escanea para pagar con {provider}.",

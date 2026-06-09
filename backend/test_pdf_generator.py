@@ -13,6 +13,15 @@ from routers import cotizaciones as cotizaciones_router
 from services import fiscal_xml_service, pdf_generator, pdf_storage_service, storage_service
 
 
+def _make_png_bytes() -> bytes:
+    from PIL import Image as PillowImage
+
+    buffer = BytesIO()
+    image = PillowImage.new("RGB", (16, 16), color="white")
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def _make_request(path: str = "/test") -> Request:
     return Request(
         {
@@ -103,6 +112,8 @@ SIMPLE_QR_SVG = """<?xml version="1.0" encoding="UTF-8"?>
   <rect x="20" y="20" width="80" height="80" fill="#000000"/>
 </svg>
 """
+
+TINY_PNG_BYTES = _make_png_bytes()
 
 
 def _fake_tenant():
@@ -202,6 +213,40 @@ def test_generar_pdf_cotizacion_genera_qr_para_billetera_o_fallback():
     assert isinstance(buffer, BytesIO)
     assert len(buffer.getvalue()) > 0
     qr_make.assert_called()
+
+
+def test_generar_pdf_cotizacion_usa_qr_subido_en_lugar_de_generar_qr():
+    tenant = _fake_tenant()
+    tenant.bank_accounts = [
+        {"tipo": "payment_qr_image", "url": "https://cdn.test/qr-cobro.png"},
+        {
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Inkora Test SAC",
+            "numero": "999888777",
+            "nota": "Pago inmediato",
+        },
+    ]
+    cotizacion = SimpleNamespace(
+        cliente=_fake_cliente(),
+        items=[_fake_item()],
+        moneda="PEN",
+        serie="COT",
+        correlativo=38,
+        created_at=datetime.now(),
+        usuario=_fake_user(),
+    )
+
+    with (
+        patch("services.pdf_generator._load_remote_logo_bytes", return_value=TINY_PNG_BYTES) as load_image,
+        patch("services.pdf_generator.qrcode.make", wraps=pdf_generator.qrcode.make) as qr_make,
+    ):
+        buffer = pdf_generator.generar_pdf_cotizacion(cotizacion, tenant)
+
+    assert isinstance(buffer, BytesIO)
+    assert len(buffer.getvalue()) > 0
+    load_image.assert_called_with("https://cdn.test/qr-cobro.png")
+    qr_make.assert_not_called()
 
 
 def test_resolve_quote_company_data_usa_email_usuario_y_fallback_bancario():

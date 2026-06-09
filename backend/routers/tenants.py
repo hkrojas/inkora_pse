@@ -386,6 +386,7 @@ async def upload_payment_qr(
         )
 
         crud.update_tenant_payment_qr(db, current_user.tenant_id, public_url)
+        crud.invalidate_tenant_quotation_pdfs(db, current_user.tenant_id)
 
         return {"url": public_url}
     except HTTPException:
