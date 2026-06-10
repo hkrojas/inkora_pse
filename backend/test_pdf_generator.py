@@ -186,6 +186,55 @@ def test_generar_pdf_cotizacion_crea_binario():
     assert len(buffer.getvalue()) > 0
 
 
+def test_quote_detail_col_widths_expande_codigo_sin_cambiar_ancho_total():
+    styles = pdf_generator.getSampleStyleSheet()
+    base = styles["Normal"]
+    header_style = pdf_generator.ParagraphStyle(
+        name="TestHeader",
+        parent=base,
+        fontName="Helvetica-Bold",
+        fontSize=7.45,
+    )
+    text_style = pdf_generator.ParagraphStyle(
+        name="TestText",
+        parent=base,
+        fontName="Helvetica",
+        fontSize=7.86,
+    )
+    money_style = pdf_generator.ParagraphStyle(
+        name="TestMoney",
+        parent=text_style,
+        fontSize=8.1,
+    )
+    total_width = 540
+    lines = [
+        {
+            "indice": 1,
+            "codigo": "PROD-8847D4",
+            "descripcion": "Bolsa pastillera",
+            "cantidad": 850,
+            "unidad": "UND",
+            "valor_unitario": 0.81,
+            "p_unit_con_igv": 0.95,
+            "subtotal_item": 684.32,
+            "precio_total_item": 807.50,
+        }
+    ]
+
+    widths = pdf_generator._build_quote_detail_col_widths(
+        lines,
+        total_width,
+        header_style=header_style,
+        text_style=text_style,
+        money_style=money_style,
+        symbol="S/",
+    )
+
+    assert round(sum(widths), 6) == total_width
+    assert widths[2] > total_width * 0.09
+    assert widths[3] >= total_width * 0.22
+
+
 def test_generar_pdf_cotizacion_genera_qr_para_billetera_o_fallback():
     tenant = _fake_tenant()
     tenant.bank_accounts = [

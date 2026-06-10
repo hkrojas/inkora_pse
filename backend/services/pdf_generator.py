@@ -820,6 +820,101 @@ def _display_unit_code(unit_code: str | None) -> str:
     return normalized or "UND"
 
 
+def _html_escape(value: object) -> str:
+    return (
+        str(value or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _text_width(value: object, style: ParagraphStyle) -> float:
+    return stringWidth(str(value or ""), style.fontName, style.fontSize)
+
+
+def _clamp(value: float, min_value: float, max_value: float) -> float:
+    return max(min_value, min(value, max_value))
+
+
+def _build_quote_detail_col_widths(
+    lines: list[dict],
+    total_width: float,
+    *,
+    header_style: ParagraphStyle,
+    text_style: ParagraphStyle,
+    money_style: ParagraphStyle,
+    symbol: str,
+) -> list[float]:
+    """Distribuye columnas del detalle sin cambiar el ancho total de la tabla."""
+    headers = ["N°", "CANTIDAD", "CÓDIGO", "DESCRIPCIÓN", "V/U", "P/U", "SUBTOTAL", "TOTAL"]
+    padding_allowance = 11
+
+    index_width = max(
+        _text_width(headers[0], header_style),
+        *[_text_width(line.get("indice") or "", text_style) for line in lines],
+    ) + padding_allowance
+    quantity_width = max(
+        _text_width(headers[1], header_style),
+        *[
+            _text_width(
+                f"{_format_quantity(line.get('cantidad') or 0)} {_display_unit_code(line.get('unidad'))}",
+                text_style,
+            )
+            for line in lines
+        ],
+    ) + padding_allowance
+    code_width = max(
+        _text_width(headers[2], header_style),
+        *[_text_width(line.get("codigo") or "-", text_style) for line in lines],
+    ) + padding_allowance
+    money_width = max(
+        _text_width(headers[4], header_style),
+        _text_width(headers[5], header_style),
+        _text_width(headers[6], header_style),
+        _text_width(headers[7], header_style),
+        *[
+            _text_width(_format_detail_money(symbol, line.get(key) or 0), money_style)
+            for line in lines
+            for key in ("valor_unitario", "p_unit_con_igv", "subtotal_item", "precio_total_item")
+        ],
+    ) + padding_allowance
+
+    widths = [
+        _clamp(index_width, total_width * 0.04, total_width * 0.055),
+        _clamp(quantity_width, total_width * 0.105, total_width * 0.13),
+        _clamp(code_width, total_width * 0.09, total_width * 0.145),
+        0,
+        _clamp(money_width, total_width * 0.092, total_width * 0.125),
+        _clamp(money_width, total_width * 0.092, total_width * 0.125),
+        _clamp(money_width, total_width * 0.118, total_width * 0.145),
+        _clamp(money_width, total_width * 0.118, total_width * 0.145),
+    ]
+    widths[3] = total_width - sum(widths[:3]) - sum(widths[4:])
+    description_min = total_width * 0.22
+    if widths[3] < description_min:
+        deficit = description_min - widths[3]
+        minimums = {
+            1: total_width * 0.105,
+            2: total_width * 0.09,
+            4: total_width * 0.092,
+            5: total_width * 0.092,
+            6: total_width * 0.118,
+            7: total_width * 0.118,
+        }
+        for idx in (2, 6, 7, 1, 4, 5):
+            available = max(0, widths[idx] - minimums[idx])
+            reduction = min(available, deficit)
+            widths[idx] -= reduction
+            deficit -= reduction
+            if deficit <= 0:
+                break
+        widths[3] = total_width - sum(widths[:3]) - sum(widths[4:])
+
+    widths[3] += total_width - sum(widths)
+    return widths
+
+
 def _resolve_company_data(document_data, tenant: models.Tenant, parsed_xml: dict | None) -> dict:
     user = getattr(document_data, "usuario", None)
     supplier = (parsed_xml or {}).get("supplier") or {}
@@ -2193,7 +2288,7 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
             [
                 Paragraph(str(item_data.get("indice") or ""), detail_center_style),
                 Paragraph(f"{_format_quantity(item_data['cantidad'])} {_display_unit_code(item_data.get('unidad'))}", detail_center_style),
-                Paragraph(str(item_data.get("codigo") or "-"), detail_center_style),
+                Paragraph(f"<nobr>{_html_escape(item_data.get('codigo') or '-')}</nobr>", detail_center_style),
                 Paragraph(item_data["descripcion"], detail_text_style),
                 Paragraph(_format_detail_money(simbolo, item_data.get("valor_unitario") or 0), detail_money_style),
                 Paragraph(_format_detail_money(simbolo, item_data.get("p_unit_con_igv") or 0), detail_money_style),
@@ -2202,18 +2297,18 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
             ]
         )
 
+    detail_col_widths = _build_quote_detail_col_widths(
+        line_context["lines"],
+        ancho_total,
+        header_style=table_header_style,
+        text_style=detail_text_style,
+        money_style=detail_money_style,
+        symbol=simbolo,
+    )
+
     detail_table = Table(
         detail_rows,
-        colWidths=[
-            ancho_total * 0.04,
-            ancho_total * 0.105,
-            ancho_total * 0.09,
-            ancho_total * 0.275,
-            ancho_total * 0.105,
-            ancho_total * 0.105,
-            ancho_total * 0.14,
-            ancho_total * 0.14,
-        ],
+        colWidths=detail_col_widths,
         repeatRows=1,
     )
     detail_table.setStyle(
