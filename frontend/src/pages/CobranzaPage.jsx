@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   Calendar,
@@ -60,11 +60,12 @@ function getClientName(item) {
 
 export default function CobranzaPage() {
   const toast = useToast();
+  const [searchParams] = useSearchParams();
   const [vencidas, setVencidas] = useState([]);
   const [resumen, setResumen] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('q') || '');
   const [segment, setSegment] = useState('all');
 
   const loadCobranza = useCallback(() => {
@@ -85,6 +86,11 @@ export default function CobranzaPage() {
   useEffect(() => {
     loadCobranza();
   }, [loadCobranza]);
+
+  useEffect(() => {
+    const query = searchParams.get('q') || '';
+    setSearch((current) => (current === query ? current : query));
+  }, [searchParams]);
 
   const counts = useMemo(() => ({
     all:      vencidas.length,

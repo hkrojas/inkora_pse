@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Eye, Search, Trash2, Send, FileText,
   Download, CheckCircle2, Clock, AlertCircle, XCircle,
@@ -1572,9 +1572,13 @@ return (
 
 export default function CotizacionesPage() {
   const toast = useToast();
+  const [searchParams] = useSearchParams();
+  const initialSearch = searchParams.get('q') || '';
+  const initialViewParam = searchParams.get('view');
+  const initialView = initialViewParam === 'fiscal' ? 'fiscal' : (initialSearch || initialViewParam === 'history' ? 'history' : 'create');
 
   // Vista activa: 'create' | 'history' | 'fiscal'
-  const [view, setView] = useState('create');
+  const [view, setView] = useState(initialView);
 
   // Datos compartidos
   const [clientes, setClientes]         = useState([]);
@@ -1588,7 +1592,7 @@ export default function CotizacionesPage() {
   const [editingQuote, setEditingQuote] = useState(null);
 
   // Búsqueda y filtros
-  const [search, setSearch]         = useState('');
+  const [search, setSearch]         = useState(initialSearch);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     // compartidos
@@ -1630,6 +1634,14 @@ export default function CotizacionesPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const query = searchParams.get('q') || '';
+    const viewParam = searchParams.get('view');
+    const nextView = viewParam === 'fiscal' ? 'fiscal' : (query || viewParam === 'history' ? 'history' : 'create');
+    setSearch((current) => (current === query ? current : query));
+    setView((current) => (current === nextView ? current : nextView));
+  }, [searchParams]);
 
   // Separación por tipo
   const quotations = list.filter((d) => d.document_kind === 'quotation');

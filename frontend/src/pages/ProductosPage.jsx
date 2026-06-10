@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Barcode,
   Boxes,
@@ -366,12 +367,13 @@ function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving, onGenera
 
 export default function ProductosPage() {
   const toast = useToast();
+  const [searchParams] = useSearchParams();
   const [list, setList] = useState([]);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState({ all: 0, productos: 0, servicios: 0, con_sku: 0, con_precio: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('q') || '');
   const debouncedSearch = useDebouncedValue(search, 300);
   const [segment, setSegment] = useState('all');
   const [page, setPage] = useState(1);
@@ -413,6 +415,11 @@ export default function ProductosPage() {
   }, [debouncedSearch, page, segment, toast]);
 
   useEffect(load, [load]);
+
+  useEffect(() => {
+    const query = searchParams.get('q') || '';
+    setSearch((current) => (current === query ? current : query));
+  }, [searchParams]);
 
   useEffect(() => {
     setPage(1);

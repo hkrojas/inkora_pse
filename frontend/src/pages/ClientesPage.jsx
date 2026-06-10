@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Building2,
   CreditCard,
@@ -517,12 +518,13 @@ function ClienteForm({ initial = EMPTY_FORM, onSave, onCancel, saving }) {
 
 export default function ClientesPage() {
   const toast = useToast();
+  const [searchParams] = useSearchParams();
   const [list, setList] = useState([]);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState({ all: 0, empresa: 0, persona: 0, credito: 0, incompletos: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('q') || '');
   const debouncedSearch = useDebouncedValue(search, 300);
   const [segment, setSegment] = useState('all');
   const [page, setPage] = useState(1);
@@ -563,6 +565,11 @@ export default function ClientesPage() {
   }, [debouncedSearch, page, segment, toast]);
 
   useEffect(load, [load]);
+
+  useEffect(() => {
+    const query = searchParams.get('q') || '';
+    setSearch((current) => (current === query ? current : query));
+  }, [searchParams]);
 
   useEffect(() => {
     setPage(1);
