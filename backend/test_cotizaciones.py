@@ -66,6 +66,105 @@ def test_eliminar_cotizacion_permitido_si_esta_pendiente_y_sin_fiscal(db_session
     assert crud.get_cotizacion(db_session, quote.id, user) is None
 
 
+def test_actualizar_cotizacion_pendiente_recalcula_y_limpia_pdf(db_session):
+    tenant = make_tenant(db_session, "COT02U")
+    user = make_user(db_session, tenant, email="cot02u@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02U")
+    quote = make_quote_via_crud(db_session, tenant, user, cliente)
+    original_number = quote.document_number
+    quote.sunat_pdf_url = "supabase-private://inkora-private/cotizaciones/demo.pdf"
+    quote.sunat_xml_url = "legacy.xml"
+    db_session.commit()
+
+    updated = crud.update_cotizacion(
+        db_session,
+        quote.id,
+        schemas.CotizacionUpdate(
+            cliente_id=cliente.id,
+            moneda="PEN",
+            tipo_comprobante="00",
+            observaciones="Version corregida",
+            condicion_pago="contado",
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Servicio actualizado",
+                    cantidad=Decimal("2"),
+                    precio_unitario=Decimal("118.00"),
+                    unidad_medida="NIU",
+                    tipo_afectacion_igv="10",
+                ),
+            ],
+        ),
+        user,
+    )
+
+    assert updated.id == quote.id
+    assert updated.document_number == original_number
+    assert updated.observaciones == "Version corregida"
+    assert updated.total_venta == Decimal("236.00")
+    assert updated.saldo_pendiente == Decimal("236.00")
+    assert len(updated.items) == 1
+    assert updated.items[0].descripcion == "Servicio actualizado"
+    assert updated.sunat_pdf_url is None
+    assert updated.sunat_xml_url is None
+
+
+def test_actualizar_cotizacion_rechaza_si_tiene_pagos(db_session):
+    tenant = make_tenant(db_session, "COT02P")
+    user = make_user(db_session, tenant, email="cot02p@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02P")
+    quote = make_quote_via_crud(db_session, tenant, user, cliente)
+    quote.monto_pagado = Decimal("10.00")
+    quote.saldo_pendiente = quote.total_venta - Decimal("10.00")
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="pagos asociados"):
+        crud.update_cotizacion(
+            db_session,
+            quote.id,
+            schemas.CotizacionUpdate(
+                cliente_id=cliente.id,
+                moneda="PEN",
+                tipo_comprobante="00",
+                items=[
+                    schemas.CotizacionItemCreate(
+                        descripcion="No debe cambiar",
+                        cantidad=Decimal("1"),
+                        precio_unitario=Decimal("118.00"),
+                    ),
+                ],
+            ),
+            user,
+        )
+
+
+def test_actualizar_cotizacion_rechaza_si_tiene_fiscal_vinculado(db_session):
+    tenant = make_tenant(db_session, "COT02F")
+    user = make_user(db_session, tenant, email="cot02f@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02F")
+    quote = make_quote_via_crud(db_session, tenant, user, cliente)
+    crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+
+    with pytest.raises(ValueError, match="comprobante fiscal asociado"):
+        crud.update_cotizacion(
+            db_session,
+            quote.id,
+            schemas.CotizacionUpdate(
+                cliente_id=cliente.id,
+                moneda="PEN",
+                tipo_comprobante="00",
+                items=[
+                    schemas.CotizacionItemCreate(
+                        descripcion="No debe cambiar",
+                        cantidad=Decimal("1"),
+                        precio_unitario=Decimal("118.00"),
+                    ),
+                ],
+            ),
+            user,
+        )
+
+
 def test_cotizacion_exonerada_no_genera_igv(db_session):
     tenant = make_tenant(db_session, "COT02B")
     user = make_user(db_session, tenant, email="cot02b@test.com")

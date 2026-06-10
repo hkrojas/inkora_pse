@@ -63,6 +63,35 @@ def create_cotizacion(
     return db_cotizacion
 
 
+@router.put("/cotizaciones/{cotizacion_id}", response_model=schemas.CotizacionResponse)
+def update_cotizacion(
+    cotizacion_id: int,
+    cotizacion: schemas.CotizacionUpdate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    try:
+        db_cotizacion = crud.update_cotizacion(
+            db,
+            cotizacion_id,
+            cotizacion,
+            current_user,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    if not db_cotizacion:
+        raise HTTPException(404, "Cotizacion no encontrada")
+
+    background_tasks.add_task(
+        pdf_storage_service.process_pdf_background,
+        db_cotizacion.id,
+        db_cotizacion.tenant_id,
+    )
+    return db_cotizacion
+
+
 @router.post(
     "/cotizaciones/{cotizacion_id}/duplicar",
     response_model=schemas.CotizacionResponse,

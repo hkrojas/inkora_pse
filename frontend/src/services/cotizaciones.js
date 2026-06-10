@@ -4,6 +4,7 @@ export const cotizaciones = {
   list:    (params = '?limit=15') => api.get(`/cotizaciones/${params}`),
   get:     (id)          => api.get(`/cotizaciones/${id}`),
   create:  (data)        => api.post('/cotizaciones/', data),
+  update:  (id, data)    => api.put(`/cotizaciones/${id}`, data),
   duplicar:(id)          => api.post(`/cotizaciones/${id}/duplicar`, {}),
   pdf:     (id)          => api.get(`/cotizaciones/${id}/pdf`),
   share:   (id)          => api.get(`/cotizaciones/${id}/compartir`),

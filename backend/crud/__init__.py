@@ -80,6 +80,7 @@ from crud.cotizaciones import (
     create_cotizacion,
     duplicate_cotizacion,
     delete_cotizacion,
+    update_cotizacion,
     create_fiscal_document_from_quote,
     guardar_respuesta_sunat,
     guardar_error_sunat,

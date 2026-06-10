@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Eye, Search, Trash2, Send, FileText,
   Download, CheckCircle2, Clock, AlertCircle, XCircle,
   Receipt, SlidersHorizontal, Save,
-  History, Copy, Share2, MessageCircle, Mail, MoreHorizontal,
+  History, Copy, Share2, MessageCircle, Mail, MoreHorizontal, PencilLine,
 } from 'lucide-react';
 import { cotizaciones as svc } from '../services/cotizaciones';
 import { clientes as cliSvc } from '../services/clientes';
@@ -209,6 +209,25 @@ function fiscalTone(item) {
 }
 
 const fmt = (v) => Number(v || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 });
+
+function toDateInputValue(value) {
+  if (!value) return '';
+  const raw = String(value);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${parsed.getFullYear()}-${month}-${day}`;
+}
+
+function canEditCommercialQuote(item) {
+  if (!item || item.document_kind !== 'quotation') return false;
+  if (item.estado !== 'pendiente') return false;
+  if (item.linked_fiscal_document_id || item.linked_fiscal_document_number) return false;
+  return Number(item.monto_pagado || 0) <= 0;
+}
 
 function normalizeObservationLine(line, fallback = {}) {
   const text = String(line?.text || '').trim();
@@ -1052,6 +1071,7 @@ function NotaModal({ documento, onClose, onSuccess }) {
 function NuevaCotizacionForm({
   onSave,
   onClear,
+  onCancelEdit,
   saving,
   clientes,
   productosDisp,
@@ -1059,6 +1079,7 @@ function NuevaCotizacionForm({
   quoteCountByClient = {},
   recentClientIds = [],
   createdClient,
+  initialQuote = null,
 }) {
   const { user } = useAuth();
   const toast = useToast();
@@ -1087,6 +1108,16 @@ function NuevaCotizacionForm({
   const [previewOpen, setPreviewOpen]   = useState(false);
   const [tenantData, setTenantData]     = useState(null);
   const [observationsInitialized, setObservationsInitialized] = useState(false);
+  const isEditing = Boolean(initialQuote?.id);
+  const editDisplayNumber = initialQuote ? getDocumentDisplayNumber(initialQuote) : '';
+  const formClientes = useMemo(() => (
+    initialQuote?.cliente
+      ? [
+        initialQuote.cliente,
+        ...clientes.filter((client) => String(client.id) !== String(initialQuote.cliente.id)),
+      ]
+      : clientes
+  ), [clientes, initialQuote?.cliente]);
 
   // Pre-fill condición de pago desde el cliente seleccionado
   useEffect(() => {
@@ -1121,26 +1152,54 @@ function NuevaCotizacionForm({
   }, []);
 
   useEffect(() => {
-    if (createdClient?.id) {
+    if (!isEditing && createdClient?.id) {
       setClienteId(String(createdClient.id));
     }
-  }, [createdClient]);
+  }, [createdClient, isEditing]);
 
   useEffect(() => {
-    const cli = clientes.find((c) => String(c.id) === String(clienteId));
+    const cli = formClientes.find((c) => String(c.id) === String(clienteId));
     if (cli?.condicion_pago) {
       setCondicion(cli.condicion_pago);
     }
-  }, [clienteId, clientes]);
+  }, [clienteId, formClientes]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+
+    const nextClient = initialQuote?.cliente || null;
+    const nextItems = (initialQuote?.items?.length ? initialQuote.items : []).map((item) => ({
+      producto_id: item.producto_id ? String(item.producto_id) : '',
+      codigo: item.codigo_producto || '',
+      descripcion: item.descripcion || '',
+      cantidad: item.cantidad || 1,
+      precio_unitario: item.precio_unitario || '',
+      unidad_medida: item.unidad_medida || 'NIU',
+      tipo_afectacion_igv: item.tipo_afectacion_igv || '10',
+      _isNew: false,
+    }));
+
+    setClienteId(nextClient?.id ? String(nextClient.id) : String(initialQuote?.cliente_id || ''));
+    setClienteForm(nextClient ? normalizeFiscalClientForm(nextClient) : null);
+    setClienteDirty(false);
+    setClienteIsNew(false);
+    setMoneda(initialQuote?.moneda || 'PEN');
+    setCondicion(initialQuote?.condicion_pago || 'contado');
+    setFechaVenc(toDateInputValue(initialQuote?.fecha_vencimiento));
+    setObservationLines(parseObservationValue(initialQuote?.observaciones, tenantData));
+    setObservacionesOpen(Boolean(initialQuote?.observaciones));
+    setItems(nextItems.length ? nextItems : [emptyItem()]);
+  }, [initialQuote, isEditing, tenantData]);
 
   // Auto-calc fecha vencimiento según condición
   useEffect(() => {
+    if (isEditing && initialQuote?.fecha_vencimiento) return;
     if (condicion === 'contado') {
       setFechaVenc('');
       return;
     }
     setFechaVenc(calcFechaVencimiento(condicion));
-  }, [condicion]);
+  }, [condicion, initialQuote?.fecha_vencimiento, isEditing]);
 
   const addItem    = () => setItems((cur) => [...cur, emptyItem()]);
   const removeItem = (idx) => setItems((cur) => cur.filter((_, i) => i !== idx));
@@ -1264,13 +1323,31 @@ function NuevaCotizacionForm({
   const igv = totales.gravado * 0.18 / 1.18;
   const subtotalGravado = totales.gravado - igv;
   const totalGeneral = totales.gravado + totales.exonerado + totales.inafecto + totales.exportacion;
-  const previewClient = getPreviewClientData(clienteId, clienteForm, clientes);
+  const previewClient = getPreviewClientData(clienteId, clienteForm, formClientes);
   const hasObservationLines = observationLines.some((line) => line.text?.trim());
 
 return (
     <>
       <form onSubmit={handleSubmit}>
         <section className="builder">
+          {isEditing && (
+            <article
+              className="panel"
+              style={{
+                gridColumn: '1 / -1',
+                borderColor: 'rgba(132, 204, 22, 0.42)',
+                background: 'linear-gradient(135deg, rgba(132, 204, 22, 0.12), var(--color-surface) 45%)',
+              }}
+            >
+              <div className="panel-header">
+                <div>
+                  <h3>Editando {editDisplayNumber}</h3>
+                  <p>Solo se permite cambiar una cotizacion pendiente, sin pagos y sin comprobante asociado.</p>
+                </div>
+                <button type="button" className="mini-action" onClick={onCancelEdit}>Cancelar edicion</button>
+              </div>
+            </article>
+          )}
           <div>
             <article className="panel">
               <div className="panel-header"><div><h3>Cliente y condiciones</h3><p>Primero identifica al cliente. Si ya existe, se autocompletan sus datos.</p></div></div>
@@ -1278,7 +1355,7 @@ return (
                 <ClientCombobox
                   value={clienteId}
                   onChange={setClienteId}
-                  clients={clientes}
+                  clients={formClientes}
                   onFormChange={handleClientFormChange}
                   quoteCountByClient={quoteCountByClient}
                   recentClientIds={recentClientIds}
@@ -1444,8 +1521,8 @@ return (
           <aside>
             <article className="summary-card">
               <div className="summary-header">
-                <h3>Resumen de cotización</h3>
-                <p>Cálculo siempre visible para evitar guardar sin revisar.</p>
+                <h3>{isEditing ? 'Resumen de edicion' : 'Resumen de cotización'}</h3>
+                <p>{isEditing ? 'Revisa los nuevos totales antes de actualizar.' : 'Cálculo siempre visible para evitar guardar sin revisar.'}</p>
               </div>
               <div className="summary-body">
                 <div className="total-line"><span>Subtotal</span><strong>{sym} {fmt(subtotalGravado + totales.exonerado + totales.inafecto + totales.exportacion)}</strong></div>
@@ -1458,7 +1535,7 @@ return (
                 <button type="button" className="side-btn open-preview" onClick={() => setPreviewOpen(true)}><Eye size={16} /> Vista previa</button>
                 <button type="button" className="side-btn"><Save size={16} /> Guardar borrador</button>
                 <button type="submit" className="side-btn primary" disabled={saving || (!clienteId && !clienteForm?.razon_social)}>
-                  {saving ? 'Guardando…' : 'Guardar cotización'}
+                  {saving ? 'Guardando…' : isEditing ? 'Actualizar cotizacion' : 'Guardar cotización'}
                 </button>
               </div>
             </article>
@@ -1508,6 +1585,7 @@ export default function CotizacionesPage() {
   const [list, setList]         = useState([]);
   const [loading, setLoading]   = useState(false);
   const [saving, setSaving]     = useState(false);
+  const [editingQuote, setEditingQuote] = useState(null);
 
   // Búsqueda y filtros
   const [search, setSearch]         = useState('');
@@ -1631,8 +1709,13 @@ export default function CotizacionesPage() {
   const handleSave = async (data) => {
     setSaving(true);
     try {
-      await svc.create(data);
-      toast('Cotización guardada');
+      if (editingQuote?.id) {
+        await svc.update(editingQuote.id, data);
+        setEditingQuote(null);
+      } else {
+        await svc.create(data);
+      }
+      toast(editingQuote?.id ? 'Cotizacion actualizada' : 'Cotizacion guardada');
       setView('history');
       load();
     } catch (err) {
@@ -1715,6 +1798,22 @@ export default function CotizacionesPage() {
     }
   };
 
+  const handleEditQuote = async (item) => {
+    if (!canEditCommercialQuote(item)) {
+      toast('Solo se puede editar una cotizacion pendiente sin pagos ni comprobante asociado.', 'error');
+      return;
+    }
+
+    try {
+      const detail = await svc.get(item.id);
+      setEditingQuote(detail);
+      setView('create');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+
   const handleDeleteQuote = async (item) => {
     const confirmed = window.confirm(
       `Eliminar la cotizacion ${item.internal_order_number || `#${item.id}`}?`,
@@ -1735,10 +1834,12 @@ export default function CotizacionesPage() {
         <div>
           <p className="eyebrow">Motor comercial</p>
           <h2>
-            {view === 'create' ? 'Nueva cotización' : view === 'history' ? 'Historial' : 'Emitidas SUNAT'}
+            {view === 'create' && editingQuote ? `Editar ${getDocumentDisplayNumber(editingQuote)}` : view === 'create' ? 'Nueva cotización' : view === 'history' ? 'Historial' : 'Emitidas SUNAT'}
           </h2>
           <p>
-            {view === 'create'
+            {view === 'create' && editingQuote
+              ? 'Actualiza una cotizacion pendiente antes de pasarla a comprobante.'
+              : view === 'create'
               ? 'Construye una propuesta clara, calcula totales y déjala lista para vista previa.'
               : `${quotations.length} cotizaciones · ${fiscalDocs.length} comprobantes emitidos.`}
           </p>
@@ -1746,8 +1847,8 @@ export default function CotizacionesPage() {
       </div>
 
       <nav className="quote-tabs ink-enter-2">
-        <button className={`tab ${view === 'create' ? 'active' : ''}`} onClick={() => setView('create')}>＋ Nueva cotización</button>
-        <button className={`tab ${view === 'history' ? 'active' : ''}`} onClick={() => setView('history')}>↺ Historial <span className="count-badge">{quotations.length}</span></button>
+        <button className={`tab ${view === 'create' ? 'active' : ''}`} onClick={() => { setEditingQuote(null); setView('create'); }}>＋ Nueva cotización</button>
+        <button className={`tab ${view === 'history' ? 'active' : ''}`} onClick={() => { setEditingQuote(null); setView('history'); }}>↺ Historial <span className="count-badge">{quotations.length}</span></button>
         <button className={`tab ${view === 'fiscal' ? 'active' : ''}`} onClick={() => setView('fiscal')}>▣ Emitidas SUNAT <span className="count-badge">{fiscalDocs.length}</span></button>
       </nav>
 
@@ -1770,6 +1871,11 @@ export default function CotizacionesPage() {
                 quoteCountByClient={quoteCountByClient}
                 recentClientIds={recentClientIds}
                 createdClient={createdClient}
+                initialQuote={editingQuote}
+                onCancelEdit={() => {
+                  setEditingQuote(null);
+                  setView('history');
+                }}
               />
             )
       )}
@@ -1782,7 +1888,10 @@ export default function CotizacionesPage() {
             onSearch={setSearch}
             showFilters={showFilters}
             onToggleFilters={() => setShowFilters(!showFilters)}
-            onNewAction={() => setView('create')}
+            onNewAction={() => {
+              setEditingQuote(null);
+              setView('create');
+            }}
             newLabel="+ Nueva cotización"
           />
 
@@ -1980,6 +2089,12 @@ export default function CotizacionesPage() {
                                 <span>Mas</span>
                               </summary>
                               <div className="history-actions-more-menu">
+                                {canEditCommercialQuote(item) && (
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => handleEditQuote(item)}>
+                                    <PencilLine className="h-3.5 w-3.5" />
+                                    Editar cotizacion
+                                  </button>
+                                )}
                                 <button type="button" className="history-actions-mobile-item" onClick={() => handleDuplicateQuote(item)}>
                                   <Copy className="h-3.5 w-3.5" />
                                   Duplicar
@@ -2033,6 +2148,12 @@ export default function CotizacionesPage() {
                                 <Eye className="h-3.5 w-3.5" />
                                 Ver detalle
                               </Link>
+                              {canEditCommercialQuote(item) && (
+                                <button type="button" className="history-actions-mobile-item" onClick={() => handleEditQuote(item)}>
+                                  <PencilLine className="h-3.5 w-3.5" />
+                                  Editar cotizacion
+                                </button>
+                              )}
                               <button type="button" className="history-actions-mobile-item" onClick={() => handleDuplicateQuote(item)}>
                                 <Copy className="h-3.5 w-3.5" />
                                 Duplicar

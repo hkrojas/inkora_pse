@@ -94,6 +94,10 @@ class CotizacionCreate(BaseModel):
         return value or []
 
 
+class CotizacionUpdate(CotizacionCreate):
+    pass
+
+
 class PagoCreate(StrictInputModel):
     monto_pagado: Decimal = Field(..., gt=0)
     metodo_pago: str

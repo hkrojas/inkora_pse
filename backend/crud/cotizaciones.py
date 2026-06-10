@@ -14,6 +14,7 @@ from crud._cotizaciones_quotes import (
     get_cotizacion,
     get_cotizacion_by_uuid,
     get_cotizaciones,
+    update_cotizacion,
 )
 
 
@@ -29,4 +30,5 @@ __all__ = [
     "get_cotizaciones",
     "guardar_error_sunat",
     "guardar_respuesta_sunat",
+    "update_cotizacion",
 ]

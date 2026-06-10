@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
@@ -22,6 +23,7 @@ from services import calculations
 from services.document_flow_service import (
     DOCUMENT_KIND_QUOTATION,
     DOCUMENT_STATUS_PENDING,
+    DOCUMENT_STATUS_VOIDED,
     is_quote_document,
 )
 
@@ -142,6 +144,105 @@ def _create_cotizacion_inner(
         db.refresh(db_cotizacion)
         _ensure_quote_balance_persisted(db, db_cotizacion, totales["total_venta"])
         return get_cotizacion(db, db_cotizacion.id)
+    except Exception as exc:
+        db.rollback()
+        raise exc
+
+
+def _has_active_derived_document(db: Session, cotizacion: models.Cotizacion) -> bool:
+    return (
+        db.query(models.Cotizacion.id)
+        .filter(
+            models.Cotizacion.source_quote_id == cotizacion.id,
+            models.Cotizacion.document_kind != DOCUMENT_KIND_QUOTATION,
+            models.Cotizacion.estado != DOCUMENT_STATUS_VOIDED,
+        )
+        .first()
+        is not None
+    )
+
+
+def _ensure_cotizacion_editable(db: Session, cotizacion: models.Cotizacion) -> None:
+    if not is_quote_document(cotizacion):
+        raise ValueError("Solo se puede editar una cotizacion comercial.")
+    if cotizacion.estado != DOCUMENT_STATUS_PENDING:
+        raise ValueError("Solo se puede editar una cotizacion en estado pendiente.")
+    if cotizacion.linked_fiscal_document_id or _has_active_derived_document(db, cotizacion):
+        raise ValueError(
+            "No se puede editar una cotizacion con comprobante fiscal asociado."
+        )
+    if Decimal(str(cotizacion.monto_pagado or 0)) > Decimal("0"):
+        raise ValueError("No se puede editar una cotizacion con pagos asociados.")
+    if getattr(cotizacion, "pagos", None):
+        raise ValueError("No se puede editar una cotizacion con pagos asociados.")
+
+
+def update_cotizacion(
+    db: Session,
+    cotizacion_id: int,
+    cotizacion: schemas.CotizacionUpdate,
+    usuario: models.User,
+):
+    query = db.query(models.Cotizacion).filter(models.Cotizacion.id == cotizacion_id)
+    query = _apply_quote_user_scope(query, usuario)
+
+    db_cotizacion = query.with_for_update().first()
+    if not db_cotizacion:
+        return None
+
+    _ensure_cotizacion_editable(db, db_cotizacion)
+
+    db_cliente = get_cliente_for_tenant(
+        db,
+        cotizacion.cliente_id,
+        db_cotizacion.tenant_id,
+    )
+    if not db_cliente:
+        raise ValueError("Cliente no encontrado o no pertenece al tenant actual.")
+
+    items_db, items_procesados_para_suma = _build_quote_items(
+        db,
+        cotizacion,
+        db_cotizacion.tenant_id,
+    )
+    totales = calculations.sumarizar_cotizacion(items_procesados_para_suma)
+    condicion_pago = (
+        getattr(cotizacion, "condicion_pago", None)
+        or getattr(db_cliente, "condicion_pago", None)
+    )
+    cuotas_pago = _serialize_cuotas_pago(getattr(cotizacion, "cuotas_pago", None))
+
+    db_cotizacion.cliente_id = db_cliente.id
+    if cotizacion.fecha_emision is not None:
+        db_cotizacion.fecha_emision = cotizacion.fecha_emision
+    db_cotizacion.fecha_vencimiento = cotizacion.fecha_vencimiento
+    db_cotizacion.moneda = cotizacion.moneda
+    db_cotizacion.tipo_comprobante = cotizacion.tipo_comprobante
+    db_cotizacion.observaciones = getattr(cotizacion, "observaciones", None)
+    db_cotizacion.condicion_pago = condicion_pago
+    db_cotizacion.cuotas_pago = cuotas_pago or None
+    db_cotizacion.total_gravada = totales["total_gravada"]
+    db_cotizacion.total_exonerada = totales["total_exonerada"]
+    db_cotizacion.total_inafecta = totales["total_inafecta"]
+    db_cotizacion.total_igv = totales["total_igv"]
+    db_cotizacion.total_venta = totales["total_venta"]
+    db_cotizacion.saldo_pendiente = totales["total_venta"]
+    db_cotizacion.items = items_db
+
+    # La cotizacion conserva su COT, pero el PDF comercial se regenera bajo demanda.
+    db_cotizacion.sunat_pdf_url = None
+    db_cotizacion.sunat_xml_url = None
+    db_cotizacion.sunat_cdr_url = None
+    db_cotizacion.sunat_error = None
+    db_cotizacion.sunat_xml_content = None
+    db_cotizacion.sunat_hash = None
+    db_cotizacion.sunat_qr_payload = None
+    db_cotizacion.sunat_qr_svg = None
+
+    try:
+        db.commit()
+        db.refresh(db_cotizacion)
+        return get_cotizacion(db, db_cotizacion.id, usuario)
     except Exception as exc:
         db.rollback()
         raise exc
