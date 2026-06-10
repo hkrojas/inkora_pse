@@ -7,7 +7,40 @@ import Spinner from '../components/ui/Spinner';
 import Badge, { statusBadge } from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
 import CustomSelect from '../components/ui/CustomSelect';
+import EmptyState from '../components/ui/EmptyState';
 import { useToast } from '../components/ui/Toast';
+
+function getDocumentDisplayNumber(doc) {
+  if (!doc) return '--';
+  if (doc.document_number) return doc.document_number;
+  if (doc.serie) {
+    return `${doc.serie}-${String(doc.correlativo || 0).padStart(6, '0')}`;
+  }
+  if (doc.correlativo !== undefined && doc.correlativo !== null) {
+    return `COT-${String(doc.correlativo).padStart(6, '0')}`;
+  }
+  return `Cotizacion #${doc.id}`;
+}
+
+function getClientDisplayName(cotizacion) {
+  return cotizacion?.cliente?.razon_social || cotizacion?.cliente_nombre || '--';
+}
+
+function getPaymentStatusLabel(status) {
+  const value = String(status || 'pendiente').trim();
+  const normalized = value.toLowerCase();
+  const labels = {
+    pendiente: 'Pendiente',
+    pagado: 'Pagado',
+    parcial: 'Parcial',
+    vencido: 'Vencido',
+    anulada: 'Anulado',
+  };
+  if (labels[normalized]) return labels[normalized];
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 
 function PagoForm({ onSave, onCancel, saving }) {
   const [form, setForm] = useState({
@@ -172,8 +205,8 @@ export default function CotizacionDetalle() {
             Volver a cotizaciones
           </Link>
           <p className="page-kicker">Detalle comercial</p>
-          <h2 className="page-title">{cot.internal_order_number || `Cotizacion #${cot.id}`}</h2>
-          <p className="page-subtitle">{cot.cliente_nombre || '--'}</p>
+          <h2 className="page-title">{getDocumentDisplayNumber(cot)}</h2>
+          <p className="page-subtitle">{getClientDisplayName(cot)}</p>
         </div>
 
         <div className="page-actions">
@@ -317,7 +350,7 @@ export default function CotizacionDetalle() {
 
           <div className="flex items-center justify-between border-t border-[var(--border-subtle)] px-5 py-4">
             <Badge variant={statusBadge(cot.payment_status)}>
-              {cot.payment_status || 'pendiente'}
+              {getPaymentStatusLabel(cot.payment_status)}
             </Badge>
             <span className="font-mono-label text-xs text-[var(--text-secondary)]">
               Saldo S/ {fmt(cot.saldo_pendiente)}
@@ -341,10 +374,10 @@ export default function CotizacionDetalle() {
             <Receipt size={18} style={{ flexShrink: 0, marginTop: 2, color: 'var(--text-brand)' }} />
             <div>
               <p style={{ fontWeight: 700, fontSize: 13 }}>
-                {cot?.internal_order_number || `Cotización #${id}`}
+                {getDocumentDisplayNumber(cot)}
               </p>
               <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                {cot?.cliente_nombre} · S/ {fmt(cot?.total_venta)}
+                {getClientDisplayName(cot)} · S/ {fmt(cot?.total_venta)}
               </p>
               <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
                 Se emitirá un comprobante tipo <strong>{emitirModal === '01' ? 'Factura (01)' : 'Boleta de Venta (03)'}</strong> ante SUNAT.
