@@ -1,0 +1,162 @@
+.cotizaciones-history-table tbody tr {
+  position: relative;
+  z-index: 0;
+}
+
+.cotizaciones-history-table tbody tr:has(.history-actions-more[open]),
+.cotizaciones-history-table tbody tr:has(.history-actions-mobile[open]) {
+  z-index: 80;
+}
+
+.history-actions-more {
+  z-index: 1;
+}
+
+.history-actions-more[open] {
+  z-index: 90;
+}
+
+.history-actions-more-menu {
+  z-index: 100;
+}
+
+.history-actions-mobile {
+  z-index: 1;
+}
+
+.history-actions-mobile[open] {
+  z-index: 90;
+}
+
+.history-actions-mobile-menu {
+  z-index: 100;
+}
+
+@media (max-width: 768px) {
+  .cotizaciones-history-card {
+    border-radius: 18px;
+    overflow: visible;
+  }
+
+  .cotizaciones-history-card .panel-header {
+    align-items: flex-start;
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .cotizaciones-history-card .panel-header h3 {
+    font-size: 15px;
+  }
+
+  .cotizaciones-history-card .panel-header p {
+    max-width: 210px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .cotizaciones-history-card .proto-pagination {
+    flex: 0 0 auto;
+    max-width: 88px;
+    min-height: 34px;
+    padding: 6px 8px;
+    white-space: normal;
+    text-align: right;
+  }
+
+  .cotizaciones-history-scroll {
+    padding: 12px;
+    background: var(--color-surface-soft);
+  }
+
+  .cotizaciones-history-table,
+  .cotizaciones-history-table tbody,
+  .cotizaciones-history-table tr,
+  .cotizaciones-history-table td {
+    display: block;
+    width: 100% !important;
+  }
+
+  .cotizaciones-history-table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .cotizaciones-history-table thead {
+    display: none;
+  }
+
+  .cotizaciones-history-table tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .cotizaciones-history-table tbody tr {
+    padding: 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 18px;
+    background: var(--color-surface);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.08);
+  }
+
+  .cotizaciones-history-table tbody tr:hover {
+    background: var(--color-surface);
+  }
+
+  .cotizaciones-history-table tbody td {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    min-height: 34px;
+    padding: 8px 0;
+    border: 0;
+    text-align: left !important;
+  }
+
+  .cotizaciones-history-table tbody td + td {
+    border-top: 1px solid var(--color-border-subtle, var(--color-border));
+  }
+
+  .cotizaciones-history-table tbody td::before {
+    content: attr(data-label);
+    align-self: center;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1.1;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-soft);
+  }
+
+  .cotizaciones-history-table td[data-label="Cliente"] > div {
+    min-width: 0;
+  }
+
+  .cotizaciones-history-table td[data-label="Cliente"] span:first-child {
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  .cotizaciones-history-table td[data-label="Acciones"] {
+    display: block;
+    padding-top: 12px;
+  }
+
+  .cotizaciones-history-table td[data-label="Acciones"]::before {
+    display: none;
+  }
+
+  .history-actions-mobile {
+    width: 100%;
+  }
+
+  .history-actions-mobile summary {
+    width: 100%;
+  }
+
+  .history-actions-mobile-menu {
+    right: auto;
+    left: 0;
+    width: min(100%, 260px);
+  }
+}

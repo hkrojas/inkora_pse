@@ -22,6 +22,7 @@ import ClientCombobox from '../components/ui/ClientCombobox';
 import ProductLineCell from '../components/ui/ProductLineCell';
 import { FieldError } from '../components/ui/FieldError';
 import { useToast } from '../components/ui/Toast';
+import '../styles/cotizacionesHistory.css';
 import { getPaymentMethodPreview, getPaymentQrImageUrl, normalizePaymentMethods } from '../lib/utils/paymentMethods';
 import { BASE_URL } from '../lib/utils/config';
 import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/peruPhoneValidation';
@@ -99,6 +100,34 @@ function getSunatStatus(item) {
   if (item.sunat_xml_url)          return { label: 'ACEPTADO',  variant: 'success', icon: CheckCircle2 };
   if (item.document_kind !== 'quotation') return { label: 'PENDIENTE', variant: 'warning', icon: Clock };
   return null;
+}
+
+function getDocumentDisplayNumber(doc) {
+  if (!doc) return '--';
+  if (doc.document_number) return doc.document_number;
+  if (doc.serie) {
+    return `${doc.serie}-${String(doc.correlativo || 0).padStart(6, '0')}`;
+  }
+  if (doc.correlativo !== undefined && doc.correlativo !== null) {
+    return `COT-${String(doc.correlativo).padStart(6, '0')}`;
+  }
+  return doc.internal_order_number || `#${doc.id}`;
+}
+
+function getPaymentStatusLabel(status) {
+  const value = String(status || 'pendiente').trim();
+  const normalized = value.toLowerCase();
+  const labels = {
+    pendiente: 'Pendiente',
+    pagado: 'Pagado',
+    parcial: 'Parcial',
+    vencido: 'Vencido',
+    anulada: 'Anulado',
+  };
+  if (labels[normalized]) return labels[normalized];
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function calcFechaVencimiento(condicion) {
@@ -1540,7 +1569,8 @@ export default function CotizacionesPage() {
     const matchSearch = !q
       || item.cliente?.razon_social?.toLowerCase().includes(q)
       || String(item.id).includes(q)
-      || item.internal_order_number?.toLowerCase().includes(q);
+      || item.internal_order_number?.toLowerCase().includes(q)
+      || getDocumentDisplayNumber(item).toLowerCase().includes(q);
     const matchDesde = !filters.desde || new Date(item.fecha_emision) >= new Date(filters.desde);
     const matchHasta = !filters.hasta || new Date(item.fecha_emision) <= new Date(filters.hasta);
     return matchSearch && matchDesde && matchHasta;
@@ -1853,7 +1883,7 @@ export default function CotizacionesPage() {
                 <thead>
                   <tr>
                     <th className="ink-th">F. Emisión</th>
-                    <th className="ink-th">N° Orden</th>
+                    <th className="ink-th">N° Cotización</th>
                     <th className="ink-th">Cliente</th>
                     <th className="ink-th text-center">M.</th>
                     <th className="ink-th text-right">Total</th>
@@ -1878,8 +1908,8 @@ export default function CotizacionesPage() {
                             {item.fecha_emision ? new Date(item.fecha_emision).toLocaleDateString('es-PE') : '--'}
                           </span>
                         </td>
-                        <td className="ink-td font-mono-label text-xs" data-label="N orden">
-                          {item.internal_order_number || `#${item.id}`}
+                        <td className="ink-td font-mono-label text-xs" data-label="N° cotización">
+                          {getDocumentDisplayNumber(item)}
                         </td>
                         <td className="ink-td" data-label="Cliente">
                           <div className="flex flex-col">
@@ -1894,7 +1924,7 @@ export default function CotizacionesPage() {
                         </td>
                         <td className="ink-td" data-label="Pago">
                           <Badge variant={statusBadge(item.payment_status)}>
-                            {item.payment_status || 'pendiente'}
+                            {getPaymentStatusLabel(item.payment_status)}
                           </Badge>
                         </td>
                         <td className="ink-td" data-label="Comprobante">
@@ -1994,8 +2024,9 @@ export default function CotizacionesPage() {
                           </div>
 
                           <details className="history-actions-mobile">
-                            <summary className="row-action-icon row-action-icon--neutral" title="Mas acciones">
-                              <MoreHorizontal className="h-3 w-3" />
+                            <summary className="history-action-button history-action-button--neutral" title="Mas acciones">
+                              <MoreHorizontal className="h-4 w-4" />
+                              <span>Acciones</span>
                             </summary>
                             <div className="history-actions-mobile-menu">
                               <Link to={`/cotizaciones/${item.id}`} className="history-actions-mobile-item">
