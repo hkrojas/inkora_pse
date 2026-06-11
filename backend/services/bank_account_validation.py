@@ -20,6 +20,18 @@ def _key(value: Any) -> str:
     return unicodedata.normalize("NFD", _text(value)).encode("ascii", "ignore").decode("ascii").lower()
 
 
+def _normalize_communication_template(raw_method: dict[str, Any]) -> dict[str, Any]:
+    whatsapp_message = _text(raw_method.get("whatsapp_message"))[:1200]
+    email_subject = _text(raw_method.get("email_subject"))[:180]
+    email_body = _text(raw_method.get("email_body"))[:3000]
+    return {
+        "tipo": "communication_templates",
+        "whatsapp_message": whatsapp_message,
+        "email_subject": email_subject,
+        "email_body": email_body,
+    }
+
+
 def _matches_bank(bank_key: str, *aliases: str) -> bool:
     return any(bank_key == alias or alias in bank_key for alias in aliases)
 
@@ -72,6 +84,12 @@ def validate_and_normalize_bank_accounts(methods: Any) -> Any:
 
         raw_type = _key(raw_method.get("tipo"))
         if raw_type == "payment_qr_image":
+            continue
+
+        if raw_type == "communication_templates":
+            normalized = _normalize_communication_template(raw_method)
+            if normalized["whatsapp_message"] or normalized["email_subject"] or normalized["email_body"]:
+                normalized_methods.append(normalized)
             continue
 
         is_wallet = raw_type == "wallet" or bool(_text(raw_method.get("proveedor")))

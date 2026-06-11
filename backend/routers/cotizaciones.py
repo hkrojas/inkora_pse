@@ -213,12 +213,18 @@ async def compartir_cotizacion(
     base_url = settings.BACKEND_URL.rstrip("/")
     url_publica = f"{base_url}/public/cotizaciones/{cotizacion.uuid_publico}/pdf"
     cliente = cotizacion.cliente
-    telefono_cliente = getattr(cliente, "telefono", "") if cliente else ""
+    telefono_cliente = (
+        getattr(cliente, "whatsapp", None)
+        or getattr(cliente, "telefono", "")
+        if cliente
+        else ""
+    )
     email_cliente = getattr(cliente, "email", "") if cliente else ""
     wp_link = comunicacion_service.generar_link_whatsapp(
         cotizacion,
         telefono_cliente,
         url_publica,
+        current_user.tenant,
     )
     mailto_link = comunicacion_service.generar_link_mailto(
         cotizacion,

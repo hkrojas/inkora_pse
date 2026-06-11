@@ -302,6 +302,40 @@ def test_update_tenant_preserva_qr_de_cobro_al_guardar_medios(db_session):
     assert {"tipo": "wallet", "proveedor": "Plin", "titular": "", "numero": "999111222", "nota": ""} in updated.bank_accounts
 
 
+def test_update_tenant_preserva_plantillas_de_comunicacion_al_guardar_medios(db_session):
+    tenant = _create_tenant(db_session, "28")
+    tenant.bank_accounts = [
+        {
+            "tipo": "communication_templates",
+            "whatsapp_message": "Hola {cliente}, descarga {url}",
+            "email_subject": "Cotizacion {numero}",
+            "email_body": "Documento: {url}",
+        },
+        {"tipo": "wallet", "proveedor": "Yape", "numero": "999888777"},
+    ]
+    db_session.commit()
+
+    payload = schemas.TenantAdminUpdate(
+        bank_accounts=[
+            {
+                "tipo": "wallet",
+                "proveedor": "Plin",
+                "numero": "999111222",
+            }
+        ]
+    )
+
+    updated = crud.update_tenant(db_session, tenant.id, payload)
+
+    assert {
+        "tipo": "communication_templates",
+        "whatsapp_message": "Hola {cliente}, descarga {url}",
+        "email_subject": "Cotizacion {numero}",
+        "email_body": "Documento: {url}",
+    } in updated.bank_accounts
+    assert {"tipo": "wallet", "proveedor": "Plin", "titular": "", "numero": "999111222", "nota": ""} in updated.bank_accounts
+
+
 def test_usuario_inactivo_queda_bloqueado_para_roles_sensibles(db_session):
     tenant = _create_tenant(db_session, "17", is_active=False)
     suspended_admin = _create_user(

@@ -1,4 +1,5 @@
 import pytest
+import urllib.parse
 from pydantic import ValidationError
 from types import SimpleNamespace
 
@@ -89,3 +90,41 @@ def test_generar_link_whatsapp_returns_empty_for_invalid_mobile():
         cliente=SimpleNamespace(numero_documento="20100099991"),
     )
     assert generar_link_whatsapp(cotizacion, "123456789", "https://demo.test/cotizacion") == ""
+
+
+def test_generar_link_whatsapp_uses_tenant_template_and_public_url():
+    cotizacion = SimpleNamespace(
+        moneda="PEN",
+        serie="COT",
+        correlativo=2,
+        total_venta="807.50",
+        cliente=SimpleNamespace(
+            numero_documento="20100099991",
+            razon_social="Cliente Demo SAC",
+        ),
+    )
+    tenant = SimpleNamespace(
+        business_name="Inkora Demo",
+        bank_accounts=[
+            {
+                "tipo": "communication_templates",
+                "whatsapp_message": "Hola {cliente}: {numero} {moneda} {total} {url} {pin} {empresa}",
+            }
+        ],
+    )
+
+    link = generar_link_whatsapp(
+        cotizacion,
+        "987654321",
+        "https://demo.test/public/cotizaciones/abc/pdf",
+        tenant,
+    )
+    text = urllib.parse.parse_qs(urllib.parse.urlparse(link).query)["text"][0]
+
+    assert link.startswith("https://wa.me/51987654321?")
+    assert "Cliente Demo SAC" in text
+    assert "COT-000002" in text
+    assert "S/ 807.50" in text
+    assert "https://demo.test/public/cotizaciones/abc/pdf" in text
+    assert "20100099991" in text
+    assert "Inkora Demo" in text

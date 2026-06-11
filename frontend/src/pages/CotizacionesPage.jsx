@@ -145,11 +145,13 @@ function getWhatsAppLink(cliente, doc) {
   const normalizedPhone = normalizePeruMobileInput(phone);
   if (validatePeruMobilePhone(normalizedPhone, 'WhatsApp')) return null;
   const number = `51${normalizedPhone}`;
-  const docNum = doc.serie
-    ? `${doc.serie}-${String(doc.correlativo || 0).padStart(6, '0')}`
-    : `#${doc.id}`;
+  const docNum = getDocumentDisplayNumber(doc);
   const sym = doc.moneda === 'USD' ? '$' : 'S/';
-  const msg = `Hola, le compartimos el comprobante ${docNum} por ${sym} ${Number(doc.total_venta || 0).toFixed(2)}.`;
+  const shareUrl = getPublicShareUrl(doc);
+  const msg = [
+    `Hola, le compartimos la cotizacion ${docNum} por ${sym} ${Number(doc.total_venta || 0).toFixed(2)}.`,
+    shareUrl ? `Puede descargar el documento aqui: ${shareUrl}` : '',
+  ].filter(Boolean).join('\n\n');
   return `https://wa.me/${number}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -1800,6 +1802,57 @@ export default function CotizacionesPage() {
     }
   };
 
+  const resolveShareLinks = async (item) => {
+    const fallback = {
+      whatsapp: getWhatsAppLink(item.cliente, item),
+      email: getEmailLink(item.cliente, item),
+    };
+
+    try {
+      const data = await svc.share(item.id);
+      return {
+        whatsapp: data?.whatsapp_link || fallback.whatsapp,
+        email: data?.mailto_link || fallback.email,
+      };
+    } catch {
+      return fallback;
+    }
+  };
+
+  const openShareLink = (link, channel) => {
+    if (!link) {
+      toast(
+        channel === 'email'
+          ? 'El cliente no tiene correo registrado.'
+          : 'El cliente no tiene WhatsApp valido.',
+        'error',
+      );
+      return false;
+    }
+
+    if (channel === 'email') {
+      window.location.href = link;
+    } else {
+      window.open(link, '_blank', 'noopener,noreferrer');
+    }
+    return true;
+  };
+
+  const handleOpenShareChannel = async (item, channel) => {
+    const links = await resolveShareLinks(item);
+    openShareLink(channel === 'email' ? links.email : links.whatsapp, channel);
+  };
+
+  const handleOpenCombinedShare = async (item) => {
+    const links = await resolveShareLinks(item);
+    const openedWhatsApp = openShareLink(links.whatsapp, 'whatsapp');
+    if (links.email) {
+      window.setTimeout(() => openShareLink(links.email, 'email'), openedWhatsApp ? 120 : 0);
+    } else {
+      toast('El cliente no tiene correo registrado.', 'error');
+    }
+  };
+
   const handleDuplicateQuote = async (item) => {
     try {
       const duplicated = await svc.duplicar(item.id);
@@ -2116,25 +2169,22 @@ export default function CotizacionesPage() {
                                   Copiar enlace
                                 </button>
                                 {waLink && (
-                                  <a href={waLink} target="_blank" rel="noreferrer" className="history-actions-mobile-item">
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(item, 'whatsapp')}>
                                     <MessageCircle className="h-3.5 w-3.5" />
                                     WhatsApp
-                                  </a>
+                                  </button>
                                 )}
                                 {emailLink && (
-                                  <a href={emailLink} className="history-actions-mobile-item">
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(item, 'email')}>
                                     <Mail className="h-3.5 w-3.5" />
                                     Correo
-                                  </a>
+                                  </button>
                                 )}
                                 {waLink && emailLink && (
                                   <button
                                     type="button"
                                     className="history-actions-mobile-item"
-                                    onClick={() => {
-                                      window.open(waLink, '_blank', 'noopener,noreferrer');
-                                      window.setTimeout(() => window.open(emailLink, '_blank', 'noopener,noreferrer'), 80);
-                                    }}
+                                    onClick={() => handleOpenCombinedShare(item)}
                                   >
                                     <Send className="h-3.5 w-3.5" />
                                     WhatsApp + correo
@@ -2179,25 +2229,22 @@ export default function CotizacionesPage() {
                                 Copiar enlace
                               </button>
                               {waLink && (
-                                <a href={waLink} target="_blank" rel="noreferrer" className="history-actions-mobile-item">
+                                <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(item, 'whatsapp')}>
                                   <MessageCircle className="h-3.5 w-3.5" />
                                   WhatsApp
-                                </a>
+                                </button>
                               )}
                               {emailLink && (
-                                <a href={emailLink} className="history-actions-mobile-item">
+                                <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(item, 'email')}>
                                   <Mail className="h-3.5 w-3.5" />
                                   Correo
-                                </a>
+                                </button>
                               )}
                               {waLink && emailLink && (
                                 <button
                                   type="button"
                                   className="history-actions-mobile-item"
-                                  onClick={() => {
-                                    window.open(waLink, '_blank', 'noopener,noreferrer');
-                                    window.setTimeout(() => window.open(emailLink, '_blank', 'noopener,noreferrer'), 80);
-                                  }}
+                                  onClick={() => handleOpenCombinedShare(item)}
                                 >
                                   <Send className="h-3.5 w-3.5" />
                                   WhatsApp + correo
@@ -2537,11 +2584,11 @@ export default function CotizacionesPage() {
                               </a>
                             )}
                             {waLink && (
-                              <a href={waLink} target="_blank" rel="noreferrer"
+                              <button type="button" onClick={() => handleOpenShareChannel(item, 'whatsapp')}
                                 title="Enviar por WhatsApp"
                                 className="row-action-icon row-action-icon--success">
                                 <Send className="h-3 w-3" />
-                              </a>
+                              </button>
                             )}
                             {canNota && (
                               <button

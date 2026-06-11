@@ -14851,10 +14851,12 @@ textarea.input:focus,
 .dark .configuracion-page .settings-payment-toolbar,
 .dark .configuracion-page .settings-tax-identity-card,
 .dark .configuracion-page .settings-logo-upload-card,
+.dark .configuracion-page .settings-share-template-card,
 [data-theme='dark'] .configuracion-page .settings-contact-field,
 [data-theme='dark'] .configuracion-page .settings-payment-toolbar,
 [data-theme='dark'] .configuracion-page .settings-tax-identity-card,
-[data-theme='dark'] .configuracion-page .settings-logo-upload-card {
+[data-theme='dark'] .configuracion-page .settings-logo-upload-card,
+[data-theme='dark'] .configuracion-page .settings-share-template-card {
   background:
     radial-gradient(circle at 100% 0%, rgba(141, 198, 63, 0.08), transparent 36%),
     rgba(255, 255, 255, 0.035);
@@ -18064,6 +18066,82 @@ textarea.input:focus,
   z-index: 1;
 }
 
+.settings-share-template-card {
+  position: relative;
+  overflow: hidden;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, var(--color-border));
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(141,198,63,.12), transparent 30%),
+    linear-gradient(135deg, rgba(255,255,255,.96), rgba(248,250,252,.9));
+  box-shadow: 0 14px 34px rgba(15,23,42,.055);
+}
+
+.settings-share-template-card::after {
+  content: "";
+  position: absolute;
+  right: -64px;
+  top: -70px;
+  width: 190px;
+  height: 190px;
+  border-radius: 999px;
+  background: rgba(141,198,63,.1);
+  pointer-events: none;
+}
+
+.settings-share-template-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.settings-share-template-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-share-placeholder-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.settings-share-placeholder-row code {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+  border-radius: 999px;
+  background: rgba(240,251,232,.78);
+  color: var(--color-success);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.settings-share-template-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.settings-email-template-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-share-textarea {
+  min-height: 168px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
 @media (max-width: 1100px) {
   .settings-command-card {
     grid-template-columns: 1fr;
@@ -18090,6 +18168,7 @@ textarea.input:focus,
 
   .settings-command-actions,
   .settings-payment-toolbar,
+  .settings-share-template-header,
   .settings-form-actions {
     align-items: stretch;
     flex-direction: column;
@@ -18108,8 +18187,14 @@ textarea.input:focus,
 
   .settings-command-actions .document-list-hero-btn,
   .settings-payment-toolbar .btn-secondary,
+  .settings-share-template-header .btn-secondary,
   .settings-form-actions .btn-primary {
     width: 100%;
+    justify-content: center;
+  }
+
+  .settings-share-template-grid {
+    grid-template-columns: 1fr;
   }
 
   .settings-tab-btn {

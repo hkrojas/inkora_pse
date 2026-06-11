@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { tenant as svc } from '../services/tenant';
-import { Sun, Moon, Monitor, Building2, ShieldCheck, User, Palette, CreditCard, AlertTriangle, Eye, EyeOff, KeyRound, Phone, Landmark, Smartphone, WalletCards, LockKeyhole, FileCheck2, BadgeCheck, FileKey2, RadioTower, ImageUp, QrCode } from 'lucide-react';
+import { Sun, Moon, Monitor, Building2, ShieldCheck, User, Palette, CreditCard, AlertTriangle, Eye, EyeOff, KeyRound, Phone, Landmark, Smartphone, WalletCards, LockKeyhole, FileCheck2, BadgeCheck, FileKey2, RadioTower, ImageUp, QrCode, MessageCircle, Mail } from 'lucide-react';
 import Spinner from '../components/ui/Spinner';
 import CustomSelect from '../components/ui/CustomSelect';
 import FormField from '../components/ui/FormField';
@@ -25,6 +25,12 @@ import {
   normalizePaymentMethods,
   serializePaymentMethods,
 } from '../lib/utils/paymentMethods';
+import {
+  DEFAULT_SHARE_TEMPLATES,
+  SHARE_TEMPLATE_PLACEHOLDERS,
+  extractCommunicationTemplates,
+  mergeCommunicationTemplates,
+} from '../lib/utils/communicationTemplates';
 
 const BANK_OPTIONS = [
   { value: 'Banco de la Nacion', label: 'Banco de la Nacion', searchText: 'banco de la nacion nacion detraccion' },
@@ -601,6 +607,7 @@ export default function ConfiguracionPage() {
   const [phoneError, setPhoneError] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [paymentMethodErrors, setPaymentMethodErrors] = useState({});
+  const [communicationTemplates, setCommunicationTemplates] = useState(() => extractCommunicationTemplates([]));
   const [activeTab, setActiveTab] = useState(TABS.includes(initialTab) ? initialTab : 'empresa');
   const [tabDirection, setTabDirection] = useState('forward');
 
@@ -615,6 +622,7 @@ export default function ConfiguracionPage() {
         setPhone(normalizePeruMobileInput(tenantResponse.business_phone || ''));
         setPhoneError(null);
         setPaymentMethods(normalizePaymentMethods(tenantResponse.bank_accounts));
+        setCommunicationTemplates(extractCommunicationTemplates(tenantResponse.bank_accounts));
         setPaymentMethodErrors({});
       })
       .catch((err) => {
@@ -658,13 +666,17 @@ export default function ConfiguracionPage() {
         business_name: nextBusinessName,
         business_address: nextBusinessAddress,
         business_phone: phone,
-        bank_accounts: serializePaymentMethods(paymentMethods),
+        bank_accounts: mergeCommunicationTemplates(
+          serializePaymentMethods(paymentMethods),
+          communicationTemplates,
+        ),
       });
       setTenantData(updated);
       setBusinessName(updated.business_name || '');
       setBusinessAddress(updated.business_address || '');
       setBusinessErrors({});
       setPaymentMethods(normalizePaymentMethods(updated.bank_accounts));
+      setCommunicationTemplates(extractCommunicationTemplates(updated.bank_accounts));
       setPaymentMethodErrors({});
       setPhone(normalizePeruMobileInput(updated.business_phone || ''));
       setPhoneError(null);
@@ -802,6 +814,22 @@ export default function ConfiguracionPage() {
       setPaymentMethodErrors(buildPaymentMethodErrorMap(next));
       return next;
     });
+  };
+
+  const setCommunicationTemplateField = (key) => (event) => {
+    setCommunicationTemplates((current) => ({
+      ...current,
+      [key]: event.target.value,
+    }));
+  };
+
+  const resetCommunicationTemplates = () => {
+    setCommunicationTemplates(extractCommunicationTemplates([
+      {
+        tipo: 'communication_templates',
+        ...DEFAULT_SHARE_TEMPLATES,
+      },
+    ]));
   };
 
   const handleTabChange = (nextTab) => {
@@ -1179,6 +1207,65 @@ export default function ConfiguracionPage() {
                       <span>Todavia no hay cuentas bancarias ni billeteras digitales configuradas.</span>
                     </div>
                   )}
+                </div>
+
+                <div className="settings-share-template-card">
+                  <div className="settings-share-template-header">
+                    <div className="settings-section-title">
+                      <div className="settings-icon-box">
+                        <MessageCircle size={15} />
+                      </div>
+                      <div>
+                        <h3>Mensajes para compartir</h3>
+                        <p>Personaliza el texto que se abre al enviar cotizaciones por WhatsApp o correo.</p>
+                      </div>
+                    </div>
+                    <button type="button" className="btn-secondary" onClick={resetCommunicationTemplates}>
+                      Restaurar texto base
+                    </button>
+                  </div>
+
+                  <div className="settings-share-placeholder-row" aria-label="Variables disponibles">
+                    {SHARE_TEMPLATE_PLACEHOLDERS.map((placeholder) => (
+                      <code key={placeholder}>{placeholder}</code>
+                    ))}
+                  </div>
+
+                  <div className="settings-share-template-grid">
+                    <FormField
+                      label="Mensaje WhatsApp"
+                      icon={MessageCircle}
+                      hint="Incluye {url} para que el cliente reciba el enlace del PDF."
+                    >
+                      <textarea
+                        className="input settings-textarea settings-share-textarea"
+                        value={communicationTemplates.whatsapp_message}
+                        onChange={setCommunicationTemplateField('whatsapp_message')}
+                        maxLength={1200}
+                        rows={7}
+                      />
+                    </FormField>
+
+                    <div className="settings-email-template-stack">
+                      <FormField label="Asunto del correo" icon={Mail}>
+                        <input
+                          className="input"
+                          value={communicationTemplates.email_subject}
+                          onChange={setCommunicationTemplateField('email_subject')}
+                          maxLength={180}
+                        />
+                      </FormField>
+                      <FormField label="Cuerpo del correo" icon={Mail}>
+                        <textarea
+                          className="input settings-textarea settings-share-textarea"
+                          value={communicationTemplates.email_body}
+                          onChange={setCommunicationTemplateField('email_body')}
+                          maxLength={3000}
+                          rows={7}
+                        />
+                      </FormField>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex justify-end pt-2">

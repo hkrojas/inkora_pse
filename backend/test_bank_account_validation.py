@@ -43,6 +43,28 @@ def test_validate_and_normalize_bank_accounts_ignores_payment_qr_meta():
     ]
 
 
+def test_validate_and_normalize_bank_accounts_preserves_communication_templates():
+    normalized = validate_and_normalize_bank_accounts(
+        [
+            {
+                "tipo": "communication_templates",
+                "whatsapp_message": "Hola {cliente}, descarga {url}",
+                "email_subject": "Cotizacion {numero}",
+                "email_body": "Documento: {url}",
+            },
+            {"tipo": "wallet", "proveedor": "Yape", "numero": "999888777"},
+        ]
+    )
+
+    assert normalized[0] == {
+        "tipo": "communication_templates",
+        "whatsapp_message": "Hola {cliente}, descarga {url}",
+        "email_subject": "Cotizacion {numero}",
+        "email_body": "Documento: {url}",
+    }
+    assert normalized[1]["tipo"] == "wallet"
+
+
 def test_validate_and_normalize_bank_accounts_rejects_invalid_interbank_length():
     methods = [
         {

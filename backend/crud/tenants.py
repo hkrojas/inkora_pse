@@ -11,10 +11,15 @@ import schemas
 # ==========================================
 
 PAYMENT_QR_METHOD_TYPE = "payment_qr_image"
+COMMUNICATION_TEMPLATES_METHOD_TYPE = "communication_templates"
 
 
 def _is_payment_qr_method(method) -> bool:
     return isinstance(method, dict) and method.get("tipo") == PAYMENT_QR_METHOD_TYPE
+
+
+def _is_communication_templates_method(method) -> bool:
+    return isinstance(method, dict) and method.get("tipo") == COMMUNICATION_TEMPLATES_METHOD_TYPE
 
 
 def _payment_qr_method(url: str) -> dict:
@@ -32,6 +37,19 @@ def _merge_payment_qr_method(existing_methods, incoming_methods):
         if not _is_payment_qr_method(method)
     ]
     return [*clean_incoming, qr_method]
+
+
+def _merge_tenant_bank_account_meta(existing_methods, incoming_methods):
+    merged = _merge_payment_qr_method(existing_methods, incoming_methods)
+    communication_templates = next(
+        (method for method in existing_methods or [] if _is_communication_templates_method(method)),
+        None,
+    )
+    if not communication_templates:
+        return merged
+    if any(_is_communication_templates_method(method) for method in merged or []):
+        return merged
+    return [*(merged or []), communication_templates]
 
 
 def get_tenant(db: Session, tenant_id: int):
@@ -65,7 +83,7 @@ def update_tenant(db: Session, tenant_id: int, data: schemas.TenantUpdate):
     if db_tenant:
         for key, value in data.model_dump(exclude_unset=True).items():
             if key == "bank_accounts":
-                value = _merge_payment_qr_method(db_tenant.bank_accounts, value)
+                value = _merge_tenant_bank_account_meta(db_tenant.bank_accounts, value)
             setattr(db_tenant, key, value)
         db.commit()
         db.refresh(db_tenant)
