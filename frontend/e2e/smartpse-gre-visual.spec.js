@@ -86,6 +86,18 @@ const inactiveSmartPseTenant = {
   smartpse_remote_estado: 'INACTIVO',
 };
 
+const remoteCreatedCompany = {
+  id: '105',
+  ruc: '20999999991',
+  razon_social: 'REMOTE ONLY SAC',
+  environment: 'demo',
+  active: true,
+  estado: 'ACTIVO',
+  start_date: '2026-01-01',
+  end_date: null,
+  firmas_usadas: 0,
+};
+
 const user = {
   id: 700,
   email: 'visual.qa@inkora.test',
@@ -217,6 +229,25 @@ function getApiPayload(path, role, request) {
       },
     };
   }
+  if (path === '/superadmin/smartpse/companies' && method === 'GET') {
+    return {
+      data: [smartPseCompany],
+      total: 1,
+      current_page: 1,
+      last_page: 1,
+    };
+  }
+  if (path === '/superadmin/smartpse/companies' && method === 'POST') {
+    return remoteCreatedCompany;
+  }
+  if (path === '/superadmin/smartpse/sync-all' && method === 'POST') {
+    return {
+      total: 1,
+      synced: 1,
+      failed: 0,
+      items: [{ tenant_id: tenant.id, company_id: tenant.smartpse_company_id, status: 'synced' }],
+    };
+  }
   if (path === '/superadmin/tenants' && method === 'POST') return createdTenant;
   if (path === `/superadmin/tenants/${createdTenant.id}/smartpse/provision` && method === 'POST') {
     return provisionedTenant;
@@ -240,6 +271,31 @@ function getApiPayload(path, role, request) {
   }
   if (path === `/superadmin/tenants/${tenant.id}/smartpse/activation` && method === 'POST') {
     return inactiveSmartPseTenant;
+  }
+  if (path === `/superadmin/tenants/${tenant.id}/smartpse/credentials` && method === 'PUT') {
+    return {
+      ...tenant,
+      smartpse_company_id: '7',
+      has_smartpse_credentials: true,
+      smartpse_status: 'unchecked',
+    };
+  }
+  if (path === `/superadmin/tenants/${tenant.id}/smartpse/audit-logs` && method === 'GET') {
+    return [
+      {
+        id: 1,
+        timestamp: '2026-06-01T10:00:00Z',
+        user_id: 700,
+        action: 'superadmin.tenant.smartpse_synced',
+        entity_type: 'tenant',
+        entity_id: tenant.id,
+        details: 'company_id=7',
+        ip_address: null,
+      },
+    ];
+  }
+  if (path === `/superadmin/tenants/${tenant.id}/smartpse/company` && method === 'DELETE') {
+    return { deleted: true, company_id: '7' };
   }
   return null;
 }
@@ -330,7 +386,7 @@ test.describe('Smart PSE GRE QA visual', () => {
     }
   });
 
-  test('superadmin gestiona empresa Smart PSE CPE sin accion de eliminacion', async ({ browser, baseURL }) => {
+  test('superadmin gestiona empresa Smart PSE CPE con acciones operativas', async ({ browser, baseURL }) => {
     const requests = [];
     const { context, page } = await createVisualContext(browser, baseURL, 'superadmin', {
       onRequest: async (request) => {
@@ -353,7 +409,6 @@ test.describe('Smart PSE GRE QA visual', () => {
       const drawer = page.locator('.ink-drawer.is-open');
       await expect(drawer).toBeVisible();
       await expect(drawer.getByRole('heading', { name: /Empresa Smart PSE/i })).toBeVisible();
-      await expect(drawer.getByText(/Eliminar SmartPSE|Eliminar Smart PSE/i)).toHaveCount(0);
 
       await drawer.getByRole('button', { name: /Ver empresa Smart PSE/i }).click();
       await expect.poll(() =>
@@ -380,6 +435,70 @@ test.describe('Smart PSE GRE QA visual', () => {
       await drawer.getByRole('button', { name: /Desactivar remoto/i }).click();
       await expect.poll(() =>
         requests.some((entry) => entry.path === `/superadmin/tenants/${tenant.id}/smartpse/activation` && entry.method === 'POST'),
+      ).toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('superadmin usa gestion completa de empresas Smart PSE', async ({ browser, baseURL }) => {
+    const requests = [];
+    const { context, page } = await createVisualContext(browser, baseURL, 'superadmin', {
+      onRequest: async (request) => {
+        const url = new URL(request.url());
+        if (!url.pathname.startsWith('/superadmin')) return;
+        let body = null;
+        try {
+          body = request.postDataJSON();
+        } catch {
+          body = null;
+        }
+        requests.push({ method: request.method(), path: url.pathname.replace(/\/$/, ''), search: url.search, body });
+      },
+    });
+
+    try {
+      await page.goto('/superadmin');
+      await expect(page.getByRole('heading', { name: /Empresas Smart PSE/i })).toBeVisible();
+      await expect(page.getByText(/REMOTE ONLY SAC/i)).toHaveCount(0);
+
+      await page.getByRole('button', { name: /Crear empresa remota/i }).click();
+      await page.getByLabel(/RUC remoto/i).fill(remoteCreatedCompany.ruc);
+      await page.getByLabel(/Razon social remota/i).fill(remoteCreatedCompany.razon_social);
+      await page.getByRole('button', { name: /^Crear empresa$/i }).click();
+      await expect.poll(() =>
+        requests.some((entry) => entry.path === '/superadmin/smartpse/companies' && entry.method === 'POST'),
+      ).toBe(true);
+
+      await page.getByRole('button', { name: /Sincronizar todos/i }).click();
+      await expect.poll(() =>
+        requests.some((entry) => entry.path === '/superadmin/smartpse/sync-all' && entry.method === 'POST'),
+      ).toBe(true);
+
+      await page.getByRole('button', { name: /^Editar$/ }).first().click();
+      const drawer = page.locator('.ink-drawer.is-open');
+      await drawer.getByRole('button', { name: /Rotar credenciales CPE/i }).click();
+      await drawer.getByLabel(/Usuario secundaria nuevo/i).fill('NEWUSER1');
+      await drawer.getByLabel(/Token CPE nuevo/i).fill('NEWTOKEN1');
+      await drawer.getByRole('button', { name: /Guardar credenciales CPE/i }).click();
+      await expect.poll(() =>
+        requests.some((entry) => entry.path === `/superadmin/tenants/${tenant.id}/smartpse/credentials`),
+      ).toBe(true);
+
+      await drawer.getByRole('button', { name: /Auditoria Smart PSE/i }).click();
+      await expect(drawer.getByText(/smartpse_synced/i)).toBeVisible();
+
+      await drawer.getByRole('button', { name: /Eliminar Smart PSE/i }).click();
+      await expect(drawer.getByText(/Confirmar eliminacion Smart PSE/i)).toBeVisible();
+      await drawer.getByLabel(/Confirmar company id/i).fill(tenant.smartpse_company_id);
+      await drawer.getByRole('button', { name: /Eliminar empresa remota/i }).click();
+      await expect.poll(() =>
+        requests.some(
+          (entry) =>
+            entry.path === `/superadmin/tenants/${tenant.id}/smartpse/company` &&
+            entry.method === 'DELETE' &&
+            entry.search.includes(`confirm_company_id=${tenant.smartpse_company_id}`),
+        ),
       ).toBe(true);
     } finally {
       await context.close();

@@ -333,6 +333,35 @@ class SmartPSEProvisionRequest(StrictInputModel):
     end_date: Optional[str] = None
 
 
+class SmartPSECompanyCreate(StrictInputModel):
+    ruc: str = Field(..., min_length=11, max_length=11)
+    razon_social: str = Field(..., min_length=2, max_length=180)
+    environment: str = "demo"
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+    @field_validator("ruc")
+    @classmethod
+    def validate_ruc(cls, value: str) -> str:
+        normalized = re.sub(r"\D", "", value or "")
+        if len(normalized) != 11:
+            raise ValueError("ruc debe tener 11 digitos.")
+        return normalized
+
+    @field_validator("razon_social")
+    @classmethod
+    def normalize_razon_social(cls, value: str) -> str:
+        return " ".join(value.strip().split())
+
+    @field_validator("environment")
+    @classmethod
+    def validate_environment(cls, value: str) -> str:
+        normalized = (value or "demo").strip().lower()
+        if normalized not in {"demo", "produccion"}:
+            raise ValueError("environment debe ser 'demo' o 'produccion'.")
+        return normalized
+
+
 class SmartPSECompanyUpdate(StrictInputModel):
     razon_social: Optional[str] = Field(default=None, min_length=2, max_length=180)
     environment: Optional[str] = None
@@ -348,6 +377,36 @@ class SmartPSECompanyUpdate(StrictInputModel):
         if normalized not in {"demo", "produccion"}:
             raise ValueError("environment debe ser 'demo' o 'produccion'.")
         return normalized
+
+
+class SmartPSETenantCredentialsUpdate(StrictInputModel):
+    company_id: Optional[str] = Field(default=None, max_length=80)
+    environment: Optional[str] = None
+    usuario_secundaria: str = Field(..., min_length=1, max_length=120)
+    token_acceso: str = Field(..., min_length=1, max_length=500)
+
+    @field_validator("company_id")
+    @classmethod
+    def normalize_company_id(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("environment")
+    @classmethod
+    def validate_environment(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in {"demo", "produccion"}:
+            raise ValueError("environment debe ser 'demo' o 'produccion'.")
+        return normalized
+
+    @field_validator("usuario_secundaria", "token_acceso")
+    @classmethod
+    def normalize_secret_text(cls, value: str) -> str:
+        return value.strip()
 
 
 class SmartPSECompanyResponse(BaseModel):
@@ -368,6 +427,25 @@ class SmartPSECompanyPageResponse(BaseModel):
     total: Optional[int] = None
     current_page: Optional[int] = None
     last_page: Optional[int] = None
+
+
+class SmartPSESyncAllItem(BaseModel):
+    tenant_id: int
+    company_id: Optional[str] = None
+    status: str
+    message: Optional[str] = None
+
+
+class SmartPSESyncAllResponse(BaseModel):
+    total: int
+    synced: int
+    failed: int
+    items: List[SmartPSESyncAllItem]
+
+
+class SmartPSEDeleteResponse(BaseModel):
+    deleted: bool
+    company_id: Optional[str] = None
 
 
 class SmartPSEGreCredentialsUpdate(StrictInputModel):

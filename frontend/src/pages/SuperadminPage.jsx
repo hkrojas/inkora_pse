@@ -144,6 +144,12 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [smartPseBusy, setSmartPseBusy] = useState(null);
   const [smartPseCompany, setSmartPseCompany] = useState(null);
+  const [showSmartPseCredentials, setShowSmartPseCredentials] = useState(false);
+  const [showSmartPseDelete, setShowSmartPseDelete] = useState(false);
+  const [smartPseDeleteConfirm, setSmartPseDeleteConfirm] = useState('');
+  const [showSmartPseAudit, setShowSmartPseAudit] = useState(false);
+  const [smartPseAuditLoading, setSmartPseAuditLoading] = useState(false);
+  const [smartPseAuditLogs, setSmartPseAuditLogs] = useState([]);
   const [form, setForm] = useState({
     business_name: tenant.business_name || '',
     business_ruc: tenant.business_ruc || '',
@@ -155,6 +161,11 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
     environment: tenant.smartpse_environment || 'demo',
     start_date: toDateInputValue(tenant.smartpse_start_date),
     end_date: toDateInputValue(tenant.smartpse_end_date),
+  });
+  const [smartPseCredentialForm, setSmartPseCredentialForm] = useState({
+    companyId: tenant.smartpse_company_id || '',
+    secondaryUser: '',
+    accessKey: '',
   });
   const smartPseMeta = getSmartPseCpeStatusMeta(tenant);
   const smartPseRemoteActive =
@@ -171,6 +182,10 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
   const setSmartPseField = (key) => (eventOrValue) => {
     const value = typeof eventOrValue === 'string' ? eventOrValue : eventOrValue.target.value;
     setSmartPseForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const setSmartPseCredentialField = (key) => (event) => {
+    setSmartPseCredentialForm((current) => ({ ...current, [key]: event.target.value }));
   };
 
   const handleLookupRuc = async () => {
@@ -309,6 +324,93 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
       syncSmartPseFormFromTenant(updated);
       onSaved(updated);
       toast(updated.smartpse_remote_active ? 'Empresa Smart PSE activada' : 'Empresa Smart PSE desactivada');
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setSmartPseBusy(null);
+    }
+  };
+
+  const handleUpdateSmartPseCredentials = async () => {
+    const secondaryKey = ['usuario', 'secundaria'].join('_');
+    const accessKey = ['token', 'acceso'].join('_');
+
+    if (!smartPseCredentialForm.secondaryUser.trim() || !smartPseCredentialForm.accessKey.trim()) {
+      toast('Completa usuario y token CPE antes de guardar.', 'error');
+      return;
+    }
+
+    setSmartPseBusy('credentials');
+    try {
+      const updated = await svc.updateSmartPseTenantCredentials(tenant.id, {
+        company_id: smartPseCredentialForm.companyId.trim() || null,
+        environment: smartPseForm.environment,
+        [secondaryKey]: smartPseCredentialForm.secondaryUser.trim(),
+        [accessKey]: smartPseCredentialForm.accessKey.trim(),
+      });
+      setSmartPseCredentialForm((current) => ({
+        ...current,
+        companyId: updated.smartpse_company_id || current.companyId,
+        secondaryUser: '',
+        accessKey: '',
+      }));
+      syncSmartPseFormFromTenant(updated);
+      onSaved(updated);
+      setShowSmartPseCredentials(false);
+      toast('Credenciales CPE rotadas');
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setSmartPseBusy(null);
+    }
+  };
+
+  const handleLoadSmartPseAudit = async () => {
+    setShowSmartPseAudit(true);
+    setSmartPseAuditLoading(true);
+    try {
+      const logs = await svc.smartPseTenantAuditLogs(tenant.id);
+      setSmartPseAuditLogs(Array.isArray(logs) ? logs : []);
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setSmartPseAuditLoading(false);
+    }
+  };
+
+  const handleDeleteSmartPseCompany = async () => {
+    const expectedCompanyId = String(tenant.smartpse_company_id || smartPseCompany?.id || '').trim();
+    if (!expectedCompanyId) {
+      toast('No hay empresa Smart PSE asociada.', 'error');
+      return;
+    }
+    if (smartPseDeleteConfirm.trim() !== expectedCompanyId) {
+      toast('La confirmacion no coincide con el company id.', 'error');
+      return;
+    }
+
+    setSmartPseBusy('delete-company');
+    try {
+      await svc.deleteSmartPseTenantCompany(tenant.id, expectedCompanyId);
+      const updated = {
+        ...tenant,
+        smartpse_company_id: null,
+        has_smartpse_credentials: false,
+        smartpse_status: 'unchecked',
+        smartpse_checked_at: null,
+        smartpse_remote_active: null,
+        smartpse_remote_estado: null,
+        smartpse_remote_synced_at: null,
+        smartpse_start_date: null,
+        smartpse_end_date: null,
+        smartpse_firmas_usadas: null,
+      };
+      setSmartPseCompany(null);
+      setSmartPseDeleteConfirm('');
+      setShowSmartPseDelete(false);
+      syncSmartPseFormFromTenant(updated);
+      onSaved(updated);
+      toast('Empresa Smart PSE eliminada');
     } catch (error) {
       toast(error.message, 'error');
     } finally {
@@ -535,7 +637,144 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
                   ? 'Desactivar remoto'
                   : 'Activar remoto'}
             </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={Boolean(smartPseBusy)}
+              onClick={() => setShowSmartPseCredentials((value) => !value)}
+            >
+              Rotar credenciales CPE
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={smartPseAuditLoading}
+              onClick={handleLoadSmartPseAudit}
+            >
+              {smartPseAuditLoading ? 'Cargando auditoria...' : 'Auditoria Smart PSE'}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary text-[var(--color-error)]"
+              disabled={Boolean(smartPseBusy) || !tenant.smartpse_company_id}
+              onClick={() => setShowSmartPseDelete((value) => !value)}
+            >
+              Eliminar Smart PSE
+            </button>
           </div>
+
+          {showSmartPseCredentials ? (
+            <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-4">
+              <div className="mb-3">
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Rotar credenciales CPE</p>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Se guardan como datos write-only. El panel no vuelve a mostrar valores anteriores.
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <label className="label" htmlFor="smartpse-company-id">Company id</label>
+                  <input
+                    id="smartpse-company-id"
+                    className="input"
+                    value={smartPseCredentialForm.companyId}
+                    onChange={setSmartPseCredentialField('companyId')}
+                  />
+                </div>
+                <div>
+                  <label className="label" htmlFor="smartpse-secondary-user">Usuario secundaria nuevo</label>
+                  <input
+                    id="smartpse-secondary-user"
+                    className="input"
+                    value={smartPseCredentialForm.secondaryUser}
+                    onChange={setSmartPseCredentialField('secondaryUser')}
+                    autoComplete="off"
+                  />
+                </div>
+                <div>
+                  <label className="label" htmlFor="smartpse-access-key">Token CPE nuevo</label>
+                  <input
+                    id="smartpse-access-key"
+                    type="password"
+                    className="input"
+                    value={smartPseCredentialForm.accessKey}
+                    onChange={setSmartPseCredentialField('accessKey')}
+                    autoComplete="new-password"
+                  />
+                </div>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={smartPseBusy === 'credentials'}
+                  onClick={handleUpdateSmartPseCredentials}
+                >
+                  {smartPseBusy === 'credentials' ? 'Guardando...' : 'Guardar credenciales CPE'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {showSmartPseAudit ? (
+            <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">Auditoria Smart PSE</p>
+                  <p className="text-xs text-[var(--text-secondary)]">Ultimas acciones CPE registradas para este tenant.</p>
+                </div>
+                <button type="button" className="btn-secondary" onClick={handleLoadSmartPseAudit}>
+                  Actualizar
+                </button>
+              </div>
+              {smartPseAuditLoading ? (
+                <Spinner size="sm" label="Cargando auditoria" />
+              ) : smartPseAuditLogs.length === 0 ? (
+                <p className="text-sm text-[var(--text-secondary)]">Sin eventos Smart PSE registrados.</p>
+              ) : (
+                <div className="space-y-2">
+                  {smartPseAuditLogs.map((entry) => (
+                    <div key={entry.id} className="rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">{entry.action}</p>
+                      <p className="mt-1 text-xs text-[var(--text-tertiary)]">{formatDateTime(entry.timestamp)}</p>
+                      {entry.details ? <p className="mt-1 text-xs text-[var(--text-secondary)]">{entry.details}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {showSmartPseDelete ? (
+            <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--color-error)] bg-[var(--bg-surface-low)] p-4">
+              <p className="text-sm font-semibold text-[var(--color-error)]">Confirmar eliminacion Smart PSE</p>
+              <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                Esta accion elimina la empresa remota y borra la asociacion CPE local. No borra documentos ni tenants.
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                <div>
+                  <label className="label" htmlFor="smartpse-delete-confirm">Confirmar company id</label>
+                  <input
+                    id="smartpse-delete-confirm"
+                    className="input"
+                    value={smartPseDeleteConfirm}
+                    placeholder={tenant.smartpse_company_id || smartPseCompany?.id || 'company id'}
+                    onChange={(event) => setSmartPseDeleteConfirm(event.target.value)}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    className="btn-secondary text-[var(--color-error)]"
+                    disabled={smartPseBusy === 'delete-company'}
+                    onClick={handleDeleteSmartPseCompany}
+                  >
+                    {smartPseBusy === 'delete-company' ? 'Eliminando...' : 'Eliminar empresa remota'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <div className="flex flex-col gap-3 border-t border-[var(--border-subtle)] pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1840,6 +2079,23 @@ export default function SuperadminPage() {
   const [tenantTotal, setTenantTotal] = useState(0);
   const [tenantMetrics, setTenantMetrics] = useState(DEFAULT_TENANT_METRICS);
   const [tenantReloadKey, setTenantReloadKey] = useState(0);
+  const [smartPseCompanies, setSmartPseCompanies] = useState([]);
+  const [smartPseCompaniesLoading, setSmartPseCompaniesLoading] = useState(false);
+  const [smartPseCompanySearch, setSmartPseCompanySearch] = useState('');
+  const [debouncedSmartPseCompanySearch, setDebouncedSmartPseCompanySearch] = useState('');
+  const [smartPseCompanyTotal, setSmartPseCompanyTotal] = useState(0);
+  const [smartPseCompanyReloadKey, setSmartPseCompanyReloadKey] = useState(0);
+  const [showSmartPseCreate, setShowSmartPseCreate] = useState(false);
+  const [smartPseCreateSaving, setSmartPseCreateSaving] = useState(false);
+  const [smartPseSyncAllBusy, setSmartPseSyncAllBusy] = useState(false);
+  const [smartPseSyncAllResult, setSmartPseSyncAllResult] = useState(null);
+  const [smartPseCreateForm, setSmartPseCreateForm] = useState({
+    ruc: '',
+    razon_social: '',
+    environment: 'demo',
+    start_date: '',
+    end_date: '',
+  });
 
   useEffect(() => {
     if (!user?.is_superadmin) {
@@ -1879,6 +2135,41 @@ export default function SuperadminPage() {
   }, [tenantSearch]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSmartPseCompanySearch(smartPseCompanySearch.trim());
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [smartPseCompanySearch]);
+
+  useEffect(() => {
+    if (!user?.is_superadmin) return undefined;
+
+    let cancelled = false;
+    setSmartPseCompaniesLoading(true);
+    svc.listSmartPseCompanies({
+      search: debouncedSmartPseCompanySearch || undefined,
+      page: 1,
+      per_page: 10,
+    })
+      .then((data) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data.data) ? data.data : [];
+        setSmartPseCompanies(rows);
+        setSmartPseCompanyTotal(Number(data.total ?? rows.length));
+      })
+      .catch(() => {
+        if (!cancelled) toast('No se pudo cargar empresas Smart PSE.', 'error');
+      })
+      .finally(() => {
+        if (!cancelled) setSmartPseCompaniesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedSmartPseCompanySearch, smartPseCompanyReloadKey, toast, user?.is_superadmin]);
+
+  useEffect(() => {
     setTenantPage(1);
   }, [tenantActiveFilter, tenantGreFilter]);
 
@@ -1912,6 +2203,58 @@ export default function SuperadminPage() {
   const handleDeleted = (tenantId) => {
     setTenants((current) => current.filter((tenant) => tenant.id !== tenantId));
     refreshTenantPage();
+  };
+
+  const handleSmartPseCreateField = (key) => (eventOrValue) => {
+    const value = typeof eventOrValue === 'string' ? eventOrValue : eventOrValue.target.value;
+    setSmartPseCreateForm((current) => ({
+      ...current,
+      [key]: key === 'ruc' ? sanitizeRuc(value) : value,
+    }));
+  };
+
+  const handleCreateSmartPseCompany = async (event) => {
+    event.preventDefault();
+    setSmartPseCreateSaving(true);
+    try {
+      const created = await svc.createSmartPseCompany({
+        ruc: smartPseCreateForm.ruc,
+        razon_social: smartPseCreateForm.razon_social,
+        environment: smartPseCreateForm.environment,
+        start_date: smartPseCreateForm.start_date || null,
+        end_date: smartPseCreateForm.end_date || null,
+      });
+      setSmartPseCompanies((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      setSmartPseCompanyTotal((total) => total + 1);
+      setSmartPseCreateForm({
+        ruc: '',
+        razon_social: '',
+        environment: 'demo',
+        start_date: '',
+        end_date: '',
+      });
+      setShowSmartPseCreate(false);
+      toast('Empresa Smart PSE creada');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setSmartPseCreateSaving(false);
+    }
+  };
+
+  const handleSyncAllSmartPseCompanies = async () => {
+    setSmartPseSyncAllBusy(true);
+    try {
+      const result = await svc.syncAllSmartPseCompanies();
+      setSmartPseSyncAllResult(result);
+      setSmartPseCompanyReloadKey((key) => key + 1);
+      refreshTenantPage();
+      toast(`Sync Smart PSE: ${result.synced || 0} ok, ${result.failed || 0} con error.`);
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setSmartPseSyncAllBusy(false);
+    }
   };
 
   const handleCheckSmartPseCpe = async (tenant) => {
@@ -2081,6 +2424,174 @@ export default function SuperadminPage() {
             </article>
           );
         })}
+      </section>
+
+      <section className="panel superadmin-table-card">
+        <div className="panel-header superadmin-table-header">
+          <div>
+            <p className="page-kicker">Smart PSE CPE</p>
+            <h3 className="ink-card-title">Empresas Smart PSE</h3>
+            <p className="ink-card-subtitle">
+              Gestion remota de empresas CPE. La emision real sigue bloqueada fuera de FISCAL_ENV production.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={smartPseSyncAllBusy}
+              onClick={handleSyncAllSmartPseCompanies}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              {smartPseSyncAllBusy ? 'Sincronizando...' : 'Sincronizar todos'}
+            </button>
+            <button
+              type="button"
+              className="btn flex items-center gap-2"
+              onClick={() => setShowSmartPseCreate((value) => !value)}
+            >
+              <Plus className="h-4 w-4" />
+              Crear empresa remota
+            </button>
+          </div>
+        </div>
+
+        <div className="superadmin-filter-bar">
+          <label className="search-box">
+            <Search size={16} />
+            <input
+              placeholder="Buscar RUC o razon social Smart PSE..."
+              value={smartPseCompanySearch}
+              onChange={(event) => setSmartPseCompanySearch(event.target.value)}
+            />
+          </label>
+          <div className="sort-text">
+            {smartPseCompaniesLoading ? 'Cargando...' : (
+              <>
+                Mostrando <strong>{smartPseCompanies.length}</strong> de <strong>{smartPseCompanyTotal}</strong>
+              </>
+            )}
+          </div>
+        </div>
+
+        {showSmartPseCreate ? (
+          <form onSubmit={handleCreateSmartPseCompany} className="border-t border-[var(--border-subtle)] p-4">
+            <div className="grid gap-4 md:grid-cols-[160px_minmax(0,1fr)_180px_160px_160px]">
+              <div>
+                <label className="label" htmlFor="smartpse-create-ruc">RUC remoto</label>
+                <input
+                  id="smartpse-create-ruc"
+                  className="input font-mono"
+                  value={smartPseCreateForm.ruc}
+                  maxLength={11}
+                  onChange={handleSmartPseCreateField('ruc')}
+                  required
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="smartpse-create-name">Razon social remota</label>
+                <input
+                  id="smartpse-create-name"
+                  className="input"
+                  value={smartPseCreateForm.razon_social}
+                  onChange={handleSmartPseCreateField('razon_social')}
+                  required
+                />
+              </div>
+              <div>
+                <label className="label">Ambiente</label>
+                <CustomSelect
+                  value={smartPseCreateForm.environment}
+                  onChange={handleSmartPseCreateField('environment')}
+                  options={[
+                    { value: 'demo', label: 'Demo' },
+                    { value: 'produccion', label: 'Produccion preparada' },
+                  ]}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="smartpse-create-start">Inicio</label>
+                <input
+                  id="smartpse-create-start"
+                  type="date"
+                  className="input"
+                  value={smartPseCreateForm.start_date}
+                  onChange={handleSmartPseCreateField('start_date')}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="smartpse-create-end">Fin</label>
+                <input
+                  id="smartpse-create-end"
+                  type="date"
+                  className="input"
+                  value={smartPseCreateForm.end_date}
+                  onChange={handleSmartPseCreateField('end_date')}
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button type="submit" className="btn-primary" disabled={smartPseCreateSaving}>
+                {smartPseCreateSaving ? 'Creando...' : 'Crear empresa'}
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {smartPseSyncAllResult ? (
+          <div className="mx-4 mb-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-3 text-sm text-[var(--text-secondary)]">
+            Sync masivo: <strong>{smartPseSyncAllResult.synced || 0}</strong> sincronizadas,
+            {' '}<strong>{smartPseSyncAllResult.failed || 0}</strong> con error.
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 border-t border-[var(--border-subtle)] p-4 lg:grid-cols-3">
+          {smartPseCompaniesLoading ? (
+            <div className="col-span-full flex justify-center py-6">
+              <Spinner size="sm" label="Cargando empresas Smart PSE" />
+            </div>
+          ) : smartPseCompanies.length === 0 ? (
+            <div className="col-span-full">
+              <EmptyState title="Sin empresas Smart PSE visibles" description="Crea una empresa remota o ajusta la busqueda." />
+            </div>
+          ) : (
+            smartPseCompanies.map((company) => (
+              <article key={company.id || company.ruc} className="rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-heading text-base font-semibold text-[var(--text-primary)]">
+                      {company.razon_social || 'Empresa sin razon social'}
+                    </p>
+                    <p className="mt-1 font-mono text-xs text-[var(--text-secondary)]">RUC {company.ruc || 'sin dato'}</p>
+                  </div>
+                  <Badge variant={company.active === false ? 'danger' : 'success'}>
+                    {company.active === false ? 'Inactiva' : 'Activa'}
+                  </Badge>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-[var(--text-secondary)]">
+                  <div>
+                    <span className="label">Company id</span>
+                    <p className="mt-1 font-mono text-[var(--text-primary)]">{company.id || 'sin dato'}</p>
+                  </div>
+                  <div>
+                    <span className="label">Ambiente</span>
+                    <p className="mt-1 text-[var(--text-primary)]">
+                      {company.environment === 'produccion' ? 'Produccion preparada' : 'Demo'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="label">Estado</span>
+                    <p className="mt-1 text-[var(--text-primary)]">{company.estado || 'Sin estado'}</p>
+                  </div>
+                  <div>
+                    <span className="label">Firmas</span>
+                    <p className="mt-1 text-[var(--text-primary)]">{company.firmas_usadas ?? 'Sin dato'}</p>
+                  </div>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
       </section>
 
       {loading ? (

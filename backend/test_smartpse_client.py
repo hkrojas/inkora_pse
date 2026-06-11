@@ -248,6 +248,32 @@ def test_update_company_redacts_provider_secrets_on_error():
     assert calls[0][1]["json"] == {"environment": "produccion"}
 
 
+def test_delete_company_uses_global_management_token_and_redacts_errors():
+    calls = []
+
+    def fake_delete(url, **kwargs):
+        calls.append((url, kwargs))
+        return _json_response(
+            200,
+            {
+                "success": True,
+                "data": {"id": 7, "deleted": True},
+            },
+        )
+
+    client = SmartPSEClient(
+        base_url="https://panel.smartpse.pe",
+        api_token="global-token",
+        delete=fake_delete,
+    )
+
+    result = client.delete_company("7")
+
+    assert result["deleted"] is True
+    assert calls[0][0] == "https://panel.smartpse.pe/api/v1/companies/7"
+    assert calls[0][1]["headers"]["Authorization"] == "Bearer global-token"
+
+
 def test_provider_errors_are_reported_without_leaking_credentials():
     def fake_post(url, **kwargs):
         return _json_response(

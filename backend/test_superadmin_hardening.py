@@ -256,13 +256,19 @@ def test_frontend_superadmin_smartpse_company_management_is_safe_beta():
         "syncSmartPseTenantCompany",
         "updateSmartPseTenantCompany",
         "toggleSmartPseTenantCompanyActivation",
+        "createSmartPseCompany",
+        "deleteSmartPseTenantCompany",
+        "syncAllSmartPseCompanies",
+        "updateSmartPseTenantCredentials",
+        "smartPseTenantAuditLogs",
         "Empresa Smart PSE",
+        "Empresas Smart PSE",
         "Produccion preparada",
+        "Confirmar eliminacion Smart PSE",
+        "Rotar credenciales CPE",
+        "Auditoria Smart PSE",
     ]
     forbidden_patterns = [
-        "deleteSmartPse",
-        "Eliminar SmartPSE",
-        "Eliminar Smart PSE",
         "token_acceso",
         "usuario_secundaria",
     ]

@@ -66,6 +66,7 @@ class SmartPSEClient:
         get: Callable[..., Any] | None = None,
         put: Callable[..., Any] | None = None,
         patch: Callable[..., Any] | None = None,
+        delete: Callable[..., Any] | None = None,
         now_fn: Callable[[], datetime] | None = None,
     ):
         self.base_url = (base_url or settings.SMARTPSE_BASE_URL).strip().rstrip("/")
@@ -75,6 +76,7 @@ class SmartPSEClient:
         self._get = get or requests.get
         self._put = put or requests.put
         self._patch = patch or post or requests.patch
+        self._delete = delete or requests.delete
         self._now = now_fn or _utc_now
         self._token_cache: dict[int | str, tuple[str, datetime]] = {}
 
@@ -347,6 +349,25 @@ class SmartPSEClient:
         company = data.get("data") if isinstance(data.get("data"), dict) else data
         if not isinstance(company, dict):
             raise SmartPSEException("Smart PSE devolvio una empresa invalida.")
+        return company
+
+    def delete_company(self, company_id: int | str) -> dict:
+        try:
+            response = self._delete(
+                self._url(f"/api/v1/companies/{company_id}"),
+                headers=self._management_headers(),
+                timeout=self.timeout_seconds,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise SmartPSEException("Timeout eliminando empresa Smart PSE.") from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise SmartPSEException("No se pudo conectar con Smart PSE para eliminar empresa.") from exc
+
+        self._raise_for_response(response, action="eliminar empresa")
+        data = _safe_json(response)
+        company = data.get("data") if isinstance(data.get("data"), dict) else data
+        if not isinstance(company, dict):
+            raise SmartPSEException("Smart PSE devolvio una respuesta de eliminacion invalida.")
         return company
 
     def validate_tenant_credentials(self, tenant) -> dict:

@@ -263,6 +263,23 @@ def _apply_smartpse_company_to_tenant(
     return tenant
 
 
+def _clear_smartpse_company_from_tenant(db: Session, tenant: models.Tenant) -> models.Tenant:
+    tenant.smartpse_company_id = None
+    tenant.smartpse_usuario_secundaria = None
+    tenant.smartpse_token_acceso = None
+    tenant.smartpse_status = models.SMARTPSE_STATUS_UNCHECKED
+    tenant.smartpse_checked_at = None
+    tenant.smartpse_remote_active = None
+    tenant.smartpse_remote_estado = None
+    tenant.smartpse_remote_synced_at = None
+    tenant.smartpse_start_date = None
+    tenant.smartpse_end_date = None
+    tenant.smartpse_firmas_usadas = None
+    db.commit()
+    db.refresh(tenant)
+    return tenant
+
+
 def _require_smartpse_company_id(tenant: models.Tenant) -> str:
     company_id = str(tenant.smartpse_company_id or "").strip()
     if not company_id:
@@ -398,6 +415,99 @@ def list_smartpse_companies_endpoint(
     }
 
 
+@router.post(
+    "/superadmin/smartpse/companies",
+    response_model=schemas.SmartPSECompanyResponse,
+    status_code=201,
+    summary="Crear empresa Smart PSE independiente",
+)
+def create_smartpse_company_endpoint(
+    data: schemas.SmartPSECompanyCreate,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    try:
+        company = smartpse_client.get_default_client().provision_company(
+            ruc=data.ruc,
+            razon_social=data.razon_social,
+            environment=data.environment,
+            start_date=data.start_date,
+            end_date=data.end_date,
+        )
+    except smartpse_client.SmartPSEException as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    sanitized = _sanitize_smartpse_company(company)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.smartpse_company.created",
+        entity_type="smartpse_company",
+        entity_id=None,
+        details=f"ruc={sanitized.get('ruc')}; company_id={sanitized.get('id')}; environment={sanitized.get('environment')}",
+    )
+    return sanitized
+
+
+@router.post(
+    "/superadmin/smartpse/sync-all",
+    response_model=schemas.SmartPSESyncAllResponse,
+    summary="Sincronizar todas las empresas Smart PSE asociadas",
+)
+def sync_all_smartpse_companies_endpoint(
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    tenants = (
+        db.query(models.Tenant)
+        .filter(models.Tenant.smartpse_company_id.isnot(None))
+        .order_by(models.Tenant.id.asc())
+        .all()
+    )
+    client = smartpse_client.get_default_client()
+    items: list[dict] = []
+    synced = 0
+    failed = 0
+
+    for tenant in tenants:
+        company_id = str(tenant.smartpse_company_id or "").strip()
+        if not company_id:
+            continue
+        try:
+            company = _find_smartpse_company_for_tenant(client, tenant)
+            updated = _apply_smartpse_company_to_tenant(db, tenant, company)
+            synced += 1
+            items.append(
+                {
+                    "tenant_id": tenant.id,
+                    "company_id": updated.smartpse_company_id,
+                    "status": "synced",
+                    "message": None,
+                }
+            )
+        except Exception:
+            failed += 1
+            db.rollback()
+            items.append(
+                {
+                    "tenant_id": tenant.id,
+                    "company_id": company_id,
+                    "status": "failed",
+                    "message": "No se pudo sincronizar empresa Smart PSE.",
+                }
+            )
+
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.smartpse_companies.sync_all",
+        entity_type="smartpse_company",
+        entity_id=None,
+        details=f"total={len(tenants)}; synced={synced}; failed={failed}",
+    )
+    return {"total": len(tenants), "synced": synced, "failed": failed, "items": items}
+
+
 @router.get(
     "/superadmin/tenants/{tenant_id}/smartpse/company",
     response_model=schemas.SmartPSECompanyResponse,
@@ -416,6 +526,33 @@ def get_tenant_smartpse_company_endpoint(
     except smartpse_client.SmartPSEException as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return _sanitize_smartpse_company(company)
+
+
+@router.get(
+    "/superadmin/tenants/{tenant_id}/smartpse/audit-logs",
+    response_model=List[AuditLogResponse],
+    summary="Listar auditoria Smart PSE del tenant",
+)
+def list_tenant_smartpse_audit_logs_endpoint(
+    tenant_id: int,
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+    return (
+        db.query(models.AuditLog)
+        .filter(
+            models.AuditLog.entity_type == "tenant",
+            models.AuditLog.entity_id == tenant_id,
+            models.AuditLog.action.ilike("%smartpse%"),
+        )
+        .order_by(models.AuditLog.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 @router.post(
@@ -446,6 +583,45 @@ def sync_tenant_smartpse_company_endpoint(
         details=f"company_id={updated_tenant.smartpse_company_id}; environment={updated_tenant.smartpse_environment}",
     )
     return updated_tenant
+
+
+@router.put(
+    "/superadmin/tenants/{tenant_id}/smartpse/credentials",
+    response_model=schemas.SuperadminTenantResponse,
+    summary="Rotar credenciales CPE Smart PSE del tenant",
+)
+def update_tenant_smartpse_credentials_endpoint(
+    tenant_id: int,
+    data: schemas.SmartPSETenantCredentialsUpdate,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+
+    if data.company_id is not None:
+        tenant.smartpse_company_id = data.company_id
+    if data.environment is not None:
+        tenant.smartpse_environment = _smartpse_environment(data.environment)
+    elif not tenant.smartpse_environment:
+        tenant.smartpse_environment = "demo"
+    tenant.smartpse_usuario_secundaria = data.usuario_secundaria
+    tenant.smartpse_token_acceso = data.token_acceso
+    tenant.smartpse_status = models.SMARTPSE_STATUS_UNCHECKED
+    tenant.smartpse_checked_at = None
+    db.commit()
+    db.refresh(tenant)
+
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.tenant.smartpse_credentials_rotated",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"company_id={tenant.smartpse_company_id}; environment={tenant.smartpse_environment}",
+    )
+    return tenant
 
 
 @router.patch(
@@ -479,6 +655,41 @@ def update_tenant_smartpse_company_endpoint(
         details=f"fields={','.join(sorted(payload.keys()))}; company_id={company_id}",
     )
     return updated_tenant
+
+
+@router.delete(
+    "/superadmin/tenants/{tenant_id}/smartpse/company",
+    response_model=schemas.SmartPSEDeleteResponse,
+    summary="Eliminar empresa Smart PSE asociada al tenant",
+)
+def delete_tenant_smartpse_company_endpoint(
+    tenant_id: int,
+    confirm_company_id: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    tenant = crud.get_tenant(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+    company_id = _require_smartpse_company_id(tenant)
+    if str(confirm_company_id).strip() != company_id:
+        raise HTTPException(status_code=422, detail="Confirmacion de company id no coincide.")
+
+    try:
+        smartpse_client.get_default_client().delete_company(company_id)
+    except smartpse_client.SmartPSEException as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    _clear_smartpse_company_from_tenant(db, tenant)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.tenant.smartpse_company_deleted",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"company_id={company_id}",
+    )
+    return {"deleted": True, "company_id": company_id}
 
 
 @router.post(
