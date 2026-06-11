@@ -2,7 +2,7 @@
  * Inline client search/edit for quote flows.
  * Keeps fiscal identity fields strict because this data later feeds invoices/receipts.
  */
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X, Loader2 } from 'lucide-react';
 import { clientes as cliSvc } from '../../services/clientes';
@@ -34,6 +34,13 @@ const EMPTY = {
   direccion: '',
   ubigeo: '',
 };
+
+function createEmptyForm(defaultDocumentType = '6') {
+  return {
+    ...EMPTY,
+    tipo_documento: defaultDocumentType,
+  };
+}
 
 const SEARCH_DEBOUNCE_MS = 250;
 const SEARCH_MIN_CHARS = 2;
@@ -76,8 +83,29 @@ export default function ClientCombobox({
   onFormChange,
   quoteCountByClient = {},
   recentClientIds = [],
+  defaultDocumentType = '6',
+  allowedDocumentTypes = null,
 }) {
-  const [form, setForm] = useState(EMPTY);
+  const allowedTypeSet = useMemo(() => (
+    Array.isArray(allowedDocumentTypes) && allowedDocumentTypes.length
+      ? new Set(allowedDocumentTypes.map((type) => String(type)))
+      : null
+  ), [allowedDocumentTypes]);
+  const resolvedDefaultDocumentType = useMemo(() => (
+    allowedTypeSet?.has(String(defaultDocumentType))
+      ? String(defaultDocumentType)
+      : Array.from(allowedTypeSet || [String(defaultDocumentType || '6')])[0]
+  ), [allowedTypeSet, defaultDocumentType]);
+  const isDocumentTypeAllowed = useCallback(
+    (type) => !allowedTypeSet || allowedTypeSet.has(String(type || '')),
+    [allowedTypeSet],
+  );
+  const documentTypeOptions = useMemo(
+    () => FISCAL_DOC_TYPE_OPTIONS.filter((option) => isDocumentTypeAllowed(option.value)),
+    [isDocumentTypeAllowed],
+  );
+
+  const [form, setForm] = useState(() => createEmptyForm(resolvedDefaultDocumentType));
   const [locked, setLocked] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [isNew, setIsNew] = useState(false);
@@ -102,7 +130,9 @@ export default function ClientCombobox({
 
   useEffect(() => {
     if (!value) return;
-    const found = mergeClients(clients, remoteClients).find((client) => String(client.id) === String(value));
+    const found = mergeClients(clients, remoteClients)
+      .filter((client) => isDocumentTypeAllowed(client?.tipo_documento))
+      .find((client) => String(client.id) === String(value));
     if (!found) return;
     const nextForm = normalizeFiscalClientForm(found);
     setForm(nextForm);
@@ -111,9 +141,10 @@ export default function ClientCombobox({
     setIsNew(false);
     setErrors({});
     notify(nextForm, true, false, false);
-  }, [value, clients, remoteClients, notify]);
+  }, [value, clients, remoteClients, notify, isDocumentTypeAllowed]);
 
   const fillFromClient = useCallback((client) => {
+    if (!isDocumentTypeAllowed(client?.tipo_documento)) return;
     const nextForm = normalizeFiscalClientForm(client);
     setRemoteClients((current) => mergeClients([client], current));
     setForm(nextForm);
@@ -123,12 +154,15 @@ export default function ClientCombobox({
     setActiveField(null);
     setErrors({});
     notify(nextForm, true, false, false);
-  }, [notify]);
+  }, [notify, isDocumentTypeAllowed]);
 
   const matchedClients = useCallback((query, source = clients) => {
     if (!query.trim()) return [];
-    return source.filter((client) => clientMatchesQuery(client, query)).slice(0, 12);
-  }, [clients]);
+    return source
+      .filter((client) => isDocumentTypeAllowed(client?.tipo_documento))
+      .filter((client) => clientMatchesQuery(client, query))
+      .slice(0, 12);
+  }, [clients, isDocumentTypeAllowed]);
 
   const activeQuery = activeField === 'numero' ? form.numero_documento : form.razon_social;
 
@@ -200,7 +234,9 @@ export default function ClientCombobox({
     ? mergeClients(
       remoteResultsMatchCurrentQuery ? remoteClients : [],
       matchedClients(activeQuery, clients),
-    ).slice(0, 12)
+    )
+      .filter((client) => isDocumentTypeAllowed(client?.tipo_documento))
+      .slice(0, 12)
     : [];
   const canShowSearchMenu = activeField && !locked && currentSearchQuery.length >= SEARCH_MIN_CHARS;
   const showNoSearchResults = canShowSearchMenu
@@ -242,13 +278,16 @@ export default function ClientCombobox({
   }, [form]);
 
   const setField = (key, rawValue) => {
+    const safeRawValue = key === 'tipo_documento' && !isDocumentTypeAllowed(rawValue)
+      ? resolvedDefaultDocumentType
+      : rawValue;
     const nextValue = key === 'telefono'
-      ? rawValue.replace(/\D/g, '').slice(0, 9)
+      ? safeRawValue.replace(/\D/g, '').slice(0, 9)
       : key === 'numero_documento'
-        ? normalizeFiscalDocumentNumber(form.tipo_documento, rawValue)
+        ? normalizeFiscalDocumentNumber(form.tipo_documento, safeRawValue)
         : key === 'ubigeo'
-          ? normalizeFiscalUbigeo(rawValue)
-          : rawValue;
+          ? normalizeFiscalUbigeo(safeRawValue)
+          : safeRawValue;
 
     const nextForm = { ...form, [key]: nextValue };
     if (key === 'tipo_documento') {
@@ -301,14 +340,15 @@ export default function ClientCombobox({
   };
 
   const handleClear = () => {
+    const emptyForm = createEmptyForm(resolvedDefaultDocumentType);
     onChange('');
-    setForm(EMPTY);
+    setForm(emptyForm);
     setLocked(false);
     setIsDirty(false);
     setIsNew(false);
     setErrors({});
     setActiveField(null);
-    notify(EMPTY, false, false, false);
+    notify(emptyForm, false, false, false);
     setTimeout(() => numeroRef.current?.focus(), 0);
   };
 
@@ -319,7 +359,9 @@ export default function ClientCombobox({
       return;
     }
 
-    const found = clients.find((client) => String(client.numero_documento || '').trim() === numero);
+    const found = clients
+      .filter((client) => isDocumentTypeAllowed(client?.tipo_documento))
+      .find((client) => String(client.numero_documento || '').trim() === numero);
     if (found) {
       handleSelectClient(found);
       return;
@@ -334,6 +376,7 @@ export default function ClientCombobox({
         remoteMatches = [];
       }
       const remoteFound = (Array.isArray(remoteMatches) ? remoteMatches : [])
+        .filter((client) => isDocumentTypeAllowed(client?.tipo_documento))
         .find((client) => String(client.numero_documento || '').trim() === numero);
       if (remoteFound) {
         handleSelectClient(remoteFound);
@@ -342,9 +385,12 @@ export default function ClientCombobox({
 
       const data = await cliSvc.lookupDocument(numero);
       const resolvedName = getLookupName(data);
+      const lookupDocumentType = getLookupDocumentType(data, form.tipo_documento);
       const nextForm = {
         ...form,
-        tipo_documento: getLookupDocumentType(data, form.tipo_documento),
+        tipo_documento: isDocumentTypeAllowed(lookupDocumentType)
+          ? lookupDocumentType
+          : resolvedDefaultDocumentType,
         razon_social: resolvedName || form.razon_social,
         nombre_comercial: getLookupCommercialName(data) || form.nombre_comercial,
         direccion: getLookupAddress(data) || form.direccion,
@@ -382,7 +428,7 @@ export default function ClientCombobox({
               compact
               value={form.tipo_documento}
               onChange={(nextValue) => setField('tipo_documento', nextValue)}
-              options={FISCAL_DOC_TYPE_OPTIONS}
+              options={documentTypeOptions}
             />
           )}
         </div>

@@ -64,6 +64,24 @@ const EMPTY_ITEM = () => ({
   _isNew: false,
 });
 
+const RUC_ONLY_DOCUMENT_TYPES = ['6'];
+const DNI_ONLY_DOCUMENT_TYPES = ['1'];
+
+function getRequiredClientDocType(tipoComprobante) {
+  return tipoComprobante === '03' ? '1' : '6';
+}
+
+function createEmptyClient(tipoComprobante) {
+  return {
+    tipo_documento: getRequiredClientDocType(tipoComprobante),
+    numero_documento: '',
+    razon_social: '',
+    direccion: '',
+    email: '',
+    telefono: '',
+  };
+}
+
 function createInitialForm(initialType) {
   const tipo = initialType === '03' ? '03' : '01';
   return {
@@ -80,14 +98,7 @@ function createInitialForm(initialType) {
     incluye_igv: true,
     enviar_correo: false,
     cliente_id: '',
-    cliente: {
-      tipo_documento: '6',
-      numero_documento: '',
-      razon_social: '',
-      direccion: '',
-      email: '',
-      telefono: '',
-    },
+    cliente: createEmptyClient(tipo),
     items: [EMPTY_ITEM()],
   };
 }
@@ -150,9 +161,13 @@ function buildValidationRules(form) {
       const s = String(v || '').trim();
       if (!s) return 'Número de documento es obligatorio';
       if (form.tipo_comprobante === '01') {
-        if (!/^\d{11}$/.test(s)) return 'Factura requiere RUC (11 dígitos)';
-      } else if (form.cliente.tipo_documento === '1' && s.length !== 8) {
-        return 'DNI debe tener 8 dígitos';
+        if (form.cliente.tipo_documento !== '6' || !/^\d{11}$/.test(s)) {
+          return 'Factura requiere cliente con RUC (11 dígitos)';
+        }
+      } else if (form.tipo_comprobante === '03') {
+        if (form.cliente.tipo_documento !== '1' || !/^\d{8}$/.test(s)) {
+          return 'Boleta requiere cliente con DNI (8 dígitos) en beta';
+        }
       }
       return null;
     },
@@ -513,6 +528,13 @@ export default function ComprobanteNuevoPage() {
   const cuotasMontoTotal = cuotasTotal(form.cuotas_pago);
   const cuotasDiferencia = roundMoney(totals.total - cuotasMontoTotal);
   const tipoLabel = form.tipo_comprobante === '01' ? 'Factura' : 'Boleta de venta';
+  const requiredClientDocType = getRequiredClientDocType(form.tipo_comprobante);
+  const allowedClientDocumentTypes = form.tipo_comprobante === '03'
+    ? DNI_ONLY_DOCUMENT_TYPES
+    : RUC_ONLY_DOCUMENT_TYPES;
+  const clientDocRuleCopy = form.tipo_comprobante === '01'
+    ? 'Factura: solo cliente con RUC de 11 dígitos.'
+    : 'Boleta: solo cliente con DNI de 8 dígitos en esta beta.';
 
   const setRootField = useCallback((key, value) => {
     setForm((current) => {
@@ -562,10 +584,14 @@ export default function ComprobanteNuevoPage() {
       }
 
       if (key === 'tipo_comprobante') {
+        const nextClientDocType = getRequiredClientDocType(value);
+        const keepClient = current.cliente.tipo_documento === nextClientDocType;
         return {
           ...current,
           tipo_comprobante: value,
           tipo_operacion: '0101',
+          cliente_id: keepClient ? current.cliente_id : '',
+          cliente: keepClient ? current.cliente : createEmptyClient(value),
         };
       }
 
@@ -1112,11 +1138,15 @@ export default function ComprobanteNuevoPage() {
                 <div className="field full">
                   <label>Cliente</label>
                   <ClientCombobox
+                    key={form.tipo_comprobante}
                     clients={clientes}
                     value={form.cliente_id}
                     onChange={(id) => setRootField('cliente_id', id)}
                     onFormChange={handleClientFormChange}
+                    defaultDocumentType={requiredClientDocType}
+                    allowedDocumentTypes={allowedClientDocumentTypes}
                   />
+                  <p className="tx-meta mt-2">{clientDocRuleCopy}</p>
                   <FieldError message={errors.numero_documento} />
                   <FieldError message={errors.razon_social} />
                 </div>
