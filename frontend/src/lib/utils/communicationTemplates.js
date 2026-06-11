@@ -6,7 +6,7 @@ export const DEFAULT_SHARE_TEMPLATES = {
     '',
     'Puede descargar el documento aqui: {url}',
     '',
-    'PIN de seguridad: {pin}',
+    'El enlace es privado y solo debe compartirse con personas autorizadas.',
   ].join('\n'),
   email_subject: 'Cotizacion {numero} - {empresa}',
   email_body: [
@@ -17,7 +17,7 @@ export const DEFAULT_SHARE_TEMPLATES = {
     'Enlace de descarga:',
     '{url}',
     '',
-    'PIN de seguridad: {pin}',
+    'El enlace es privado y solo debe compartirse con personas autorizadas.',
     '',
     'Quedamos atentos a sus comentarios.',
     '',
@@ -32,7 +32,6 @@ export const SHARE_TEMPLATE_PLACEHOLDERS = [
   '{moneda}',
   '{total}',
   '{url}',
-  '{pin}',
   '{empresa}',
 ];
 

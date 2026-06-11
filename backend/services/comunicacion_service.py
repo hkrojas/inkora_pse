@@ -6,7 +6,7 @@ from services.phone_validation import normalize_peru_mobile, validate_optional_p
 DEFAULT_WHATSAPP_TEMPLATE = (
     "Hola {cliente}, le compartimos la cotizacion {numero} por {moneda} {total}.\n\n"
     "Puede descargar el documento aqui: {url}\n\n"
-    "PIN de seguridad: {pin}"
+    "El enlace es privado y solo debe compartirse con personas autorizadas."
 )
 
 DEFAULT_EMAIL_SUBJECT_TEMPLATE = "Cotizacion {numero} - {empresa}"
@@ -14,7 +14,7 @@ DEFAULT_EMAIL_BODY_TEMPLATE = (
     "Estimado cliente,\n\n"
     "Le enviamos el enlace para descargar la cotizacion {numero}.\n\n"
     "Enlace de descarga:\n{url}\n\n"
-    "PIN de seguridad: {pin}\n\n"
+    "El enlace es privado y solo debe compartirse con personas autorizadas.\n\n"
     "Quedamos atentos a sus comentarios.\n\n"
     "Saludos cordiales,\n{empresa}"
 )
@@ -58,7 +58,7 @@ def _render_template(template: str, context: dict) -> str:
 
 
 def generar_link_whatsapp(cotizacion, telefono: str, url_publica: str, tenant=None) -> str:
-    """Genera un link de wa.me pre-llenado con mensaje formal y PIN (Fase 3)."""
+    """Genera un link de wa.me pre-llenado con mensaje formal y enlace privado."""
     if not telefono:
         return ""
 
@@ -76,7 +76,7 @@ def generar_link_whatsapp(cotizacion, telefono: str, url_publica: str, tenant=No
 
 
 def generar_link_mailto(cotizacion, email_cliente: str, url_publica: str, tenant) -> str:
-    """Genera un enlace mailto pre-llenado con asunto, cuerpo formal y PIN (Fase 3)."""
+    """Genera un enlace mailto pre-llenado con asunto, cuerpo formal y enlace privado."""
     if not email_cliente:
         return ""
 

@@ -92,6 +92,31 @@ def test_generar_link_whatsapp_returns_empty_for_invalid_mobile():
     assert generar_link_whatsapp(cotizacion, "123456789", "https://demo.test/cotizacion") == ""
 
 
+def test_generar_link_whatsapp_default_uses_private_link_copy_without_pin():
+    cotizacion = SimpleNamespace(
+        moneda="PEN",
+        serie="COT",
+        correlativo=3,
+        total_venta="120.00",
+        cliente=SimpleNamespace(
+            numero_documento="20100099991",
+            razon_social="Cliente Demo SAC",
+        ),
+    )
+
+    link = generar_link_whatsapp(
+        cotizacion,
+        "987654321",
+        "https://demo.test/public/cotizaciones/xyz/pdf",
+    )
+    text = urllib.parse.parse_qs(urllib.parse.urlparse(link).query)["text"][0]
+
+    assert "https://demo.test/public/cotizaciones/xyz/pdf" in text
+    assert "El enlace es privado" in text
+    assert "PIN" not in text
+    assert "20100099991" not in text
+
+
 def test_generar_link_whatsapp_uses_tenant_template_and_public_url():
     cotizacion = SimpleNamespace(
         moneda="PEN",
@@ -108,7 +133,7 @@ def test_generar_link_whatsapp_uses_tenant_template_and_public_url():
         bank_accounts=[
             {
                 "tipo": "communication_templates",
-                "whatsapp_message": "Hola {cliente}: {numero} {moneda} {total} {url} {pin} {empresa}",
+                "whatsapp_message": "Hola {cliente}: {numero} {moneda} {total} {url} {empresa}",
             }
         ],
     )
@@ -126,5 +151,4 @@ def test_generar_link_whatsapp_uses_tenant_template_and_public_url():
     assert "COT-000002" in text
     assert "S/ 807.50" in text
     assert "https://demo.test/public/cotizaciones/abc/pdf" in text
-    assert "20100099991" in text
     assert "Inkora Demo" in text
