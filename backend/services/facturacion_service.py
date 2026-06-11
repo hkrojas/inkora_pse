@@ -925,7 +925,7 @@ def _smartpse_demo_mode(user) -> bool:
     tenant = getattr(user, "tenant", None)
     environment = str(getattr(tenant, "smartpse_environment", "") or "").strip().lower()
     if environment:
-        return environment != "produccion"
+        return not (environment == "produccion" and settings.is_fiscal_production)
     return not settings.is_fiscal_production
 
 

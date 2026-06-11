@@ -149,6 +149,105 @@ def test_provision_company_uses_global_management_token():
     assert calls[0][1]["json"]["ruc"] == "20123456789"
 
 
+def test_company_management_methods_use_global_management_token():
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append(("GET", url, kwargs))
+        if url.endswith("/api/v1/companies/7"):
+            return _json_response(
+                200,
+                {
+                    "success": True,
+                    "data": {
+                        "id": 7,
+                        "ruc": "20123456789",
+                        "environment": "demo",
+                        "active": True,
+                        "estado": "ACTIVO",
+                    },
+                },
+            )
+        return _json_response(
+            200,
+            {
+                "success": True,
+                "data": {
+                    "data": [{"id": 7, "ruc": "20123456789"}],
+                    "total": 1,
+                    "current_page": 1,
+                    "last_page": 1,
+                },
+            },
+        )
+
+    def fake_post(url, **kwargs):
+        calls.append(("POST", url, kwargs))
+        return _json_response(
+            200,
+            {
+                "success": True,
+                "data": {"id": 7, "active": False, "estado": "INACTIVO"},
+            },
+        )
+
+    client = SmartPSEClient(
+        base_url="https://panel.smartpse.pe",
+        api_token="global-token",
+        get=fake_get,
+        post=fake_post,
+    )
+
+    page = client.list_companies(search="20123456789", page=1, per_page=5)
+    detail = client.get_company("7")
+    activation = client.toggle_company_activation("7")
+
+    assert page["data"][0]["ruc"] == "20123456789"
+    assert detail["id"] == 7
+    assert activation["active"] is False
+    assert calls[0][0] == "GET"
+    assert calls[0][1] == "https://panel.smartpse.pe/api/v1/companies"
+    assert calls[0][2]["params"] == {"search": "20123456789", "page": 1, "per_page": 5}
+    assert calls[0][2]["headers"]["Authorization"] == "Bearer global-token"
+    assert calls[1][1] == "https://panel.smartpse.pe/api/v1/companies/7"
+    assert calls[2][1] == "https://panel.smartpse.pe/api/v1/companies/7/activation"
+
+
+def test_update_company_redacts_provider_secrets_on_error():
+    calls = []
+
+    def fake_put(url, **kwargs):
+        calls.append((url, kwargs))
+        return _json_response(
+            422,
+            {
+                "message": "Empresa invalida",
+                "credenciales_cpe": {
+                    "usuario_secundaria": "AB3KPQR9",
+                    "token_acceso": "MX7TNVQG",
+                },
+                "token_acceso": "secret-token",
+            },
+        )
+
+    client = SmartPSEClient(
+        base_url="https://panel.smartpse.pe",
+        api_token="global-token",
+        put=fake_put,
+    )
+
+    with pytest.raises(SmartPSEException) as exc_info:
+        client.update_company("7", {"environment": "produccion"})
+
+    message = str(exc_info.value)
+    assert "Empresa invalida" in message
+    assert "AB3KPQR9" not in message
+    assert "MX7TNVQG" not in message
+    assert "secret-token" not in message
+    assert calls[0][0] == "https://panel.smartpse.pe/api/v1/companies/7"
+    assert calls[0][1]["json"] == {"environment": "produccion"}
+
+
 def test_provider_errors_are_reported_without_leaking_credentials():
     def fake_post(url, **kwargs):
         return _json_response(

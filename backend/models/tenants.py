@@ -59,6 +59,12 @@ class Tenant(Base):
     smartpse_token_acceso = Column(String, nullable=True)
     smartpse_status = Column(String, default=SMARTPSE_STATUS_UNCHECKED, nullable=True)
     smartpse_checked_at = Column(DateTime, nullable=True)
+    smartpse_remote_active = Column(Boolean, nullable=True)
+    smartpse_remote_estado = Column(String, nullable=True)
+    smartpse_remote_synced_at = Column(DateTime, nullable=True)
+    smartpse_start_date = Column(DateTime, nullable=True)
+    smartpse_end_date = Column(DateTime, nullable=True)
+    smartpse_firmas_usadas = Column(Integer, nullable=True)
 
     sunat_gre_client_id = Column(String, nullable=True)
     sunat_gre_client_secret = Column(String, nullable=True)

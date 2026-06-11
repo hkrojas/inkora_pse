@@ -13,6 +13,11 @@ export const superadmin = {
   validateSmartPseCredentials: (data)   => api.post('/superadmin/validate/smartpse-credentials', data),
   provisionSmartPseTenant: (tenantId, data) => api.post(`/superadmin/tenants/${tenantId}/smartpse/provision`, data),
   checkSmartPseTenant:  (tenantId)      => api.post(`/superadmin/tenants/${tenantId}/smartpse/check`),
+  listSmartPseCompanies: (params)       => api.get(`/superadmin/smartpse/companies${buildQueryString(params)}`),
+  getSmartPseTenantCompany: (tenantId)  => api.get(`/superadmin/tenants/${tenantId}/smartpse/company`),
+  syncSmartPseTenantCompany: (tenantId) => api.post(`/superadmin/tenants/${tenantId}/smartpse/sync`),
+  updateSmartPseTenantCompany: (tenantId, data) => api.patch(`/superadmin/tenants/${tenantId}/smartpse/company`, data),
+  toggleSmartPseTenantCompanyActivation: (tenantId) => api.post(`/superadmin/tenants/${tenantId}/smartpse/activation`),
   updateSmartPseGreCredentials: (tenantId, data) => api.put(`/superadmin/tenants/${tenantId}/smartpse/gre-credentials`, data),
   checkSmartPseGreCredentials:  (tenantId)       => api.post(`/superadmin/tenants/${tenantId}/smartpse/gre-credentials/check`),
 

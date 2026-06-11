@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 import pytest
 from decimal import Decimal
@@ -21,6 +21,25 @@ engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base.metadata.create_all(bind=engine)
+
+
+def _ensure_legacy_sqlite_test_schema():
+    existing = {column["name"] for column in inspect(engine).get_columns("tenants")}
+    required_columns = {
+        "smartpse_remote_active": "BOOLEAN",
+        "smartpse_remote_estado": "VARCHAR",
+        "smartpse_remote_synced_at": "DATETIME",
+        "smartpse_start_date": "DATETIME",
+        "smartpse_end_date": "DATETIME",
+        "smartpse_firmas_usadas": "INTEGER",
+    }
+    with engine.begin() as connection:
+        for name, sql_type in required_columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE tenants ADD COLUMN {name} {sql_type}"))
+
+
+_ensure_legacy_sqlite_test_schema()
 
 def override_get_db():
     try:

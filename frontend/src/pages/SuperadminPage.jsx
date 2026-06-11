@@ -142,13 +142,23 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
+  const [smartPseBusy, setSmartPseBusy] = useState(null);
+  const [smartPseCompany, setSmartPseCompany] = useState(null);
   const [form, setForm] = useState({
     business_name: tenant.business_name || '',
     business_ruc: tenant.business_ruc || '',
     business_address: tenant.business_address || '',
     is_active: tenant.is_active ?? true,
   });
+  const [smartPseForm, setSmartPseForm] = useState({
+    razon_social: tenant.business_name || '',
+    environment: tenant.smartpse_environment || 'demo',
+    start_date: toDateInputValue(tenant.smartpse_start_date),
+    end_date: toDateInputValue(tenant.smartpse_end_date),
+  });
   const smartPseMeta = getSmartPseCpeStatusMeta(tenant);
+  const smartPseRemoteActive =
+    typeof tenant.smartpse_remote_active === 'boolean' ? tenant.smartpse_remote_active : smartPseCompany?.active;
 
   const setField = (key) => (event) => {
     const rawValue =
@@ -156,6 +166,11 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
     const value = key === 'business_ruc' ? sanitizeRuc(rawValue) : rawValue;
 
     setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const setSmartPseField = (key) => (eventOrValue) => {
+    const value = typeof eventOrValue === 'string' ? eventOrValue : eventOrValue.target.value;
+    setSmartPseForm((current) => ({ ...current, [key]: value }));
   };
 
   const handleLookupRuc = async () => {
@@ -212,6 +227,92 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
       toast(error.message, 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const syncSmartPseFormFromTenant = (updatedTenant) => {
+    setSmartPseForm({
+      razon_social: updatedTenant.business_name || '',
+      environment: updatedTenant.smartpse_environment || 'demo',
+      start_date: toDateInputValue(updatedTenant.smartpse_start_date),
+      end_date: toDateInputValue(updatedTenant.smartpse_end_date),
+    });
+  };
+
+  const handleViewSmartPseCompany = async () => {
+    setSmartPseBusy('view');
+    try {
+      const company = await svc.getSmartPseTenantCompany(tenant.id);
+      setSmartPseCompany(company);
+      setSmartPseForm((current) => ({
+        ...current,
+        razon_social: company.razon_social || current.razon_social,
+        environment: company.environment || current.environment,
+        start_date: company.start_date || current.start_date,
+        end_date: company.end_date || current.end_date,
+      }));
+      toast('Empresa Smart PSE consultada');
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setSmartPseBusy(null);
+    }
+  };
+
+  const handleSyncSmartPseCompany = async () => {
+    setSmartPseBusy('sync');
+    try {
+      const updated = await svc.syncSmartPseTenantCompany(tenant.id);
+      syncSmartPseFormFromTenant(updated);
+      setSmartPseCompany({
+        id: updated.smartpse_company_id,
+        environment: updated.smartpse_environment,
+        active: updated.smartpse_remote_active,
+        estado: updated.smartpse_remote_estado,
+        start_date: toDateInputValue(updated.smartpse_start_date),
+        end_date: toDateInputValue(updated.smartpse_end_date),
+        firmas_usadas: updated.smartpse_firmas_usadas,
+        synced_at: updated.smartpse_remote_synced_at,
+      });
+      onSaved(updated);
+      toast('Empresa Smart PSE sincronizada');
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setSmartPseBusy(null);
+    }
+  };
+
+  const handleUpdateSmartPseCompany = async () => {
+    setSmartPseBusy('update');
+    try {
+      const updated = await svc.updateSmartPseTenantCompany(tenant.id, {
+        razon_social: smartPseForm.razon_social,
+        environment: smartPseForm.environment,
+        start_date: smartPseForm.start_date || null,
+        end_date: smartPseForm.end_date || null,
+      });
+      syncSmartPseFormFromTenant(updated);
+      onSaved(updated);
+      toast('Empresa Smart PSE actualizada');
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setSmartPseBusy(null);
+    }
+  };
+
+  const handleToggleSmartPseActivation = async () => {
+    setSmartPseBusy('activation');
+    try {
+      const updated = await svc.toggleSmartPseTenantCompanyActivation(tenant.id);
+      syncSmartPseFormFromTenant(updated);
+      onSaved(updated);
+      toast(updated.smartpse_remote_active ? 'Empresa Smart PSE activada' : 'Empresa Smart PSE desactivada');
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setSmartPseBusy(null);
     }
   };
 
@@ -303,8 +404,8 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
         <section className="ink-card p-6">
           <SectionHeader
             kicker="Smart PSE CPE"
-            title="Estado de aprovisionamiento"
-            copy="Las credenciales CPE se gestionan desde Smart PSE. El tenant solo ve estados operativos, nunca secretos."
+            title="Empresa Smart PSE"
+            copy="Gestiona estado remoto, ambiente y vigencia CPE. Las credenciales no se muestran ni se editan desde Inkora."
           />
 
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
@@ -312,14 +413,128 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               <p className="text-sm font-semibold text-[var(--text-primary)]">Estado actual</p>
               <p className="mt-1 text-sm text-[var(--text-secondary)]">{smartPseMeta.description}</p>
               <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-                Ambiente: {tenant.smartpse_environment || 'demo'} · Ultima verificacion: {formatDateTime(tenant.smartpse_checked_at)}
+                Ambiente: {tenant.smartpse_environment || 'demo'} - Ultima verificacion: {formatDateTime(tenant.smartpse_checked_at)}
+              </p>
+              <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                Empresa: {tenant.smartpse_company_id || smartPseCompany?.id || 'Sin asociar'} - Sync: {formatDateTime(tenant.smartpse_remote_synced_at || smartPseCompany?.synced_at)}
               </p>
             </div>
 
             <div className="flex flex-col items-start justify-center gap-2 border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-4">
               <StatusDot ok={tenant.has_smartpse_credentials} />
               <Badge variant={smartPseMeta.badgeVariant}>{smartPseMeta.label}</Badge>
+              <Badge variant={smartPseRemoteActive ? 'success' : 'warning'}>
+                {smartPseRemoteActive ? 'Activo remoto' : 'Inactivo remoto'}
+              </Badge>
             </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-4 md:grid-cols-4">
+            <div>
+              <span className="label">Estado remoto</span>
+              <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                {tenant.smartpse_remote_estado || smartPseCompany?.estado || 'Sin sincronizar'}
+              </p>
+            </div>
+            <div>
+              <span className="label">Ambiente</span>
+              <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                {tenant.smartpse_environment === 'produccion' ? 'Produccion preparada' : 'Demo'}
+              </p>
+            </div>
+            <div>
+              <span className="label">Firmas usadas</span>
+              <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                {tenant.smartpse_firmas_usadas ?? smartPseCompany?.firmas_usadas ?? 'Sin dato'}
+              </p>
+            </div>
+            <div>
+              <span className="label">Vigencia</span>
+              <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                {toDateInputValue(tenant.smartpse_start_date) || smartPseCompany?.start_date || 'Inicio sin dato'}
+                {' / '}
+                {toDateInputValue(tenant.smartpse_end_date) || smartPseCompany?.end_date || 'Sin fin'}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="label">Razon social remota</label>
+              <input
+                className="input"
+                value={smartPseForm.razon_social}
+                onChange={setSmartPseField('razon_social')}
+              />
+            </div>
+            <div>
+              <label className="label">Ambiente CPE</label>
+              <CustomSelect
+                value={smartPseForm.environment}
+                onChange={setSmartPseField('environment')}
+                options={[
+                  { value: 'demo', label: 'Demo' },
+                  { value: 'produccion', label: 'Produccion preparada' },
+                ]}
+              />
+            </div>
+            <div>
+              <label className="label">Inicio de vigencia</label>
+              <input
+                type="date"
+                className="input"
+                value={smartPseForm.start_date}
+                onChange={setSmartPseField('start_date')}
+              />
+            </div>
+            <div>
+              <label className="label">Fin de vigencia</label>
+              <input
+                type="date"
+                className="input"
+                value={smartPseForm.end_date}
+                onChange={setSmartPseField('end_date')}
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={Boolean(smartPseBusy)}
+              onClick={handleViewSmartPseCompany}
+            >
+              {smartPseBusy === 'view' ? 'Consultando...' : 'Ver empresa Smart PSE'}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={Boolean(smartPseBusy)}
+              onClick={handleSyncSmartPseCompany}
+            >
+              {smartPseBusy === 'sync' ? 'Sincronizando...' : 'Sincronizar'}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={Boolean(smartPseBusy) || !tenant.smartpse_company_id}
+              onClick={handleUpdateSmartPseCompany}
+            >
+              {smartPseBusy === 'update' ? 'Guardando...' : 'Actualizar remoto'}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={Boolean(smartPseBusy) || !tenant.smartpse_company_id}
+              onClick={handleToggleSmartPseActivation}
+            >
+              {smartPseBusy === 'activation'
+                ? 'Cambiando...'
+                : smartPseRemoteActive
+                  ? 'Desactivar remoto'
+                  : 'Activar remoto'}
+            </button>
           </div>
         </section>
 
@@ -1419,6 +1634,14 @@ function formatDateTime(value) {
   });
 }
 
+function toDateInputValue(value) {
+  if (!value) return '';
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
 function TenantFiscalFlagsModal({ tenant, onClose }) {
   const toast = useToast();
   const [flags, setFlags] = useState({});
@@ -1989,6 +2212,9 @@ export default function SuperadminPage() {
                         </div>
                         <span className="superadmin-status-meta">
                           {tenant.smartpse_environment || 'demo'} - {formatDateTime(tenant.smartpse_checked_at)}
+                        </span>
+                        <span className="superadmin-status-meta">
+                          {tenant.smartpse_remote_estado || 'Sin sync'} - {typeof tenant.smartpse_remote_active === 'boolean' ? (tenant.smartpse_remote_active ? 'activo remoto' : 'inactivo remoto') : 'sin estado remoto'}
                         </span>
                       </div>
                     </td>

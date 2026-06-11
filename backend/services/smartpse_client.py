@@ -32,11 +32,18 @@ def _redacted_provider_message(data: dict) -> str:
         "access_token",
         "token",
     }
-    redacted = {
-        key: value
-        for key, value in (data or {}).items()
-        if key not in sensitive_keys
-    }
+
+    def redact(value):
+        if isinstance(value, dict):
+            return {
+                key: ("***" if key in sensitive_keys else redact(inner_value))
+                for key, inner_value in value.items()
+            }
+        if isinstance(value, list):
+            return [redact(item) for item in value]
+        return value
+
+    redacted = redact(data or {})
     for key in ("message", "mensaje", "error", "detail"):
         value = redacted.get(key)
         if isinstance(value, str) and value.strip():
@@ -57,6 +64,8 @@ class SmartPSEClient:
         timeout_seconds: int | None = None,
         post: Callable[..., Any] | None = None,
         get: Callable[..., Any] | None = None,
+        put: Callable[..., Any] | None = None,
+        patch: Callable[..., Any] | None = None,
         now_fn: Callable[[], datetime] | None = None,
     ):
         self.base_url = (base_url or settings.SMARTPSE_BASE_URL).strip().rstrip("/")
@@ -64,6 +73,8 @@ class SmartPSEClient:
         self.timeout_seconds = timeout_seconds or settings.SMARTPSE_TIMEOUT_SECONDS
         self._post = post or requests.post
         self._get = get or requests.get
+        self._put = put or requests.put
+        self._patch = patch or post or requests.patch
         self._now = now_fn or _utc_now
         self._token_cache: dict[int | str, tuple[str, datetime]] = {}
 
@@ -235,6 +246,107 @@ class SmartPSEClient:
         company = data.get("data") if isinstance(data.get("data"), dict) else data
         if not isinstance(company, dict):
             raise SmartPSEException("Smart PSE devolvio una respuesta de empresa invalida.")
+        return company
+
+    def list_companies(
+        self,
+        *,
+        search: str | None = None,
+        page: int = 1,
+        per_page: int = 20,
+    ) -> dict:
+        params = {
+            "page": page,
+            "per_page": per_page,
+        }
+        if search:
+            params["search"] = search
+
+        try:
+            response = self._get(
+                self._url("/api/v1/companies"),
+                params=params,
+                headers=self._management_headers(),
+                timeout=self.timeout_seconds,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise SmartPSEException("Timeout listando empresas Smart PSE.") from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise SmartPSEException("No se pudo conectar con Smart PSE para listar empresas.") from exc
+
+        self._raise_for_response(response, action="listar empresas")
+        data = _safe_json(response)
+        page_data = data.get("data") if isinstance(data.get("data"), dict) else data
+        if isinstance(page_data, list):
+            return {"data": page_data}
+        if not isinstance(page_data, dict):
+            raise SmartPSEException("Smart PSE devolvio una respuesta de lista invalida.")
+        return {
+            "data": page_data.get("data") or [],
+            "total": page_data.get("total"),
+            "current_page": page_data.get("current_page"),
+            "last_page": page_data.get("last_page"),
+        }
+
+    def get_company(self, company_id: int | str) -> dict:
+        try:
+            response = self._get(
+                self._url(f"/api/v1/companies/{company_id}"),
+                headers=self._management_headers(),
+                timeout=self.timeout_seconds,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise SmartPSEException("Timeout consultando empresa Smart PSE.") from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise SmartPSEException("No se pudo conectar con Smart PSE para consultar empresa.") from exc
+
+        self._raise_for_response(response, action="consultar empresa")
+        data = _safe_json(response)
+        company = data.get("data") if isinstance(data.get("data"), dict) else data
+        if not isinstance(company, dict):
+            raise SmartPSEException("Smart PSE devolvio una empresa invalida.")
+        return company
+
+    def update_company(self, company_id: int | str, data: dict) -> dict:
+        payload = dict(data or {})
+        try:
+            response = self._put(
+                self._url(f"/api/v1/companies/{company_id}"),
+                json=payload,
+                headers=self._management_headers(),
+                timeout=self.timeout_seconds,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise SmartPSEException("Timeout actualizando empresa Smart PSE.") from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise SmartPSEException("No se pudo conectar con Smart PSE para actualizar empresa.") from exc
+
+        self._raise_for_response(response, action="actualizar empresa")
+        response_data = _safe_json(response)
+        company = response_data.get("data") if isinstance(response_data.get("data"), dict) else response_data
+        if not isinstance(company, dict):
+            raise SmartPSEException("Smart PSE devolvio una empresa invalida.")
+        return company
+
+    def toggle_company_activation(self, company_id: int | str) -> dict:
+        try:
+            response = self._patch(
+                self._url(f"/api/v1/companies/{company_id}/activation"),
+                headers=self._management_headers(),
+                timeout=self.timeout_seconds,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise SmartPSEException("Timeout cambiando activacion de empresa Smart PSE.") from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise SmartPSEException(
+                "No se pudo conectar con Smart PSE para cambiar activacion de empresa."
+            ) from exc
+
+        self._raise_for_response(response, action="cambiar activacion de empresa")
+        data = _safe_json(response)
+        company = data.get("data") if isinstance(data.get("data"), dict) else data
+        if not isinstance(company, dict):
+            raise SmartPSEException("Smart PSE devolvio una empresa invalida.")
         return company
 
     def validate_tenant_credentials(self, tenant) -> dict:

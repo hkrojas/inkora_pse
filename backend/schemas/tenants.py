@@ -134,8 +134,16 @@ class TenantResponse(TenantSummaryResponse):
     bank_accounts: Optional[Any] = None
     apisperu_token_status: Optional[str] = None
     apisperu_token_checked_at: Optional[datetime] = None
+    smartpse_company_id: Optional[str] = None
+    smartpse_environment: Optional[str] = None
     smartpse_status: Optional[str] = None
     smartpse_checked_at: Optional[datetime] = None
+    smartpse_remote_active: Optional[bool] = None
+    smartpse_remote_estado: Optional[str] = None
+    smartpse_remote_synced_at: Optional[datetime] = None
+    smartpse_start_date: Optional[datetime] = None
+    smartpse_end_date: Optional[datetime] = None
+    smartpse_firmas_usadas: Optional[int] = None
     smartpse_gre_status: Optional[str] = None
     smartpse_gre_checked_at: Optional[datetime] = None
 
@@ -323,6 +331,43 @@ class SmartPSEProvisionRequest(StrictInputModel):
     environment: str = "demo"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+
+
+class SmartPSECompanyUpdate(StrictInputModel):
+    razon_social: Optional[str] = Field(default=None, min_length=2, max_length=180)
+    environment: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+    @field_validator("environment")
+    @classmethod
+    def validate_environment(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in {"demo", "produccion"}:
+            raise ValueError("environment debe ser 'demo' o 'produccion'.")
+        return normalized
+
+
+class SmartPSECompanyResponse(BaseModel):
+    id: Optional[str] = None
+    ruc: Optional[str] = None
+    razon_social: Optional[str] = None
+    environment: Optional[str] = None
+    active: Optional[bool] = None
+    estado: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    firmas_usadas: Optional[int] = None
+    synced_at: Optional[datetime] = None
+
+
+class SmartPSECompanyPageResponse(BaseModel):
+    data: List[SmartPSECompanyResponse]
+    total: Optional[int] = None
+    current_page: Optional[int] = None
+    last_page: Optional[int] = None
 
 
 class SmartPSEGreCredentialsUpdate(StrictInputModel):

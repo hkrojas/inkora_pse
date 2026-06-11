@@ -75,6 +75,27 @@ def test_emitir_factura_uses_smartpse_xml_flow_without_apisperu_http(db_session)
     assert fake_client.process_xml.call_args.kwargs["demo"] is True
 
 
+def test_smartpse_production_tenant_still_uses_demo_when_fiscal_env_is_beta(monkeypatch, db_session):
+    tenant, user, fiscal = _make_smartpse_fiscal_document(db_session)
+    tenant.smartpse_environment = "produccion"
+    db_session.commit()
+    fake_client = MagicMock()
+    fake_client.process_xml.return_value = {
+        "estado": 200,
+        "mensaje": "Aceptado demo",
+        "xml_firmado": _zip_b64("signed.xml", "<Invoice/>"),
+        "codigo_hash": "hash-smart",
+        "cdr": "<ApplicationResponse/>",
+        "rechazado": False,
+    }
+    monkeypatch.setattr(facturacion_service.settings, "FISCAL_ENV", "beta")
+
+    with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
+        facturacion_service.emitir_factura(fiscal, db_session, user)
+
+    assert fake_client.process_xml.call_args.kwargs["demo"] is True
+
+
 def test_retenciones_and_percepciones_are_blocked_for_smartpse_v1(db_session):
     _, user, _ = _make_smartpse_fiscal_document(db_session)
 

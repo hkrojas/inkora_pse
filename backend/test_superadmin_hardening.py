@@ -243,6 +243,36 @@ def test_frontend_superadmin_onboarding_usa_smartpse_first():
         assert pattern in page_text or pattern in service_text
 
 
+def test_frontend_superadmin_smartpse_company_management_is_safe_beta():
+    page_text = (ROOT / "frontend" / "src" / "pages" / "SuperadminPage.jsx").read_text(
+        encoding="utf-8"
+    )
+    service_text = (ROOT / "frontend" / "src" / "services" / "superadmin.js").read_text(
+        encoding="utf-8"
+    )
+
+    required_patterns = [
+        "getSmartPseTenantCompany",
+        "syncSmartPseTenantCompany",
+        "updateSmartPseTenantCompany",
+        "toggleSmartPseTenantCompanyActivation",
+        "Empresa Smart PSE",
+        "Produccion preparada",
+    ]
+    forbidden_patterns = [
+        "deleteSmartPse",
+        "Eliminar SmartPSE",
+        "Eliminar Smart PSE",
+        "token_acceso",
+        "usuario_secundaria",
+    ]
+
+    for pattern in required_patterns:
+        assert pattern in page_text or pattern in service_text
+    for pattern in forbidden_patterns:
+        assert pattern not in page_text
+
+
 def test_superadmin_tenants_page_escala_filtra_y_no_expone_secretos_gre(db_session):
     tenant = make_tenant(db_session, "PG00")
     tenant.business_name = "Empresa Demo 0000 SAC"
