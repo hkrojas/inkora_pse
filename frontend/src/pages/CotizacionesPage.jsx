@@ -341,6 +341,21 @@ function getTipoDocumentoClienteLabel(value, numeroDocumento = '') {
   return 'DNI';
 }
 
+function getFiscalCustomerDocKind(cliente) {
+  const docType = String(cliente?.tipo_documento || '').trim();
+  const docNumber = String(cliente?.numero_documento || '').replace(/\D/g, '');
+  const isRuc = docType === '6' && docNumber.length === 11;
+  const isDni = docType === '1' && docNumber.length === 8;
+
+  if (isRuc) return 'ruc';
+  if (isDni) return 'dni';
+  return 'other';
+}
+
+function getRecommendedFiscalReceiptType(cliente) {
+  return getFiscalCustomerDocKind(cliente) === 'dni' ? '03' : '01';
+}
+
 function getMonedaTexto(moneda) {
   return moneda === 'USD' ? 'DOLARES' : 'SOLES';
 }
@@ -840,19 +855,22 @@ function NuevoClienteModal({ onClose, onCreated, initialName = '' }) {
 function EmitirModal({ cotizacion, onClose, onSuccess }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
-  const [tipo, setTipo] = useState('01');
+  const [tipo, setTipo] = useState(() => getRecommendedFiscalReceiptType(cotizacion?.cliente));
   const [serieOverride, setSerieOverride] = useState('');
 
   const cliente = cotizacion?.cliente;
   const tipoDocCliente = cliente?.tipo_documento;
-  const esRUC = tipoDocCliente === '6' || (cliente?.numero_documento?.length === 11);
-  const esDNI = tipoDocCliente === '1' || (cliente?.numero_documento?.length === 8);
+  const fiscalDocKind = getFiscalCustomerDocKind(cliente);
+  const esRUC = fiscalDocKind === 'ruc';
+  const esDNI = fiscalDocKind === 'dni';
 
   const facturaInvalida = tipo === '01' && !esRUC;
+  const boletaInvalida = tipo === '03' && !esDNI;
+  const comprobanteInvalido = facturaInvalida || boletaInvalida;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (facturaInvalida) return;
+    if (comprobanteInvalido) return;
     setSaving(true);
     try {
       await svc.facturar(cotizacion.id, {
@@ -878,7 +896,7 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
           {cliente?.razon_social}
         </p>
         <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
-          Doc. cliente: {cliente?.numero_documento} ({tipoDocCliente === '6' ? 'RUC' : tipoDocCliente === '1' ? 'DNI' : tipoDocCliente})
+          Doc. cliente: {cliente?.numero_documento} ({tipoDocCliente === '6' ? 'RUC' : tipoDocCliente === '1' ? 'DNI' : tipoDocCliente || 'sin tipo'})
         </p>
       </div>
 
@@ -901,6 +919,12 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
           Cambia a Boleta o actualiza el documento del cliente.
         </div>
       )}
+      {boletaInvalida && (
+        <div style={{ padding: '10px 14px', background: 'var(--color-error-bg)', border: '1px solid rgba(220,38,38,0.2)', color: 'var(--color-error)', fontSize: '13px' }}>
+          Para emitir boleta en beta, el cliente debe tener DNI (8 digitos). Si el cliente tiene RUC 10/20,
+          corresponde emitir Factura.
+        </div>
+      )}
 
       <div>
         <label className="label">Serie (opcional — deja vacío para usar la serie por defecto)</label>
@@ -916,7 +940,7 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
         <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
         <button
           type="submit"
-          disabled={saving || facturaInvalida}
+          disabled={saving || comprobanteInvalido}
           className="btn-primary flex items-center gap-2"
         >
           {saving && <Spinner size="sm" />}

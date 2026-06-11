@@ -279,6 +279,23 @@ class TestPreValidacion:
         # No debe lanzar excepción
         _validar_pre_emision(quote, "03")  # ← OK
 
+    def test_boleta_con_ruc_20_lanza_400(self):
+        c = _make_mock_cliente(tipo="6", numero="20100100100")
+        quote = _make_mock_quote(cliente=c, tipo_comprobante="03")
+        with pytest.raises(HTTPException) as exc:
+            _validar_pre_emision(quote, "03")
+        assert exc.value.status_code == 400
+        assert "boletas" in exc.value.detail.lower()
+        assert "factura" in exc.value.detail.lower()
+
+    def test_boleta_con_ruc_10_lanza_400(self):
+        c = _make_mock_cliente(tipo="6", numero="10400000001")
+        quote = _make_mock_quote(cliente=c, tipo_comprobante="03")
+        with pytest.raises(HTTPException) as exc:
+            _validar_pre_emision(quote, "03")
+        assert exc.value.status_code == 400
+        assert "ruc 10/20" in exc.value.detail.lower()
+
     def test_factura_con_ruc_valido_pasa(self):
         c = _make_mock_cliente(tipo="6", numero="20100100100")  # RUC 11 dígitos
         quote = _make_mock_quote(cliente=c, tipo_comprobante="01")

@@ -577,14 +577,30 @@ def _validar_pre_emision(quote, tipo_comprobante: str):
             "Pre-validacion fallida: El cliente no tiene numero de documento valido (minimo 8 digitos).",
         )
 
-    # 3. Para facturas (tipo 01): el cliente debe tener RUC (11 digitos, tipo 6)
+    numero_documento = str(cliente.numero_documento or "").strip()
+    tipo_documento = str(cliente.tipo_documento or "").strip()
+    is_ruc = tipo_documento == "6" and len(numero_documento) == 11
+    is_dni = tipo_documento == "1" and len(numero_documento) == 8
+
+    # 3. Factura/boleta deben respetar el tipo de documento del cliente.
     if tipo_comprobante == "01":
-        if cliente.tipo_documento != "6" or len(cliente.numero_documento.strip()) != 11:
+        if not is_ruc:
             raise HTTPException(
                 400,
                 (
                     "Pre-validacion fallida: Las Facturas (tipo 01) requieren que el cliente "
                     "tenga RUC (11 digitos, tipo_documento='6'). "
+                    f"Documento actual: {cliente.numero_documento} (tipo {cliente.tipo_documento})."
+                ),
+            )
+    if tipo_comprobante == "03":
+        if not is_dni:
+            raise HTTPException(
+                400,
+                (
+                    "Pre-validacion fallida: Las Boletas (tipo 03) solo se emiten a clientes "
+                    "con DNI (8 digitos, tipo_documento='1') en el flujo beta. "
+                    "Para clientes con RUC 10/20 use Factura (tipo 01). "
                     f"Documento actual: {cliente.numero_documento} (tipo {cliente.tipo_documento})."
                 ),
             )
