@@ -16,6 +16,7 @@ Ejecutar:
 
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -295,7 +296,8 @@ def test_anular_factura_payload_contract_subset_is_stable(db_session):
     _, filename, xml_content, _ = fake_client.process_calls[0]
     xml_text = xml_content.decode("utf-8")
 
-    assert filename.startswith(f"{_filename_ruc(fiscal.tenant)}-RA-")
+    assert re.match(rf"^{_filename_ruc(fiscal.tenant)}-RA-\d{{8}}-\d{{5}}$", filename)
+    assert "RA-" in xml_text
     assert "DocumentTypeCode" in xml_text
     assert fiscal.serie in xml_text
     assert str(fiscal.correlativo).zfill(6) in xml_text
@@ -324,12 +326,13 @@ def test_baja_boleta_payload_contract_subset_is_stable(db_session):
     detail = summary_payload["details"][0]
 
     _, filename, xml_content, _ = fake_client.process_calls[0]
-    assert filename.startswith(f"{_filename_ruc(boleta.tenant)}-RC-")
+    assert re.match(rf"^{_filename_ruc(boleta.tenant)}-RC-\d{{8}}-\d{{5}}$", filename)
     assert b"SummaryDocuments" in xml_content
+    assert b"RC-" in xml_content
     assert summary_payload["company"]["ruc"] == boleta.tenant.business_ruc
     assert summary_payload["moneda"] == "PEN"
     assert detail["tipoDoc"] == "03"
-    assert detail["serieNro"] == f"{boleta.serie}-{boleta.correlativo}"
+    assert detail["serieNro"] == facturacion_service._document_number(boleta)
     assert detail["estado"] == "3"
     assert detail["desMotivoBaja"] == "ANULACION DE PRUEBA"
     assert result["success"] is True

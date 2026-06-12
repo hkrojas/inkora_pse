@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+import re
 from xml.etree import ElementTree as ET
 
 
@@ -60,6 +61,52 @@ def _date_time(value: str | None) -> tuple[str, str]:
         return text[:10], "00:00:00"
     now = datetime.now()
     return now.date().isoformat(), now.time().replace(microsecond=0).isoformat()
+
+
+_BATCH_DOC_TYPES = {"RC", "RA", "RR"}
+_COMPACT_DATE_RE = re.compile(r"^\d{8}$")
+_DATE_PREFIXED_CORRELATIVO_RE = re.compile(r"^\d{8}-\d+(?:-\d+)?$")
+
+
+def _compact_date(value) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%Y%m%d")
+
+    text = str(value or "").strip()
+    if _COMPACT_DATE_RE.match(text):
+        return text
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        return text[:10].replace("-", "")
+
+    return datetime.now().strftime("%Y%m%d")
+
+
+def _strip_batch_prefix(value) -> str:
+    normalized = str(value or "").strip().upper()
+    for prefix in _BATCH_DOC_TYPES:
+        marker = f"{prefix}-"
+        if normalized.startswith(marker):
+            return normalized[len(marker) :]
+    return normalized
+
+
+def _batch_reference_date(payload: dict, tipo_doc: str):
+    if tipo_doc == "RC":
+        return payload.get("fecResumen") or payload.get("fecGeneracion")
+    return payload.get("fecComunicacion") or payload.get("fecResumen") or payload.get("fecGeneracion")
+
+
+def normalize_batch_correlativo(payload: dict, tipo_doc: str) -> str:
+    """Return the Smart PSE batch suffix as YYYYMMDD-NNNNN."""
+    tipo_doc = str(tipo_doc or payload.get("tipoDoc") or "").strip().upper()
+    raw = _strip_batch_prefix(payload.get("correlativo"))
+    if _DATE_PREFIXED_CORRELATIVO_RE.match(raw):
+        return raw
+
+    suffix = raw or "1"
+    if suffix.isdigit():
+        suffix = suffix.zfill(5)
+    return f"{_compact_date(_batch_reference_date(payload, tipo_doc))}-{suffix}"
 
 
 def _date_only(value: str | None) -> str:
@@ -362,7 +409,8 @@ def build_summary_document_xml(payload: dict) -> str:
     _add_ubl_extensions(root)
     _add(root, "cbc", "UBLVersionID", "2.0")
     _add(root, "cbc", "CustomizationID", "1.1")
-    _add(root, "cbc", "ID", f"RC-{payload.get('correlativo')}")
+    batch_correlativo = normalize_batch_correlativo(payload, "RC")
+    _add(root, "cbc", "ID", f"RC-{batch_correlativo}")
     gen_date, _ = _date_time(payload.get("fecGeneracion"))
     ref_date, _ = _date_time(payload.get("fecResumen"))
     _add(root, "cbc", "ReferenceDate", ref_date)
@@ -394,7 +442,8 @@ def build_voided_document_xml(payload: dict) -> str:
     _add(root, "cbc", "UBLVersionID", "2.0")
     _add(root, "cbc", "CustomizationID", "1.0")
     tipo_doc = str(payload.get("tipoDoc") or "RA").upper()
-    _add(root, "cbc", "ID", f"{tipo_doc}-{payload.get('correlativo')}")
+    batch_correlativo = normalize_batch_correlativo(payload, tipo_doc)
+    _add(root, "cbc", "ID", f"{tipo_doc}-{batch_correlativo}")
     gen_date, _ = _date_time(payload.get("fecGeneracion"))
     ref_date, _ = _date_time(payload.get("fecComunicacion") or payload.get("fecResumen"))
     _add(root, "cbc", "ReferenceDate", ref_date)
@@ -416,6 +465,7 @@ def build_smartpse_filename(payload: dict) -> str:
     company = _company(payload)
     ruc = "".join(ch for ch in str(company.get("ruc") or "") if ch.isdigit())
     tipo_doc = str(payload.get("tipoDoc") or "").strip().upper()
-    if tipo_doc in {"RC", "RA", "RR"}:
-        return f"{ruc}-{tipo_doc}-{payload.get('correlativo')}"
+    if tipo_doc in _BATCH_DOC_TYPES:
+        batch_correlativo = normalize_batch_correlativo(payload, tipo_doc)
+        return f"{ruc}-{tipo_doc}-{batch_correlativo}"
     return f"{ruc}-{tipo_doc}-{payload.get('serie')}-{payload.get('correlativo')}"

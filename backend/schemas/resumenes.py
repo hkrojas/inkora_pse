@@ -13,6 +13,7 @@ from schemas._base import StrictInputModel
 
 _DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _SERIE_NRO_RE = re.compile(r"^[A-Z0-9]{4}-\d{1,8}$")
+_BATCH_CORRELATIVO_RE = re.compile(r"^\d{8}-\d+(?:-\d+)?$")
 
 
 def _normalize_datetime(value: Any) -> Any:
@@ -120,7 +121,7 @@ class ResumenDiarioDetalleCreate(StrictInputModel):
 
 
 class ResumenDiarioCreate(StrictInputModel):
-    correlativo: str = Field(..., min_length=1, max_length=8)
+    correlativo: str = Field(..., min_length=1, max_length=24)
     fecGeneracion: datetime
     fecResumen: datetime
     moneda: str = Field(default="PEN", min_length=3, max_length=3)
@@ -136,9 +137,9 @@ class ResumenDiarioCreate(StrictInputModel):
     def normalize_correlativo(cls, value: Any) -> str:
         normalized = str(value or "").strip().upper()
         if normalized.startswith("RC-"):
-            normalized = normalized.split("-")[-1]
-        if not normalized.isdigit():
-            raise ValueError("El correlativo del resumen debe ser numerico; ApisPeru construye el prefijo RC.")
+            normalized = normalized[3:]
+        if not (normalized.isdigit() or _BATCH_CORRELATIVO_RE.match(normalized)):
+            raise ValueError("El correlativo del resumen debe ser numerico o usar formato RC-YYYYMMDD-N.")
         return normalized
 
     @field_validator("moneda")
