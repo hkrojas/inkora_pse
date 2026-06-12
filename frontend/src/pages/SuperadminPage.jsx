@@ -137,6 +137,141 @@ function SectionHeader({ kicker, title, copy }) {
   );
 }
 
+function SmartPseCreateDrawer({
+  open,
+  form,
+  saving,
+  lookupLoading,
+  onClose,
+  onField,
+  onLookupRuc,
+  onSubmit,
+}) {
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title="Crear empresa Smart PSE"
+      subtitle="Alta remota CPE sin exponer credenciales ni activar SUNAT real."
+      icon={<Building2 size={18} />}
+      footer={(
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            form="smartpse-remote-company-form"
+            disabled={saving}
+            className="btn-primary flex items-center gap-2"
+          >
+            {saving ? <Spinner size="sm" /> : null}
+            Crear empresa
+          </button>
+        </>
+      )}
+    >
+      <form id="smartpse-remote-company-form" onSubmit={onSubmit} className="drawer-editor-form">
+        <section className="drawer-editor-section">
+          <div className="drawer-editor-section-header">
+            <div>
+              <p className="page-kicker">Identidad fiscal</p>
+              <h4>Empresa remota</h4>
+            </div>
+          </div>
+          <p className="drawer-editor-section-intro">
+            Consulta el RUC para completar la razon social antes de crear la empresa en Smart PSE.
+          </p>
+
+          <div className="smartpse-create-grid">
+            <div>
+              <label className="label" htmlFor="smartpse-create-ruc">RUC *</label>
+              <div className="smartpse-create-ruc-row">
+                <input
+                  id="smartpse-create-ruc"
+                  className="input font-mono"
+                  value={form.ruc}
+                  maxLength={11}
+                  inputMode="numeric"
+                  onChange={onField('ruc')}
+                  placeholder="20123456789"
+                  required
+                />
+                <button
+                  type="button"
+                  className="btn-secondary whitespace-nowrap"
+                  disabled={lookupLoading || form.ruc.length !== 11}
+                  onClick={onLookupRuc}
+                >
+                  {lookupLoading ? 'Consultando...' : 'Consultar RUC'}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="label" htmlFor="smartpse-create-name">Razon social *</label>
+              <input
+                id="smartpse-create-name"
+                className="input"
+                value={form.razon_social}
+                onChange={onField('razon_social')}
+                placeholder="Razon social registrada"
+                required
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="drawer-editor-section">
+          <div className="drawer-editor-section-header">
+            <div>
+              <p className="page-kicker">Operacion CPE</p>
+              <h4>Ambiente y vigencia</h4>
+            </div>
+          </div>
+          <p className="drawer-editor-section-intro">
+            Produccion queda como preparacion administrativa; la emision real sigue bloqueada mientras FISCAL_ENV no sea production.
+          </p>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="label">Ambiente</label>
+              <CustomSelect
+                value={form.environment}
+                onChange={onField('environment')}
+                options={[
+                  { value: 'demo', label: 'Demo' },
+                  { value: 'produccion', label: 'Produccion preparada' },
+                ]}
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="smartpse-create-start">Inicio</label>
+              <input
+                id="smartpse-create-start"
+                type="date"
+                className="input"
+                value={form.start_date}
+                onChange={onField('start_date')}
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="smartpse-create-end">Fin</label>
+              <input
+                id="smartpse-create-end"
+                type="date"
+                className="input"
+                value={form.end_date}
+                onChange={onField('end_date')}
+              />
+            </div>
+          </div>
+        </section>
+      </form>
+    </Drawer>
+  );
+}
+
 function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
@@ -2086,6 +2221,7 @@ export default function SuperadminPage() {
   const [smartPseCompanyTotal, setSmartPseCompanyTotal] = useState(0);
   const [smartPseCompanyReloadKey, setSmartPseCompanyReloadKey] = useState(0);
   const [showSmartPseCreate, setShowSmartPseCreate] = useState(false);
+  const [smartPseCreateLookupLoading, setSmartPseCreateLookupLoading] = useState(false);
   const [smartPseCreateSaving, setSmartPseCreateSaving] = useState(false);
   const [smartPseSyncAllBusy, setSmartPseSyncAllBusy] = useState(false);
   const [smartPseSyncAllResult, setSmartPseSyncAllResult] = useState(null);
@@ -2211,6 +2347,28 @@ export default function SuperadminPage() {
       ...current,
       [key]: key === 'ruc' ? sanitizeRuc(value) : value,
     }));
+  };
+
+  const handleSmartPseCreateLookupRuc = async () => {
+    if (smartPseCreateForm.ruc.length !== 11) {
+      toast('Ingresa un RUC valido de 11 digitos', 'error');
+      return;
+    }
+
+    setSmartPseCreateLookupLoading(true);
+    try {
+      const data = await svc.consultarDocumento(smartPseCreateForm.ruc);
+      const fields = getTenantLookupFields(data);
+      setSmartPseCreateForm((current) => ({
+        ...current,
+        razon_social: fields.business_name || current.razon_social,
+      }));
+      toast('Razon social completada desde SUNAT');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setSmartPseCreateLookupLoading(false);
+    }
   };
 
   const handleCreateSmartPseCompany = async (event) => {
@@ -2448,7 +2606,7 @@ export default function SuperadminPage() {
             <button
               type="button"
               className="btn flex items-center gap-2"
-              onClick={() => setShowSmartPseCreate((value) => !value)}
+              onClick={() => setShowSmartPseCreate(true)}
             >
               <Plus className="h-4 w-4" />
               Crear empresa remota
@@ -2456,7 +2614,7 @@ export default function SuperadminPage() {
           </div>
         </div>
 
-        <div className="superadmin-filter-bar">
+        <div className="superadmin-filter-bar smartpse-company-filter">
           <label className="search-box">
             <Search size={16} />
             <input
@@ -2474,70 +2632,6 @@ export default function SuperadminPage() {
           </div>
         </div>
 
-        {showSmartPseCreate ? (
-          <form onSubmit={handleCreateSmartPseCompany} className="border-t border-[var(--border-subtle)] p-4">
-            <div className="grid gap-4 md:grid-cols-[160px_minmax(0,1fr)_180px_160px_160px]">
-              <div>
-                <label className="label" htmlFor="smartpse-create-ruc">RUC remoto</label>
-                <input
-                  id="smartpse-create-ruc"
-                  className="input font-mono"
-                  value={smartPseCreateForm.ruc}
-                  maxLength={11}
-                  onChange={handleSmartPseCreateField('ruc')}
-                  required
-                />
-              </div>
-              <div>
-                <label className="label" htmlFor="smartpse-create-name">Razon social remota</label>
-                <input
-                  id="smartpse-create-name"
-                  className="input"
-                  value={smartPseCreateForm.razon_social}
-                  onChange={handleSmartPseCreateField('razon_social')}
-                  required
-                />
-              </div>
-              <div>
-                <label className="label">Ambiente</label>
-                <CustomSelect
-                  value={smartPseCreateForm.environment}
-                  onChange={handleSmartPseCreateField('environment')}
-                  options={[
-                    { value: 'demo', label: 'Demo' },
-                    { value: 'produccion', label: 'Produccion preparada' },
-                  ]}
-                />
-              </div>
-              <div>
-                <label className="label" htmlFor="smartpse-create-start">Inicio</label>
-                <input
-                  id="smartpse-create-start"
-                  type="date"
-                  className="input"
-                  value={smartPseCreateForm.start_date}
-                  onChange={handleSmartPseCreateField('start_date')}
-                />
-              </div>
-              <div>
-                <label className="label" htmlFor="smartpse-create-end">Fin</label>
-                <input
-                  id="smartpse-create-end"
-                  type="date"
-                  className="input"
-                  value={smartPseCreateForm.end_date}
-                  onChange={handleSmartPseCreateField('end_date')}
-                />
-              </div>
-            </div>
-            <div className="mt-3 flex justify-end">
-              <button type="submit" className="btn-primary" disabled={smartPseCreateSaving}>
-                {smartPseCreateSaving ? 'Creando...' : 'Crear empresa'}
-              </button>
-            </div>
-          </form>
-        ) : null}
-
         {smartPseSyncAllResult ? (
           <div className="mx-4 mb-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-3 text-sm text-[var(--text-secondary)]">
             Sync masivo: <strong>{smartPseSyncAllResult.synced || 0}</strong> sincronizadas,
@@ -2545,51 +2639,73 @@ export default function SuperadminPage() {
           </div>
         ) : null}
 
-        <div className="grid gap-3 border-t border-[var(--border-subtle)] p-4 lg:grid-cols-3">
+        <div className="smartpse-company-list">
           {smartPseCompaniesLoading ? (
-            <div className="col-span-full flex justify-center py-6">
+            <div className="flex justify-center py-6">
               <Spinner size="sm" label="Cargando empresas Smart PSE" />
             </div>
           ) : smartPseCompanies.length === 0 ? (
-            <div className="col-span-full">
-              <EmptyState title="Sin empresas Smart PSE visibles" description="Crea una empresa remota o ajusta la busqueda." />
-            </div>
+            <EmptyState title="Sin empresas Smart PSE visibles" description="Crea una empresa remota o ajusta la busqueda." />
           ) : (
-            smartPseCompanies.map((company) => (
-              <article key={company.id || company.ruc} className="rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-heading text-base font-semibold text-[var(--text-primary)]">
-                      {company.razon_social || 'Empresa sin razon social'}
-                    </p>
-                    <p className="mt-1 font-mono text-xs text-[var(--text-secondary)]">RUC {company.ruc || 'sin dato'}</p>
+            smartPseCompanies.map((company) => {
+              const companyInitials = String(company.razon_social || company.ruc || 'SP')
+                .split(/\s+/)
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((part) => part[0])
+                .join('')
+                .toUpperCase();
+              const isActive = company.active !== false;
+              const isProduction = company.environment === 'produccion';
+
+              return (
+                <article key={company.id || company.ruc} className="smartpse-company-card">
+                  <div className="smartpse-company-main">
+                    <div className="smartpse-company-avatar" aria-hidden="true">
+                      {companyInitials || 'SP'}
+                    </div>
+                    <div className="smartpse-company-copy">
+                      <div className="smartpse-company-title-row">
+                        <h4>{company.razon_social || 'Empresa sin razon social'}</h4>
+                        <Badge variant={isActive ? 'success' : 'danger'}>
+                          {isActive ? 'Activa' : 'Inactiva'}
+                        </Badge>
+                      </div>
+                      <p className="smartpse-company-ruc">
+                        RUC <span>{company.ruc || 'sin dato'}</span>
+                      </p>
+                    </div>
                   </div>
-                  <Badge variant={company.active === false ? 'danger' : 'success'}>
-                    {company.active === false ? 'Inactiva' : 'Activa'}
-                  </Badge>
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-[var(--text-secondary)]">
-                  <div>
-                    <span className="label">Company id</span>
-                    <p className="mt-1 font-mono text-[var(--text-primary)]">{company.id || 'sin dato'}</p>
+
+                  <div className="smartpse-company-details">
+                    <div className="smartpse-company-detail">
+                      <span>Company id</span>
+                      <strong>{company.id || 'sin dato'}</strong>
+                    </div>
+                    <div className="smartpse-company-detail">
+                      <span>Ambiente</span>
+                      <strong>{isProduction ? 'Produccion preparada' : 'Demo'}</strong>
+                    </div>
+                    <div className="smartpse-company-detail">
+                      <span>Estado</span>
+                      <strong>{company.estado || 'Sin estado'}</strong>
+                    </div>
+                    <div className="smartpse-company-detail">
+                      <span>Firmas usadas</span>
+                      <strong>{company.firmas_usadas ?? 'Sin dato'}</strong>
+                    </div>
+                    <div className="smartpse-company-detail">
+                      <span>Inicio</span>
+                      <strong>{toDateInputValue(company.start_date) || 'Sin inicio'}</strong>
+                    </div>
+                    <div className="smartpse-company-detail">
+                      <span>Fin</span>
+                      <strong>{toDateInputValue(company.end_date) || 'Sin fin'}</strong>
+                    </div>
                   </div>
-                  <div>
-                    <span className="label">Ambiente</span>
-                    <p className="mt-1 text-[var(--text-primary)]">
-                      {company.environment === 'produccion' ? 'Produccion preparada' : 'Demo'}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="label">Estado</span>
-                    <p className="mt-1 text-[var(--text-primary)]">{company.estado || 'Sin estado'}</p>
-                  </div>
-                  <div>
-                    <span className="label">Firmas</span>
-                    <p className="mt-1 text-[var(--text-primary)]">{company.firmas_usadas ?? 'Sin dato'}</p>
-                  </div>
-                </div>
-              </article>
-            ))
+                </article>
+              );
+            })
           )}
         </div>
       </section>
@@ -2861,6 +2977,17 @@ export default function SuperadminPage() {
           )}
         </div>
       )}
+
+      <SmartPseCreateDrawer
+        open={showSmartPseCreate}
+        form={smartPseCreateForm}
+        saving={smartPseCreateSaving}
+        lookupLoading={smartPseCreateLookupLoading}
+        onClose={() => setShowSmartPseCreate(false)}
+        onField={handleSmartPseCreateField}
+        onLookupRuc={handleSmartPseCreateLookupRuc}
+        onSubmit={handleCreateSmartPseCompany}
+      />
 
       {editing ? (
         <TenantModal
