@@ -201,6 +201,7 @@ def test_summary_voided_and_reversion_xml_use_batch_filename_prefixes():
 
     assert ET.fromstring(build_summary_document_xml(summary)).tag.endswith("SummaryDocuments")
     summary_root = ET.fromstring(build_summary_document_xml(summary))
+    assert summary_root.find("./cbc:ID", NS).text == "RC-20260505-001"
     assert summary_root.find("./cac:AccountingSupplierParty/cbc:CustomerAssignedAccountID", NS).text == "20123456789"
     summary_ns = {**NS, "sac": "urn:sunat:names:specification:ubl:peru:schema:xsd:SunatAggregateComponents-1"}
     assert summary_root.find("./sac:SummaryDocumentsLine/cac:Status/cbc:ConditionCode", summary_ns).text == "1"
@@ -208,8 +209,39 @@ def test_summary_voided_and_reversion_xml_use_batch_filename_prefixes():
     assert summary_root.find("./sac:SummaryDocumentsLine/cac:TaxTotal/cbc:TaxAmount", summary_ns).text == "18.00"
     voided_root = ET.fromstring(build_voided_document_xml(voided))
     assert voided_root.tag.endswith("VoidedDocuments")
+    assert voided_root.find("./cbc:ID", NS).text == "RA-20260505-001"
     assert voided_root.find("./cac:AccountingSupplierParty/cbc:CustomerAssignedAccountID", NS).text == "20123456789"
-    assert ET.fromstring(build_voided_document_xml(reversion)).tag.endswith("VoidedDocuments")
+    reversion_root = ET.fromstring(build_voided_document_xml(reversion))
+    assert reversion_root.tag.endswith("VoidedDocuments")
+    assert reversion_root.find("./cbc:ID", NS).text == "RR-20260505-001"
     assert build_smartpse_filename(summary) == "20123456789-RC-20260505-001"
     assert build_smartpse_filename(voided) == "20123456789-RA-20260505-001"
     assert build_smartpse_filename(reversion) == "20123456789-RR-20260505-001"
+
+
+def test_batch_xml_and_filename_add_reference_date_for_numeric_correlativo():
+    company = {"ruc": "20123456789", "razonSocial": "INKORA TEST SAC"}
+    summary = {
+        "tipoDoc": "RC",
+        "correlativo": "1",
+        "fecGeneracion": "2026-05-04T00:00:00-05:00",
+        "fecResumen": "2026-05-05T00:00:00-05:00",
+        "company": company,
+        "details": [{"tipoDoc": "03", "serieNro": "B001-000001", "estado": "1", "total": 118}],
+    }
+    voided = {
+        "tipoDoc": "RA",
+        "correlativo": "2",
+        "fecGeneracion": "2026-05-04T00:00:00-05:00",
+        "fecComunicacion": "2026-05-06T00:00:00-05:00",
+        "company": company,
+        "details": [{"tipoDoc": "01", "serie": "F001", "correlativo": "000001", "desMotivoBaja": "ERROR"}],
+    }
+
+    summary_root = ET.fromstring(build_summary_document_xml(summary))
+    voided_root = ET.fromstring(build_voided_document_xml(voided))
+
+    assert summary_root.find("./cbc:ID", NS).text == "RC-20260505-00001"
+    assert voided_root.find("./cbc:ID", NS).text == "RA-20260506-00002"
+    assert build_smartpse_filename(summary) == "20123456789-RC-20260505-00001"
+    assert build_smartpse_filename(voided) == "20123456789-RA-20260506-00002"

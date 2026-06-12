@@ -3,6 +3,8 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from schemas.resumenes import ResumenDiarioCreate
+from schemas.reversiones import ReversionCreate
 from services import facturacion_service
 
 
@@ -41,6 +43,43 @@ def _mock_user():
         bank_accounts=[],
     )
     return SimpleNamespace(tenant=tenant)
+
+
+def test_resumen_schema_acepta_correlativo_completo_rc():
+    resumen = ResumenDiarioCreate(
+        correlativo="RC-20260501-1",
+        fecGeneracion="2026-05-01",
+        fecResumen="2026-05-01",
+        details=[
+            {
+                "tipoDoc": "03",
+                "serieNro": "B001-1",
+                "total": "118.00",
+                "mtoOperGravadas": "100.00",
+                "mtoIGV": "18.00",
+            }
+        ],
+    )
+
+    assert resumen.correlativo == "20260501-1"
+
+
+def test_reversion_schema_acepta_correlativo_completo_rr():
+    reversion = ReversionCreate(
+        correlativo="RR-20260502-1",
+        fecGeneracion="2026-05-01",
+        fecComunicacion="2026-05-02",
+        details=[
+            {
+                "tipoDoc": "20",
+                "serie": "R001",
+                "correlativo": "122",
+                "desMotivoBaja": "error de sistema",
+            }
+        ],
+    )
+
+    assert reversion.correlativo == "20260502-1"
 
 
 def _smartpse_accepted(*, tag: str = "Invoice", description: str = "Aceptado"):
@@ -197,13 +236,13 @@ def test_resumen_diario_payload_usa_contrato_apisperu():
 
     result = facturacion_service.build_resumen_diario_payload(payload, _mock_user())
 
-    assert result["correlativo"] == "001"
+    assert result["correlativo"] == "20260501-001"
     assert result["fecGeneracion"] == "2026-05-01T00:00:00-05:00"
     assert result["fecResumen"] == "2026-05-01T00:00:00-05:00"
     assert result["moneda"] == "PEN"
     assert result["company"]["ruc"] == "20100100100"
     assert result["details"][0]["tipoDoc"] == "03"
-    assert result["details"][0]["serieNro"] == "B001-1"
+    assert result["details"][0]["serieNro"] == "B001-000001"
     assert result["details"][0]["total"] == Decimal("118.00")
 
 
@@ -235,6 +274,10 @@ def test_emitir_resumen_diario_con_ticket_queda_pendiente_sin_polling():
     assert result["pending"] is True
     assert result["ticket"] == "20260501000001"
     assert fake_client.consult_calls == []
+    _, filename, xml_content, _ = fake_client.process_calls[0]
+    assert filename == "20100100100-RC-20260501-00001"
+    assert b"RC-20260501-00001" in xml_content
+    assert b"B001-000001" in xml_content
 
 
 def test_retencion_payload_usa_contrato_apisperu():
@@ -338,7 +381,7 @@ def test_reversion_payload_usa_contrato_apisperu():
 
     result = facturacion_service.build_reversion_payload(payload, _mock_user())
 
-    assert result["correlativo"] == "001"
+    assert result["correlativo"] == "20260502-001"
     assert result["fecGeneracion"] == "2026-05-01T00:00:00-05:00"
     assert result["fecComunicacion"] == "2026-05-02T00:00:00-05:00"
     assert result["company"]["ruc"] == "20100100100"
@@ -373,6 +416,9 @@ def test_emitir_reversion_puede_guardar_ticket_sin_polling():
     assert result["pending"] is True
     assert result["ticket"] == "20260502000001"
     assert fake_client.consult_calls == []
+    _, filename, xml_content, _ = fake_client.process_calls[0]
+    assert filename == "20100100100-RR-20260502-00001"
+    assert b"RR-20260502-00001" in xml_content
 
 
 def test_aplicar_detraccion_usa_tipo_operacion_1001():

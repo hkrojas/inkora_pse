@@ -17,6 +17,7 @@ Ejecutar:
 
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -75,10 +76,12 @@ class _FakeSmartPSEClient:
         self.process_responses = list(process_responses or [_smartpse_accepted()])
         self.consult_responses = list(consult_responses or [])
         self.process_calls = []
+        self.process_kwargs = []
         self.consult_calls = []
 
-    def process_xml(self, tenant, nombre_archivo, xml_content, *, demo=False, **_kwargs):
+    def process_xml(self, tenant, nombre_archivo, xml_content, *, demo=False, **kwargs):
         self.process_calls.append((tenant, nombre_archivo, xml_content, demo))
+        self.process_kwargs.append(kwargs)
         response = self.process_responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -351,8 +354,9 @@ class TestApisPeruDocumentosMatrix:
             result = facturacion_service.emitir_resumen_diario(payload, user)
 
         _, filename, xml_content, _ = fake_client.process_calls[0]
-        assert filename.startswith(f"{_filename_ruc(tenant)}-RC-")
+        assert filename == f"{_filename_ruc(tenant)}-RC-20260411-00001"
         assert b"SummaryDocuments" in xml_content
+        assert b"RC-20260411-00001" in xml_content
         assert fake_client.consult_calls == []
         assert result["success"] is True
         assert result["pending"] is True
@@ -375,8 +379,9 @@ class TestApisPeruDocumentosMatrix:
             )
 
         _, filename, xml_content, _ = fake_client.process_calls[0]
-        assert filename.startswith(f"{_filename_ruc(fiscal.tenant)}-RA-")
+        assert re.match(rf"^{_filename_ruc(fiscal.tenant)}-RA-\d{{8}}-\d{{5}}$", filename)
         assert b"DocumentTypeCode" in xml_content
+        assert b"RA-" in xml_content
         assert b"ERROR EN CALCULOS" in xml_content
         assert fake_client.consult_calls == []
         assert result["success"] is True
@@ -400,8 +405,10 @@ class TestApisPeruDocumentosMatrix:
             )
 
         _, filename, xml_content, _ = fake_client.process_calls[0]
-        assert filename.startswith(f"{_filename_ruc(boleta.tenant)}-RC-")
+        assert re.match(rf"^{_filename_ruc(boleta.tenant)}-RC-\d{{8}}-\d{{5}}$", filename)
         assert b"SummaryDocuments" in xml_content
+        assert b"RC-" in xml_content
+        assert facturacion_service._document_number(boleta).encode("utf-8") in xml_content
         assert fake_client.consult_calls == []
         assert result["success"] is True
         assert result["pending"] is True
@@ -528,8 +535,9 @@ class TestApisPeruDocumentosMatrix:
             result = facturacion_service.emitir_reversion(payload, user)
 
         _, filename, xml_content, _ = fake_client.process_calls[0]
-        assert filename.startswith(f"{_filename_ruc(tenant)}-RR-")
+        assert filename == f"{_filename_ruc(tenant)}-RR-20260411-00001"
         assert b"VoidedDocuments" in xml_content
+        assert b"RR-20260411-00001" in xml_content
         assert fake_client.consult_calls[0][1] == filename
         assert result["success"] is True
         assert result["ticket"] == "reversion-1"
@@ -607,7 +615,8 @@ class TestApisPeruDocumentosMatrix:
         )
         assert detail["desMotivoBaja"] == "ANULACION TEST"
         assert detail["tipoDoc"] == "03"
-        assert detail["serieNro"] == "B001-1"
+        assert detail["serieNro"] == "B001-000001"
+        assert re.match(r"^\d{8}-\d{5}$", payload["correlativo"])
 
     def test_nota_download_payload_incluye_motivo_y_documento_afectado(self, db_session):
         """_build_download_payload para nota 07/08 debe incluir datos requeridos por /note/pdf."""

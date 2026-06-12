@@ -338,10 +338,19 @@ def _current_issue_datetime(value: datetime | None = None, *, plus_minutes: int 
     return issued_at.replace(microsecond=0).isoformat()
 
 
-def _build_batch_correlativo() -> str:
+def _build_batch_correlativo(reference_datetime=None) -> str:
     now = datetime.now()
     seconds_of_day = now.hour * 3600 + now.minute * 60 + now.second
-    return str(seconds_of_day).zfill(5)
+    reference = reference_datetime or now.isoformat()
+    return smartpse_ubl_service.normalize_batch_correlativo(
+        {
+            "correlativo": str(seconds_of_day).zfill(5),
+            "fecGeneracion": reference,
+            "fecResumen": reference,
+            "fecComunicacion": reference,
+        },
+        "RC",
+    )
 
 
 def _document_number(documento) -> str:
@@ -935,10 +944,13 @@ def _prepare_smartpse_payload(payload: dict, endpoint: str) -> dict:
         prepared["tipoDoc"] = "09"
     elif endpoint == "/summary/send":
         prepared["tipoDoc"] = "RC"
+        prepared["correlativo"] = smartpse_ubl_service.normalize_batch_correlativo(prepared, "RC")
     elif endpoint == "/voided/send":
         prepared["tipoDoc"] = "RA"
+        prepared["correlativo"] = smartpse_ubl_service.normalize_batch_correlativo(prepared, "RA")
     elif endpoint == "/reversion/send":
         prepared["tipoDoc"] = "RR"
+        prepared["correlativo"] = smartpse_ubl_service.normalize_batch_correlativo(prepared, "RR")
     elif endpoint in {"/retention/send", "/perception/send"}:
         raise FacturacionException(
             "Smart PSE v1 no esta habilitado para retenciones/percepciones en Inkora."
@@ -1153,13 +1165,13 @@ def _build_summary_payload(comprobante, motivo: str, user) -> dict:
     return {
         "fecGeneracion": fecha_operacion,
         "fecResumen": fecha_operacion,
-        "correlativo": _build_batch_correlativo(),
+        "correlativo": _build_batch_correlativo(fecha_operacion),
         "moneda": comprobante.moneda or "PEN",
         "company": _build_company_payload(user),
         "details": [
             {
                 "tipoDoc": comprobante.tipo_comprobante,
-                "serieNro": f"{comprobante.serie}-{comprobante.correlativo}",
+                "serieNro": _document_number(comprobante),
                 "estado": "3",
                 "clienteTipo": obtener_tipo_documento_codigo(getattr(cliente, "tipo_documento", None)),
                 "clienteNro": str(getattr(cliente, "numero_documento", "00000000") or "00000000"),
@@ -1182,10 +1194,12 @@ def _build_summary_payload(comprobante, motivo: str, user) -> dict:
 
 
 def anular_comprobante(comprobante: models.Cotizacion, motivo: str, user: models.User):
+    fecha_generacion = _current_issue_datetime()
+    fecha_comunicacion = _current_issue_datetime(plus_minutes=1)
     payload = {
-        "correlativo": _build_batch_correlativo(),
-        "fecGeneracion": _current_issue_datetime(),
-        "fecComunicacion": _current_issue_datetime(plus_minutes=1),
+        "correlativo": _build_batch_correlativo(fecha_comunicacion),
+        "fecGeneracion": fecha_generacion,
+        "fecComunicacion": fecha_comunicacion,
         "company": _build_company_payload(user),
         "details": [
             {
@@ -1411,7 +1425,10 @@ def build_resumen_diario_payload(payload: dict, user) -> dict:
     prepared["fecGeneracion"] = _summary_datetime(prepared.get("fecGeneracion"))
     prepared["fecResumen"] = _summary_datetime(prepared.get("fecResumen"))
     correlativo = str(prepared.get("correlativo") or "").strip().upper()
-    prepared["correlativo"] = correlativo.split("-")[-1] if correlativo.startswith("RC-") else correlativo
+    prepared["correlativo"] = smartpse_ubl_service.normalize_batch_correlativo(
+        {**prepared, "correlativo": correlativo},
+        "RC",
+    )
 
     normalized_details = []
     for detail in prepared.get("details") or []:
@@ -1432,7 +1449,12 @@ def build_resumen_diario_payload(payload: dict, user) -> dict:
         ):
             normalized[key] = calculations.redondear(normalized.get(key, 0))
         normalized["tipoDoc"] = str(normalized.get("tipoDoc") or "03").zfill(2)
-        normalized["serieNro"] = str(normalized.get("serieNro") or "").strip().upper()
+        serie_nro = str(normalized.get("serieNro") or "").strip().upper()
+        if "-" in serie_nro:
+            serie, numero = serie_nro.split("-", 1)
+            if numero.isdigit():
+                serie_nro = f"{serie}-{numero.zfill(6)}"
+        normalized["serieNro"] = serie_nro
         normalized["estado"] = str(normalized.get("estado") or "1").strip()
         normalized["clienteTipo"] = str(normalized.get("clienteTipo") or "0").strip()
         normalized["clienteNro"] = str(normalized.get("clienteNro") or "00000000").strip()
@@ -1665,7 +1687,10 @@ def build_reversion_payload(payload: dict, user) -> dict:
     prepared["fecGeneracion"] = _summary_datetime(prepared.get("fecGeneracion"))
     prepared["fecComunicacion"] = _summary_datetime(prepared.get("fecComunicacion"))
     correlativo = str(prepared.get("correlativo") or "").strip().upper()
-    prepared["correlativo"] = correlativo.split("-")[-1] if correlativo.startswith("RR-") else correlativo
+    prepared["correlativo"] = smartpse_ubl_service.normalize_batch_correlativo(
+        {**prepared, "correlativo": correlativo},
+        "RR",
+    )
 
     normalized_details = []
     for detail in prepared.get("details") or []:
