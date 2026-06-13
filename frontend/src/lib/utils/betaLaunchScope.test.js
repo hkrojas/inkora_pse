@@ -105,6 +105,22 @@ test('quote product lines search tenant products live by code or name', () => {
   );
 });
 
+test('quote and invoice client edits require explicit catalog update', () => {
+  const upsertSource = readSource('./upsert.js');
+  const quoteSource = readSource('../../pages/CotizacionesPage.jsx');
+  const comprobanteSource = readSource('../../pages/ComprobanteNuevoPage.jsx');
+
+  assert.match(upsertSource, /updateExisting\s*=\s*true/);
+  assert.match(upsertSource, /isDirty\s*&&\s*!updateExisting/);
+  assert.match(upsertSource, /clienteSnapshotFromForm/);
+  assert.match(quoteSource, /Actualizar ficha del cliente/);
+  assert.match(quoteSource, /updateExistingClient/);
+  assert.match(quoteSource, /cliente_snapshot/);
+  assert.match(comprobanteSource, /Actualizar ficha del cliente/);
+  assert.match(comprobanteSource, /updateExistingClient/);
+  assert.match(comprobanteSource, /cliente_snapshot/);
+});
+
 test('payment QR cropper supports direct drag and corner resize', () => {
   const cropperSource = readSource('../../components/settings/PaymentQrCropper.jsx');
 

@@ -24,8 +24,8 @@ Base.metadata.create_all(bind=engine)
 
 
 def _ensure_legacy_sqlite_test_schema():
-    existing = {column["name"] for column in inspect(engine).get_columns("tenants")}
-    required_columns = {
+    tenant_columns = {column["name"] for column in inspect(engine).get_columns("tenants")}
+    tenant_required_columns = {
         "smartpse_remote_active": "BOOLEAN",
         "smartpse_remote_estado": "VARCHAR",
         "smartpse_remote_synced_at": "DATETIME",
@@ -33,10 +33,17 @@ def _ensure_legacy_sqlite_test_schema():
         "smartpse_end_date": "DATETIME",
         "smartpse_firmas_usadas": "INTEGER",
     }
+    cotizacion_columns = {column["name"] for column in inspect(engine).get_columns("cotizaciones")}
+    cotizacion_required_columns = {
+        "cliente_snapshot": "JSON",
+    }
     with engine.begin() as connection:
-        for name, sql_type in required_columns.items():
-            if name not in existing:
+        for name, sql_type in tenant_required_columns.items():
+            if name not in tenant_columns:
                 connection.execute(text(f"ALTER TABLE tenants ADD COLUMN {name} {sql_type}"))
+        for name, sql_type in cotizacion_required_columns.items():
+            if name not in cotizacion_columns:
+                connection.execute(text(f"ALTER TABLE cotizaciones ADD COLUMN {name} {sql_type}"))
 
 
 _ensure_legacy_sqlite_test_schema()

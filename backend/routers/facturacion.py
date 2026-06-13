@@ -29,6 +29,7 @@ from api_dependencies import (
 from api_utils import raise_internal_server_error
 from rate_limit import limiter
 from services import fiscal_artifact_service, pdf_storage_service
+from services.client_snapshot_service import resolve_document_cliente_snapshot
 from services.facturacion_background_service import process_direct_sunat_emission_bg
 from models.tenants import (
     USAGE_LIMIT_KIND_BOLETA,
@@ -570,15 +571,17 @@ def _validar_pre_emision(quote, tipo_comprobante: str):
     if not cliente:
         raise HTTPException(400, "Pre-validacion fallida: La cotizacion no tiene cliente asignado.")
 
+    cliente_snapshot = resolve_document_cliente_snapshot(quote)
+    numero_documento = str(cliente_snapshot.get("numero_documento") or "").strip()
+    tipo_documento = str(cliente_snapshot.get("tipo_documento") or "").strip()
+
     # 2. Documento de identidad del cliente
-    if not cliente.numero_documento or len(cliente.numero_documento.strip()) < 8:
+    if not numero_documento or len(numero_documento) < 8:
         raise HTTPException(
             400,
             "Pre-validacion fallida: El cliente no tiene numero de documento valido (minimo 8 digitos).",
         )
 
-    numero_documento = str(cliente.numero_documento or "").strip()
-    tipo_documento = str(cliente.tipo_documento or "").strip()
     is_ruc = tipo_documento == "6" and len(numero_documento) == 11
     is_dni = tipo_documento == "1" and len(numero_documento) == 8
 
@@ -590,7 +593,7 @@ def _validar_pre_emision(quote, tipo_comprobante: str):
                 (
                     "Pre-validacion fallida: Las Facturas (tipo 01) requieren que el cliente "
                     "tenga RUC (11 digitos, tipo_documento='6'). "
-                    f"Documento actual: {cliente.numero_documento} (tipo {cliente.tipo_documento})."
+                    f"Documento actual: {numero_documento} (tipo {tipo_documento})."
                 ),
             )
     if tipo_comprobante == "03":
@@ -601,7 +604,7 @@ def _validar_pre_emision(quote, tipo_comprobante: str):
                     "Pre-validacion fallida: Las Boletas (tipo 03) solo se emiten a clientes "
                     "con DNI (8 digitos, tipo_documento='1') en el flujo beta. "
                     "Para clientes con RUC 10/20 use Factura (tipo 01). "
-                    f"Documento actual: {cliente.numero_documento} (tipo {cliente.tipo_documento})."
+                    f"Documento actual: {numero_documento} (tipo {tipo_documento})."
                 ),
             )
 

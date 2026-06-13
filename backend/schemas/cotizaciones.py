@@ -77,8 +77,23 @@ class CuotaPagoCreate(BaseModel):
     monto: Decimal = Field(..., gt=0)
 
 
+class ClienteSnapshot(BaseModel):
+    id: Optional[int] = None
+    tipo_documento: Optional[str] = None
+    numero_documento: Optional[str] = None
+    razon_social: Optional[str] = None
+    nombre_comercial: Optional[str] = None
+    direccion: Optional[str] = None
+    ubigeo: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    whatsapp: Optional[str] = None
+    contacto: Optional[str] = None
+
+
 class CotizacionCreate(BaseModel):
     cliente_id: int
+    cliente_snapshot: Optional[ClienteSnapshot] = None
     fecha_emision: Optional[datetime] = None
     fecha_vencimiento: Optional[datetime] = None
     moneda: str = "PEN"
@@ -140,6 +155,7 @@ class CotizacionResponse(BaseModel):
     observaciones: Optional[str] = None
     condicion_pago: Optional[str] = None
     cuotas_pago: List[CuotaPagoCreate] = Field(default_factory=list)
+    cliente_snapshot: Optional[ClienteSnapshot] = None
     cliente: Optional[ClienteResponse] = None
     usuario: Optional[UserResponse] = None
     items: List[CotizacionItemResponse]
@@ -197,6 +213,7 @@ class CotizacionListResponse(BaseModel):
     observaciones: Optional[str] = None
     condicion_pago: Optional[str] = None
     cuotas_pago: List[CuotaPagoCreate] = Field(default_factory=list)
+    cliente_snapshot: Optional[ClienteSnapshot] = None
     cliente: Optional[ClienteResponse] = None
     total_gravada: Decimal
     total_igv: Decimal

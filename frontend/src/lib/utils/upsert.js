@@ -16,17 +16,7 @@ import {
   normalizeSunatUnitCode,
 } from './sunatCatalogs';
 
-/**
- * Create or update a client.
- * @param {{ id: string|null, isNew: boolean, isDirty: boolean, form: object }} clientState
- * @returns {Promise<number>} resolved cliente_id
- */
-export async function upsertCliente({ id, isNew, isDirty, form }) {
-  if (!isNew && !isDirty) {
-    if (!id) throw new Error('No hay cliente seleccionado');
-    return Number(id);
-  }
-
+export function clienteSnapshotFromForm(form = {}) {
   const normalizedForm = {
     ...form,
     numero_documento: normalizeFiscalDocumentNumber(form.tipo_documento, form.numero_documento),
@@ -38,7 +28,8 @@ export async function upsertCliente({ id, isNew, isDirty, form }) {
     throw new Error(clientError);
   }
 
-  const payload = {
+  return {
+    id: normalizedForm.id ? Number(normalizedForm.id) : undefined,
     tipo_documento: normalizedForm.tipo_documento,
     numero_documento: String(normalizedForm.numero_documento || '').trim(),
     razon_social: String(normalizedForm.razon_social || '').trim(),
@@ -48,12 +39,31 @@ export async function upsertCliente({ id, isNew, isDirty, form }) {
     email: String(normalizedForm.email || '').trim(),
     telefono: normalizedForm.telefono,
     whatsapp: normalizedForm.telefono,
-    contacto: '',
+    contacto: String(normalizedForm.contacto || '').trim(),
   };
+}
+
+/**
+ * Create or update a client.
+ * @param {{ id: string|null, isNew: boolean, isDirty: boolean, form: object, updateExisting?: boolean }} clientState
+ * @returns {Promise<number>} resolved cliente_id
+ */
+export async function upsertCliente({ id, isNew, isDirty, form, updateExisting = true }) {
+  if (!isNew && !isDirty) {
+    if (!id) throw new Error('No hay cliente seleccionado');
+    return Number(id);
+  }
+
+  const payload = clienteSnapshotFromForm(form);
 
   if (isNew) {
     const created = await clientesSvc.create(payload);
     return created.id;
+  }
+
+  if (isDirty && !updateExisting) {
+    if (!id) throw new Error('No hay cliente seleccionado');
+    return Number(id);
   }
 
   const updated = await clientesSvc.update(Number(id), payload);

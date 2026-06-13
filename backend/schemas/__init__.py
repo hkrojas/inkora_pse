@@ -92,6 +92,7 @@ from schemas.cotizaciones import (
     CotizacionItemCreate,
     CotizacionItemResponse,
     CuotaPagoCreate,
+    ClienteSnapshot,
     CotizacionCreate,
     CotizacionUpdate,
     CotizacionListResponse,
@@ -228,7 +229,7 @@ __all__ = [
     "ProveedorBase", "ProveedorCreate", "ProveedorUpdate", "ProveedorResponse",
     "OrdenProduccionDetalleResponse", "OrdenProduccionResponse",
     # cotizaciones + pagos
-    "CotizacionItemCreate", "CotizacionItemResponse", "CuotaPagoCreate", "CotizacionCreate", "CotizacionUpdate", "CotizacionListResponse", "CotizacionResponse",
+    "CotizacionItemCreate", "CotizacionItemResponse", "CuotaPagoCreate", "ClienteSnapshot", "CotizacionCreate", "CotizacionUpdate", "CotizacionListResponse", "CotizacionResponse",
     "ClienteDocumentoListResponse", "FiscalDocumentListResponse", "FiscalDocumentPageResponse",
     "NoteReferenceDocumentListResponse", "FiscalNoteListResponse", "FiscalNotePageResponse",
     "PagoCreate", "PagoResponse",

@@ -193,6 +193,25 @@ def test_base_payload_incluye_observacion_y_tipo_operacion_override():
     assert payload["formaPago"]["tipo"] == "Contado"
 
 
+def test_base_payload_prefiere_snapshot_cliente_del_documento():
+    cotizacion = _mock_cotizacion(
+        cliente_snapshot={
+            "tipo_documento": "6",
+            "numero_documento": "20999999991",
+            "razon_social": "Cliente Snapshot Fiscal",
+            "direccion": "Jr. Snapshot Fiscal 321",
+            "ubigeo": "150102",
+        },
+    )
+
+    payload, _ = facturacion_service._base_payload(cotizacion, _mock_user(), "01")
+
+    assert payload["client"]["numDoc"] == "20999999991"
+    assert payload["client"]["rznSocial"] == "Cliente Snapshot Fiscal"
+    assert payload["client"]["address"]["direccion"] == "Jr. Snapshot Fiscal 321"
+    assert payload["client"]["address"]["ubigueo"] == "150102"
+
+
 def test_emitir_factura_respeta_override_de_serie_y_tipo_operacion():
     cotizacion = _mock_cotizacion(serie="F001", correlativo=4)
     fake_client = _FakeSmartPSEClient([_smartpse_accepted(tag="Invoice")])

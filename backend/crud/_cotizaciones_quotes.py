@@ -20,6 +20,7 @@ from crud._cotizaciones_shared import (
     _next_quote_identity,
 )
 from services import calculations
+from services.client_snapshot_service import build_cliente_snapshot
 from services.document_flow_service import (
     DOCUMENT_KIND_QUOTATION,
     DOCUMENT_STATUS_PENDING,
@@ -113,9 +114,16 @@ def _create_cotizacion_inner(
         or getattr(db_cliente, "condicion_pago", None)
     )
     cuotas_pago = _serialize_cuotas_pago(getattr(cotizacion, "cuotas_pago", None))
+    cliente_snapshot = build_cliente_snapshot(
+        db_cliente,
+        getattr(cotizacion, "cliente_snapshot", None).model_dump(exclude_none=False)
+        if getattr(cotizacion, "cliente_snapshot", None)
+        else None,
+    )
 
     db_cotizacion = models.Cotizacion(
         cliente_id=db_cliente.id,
+        cliente_snapshot=cliente_snapshot,
         usuario_id=usuario_id,
         tenant_id=tenant_id,
         fecha_emision=cotizacion.fecha_emision or datetime.now(),
@@ -211,8 +219,15 @@ def update_cotizacion(
         or getattr(db_cliente, "condicion_pago", None)
     )
     cuotas_pago = _serialize_cuotas_pago(getattr(cotizacion, "cuotas_pago", None))
+    cliente_snapshot = build_cliente_snapshot(
+        db_cliente,
+        getattr(cotizacion, "cliente_snapshot", None).model_dump(exclude_none=False)
+        if getattr(cotizacion, "cliente_snapshot", None)
+        else None,
+    )
 
     db_cotizacion.cliente_id = db_cliente.id
+    db_cotizacion.cliente_snapshot = cliente_snapshot
     if cotizacion.fecha_emision is not None:
         db_cotizacion.fecha_emision = cotizacion.fecha_emision
     db_cotizacion.fecha_vencimiento = cotizacion.fecha_vencimiento
@@ -262,6 +277,7 @@ def duplicate_cotizacion(
 
     payload = schemas.CotizacionCreate(
         cliente_id=original.cliente_id,
+        cliente_snapshot=original.cliente_snapshot,
         fecha_vencimiento=original.fecha_vencimiento,
         moneda=original.moneda,
         tipo_comprobante=original.tipo_comprobante or "00",

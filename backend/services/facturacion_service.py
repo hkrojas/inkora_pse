@@ -11,6 +11,7 @@ import models
 from config import settings
 from fiscal_catalogs import tax_affectation_bucket
 from services import calculations
+from services.client_snapshot_service import resolve_document_cliente_snapshot
 from services import fiscal_xml_service
 from services import fiscal_qr_service
 from services import smartpse_client
@@ -309,22 +310,35 @@ def _build_company_payload(user) -> dict:
     }
 
 
-def _build_client_payload(cliente) -> dict:
+def _build_client_payload(cliente, snapshot: dict | None = None) -> dict:
     if not cliente:
         raise FacturacionException("Documento sin cliente asociado.")
 
-    numero_documento = str(getattr(cliente, "numero_documento", "") or "").strip()
+    snapshot = snapshot or {}
+    numero_documento = str(
+        snapshot.get("numero_documento")
+        or getattr(cliente, "numero_documento", "")
+        or ""
+    ).strip()
     if not numero_documento:
         raise FacturacionException("El cliente no tiene numero de documento configurado.")
 
-    razon_social = getattr(cliente, "razon_social", None) or getattr(cliente, "nombre_comercial", None) or "-"
+    razon_social = (
+        snapshot.get("razon_social")
+        or snapshot.get("nombre_comercial")
+        or getattr(cliente, "razon_social", None)
+        or getattr(cliente, "nombre_comercial", None)
+        or "-"
+    )
     return {
-        "tipoDoc": obtener_tipo_documento_codigo(getattr(cliente, "tipo_documento", None)),
+        "tipoDoc": obtener_tipo_documento_codigo(
+            snapshot.get("tipo_documento") or getattr(cliente, "tipo_documento", None)
+        ),
         "numDoc": numero_documento,
         "rznSocial": razon_social,
         "address": _build_address_payload(
-            getattr(cliente, "direccion", None),
-            getattr(cliente, "ubigeo", None),
+            snapshot.get("direccion") or getattr(cliente, "direccion", None),
+            snapshot.get("ubigeo") or getattr(cliente, "ubigeo", None),
         ),
     }
 
@@ -523,7 +537,7 @@ def _base_payload(cotizacion, user, tipo_doc_comprobante, *, tipo_operacion_over
         "fechaEmision": fecha_emision,
         "tipoMoneda": getattr(cotizacion, "moneda", None) or "PEN",
         "company": _build_company_payload(user),
-        "client": _build_client_payload(cliente),
+        "client": _build_client_payload(cliente, resolve_document_cliente_snapshot(cotizacion)),
         "mtoOperGravadas": totales["gravada"],
         "mtoOperExoneradas": totales["exonerada"],
         "mtoOperInafectas": totales["inafecta"],

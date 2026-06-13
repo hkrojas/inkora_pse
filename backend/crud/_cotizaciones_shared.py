@@ -16,6 +16,7 @@ from crud._base import (
 )
 from crud.tenants import get_subscription_by_tenant
 from services import calculations
+from services.client_snapshot_service import build_cliente_snapshot
 from services.document_flow_service import (
     DOCUMENT_KIND_FISCAL_DOCUMENT,
     DOCUMENT_STATUS_PENDING,
@@ -234,6 +235,7 @@ def _build_fiscal_document(
         serie=serie,
         correlativo=nuevo_correlativo,
         cliente_id=quote.cliente_id,
+        cliente_snapshot=quote.cliente_snapshot or build_cliente_snapshot(getattr(quote, "cliente", None)),
         usuario_id=usuario_id,
         tenant_id=quote.tenant_id,
         fecha_emision=quote.fecha_emision or datetime.now(),
@@ -323,6 +325,8 @@ def _build_note_document(
         serie=serie_nota,
         correlativo=nuevo_correlativo,
         cliente_id=doc_afectado.cliente_id,
+        cliente_snapshot=doc_afectado.cliente_snapshot
+        or build_cliente_snapshot(getattr(doc_afectado, "cliente", None)),
         usuario_id=usuario_id,
         tenant_id=doc_afectado.tenant_id,
         moneda=doc_afectado.moneda,

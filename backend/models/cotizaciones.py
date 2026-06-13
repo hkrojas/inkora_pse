@@ -36,6 +36,7 @@ class Cotizacion(Base):
 
     cliente_id = Column(Integer, ForeignKey("clientes.id"))
     cliente = relationship("Cliente", back_populates="cotizaciones")
+    cliente_snapshot = Column(JSON, nullable=True)
 
     usuario_id = Column(Integer, ForeignKey("users.id"))
     usuario = relationship("User", back_populates="cotizaciones")

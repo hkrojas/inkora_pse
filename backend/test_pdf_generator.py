@@ -186,6 +186,25 @@ def test_generar_pdf_cotizacion_crea_binario():
     assert len(buffer.getvalue()) > 0
 
 
+def test_resolve_document_client_data_prefiere_snapshot_sobre_ficha_actual():
+    document = SimpleNamespace(
+        cliente=_fake_cliente(),
+        cliente_snapshot={
+            "razon_social": "Cliente historico PDF",
+            "tipo_documento": "6",
+            "numero_documento": "20999999991",
+            "direccion": "Jr. Historico 789",
+        },
+    )
+
+    client_data = pdf_generator._resolve_document_client_data(document)
+
+    assert client_data["name"] == "Cliente historico PDF"
+    assert client_data["doc_type_label"] == "RUC"
+    assert client_data["doc_number"] == "20999999991"
+    assert client_data["address"] == "Jr. Historico 789"
+
+
 def test_quote_detail_col_widths_expande_codigo_sin_cambiar_ancho_total():
     styles = pdf_generator.getSampleStyleSheet()
     base = styles["Normal"]
@@ -575,6 +594,47 @@ def test_descargar_pdf_interno_devuelve_url_firmada_para_api():
         )
 
     assert payload == {"url": "https://signed.test/interno.pdf"}
+
+
+def test_compartir_cotizacion_usa_contacto_del_snapshot():
+    cotizacion = SimpleNamespace(
+        id=1,
+        uuid_publico="uuid-demo",
+        cliente=_fake_cliente(),
+        cliente_snapshot={
+            "razon_social": "Cliente Snapshot",
+            "tipo_documento": "6",
+            "numero_documento": "20999999991",
+            "email": "snapshot@test.com",
+            "telefono": "987654321",
+            "whatsapp": "987654321",
+        },
+    )
+    tenant = _fake_tenant()
+
+    with patch(
+        "routers.cotizaciones.crud.get_cotizacion",
+        return_value=cotizacion,
+    ), patch(
+        "routers.cotizaciones.comunicacion_service.generar_link_whatsapp",
+        return_value="https://wa.test",
+    ) as whatsapp_link, patch(
+        "routers.cotizaciones.comunicacion_service.generar_link_mailto",
+        return_value="mailto:snapshot@test.com",
+    ) as mailto_link:
+        payload = _run(
+            cotizaciones_router.compartir_cotizacion(
+                1,
+                SimpleNamespace(),
+                SimpleNamespace(tenant=tenant),
+            )
+        )
+
+    whatsapp_link.assert_called_once()
+    assert whatsapp_link.call_args.args[1] == "987654321"
+    mailto_link.assert_called_once()
+    assert mailto_link.call_args.args[1] == "snapshot@test.com"
+    assert payload["whatsapp_link"] == "https://wa.test"
 
 
 def _run(awaitable):

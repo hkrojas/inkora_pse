@@ -18,7 +18,7 @@ import { tenant as tenantSvc } from '../services/tenant';
 import FiscalDocPreview from '../components/documents/FiscalDocPreview';
 import ClientCombobox from '../components/ui/ClientCombobox';
 import ProductLineCell from '../components/ui/ProductLineCell';
-import { upsertCliente, upsertProductos } from '../lib/utils/upsert';
+import { clienteSnapshotFromForm, upsertCliente, upsertProductos } from '../lib/utils/upsert';
 import Spinner from '../components/ui/Spinner';
 import { PageError } from '../components/ui/PageState';
 import Modal from '../components/ui/Modal';
@@ -485,6 +485,7 @@ export default function ComprobanteNuevoPage() {
   const [igvConfirmOpen, setIgvConfirmOpen] = useState(false);
   const [pendingIgv, setPendingIgv] = useState(null);
   const [clienteState, setClienteState] = useState({ isDirty: false, isNew: false });
+  const [updateExistingClient, setUpdateExistingClient] = useState(true);
   const [recentItemKey, setRecentItemKey] = useState(null);
   const fileRef = useRef(null);
 
@@ -493,6 +494,7 @@ export default function ComprobanteNuevoPage() {
   useEffect(() => {
     setForm(createInitialForm(initialType));
     setClienteState({ isDirty: false, isNew: false });
+    setUpdateExistingClient(true);
     setRecentItemKey(null);
   }, [initialType]);
 
@@ -537,6 +539,9 @@ export default function ComprobanteNuevoPage() {
     : 'Boleta: solo cliente con DNI de 8 dígitos en esta beta.';
 
   const setRootField = useCallback((key, value) => {
+    if (key === 'cliente_id' || key === 'tipo_comprobante') {
+      setUpdateExistingClient(true);
+    }
     setForm((current) => {
       if (key === 'condicion_pago') {
         const days = paymentDays(value);
@@ -780,6 +785,7 @@ export default function ComprobanteNuevoPage() {
     const srcItems = resolvedItems || form.items;
     return {
       cliente_id: Number(clienteId),
+      cliente_snapshot: clienteSnapshotFromForm(form.cliente),
       fecha_emision: toApiDate(form.fecha_emision),
       fecha_vencimiento: form.condicion_pago === 'contado'
         ? null
@@ -818,6 +824,7 @@ export default function ComprobanteNuevoPage() {
         isNew: clienteState.isNew,
         isDirty: clienteState.isDirty,
         form: form.cliente,
+        updateExisting: updateExistingClient,
       });
 
       const resolvedItems = await upsertProductos(form.items);
@@ -1165,6 +1172,18 @@ export default function ComprobanteNuevoPage() {
                       {form.enviar_correo ? 'Correo listo' : 'Revisar entrega'}
                     </span>
                   </div>
+                )}
+                {form.cliente_id && clienteState.isDirty && !clienteState.isNew && (
+                  <button
+                    type="button"
+                    className="toggle-chip"
+                    aria-pressed={updateExistingClient}
+                    onClick={() => setUpdateExistingClient((current) => !current)}
+                    style={{ marginTop: '12px' }}
+                  >
+                    <span className={`switch ${updateExistingClient ? 'on' : ''}`} />
+                    Actualizar ficha del cliente
+                  </button>
                 )}
 
                 <div className="document-client-status-grid">

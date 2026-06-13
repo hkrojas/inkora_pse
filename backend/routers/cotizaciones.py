@@ -12,6 +12,7 @@ from api_dependencies import get_current_user, get_db, get_db_tenant
 from config import settings
 from rate_limit import limiter
 from services import pdf_storage_service, storage_service
+from services.client_snapshot_service import resolve_document_cliente_snapshot
 
 router = APIRouter(tags=["cotizaciones"])
 
@@ -212,14 +213,13 @@ async def compartir_cotizacion(
 
     base_url = settings.BACKEND_URL.rstrip("/")
     url_publica = f"{base_url}/public/cotizaciones/{cotizacion.uuid_publico}/pdf"
-    cliente = cotizacion.cliente
+    cliente_snapshot = resolve_document_cliente_snapshot(cotizacion)
     telefono_cliente = (
-        getattr(cliente, "whatsapp", None)
-        or getattr(cliente, "telefono", "")
-        if cliente
-        else ""
+        cliente_snapshot.get("whatsapp")
+        or cliente_snapshot.get("telefono")
+        or ""
     )
-    email_cliente = getattr(cliente, "email", "") if cliente else ""
+    email_cliente = cliente_snapshot.get("email") or ""
     wp_link = comunicacion_service.generar_link_whatsapp(
         cotizacion,
         telefono_cliente,

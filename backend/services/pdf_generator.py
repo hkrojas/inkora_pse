@@ -21,6 +21,7 @@ from reportlab.platypus import Flowable, Image, KeepInFrame, Paragraph, SimpleDo
 
 from services import fiscal_qr_service, fiscal_xml_service
 from services.calculations import TOTAL_PRECISION, calculate_cotizacion_totals_v3, to_decimal
+from services.client_snapshot_service import resolve_document_cliente_snapshot
 from services.quote_observation_service import build_default_observation_lines, parse_quote_observations
 from tenant_access import get_company_bank_accounts
 
@@ -62,6 +63,19 @@ def obtener_etiqueta_tipo_doc(codigo):
         "A": "CED. DIPLOMATICA",
     }
     return mapeo.get(str(codigo), "DOC")
+
+
+def _resolve_document_client_data(document_data) -> dict:
+    snapshot = resolve_document_cliente_snapshot(document_data)
+    return {
+        "name": snapshot.get("razon_social") or snapshot.get("nombre_comercial") or "Cliente General",
+        "doc_type": snapshot.get("tipo_documento") or "0",
+        "doc_type_label": obtener_etiqueta_tipo_doc(snapshot.get("tipo_documento") or "0"),
+        "doc_number": str(snapshot.get("numero_documento") or ""),
+        "address": str(snapshot.get("direccion") or "-"),
+        "email": str(snapshot.get("email") or ""),
+        "phone": str(snapshot.get("telefono") or ""),
+    }
 
 
 def _resolver_titulo_documento(tipo_doc_sunat: str | None, is_comprobante: bool) -> str:
@@ -1159,17 +1173,11 @@ def _build_quote_pdf_buffer(document_data, tenant: models.Tenant):
         base_fecha = _parse_datetime_like(raw_fecha) or datetime.now()
         fecha_vencimiento = (base_fecha + relativedelta(months=1)).strftime("%d/%m/%Y")
 
-    cliente = getattr(document_data, "cliente", None)
-    if cliente:
-        nombre_cliente = getattr(cliente, "razon_social", "") or "Cliente General"
-        tipo_doc_cliente = obtener_etiqueta_tipo_doc(getattr(cliente, "tipo_documento", "1"))
-        nro_doc_cliente = str(getattr(cliente, "numero_documento", "") or "")
-        direccion_cliente = str(getattr(cliente, "direccion", "") or "-").replace("\n", "<br/>")
-    else:
-        nombre_cliente = "Cliente General"
-        tipo_doc_cliente = "DOC"
-        nro_doc_cliente = ""
-        direccion_cliente = "-"
+    client_data = _resolve_document_client_data(document_data)
+    nombre_cliente = client_data["name"]
+    tipo_doc_cliente = client_data["doc_type_label"]
+    nro_doc_cliente = client_data["doc_number"]
+    direccion_cliente = client_data["address"].replace("\n", "<br/>")
 
     line_context = _build_local_line_context(document_data)
     total_gravado_d = to_decimal(line_context["total_gravado"])
@@ -1495,17 +1503,11 @@ def create_pdf_buffer(document_data, tenant: models.Tenant, document_type: str):
         line_context = _build_xml_line_context(parsed_xml)
         monto_en_letras_str = parsed_xml.get("amount_in_words") or ""
     else:
-        cliente = getattr(document_data, "cliente", None)
-        if cliente:
-            nombre_cliente = getattr(cliente, "razon_social", "")
-            tipo_doc_cliente_str = obtener_etiqueta_tipo_doc(getattr(cliente, "tipo_documento", "1"))
-            nro_doc_cliente = str(getattr(cliente, "numero_documento", ""))
-            direccion_cliente = str(getattr(cliente, "direccion", "") or "").replace("\n", "<br/>")
-        else:
-            nombre_cliente = "Cliente General"
-            tipo_doc_cliente_str = "DOC"
-            nro_doc_cliente = "00000000"
-            direccion_cliente = "-"
+        client_data = _resolve_document_client_data(document_data)
+        nombre_cliente = client_data["name"]
+        tipo_doc_cliente_str = client_data["doc_type_label"]
+        nro_doc_cliente = client_data["doc_number"] or "00000000"
+        direccion_cliente = client_data["address"].replace("\n", "<br/>")
         line_context = _build_local_line_context(document_data)
         monto_en_letras_str = ""
 
@@ -1928,17 +1930,11 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         line_context = _build_xml_line_context(parsed_xml)
         monto_en_letras_str = parsed_xml.get("amount_in_words") or ""
     else:
-        cliente = getattr(document_data, "cliente", None)
-        if cliente:
-            nombre_cliente = getattr(cliente, "razon_social", "") or "Cliente General"
-            tipo_doc_cliente = obtener_etiqueta_tipo_doc(getattr(cliente, "tipo_documento", "1"))
-            nro_doc_cliente = str(getattr(cliente, "numero_documento", "") or "")
-            direccion_cliente = str(getattr(cliente, "direccion", "") or "-").replace("\n", "<br/>")
-        else:
-            nombre_cliente = "Cliente General"
-            tipo_doc_cliente = "DOC"
-            nro_doc_cliente = ""
-            direccion_cliente = "-"
+        client_data = _resolve_document_client_data(document_data)
+        nombre_cliente = client_data["name"]
+        tipo_doc_cliente = client_data["doc_type_label"]
+        nro_doc_cliente = client_data["doc_number"]
+        direccion_cliente = client_data["address"].replace("\n", "<br/>")
         line_context = _build_local_line_context(document_data)
         monto_en_letras_str = ""
 

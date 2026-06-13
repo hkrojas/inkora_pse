@@ -54,7 +54,7 @@ import {
   SUNAT_UNIT_OPTIONS,
   normalizeInternalProductCode,
 } from '../lib/utils/sunatCatalogs';
-import { upsertCliente, upsertProductos } from '../lib/utils/upsert';
+import { clienteSnapshotFromForm, upsertCliente, upsertProductos } from '../lib/utils/upsert';
 import { useAuth } from '../context/AuthContext';
 
 // ─── Constantes de dominio ────────────────────────────────────────────────────
@@ -1124,6 +1124,7 @@ function NuevaCotizacionForm({
   const [clienteForm, setClienteForm]   = useState(null);  // current form values from ClientCombobox
   const [clienteDirty, setClienteDirty] = useState(false); // existing client edited
   const [clienteIsNew, setClienteIsNew] = useState(false);
+  const [updateExistingClient, setUpdateExistingClient] = useState(true);
   const [moneda, setMoneda]             = useState('PEN');
   const [condicion, setCondicion]       = useState('contado');
   const [fechaVenc, setFechaVenc]       = useState('');
@@ -1191,9 +1192,19 @@ function NuevaCotizacionForm({
   }, [clienteId, formClientes]);
 
   useEffect(() => {
+    setUpdateExistingClient(true);
+  }, [clienteId]);
+
+  useEffect(() => {
     if (!isEditing) return;
 
-    const nextClient = initialQuote?.cliente || null;
+    const nextClient = initialQuote?.cliente_snapshot
+      ? {
+          ...(initialQuote?.cliente || {}),
+          ...initialQuote.cliente_snapshot,
+          id: initialQuote?.cliente?.id || initialQuote.cliente_snapshot.id,
+        }
+      : initialQuote?.cliente || null;
     const nextItems = (initialQuote?.items?.length ? initialQuote.items : []).map((item) => ({
       producto_id: item.producto_id ? String(item.producto_id) : '',
       codigo: item.codigo_producto || '',
@@ -1209,6 +1220,7 @@ function NuevaCotizacionForm({
     setClienteForm(nextClient ? normalizeFiscalClientForm(nextClient) : null);
     setClienteDirty(false);
     setClienteIsNew(false);
+    setUpdateExistingClient(true);
     setMoneda(initialQuote?.moneda || 'PEN');
     setCondicion(initialQuote?.condicion_pago || 'contado');
     setFechaVenc(toDateInputValue(initialQuote?.fecha_vencimiento));
@@ -1286,6 +1298,7 @@ function NuevaCotizacionForm({
         isNew:   clienteIsNew,
         isDirty: clienteDirty,
         form:    clienteForm || {},
+        updateExisting: updateExistingClient,
       });
 
       // 2. Upsert new products
@@ -1294,6 +1307,7 @@ function NuevaCotizacionForm({
       // 3. Create quote
       onSave({
         cliente_id:        Number(resolvedClienteId),
+        cliente_snapshot:  clienteForm ? clienteSnapshotFromForm(clienteForm) : undefined,
         moneda,
         tipo_comprobante:  '00',
         condicion_pago:    condicion,
@@ -1324,6 +1338,7 @@ function NuevaCotizacionForm({
     setClienteForm(null);
     setClienteDirty(false);
     setClienteIsNew(false);
+    setUpdateExistingClient(true);
     setMoneda('PEN');
     setCondicion('contado');
     setFechaVenc('');
@@ -1399,6 +1414,18 @@ return (
                       </span>
                     </div>
                   </div>
+                )}
+                {clienteId && clienteDirty && !clienteIsNew && (
+                  <button
+                    type="button"
+                    className="toggle-chip"
+                    aria-pressed={updateExistingClient}
+                    onClick={() => setUpdateExistingClient((current) => !current)}
+                    style={{ marginTop: '12px' }}
+                  >
+                    <span className={`switch ${updateExistingClient ? 'on' : ''}`} />
+                    Actualizar ficha del cliente
+                  </button>
                 )}
                 <div className="form-grid" style={{ marginTop: '16px' }}>
                   <div className="field span-2">

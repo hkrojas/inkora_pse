@@ -109,6 +109,85 @@ def test_actualizar_cotizacion_pendiente_recalcula_y_limpia_pdf(db_session):
     assert updated.sunat_xml_url is None
 
 
+def test_crear_cotizacion_persiste_snapshot_cliente_del_documento(db_session):
+    tenant = make_tenant(db_session, "COTSNAP")
+    user = make_user(db_session, tenant, email="cotsnap@test.com")
+    cliente = make_cliente(db_session, tenant, "COTSNAP", numero_documento="20999999991")
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            cliente_snapshot={
+                "tipo_documento": "6",
+                "numero_documento": cliente.numero_documento,
+                "razon_social": "Cliente editado solo para documento",
+                "direccion": "Jr. Snapshot 123",
+                "email": "snapshot@test.com",
+                "telefono": "987654321",
+                "whatsapp": "987654321",
+            },
+            moneda="PEN",
+            tipo_comprobante="00",
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Servicio con snapshot",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    assert quote.cliente_snapshot["razon_social"] == "Cliente editado solo para documento"
+    assert quote.cliente_snapshot["direccion"] == "Jr. Snapshot 123"
+    assert quote.cliente_snapshot["email"] == "snapshot@test.com"
+    assert quote.cliente.razon_social == "Cliente COTSNAP"
+
+    payload = schemas.CotizacionResponse.model_validate(
+        quote,
+        from_attributes=True,
+    ).model_dump()
+    assert payload["cliente_snapshot"]["telefono"] == "987654321"
+
+
+def test_facturar_cotizacion_copia_snapshot_cliente(db_session):
+    tenant = make_tenant(db_session, "COTSNAPF")
+    user = make_user(db_session, tenant, email="cotsnapf@test.com")
+    cliente = make_cliente(db_session, tenant, "COTSNAPF", numero_documento="20999999992")
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            cliente_snapshot={
+                "tipo_documento": "6",
+                "numero_documento": cliente.numero_documento,
+                "razon_social": "Cliente fiscal congelado",
+                "direccion": "Av. Fiscal Snapshot 456",
+            },
+            moneda="PEN",
+            tipo_comprobante="00",
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Servicio facturable",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+
+    assert fiscal.cliente_snapshot == quote.cliente_snapshot
+    assert fiscal.cliente_snapshot["razon_social"] == "Cliente fiscal congelado"
+
+
 def test_actualizar_cotizacion_rechaza_si_tiene_pagos(db_session):
     tenant = make_tenant(db_session, "COT02P")
     user = make_user(db_session, tenant, email="cot02p@test.com")
