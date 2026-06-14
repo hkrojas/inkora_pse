@@ -167,8 +167,10 @@ def get_tenant_users_with_metrics(db: Session, tenant_id: int) -> List[dict]:
             "rol": u.rol,
             "is_superadmin": u.is_superadmin,
             "is_active": getattr(u, "is_active", True),
+            "must_change_password": getattr(u, "must_change_password", False),
+            "tenant_id": u.tenant_id,
             "last_login_at": getattr(u, "last_login_at", None),
-            "created_at": None,
+            "password_changed_at": getattr(u, "password_changed_at", None),
             "metrics": {
                 "cotizaciones_total": cot_total.get(uid, 0),
                 "cotizaciones_mes_actual": cot_mes.get(uid, 0),
