@@ -194,6 +194,41 @@ def test_delete_superadmin_users_funciona_solo_con_superadmin_real_y_audita(db_s
     assert "superadmin.user.deleted" in _audit_actions(db_session)
 
 
+def test_superadmin_crea_y_lista_usuarios_de_tenant_sin_error_de_schema(db_session):
+    tenant = make_tenant(db_session, "SA08")
+    superadmin = make_user(
+        db_session,
+        tenant,
+        email="real-sa08@test.com",
+        rol=ROLE_SUPERADMIN,
+        is_superadmin=True,
+    )
+    client = _client_for_user(db_session, superadmin, superadmin_router)
+
+    create_response = client.post(
+        f"/superadmin/tenants/{tenant.id}/users",
+        json={
+            "email": "operador-sa08@test.com",
+            "nombre_completo": "Operador SA08",
+            "rol": ROLE_VENDEDOR,
+        },
+    )
+
+    assert create_response.status_code == 201
+    created = create_response.json()["user"]
+    assert created["tenant_id"] == tenant.id
+    assert created["must_change_password"] is True
+
+    detail_response = client.get(f"/superadmin/tenants/{tenant.id}/users-detail")
+
+    assert detail_response.status_code == 200
+    users = detail_response.json()
+    target = next(user for user in users if user["email"] == "operador-sa08@test.com")
+    assert target["tenant_id"] == tenant.id
+    assert target["must_change_password"] is True
+    assert target["metrics"]["cotizaciones_total"] == 0
+
+
 def test_frontend_superadmin_visibility_usa_solo_is_superadmin():
     files = [
         ROOT / "frontend" / "src" / "pages" / "SuperadminPage.jsx",
