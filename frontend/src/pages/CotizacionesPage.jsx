@@ -54,7 +54,8 @@ import {
   SUNAT_UNIT_OPTIONS,
   normalizeInternalProductCode,
 } from '../lib/utils/sunatCatalogs';
-import { clienteSnapshotFromForm, upsertCliente, upsertProductos } from '../lib/utils/upsert';
+import { getCatalogProductOverrides, hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
+import { clienteSnapshotFromForm, syncCatalogProductos, upsertCliente, upsertProductos } from '../lib/utils/upsert';
 import { useAuth } from '../context/AuthContext';
 
 // ─── Constantes de dominio ────────────────────────────────────────────────────
@@ -1120,6 +1121,7 @@ function NuevaCotizacionForm({
     unidad_medida: 'NIU',
     tipo_afectacion_igv: '10',
     _isNew: false,
+    _catalogSnapshot: null,
   });
 
   const [clienteId, setClienteId]       = useState('');
@@ -1294,6 +1296,15 @@ function NuevaCotizacionForm({
     }
 
     try {
+      const catalogOverrides = getCatalogProductOverrides(items);
+      const shouldSyncCatalog = catalogOverrides.length > 0
+        ? window.confirm(
+            `Modificaste ${catalogOverrides.length} producto${catalogOverrides.length === 1 ? '' : 's'} del catalogo en esta cotizacion. `
+            + 'Por defecto esos cambios solo afectan este documento. '
+            + '¿Deseas actualizar tambien el catalogo de productos?',
+          )
+        : false;
+
       // 1. Upsert client if needed
       const resolvedClienteId = await upsertCliente({
         id:      clienteId,
@@ -1304,7 +1315,10 @@ function NuevaCotizacionForm({
       });
 
       // 2. Upsert new products
-      const resolvedItems = await upsertProductos(items);
+      const createdItems = await upsertProductos(items, { priceIncludesIgv: true });
+      const resolvedItems = shouldSyncCatalog
+        ? await syncCatalogProductos(createdItems, { priceIncludesIgv: true })
+        : createdItems;
 
       // 3. Create quote
       onSave({
@@ -1486,6 +1500,7 @@ return (
                   </div>
                   {items.map((item, idx) => {
                     const lineTotal = Number(item.cantidad) * Number(item.precio_unitario) || 0;
+                    const hasCatalogOverride = hasCatalogProductOverrides(item);
                     return (
                       <div className="line-row" key={idx}>
                         <div className="product-input">
@@ -1509,7 +1524,12 @@ return (
                           </div>
                         )}
                         <div><input required type="number" min="0.01" step="any" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
-                        <div><input required type="number" min="0.01" step="0.01" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} /></div>
+                        <div className="line-cell-stack">
+                          <input required type="number" min="0.01" step="0.01" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} />
+                          {hasCatalogOverride && (
+                            <span className="line-meta-note">Cambio local. Solo afecta este documento.</span>
+                          )}
+                        </div>
                         <div><input readOnly value="0%" /></div>
                         <div><input readOnly value={`${sym} ${fmt(lineTotal)}`} /></div>
                         <div>{items.length > 1 && <button type="button" className="trash-btn" onClick={() => removeItem(idx)}>×</button>}</div>
@@ -2762,3 +2782,4 @@ function SearchBar({ search, onSearch, showFilters, onToggleFilters, onNewAction
     </div>
   );
 }
+

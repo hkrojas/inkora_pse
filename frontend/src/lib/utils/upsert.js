@@ -15,6 +15,11 @@ import {
   normalizeInternalProductCode,
   normalizeSunatUnitCode,
 } from './sunatCatalogs';
+import {
+  buildCatalogSnapshotFromProduct,
+  buildProductCatalogPayloadFromLine,
+  hasCatalogProductOverrides,
+} from './productCatalogSync';
 
 export function clienteSnapshotFromForm(form = {}) {
   const normalizedForm = {
@@ -76,7 +81,7 @@ export async function upsertCliente({ id, isNew, isDirty, form, updateExisting =
  * @param {Array} items
  * @returns {Promise<Array>}
  */
-export async function upsertProductos(items) {
+export async function upsertProductos(items, { priceIncludesIgv = true } = {}) {
   return Promise.all(
     items.map(async (item) => {
       if (!item._isNew) return item;
@@ -88,13 +93,36 @@ export async function upsertProductos(items) {
         nombre,
         codigo_interno: normalizeInternalProductCode(item.codigo) || undefined,
         precio_unitario: Number(item.precio_unitario) || 1,
-        precio_incluye_igv: true,
+        precio_incluye_igv: priceIncludesIgv,
         unidad_medida: normalizeSunatUnitCode(item.unidad_medida),
         tipo_afectacion_igv: item.tipo_afectacion_igv || '10',
         descripcion: nombre,
       });
 
-      return { ...item, producto_id: String(created.id), _isNew: false };
+      return {
+        ...item,
+        producto_id: String(created.id),
+        _isNew: false,
+        _catalogSnapshot: buildCatalogSnapshotFromProduct(created, { priceIncludesIgv }),
+      };
+    }),
+  );
+}
+
+export async function syncCatalogProductos(items, { priceIncludesIgv = true } = {}) {
+  return Promise.all(
+    items.map(async (item) => {
+      if (!hasCatalogProductOverrides(item)) return item;
+
+      const updated = await productosSvc.update(
+        Number(item.producto_id),
+        buildProductCatalogPayloadFromLine(item, { priceIncludesIgv }),
+      );
+
+      return {
+        ...item,
+        _catalogSnapshot: buildCatalogSnapshotFromProduct(updated, { priceIncludesIgv }),
+      };
     }),
   );
 }

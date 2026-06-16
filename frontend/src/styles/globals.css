@@ -8558,6 +8558,20 @@ textarea.input:focus,
 .trash-btn:hover { background: #fef2f2; color: #ef4444; border-color: #fecaca; }
 
 .line-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 2px 0; flex-wrap: wrap; }
+.line-cell-stack {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.line-meta-note {
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #b54708;
+  letter-spacing: .01em;
+}
 
 /* Note blocks */
 .note-blocks { display: grid; gap: 12px; }
@@ -12638,6 +12652,13 @@ textarea.input:focus,
 .dark .comprobante-nuevo-page .line-row input::placeholder,
 [data-theme='dark'] .comprobante-nuevo-page .line-row input::placeholder {
   color: var(--color-text-soft);
+}
+
+.dark .cotizaciones-page .line-meta-note,
+[data-theme='dark'] .cotizaciones-page .line-meta-note,
+.dark .comprobante-nuevo-page .line-meta-note,
+[data-theme='dark'] .comprobante-nuevo-page .line-meta-note {
+  color: #f6c453;
 }
 
 .dark .comprobante-nuevo-page .trash-btn:hover,

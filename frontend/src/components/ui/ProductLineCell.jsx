@@ -19,6 +19,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, RotateCw, X } from 'lucide-react';
 import { productos as productosSvc } from '../../services/productos';
+import { buildCatalogSnapshotFromProduct } from '../../lib/utils/productCatalogSync';
 
 const NARROW = '90px'; // code input fixed width
 const SEARCH_DEBOUNCE_MS = 250;
@@ -210,12 +211,20 @@ export default function ProductLineCell({
       unidad_medida:       product.unidad_medida || value.unidad_medida || 'NIU',
       tipo_afectacion_igv: product.tipo_afectacion_igv || value.tipo_afectacion_igv || '10',
       _isNew:              false,
+      _catalogSnapshot:    buildCatalogSnapshotFromProduct(product, { priceIncludesIgv: incluyeIgv }),
     });
     setActiveInput(null);
   };
 
   const handleClear = () => {
-    onChange({ ...value, producto_id: '', codigo: '', descripcion: '', _isNew: false });
+    onChange({
+      ...value,
+      producto_id: '',
+      codigo: '',
+      descripcion: '',
+      _isNew: false,
+      _catalogSnapshot: null,
+    });
     setRemoteProducts([]);
     setActiveInput(null);
     setTimeout(() => codigoRef.current?.focus(), 0);
@@ -223,13 +232,13 @@ export default function ProductLineCell({
 
   const handleCodigoChange = (e) => {
     const v = e.target.value;
-    onChange({ ...value, codigo: v, producto_id: '', _isNew: false });
+    onChange({ ...value, codigo: v, producto_id: '', _isNew: false, _catalogSnapshot: null });
     openFor('codigo');
   };
 
   const handleNombreChange = (e) => {
     const v = e.target.value;
-    onChange({ ...value, descripcion: v, producto_id: '', _isNew: false });
+    onChange({ ...value, descripcion: v, producto_id: '', _isNew: false, _catalogSnapshot: null });
     openFor('nombre');
   };
 
@@ -238,7 +247,13 @@ export default function ProductLineCell({
     setGenerating(true);
     try {
       const code = await onGenerateCode();
-      onChange({ ...value, codigo: code });
+      onChange({
+        ...value,
+        codigo: code,
+        producto_id: '',
+        _isNew: true,
+        _catalogSnapshot: null,
+      });
     } catch {
       // silent
     } finally {
@@ -246,91 +261,119 @@ export default function ProductLineCell({
     }
   };
 
+  useEffect(() => {
+    if (!value.producto_id || value._isNew || value._catalogSnapshot) return;
+    const selected = products.find((product) => String(product.id) === String(value.producto_id));
+    if (!selected) return;
+    onChange({
+      ...value,
+      _catalogSnapshot: buildCatalogSnapshotFromProduct(selected, { priceIncludesIgv: incluyeIgv }),
+    });
+  }, [incluyeIgv, onChange, products, value]);
+
   return (
-    <div ref={containerRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
+    <div ref={containerRef} style={{ position: 'relative', minWidth: 0, width: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
+        <input
+          ref={codigoRef}
+          readOnly={isExisting}
+          placeholder="Codigo"
+          value={value.codigo}
+          onChange={handleCodigoChange}
+          onFocus={() => { if (!isExisting) openFor('codigo'); }}
+          style={{
+            width: NARROW,
+            flexShrink: 0,
+            height: '36px',
+            fontFamily: 'var(--font-mono)',
+            fontSize: '11px',
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            padding: '0 8px',
+            border: `1.5px solid ${isNew && !value.codigo ? 'var(--color-warning)' : isExisting ? 'var(--border-subtle)' : 'var(--border-subtle)'}`,
+            background: isExisting ? 'var(--bg-surface-2)' : 'var(--bg-surface)',
+            color: isExisting ? 'var(--text-tertiary)' : 'var(--text-primary)',
+            outline: 'none',
+            boxSizing: 'border-box',
+            textTransform: 'uppercase',
+          }}
+        />
 
-      {/* ── Código input ── */}
-      <input
-        ref={codigoRef}
-        readOnly={isExisting}
-        placeholder="Código"
-        value={value.codigo}
-        onChange={handleCodigoChange}
-        onFocus={() => { if (!isExisting) openFor('codigo'); }}
-        style={{
-          width: NARROW,
-          flexShrink: 0,
-          height: '36px',
-          fontFamily: 'var(--font-mono)',
-          fontSize: '11px',
-          fontWeight: 700,
-          letterSpacing: '0.04em',
-          padding: '0 8px',
-          border: `1.5px solid ${isNew && !value.codigo ? 'var(--color-warning)' : isExisting ? 'var(--border-subtle)' : 'var(--border-subtle)'}`,
-          background: isExisting ? 'var(--bg-surface-2)' : 'var(--bg-surface)',
-          color: isExisting ? 'var(--text-tertiary)' : 'var(--text-primary)',
-          outline: 'none',
-          boxSizing: 'border-box',
-          textTransform: 'uppercase',
-        }}
-      />
+        <input
+          ref={nombreRef}
+          placeholder={isExisting ? '' : 'Producto o descripcion...'}
+          value={value.descripcion}
+          onChange={isExisting ? (e) => onChange({ ...value, descripcion: e.target.value }) : handleNombreChange}
+          onFocus={() => { if (!isExisting) openFor('nombre'); }}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            height: '36px',
+            fontFamily: 'var(--font-body)',
+            fontSize: '13px',
+            padding: '0 8px',
+            border: `1.5px solid ${isExisting ? 'var(--border-subtle)' : 'var(--border-subtle)'}`,
+            background: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
 
-      {/* ── Nombre / Descripción input ── */}
-      <input
-        ref={nombreRef}
-        placeholder={isExisting ? '' : 'Producto o descripción...'}
-        value={value.descripcion}
-        onChange={isExisting ? (e) => onChange({ ...value, descripcion: e.target.value }) : handleNombreChange}
-        onFocus={() => { if (!isExisting) openFor('nombre'); }}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          height: '36px',
-          fontFamily: 'var(--font-body)',
-          fontSize: '13px',
-          padding: '0 8px',
-          border: `1.5px solid ${isExisting ? 'var(--border-subtle)' : 'var(--border-subtle)'}`,
-          background: 'var(--bg-surface)',
-          color: 'var(--text-primary)',
-          outline: 'none',
-          boxSizing: 'border-box',
-        }}
-      />
+        {isExisting && (
+          <button
+            type="button"
+            onClick={handleClear}
+            title="Quitar producto"
+            style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', padding: '4px', lineHeight: 1 }}
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
 
-      {/* ── Right action buttons ── */}
-      {isExisting && (
-        <button
-          type="button"
-          onClick={handleClear}
-          title="Quitar producto"
-          style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', padding: '4px', lineHeight: 1 }}
-        >
-          <X size={12} />
-        </button>
+      {((!isExisting && onGenerateCode) || (isNew && value.descripcion)) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+          {!isExisting && onGenerateCode && (
+            <button
+              type="button"
+              onClick={handleGenerateCode}
+              disabled={generating}
+              title="Generar codigo para producto nuevo"
+              style={{
+                flexShrink: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '0 10px',
+                height: '30px',
+                borderRadius: '999px',
+                background: 'var(--color-warning-bg)',
+                border: '1px solid rgba(217,119,6,0.2)',
+                color: 'var(--color-warning)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '10px',
+                fontWeight: 700,
+                cursor: generating ? 'wait' : 'pointer',
+                whiteSpace: 'nowrap',
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              <RotateCw size={10} style={generating ? { animation: 'spin 1s linear infinite' } : {}} />
+              {generating ? '...' : 'Generar codigo'}
+            </button>
+          )}
+
+          {isNew && value.descripcion && (
+            <span style={{ flexShrink: 0, fontSize: '9px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-warning)', background: 'var(--color-warning-bg)', border: '1px solid rgba(217,119,6,0.2)', padding: '2px 6px', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+              Nuevo
+            </span>
+          )}
+        </div>
       )}
 
-      {isNew && !value.codigo && onGenerateCode && (
-        <button
-          type="button"
-          onClick={handleGenerateCode}
-          disabled={generating}
-          title="Generar código automático"
-          style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '3px', padding: '0 8px', height: '28px', background: 'var(--color-warning-bg)', border: '1px solid rgba(217,119,6,0.2)', color: 'var(--color-warning)', fontFamily: 'var(--font-mono)', fontSize: '9px', fontWeight: 700, cursor: generating ? 'wait' : 'pointer', whiteSpace: 'nowrap', letterSpacing: '0.06em', textTransform: 'uppercase' }}
-        >
-          <RotateCw size={10} style={generating ? { animation: 'spin 1s linear infinite' } : {}} />
-          {generating ? '...' : 'Código'}
-        </button>
-      )}
-
-      {/* ── New-product indicator ── */}
-      {isNew && value.descripcion && (
-        <span style={{ flexShrink: 0, fontSize: '9px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-warning)', background: 'var(--color-warning-bg)', border: '1px solid rgba(217,119,6,0.2)', padding: '2px 6px', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-          Nuevo
-        </span>
-      )}
-
-      {/* ── Dropdown portal ── */}
-      {canShowSearchMenu && createPortal(
+{canShowSearchMenu && createPortal(
         <div
           ref={dropdownRef}
           className="ink-combobox-menu dropdown-enter"
@@ -373,3 +416,6 @@ export default function ProductLineCell({
     </div>
   );
 }
+
+
+
