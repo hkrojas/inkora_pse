@@ -585,6 +585,14 @@ function SeguridadPanel() {
   );
 }
 
+function getBusinessRoleLabel(user) {
+  if (user?.is_superadmin) return 'Equipo interno';
+  if (user?.rol === 'admin') return 'Gerente';
+  if (user?.rol === 'vendedor') return 'Vendedor';
+  if (user?.rol === 'operador') return 'Operador';
+  return 'Usuario operativo';
+}
+
 export default function ConfiguracionPage() {
   const { user } = useAuth();
   const toast = useToast();
@@ -858,7 +866,8 @@ export default function ConfiguracionPage() {
   const fiscalReady = Boolean(tenantData?.has_sunat_credentials && tenantData?.has_sunat_cert);
   const hasSmartPseCpeCredentials = Boolean(tenantData?.has_smartpse_credentials);
   const collectionsReady = Boolean(phone && paymentMethods.length > 0);
-  const setupStatus = fiscalReady && collectionsReady ? 'Lista para operar' : 'Requiere revision';
+  const setupStatus = fiscalReady && collectionsReady ? 'Lista para operar' : 'Requiere revisión';
+  const businessRoleLabel = getBusinessRoleLabel(user);
   const fiscalConfiguredCount = [
     hasSmartPseCpeCredentials,
     tenantData?.has_sunat_credentials,
@@ -916,23 +925,23 @@ export default function ConfiguracionPage() {
         <div className="settings-command-metrics">
           <article>
             <span>Empresa</span>
-            <strong>1 perfil</strong>
-            <small>Identidad comercial activa</small>
+            <strong>Perfil activo</strong>
+            <small>Identidad comercial lista para documentos</small>
           </article>
           <article>
             <span>SUNAT</span>
-            <strong>{tenantData?.has_sunat_credentials ? 'Lista' : 'Parcial'}</strong>
-            <small>{tenantData?.has_sunat_credentials ? 'Credenciales activas' : 'Configuración pendiente'}</small>
+            <strong>{tenantData?.has_sunat_credentials ? 'Fiscal listo' : 'Fiscal pendiente'}</strong>
+            <small>{tenantData?.has_sunat_credentials ? 'Credenciales operativas' : 'Falta completar la configuración fiscal'}</small>
           </article>
           <article>
             <span>Cobros</span>
-            <strong>{bankCount + walletCount}</strong>
-            <small>{collectionsReady ? 'Medios visibles en PDF' : 'Falta contacto o cobro'}</small>
+            <strong>{bankCount + walletCount} medios</strong>
+            <small>{collectionsReady ? 'Disponibles en documentos PDF' : 'Falta contacto o medio de cobro'}</small>
           </article>
           <article>
             <span>Cuenta</span>
-            <strong>{isSuperadmin ? 'SA' : user?.rol || 'Usuario'}</strong>
-            <small>Sesión con permisos operativos</small>
+            <strong>{businessRoleLabel}</strong>
+            <small>Responsable operativo de la cuenta</small>
           </article>
         </div>
       </section>
@@ -1385,11 +1394,11 @@ export default function ConfiguracionPage() {
               <div>
                 <p className="text-[15px] font-extrabold text-[var(--color-text)]">{user?.nombre_completo || user?.email}</p>
                 <p className="text-[11px] font-mono uppercase tracking-[0.1em] text-[var(--color-text-muted)] mt-0.5">
-                  {isSuperadmin ? 'superadmin' : user?.rol}
+                  {businessRoleLabel}
                 </p>
               </div>
               <span className="settings-account-badge">
-                {isSuperadmin ? 'Acceso interno' : 'Cuenta activa'}
+                {isSuperadmin ? 'Acceso interno' : 'Cuenta operativa'}
               </span>
             </div>
             <div className="credential-list settings-account-list">
@@ -1398,12 +1407,12 @@ export default function ConfiguracionPage() {
                 <span className="ci-value">{user?.nombre_completo || '--'}</span>
               </div>
               <div className="credential-item settings-account-item">
-                <span className="ci-label">Email</span>
+                <span className="ci-label">Correo electrónico</span>
                 <span className="ci-value">{user?.email}</span>
               </div>
               <div className="credential-item settings-account-item">
                 <span className="ci-label">Rol</span>
-                <span className="ci-value">{isSuperadmin ? 'superadmin' : user?.rol}</span>
+                <span className="ci-value">{businessRoleLabel}</span>
               </div>
               <div className="credential-item settings-account-item settings-account-security">
                 <span className="ci-label">Seguridad</span>

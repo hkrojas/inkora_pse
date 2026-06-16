@@ -16251,9 +16251,10 @@ textarea.input:focus,
 
 .settings-command-metrics strong {
   color: #fff;
-  font-size: 28px;
-  line-height: 1;
-  letter-spacing: -.07em;
+  font-size: clamp(22px, 2.4vw, 28px);
+  line-height: 1.08;
+  letter-spacing: -.04em;
+  overflow-wrap: anywhere;
 }
 
 .settings-command-metrics small {
