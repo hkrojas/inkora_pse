@@ -15459,6 +15459,127 @@ textarea.input:focus,
     border-radius: 20px;
   }
 
+  .document-list-table .ink-table-scroll {
+    overflow: visible;
+  }
+
+  .document-list-table .ink-document-table {
+    display: block;
+    min-width: 0;
+    width: 100%;
+    table-layout: auto;
+  }
+
+  .document-list-table .ink-document-table thead {
+    display: none;
+  }
+
+  .document-list-table .ink-document-table tbody {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .document-list-table .ink-document-table tbody tr {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 18px;
+    background: var(--color-surface);
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+  }
+
+  .document-list-table .ink-document-table tbody tr:hover {
+    background: var(--color-surface);
+  }
+
+  .document-list-table .ink-document-table tbody tr:hover td:first-child,
+  .document-list-table .ink-document-table tbody tr.ink-table-row--active td:first-child,
+  .document-list-table .ink-document-table tbody tr.ink-table-row--accepted td:first-child {
+    box-shadow: none;
+  }
+
+  .document-list-table .ink-document-table tbody td {
+    display: grid;
+    grid-template-columns: minmax(84px, 0.34fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    overflow: visible;
+    text-align: left;
+  }
+
+  .document-list-table .ink-document-table tbody td::before {
+    content: attr(data-label);
+    align-self: start;
+    color: var(--color-text-soft);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    line-height: 1.25;
+    text-transform: uppercase;
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label='Folio'],
+  .document-list-table .ink-document-table tbody td[data-label='Cliente'] {
+    grid-template-columns: 1fr;
+    gap: 5px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label='Folio']::before,
+  .document-list-table .ink-document-table tbody td[data-label='Cliente']::before {
+    content: none;
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label='Folio'] {
+    padding-right: 2px;
+  }
+
+  .document-list-table .document-list-folio {
+    color: var(--color-primary-text);
+    font-size: 17px;
+    letter-spacing: -0.01em;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .document-list-table .ink-table-cell__primary {
+    min-width: 0;
+    font-size: 14px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+
+  .document-list-table .ink-table-cell__meta {
+    min-width: 0;
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .document-list-table .document-list-amount {
+    font-size: 15px;
+  }
+
+  .document-list-table .ink-table-row-actions,
+  .document-list-table .document-list-row-actions {
+    justify-content: flex-start;
+    gap: 8px;
+    opacity: 1;
+    transform: none;
+  }
+
+  .document-list-table .ink-row-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 13px;
+  }
+
   .guide-form-tabs {
     flex-wrap: nowrap;
     overflow-x: auto;
