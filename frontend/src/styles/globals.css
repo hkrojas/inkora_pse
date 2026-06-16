@@ -9971,6 +9971,10 @@ textarea.input:focus,
   overflow: visible;
 }
 
+.document-list-table .ink-table-scroll {
+  overflow: visible;
+}
+
 .document-list-table-meta {
   display: flex;
   flex-wrap: wrap;
@@ -15611,7 +15615,7 @@ textarea.input:focus,
 
   .document-list-table .document-list-action-shell,
   .document-list-table .document-list-actions-mobile,
-  .document-list-table .document-list-actions-mobile summary {
+  .document-list-table .document-list-actions-mobile > button {
     width: 100%;
   }
 

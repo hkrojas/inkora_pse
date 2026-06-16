@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react';
-import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
+import { Component, lazy, Suspense } from 'react';
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/ui/Toast';
 import AppLayout from './layouts/AppLayout';
@@ -37,8 +37,53 @@ function RouteFallback() {
   );
 }
 
+class RouteErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    if (!this.state.error) {
+      return this.props.children;
+    }
+
+    return (
+      <div className="flex min-h-[320px] items-center justify-center px-4">
+        <article className="panel max-w-lg p-7">
+          <p className="eyebrow">Error de carga</p>
+          <h2 className="m-0 text-[24px] font-extrabold tracking-[-0.04em] text-[var(--color-text)]">
+            No se pudo cargar esta seccion
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
+            Actualiza la pagina para cargar la version mas reciente de Inkora.
+          </p>
+          <button type="button" className="btn-primary mt-6" onClick={() => window.location.reload()}>
+            Actualizar
+          </button>
+        </article>
+      </div>
+    );
+  }
+}
+
 function LazyRoute({ children }) {
-  return <Suspense fallback={<RouteFallback />}>{children}</Suspense>;
+  const location = useLocation();
+  return (
+    <RouteErrorBoundary resetKey={location.pathname}>
+      <Suspense fallback={<RouteFallback />}>{children}</Suspense>
+    </RouteErrorBoundary>
+  );
 }
 
 function AdvancedFiscalBlockedPage() {

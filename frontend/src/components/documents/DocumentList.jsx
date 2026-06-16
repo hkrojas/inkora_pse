@@ -173,6 +173,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
   const [filters, setFilters] = useState({ desde: '', hasta: '', estado: 'all', moneda: 'all' });
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState('all');
+  const [openActionMenu, setOpenActionMenu] = useState(null);
   const toast = useToast();
   const debouncedSearch = useDebouncedValue(search, 300);
 
@@ -225,6 +226,15 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
   }, [debouncedSearch, filters, activeTab]);
 
   const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
+
+  const toggleActionMenu = (key) => {
+    setOpenActionMenu((current) => (current === key ? null : key));
+  };
+
+  const runActionMenuItem = (handler) => {
+    setOpenActionMenu(null);
+    handler();
+  };
 
   const clearFilters = () => {
     setFilters({ desde: '', hasta: '', estado: 'all', moneda: 'all' });
@@ -620,6 +630,8 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                   {pageItems.map((doc) => {
                     const sunat = getSunatStatus(doc);
                     const num = formatDocNumber(doc);
+                    const desktopMenuKey = `${doc.id}-desktop`;
+                    const mobileMenuKey = `${doc.id}-mobile`;
                     const clienteName = doc.cliente?.razon_social || doc.cliente?.nombre || '-';
                     const clienteDoc = doc.cliente?.numero_documento || doc.cliente?.ruc || doc.cliente?.dni;
                     const rowClass =
@@ -687,25 +699,107 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                 <span>PDF</span>
                               </button>
 
-                              <details className="history-actions-more document-list-actions-more">
-                                <summary className="history-action-button history-action-button--neutral" aria-label="Mas acciones">
+                              <div className="history-actions-more document-list-actions-more">
+                                <button
+                                  type="button"
+                                  className="history-action-button history-action-button--neutral"
+                                  aria-label={`Mas acciones de ${getFiscalDocumentName(doc)}`}
+                                  aria-expanded={openActionMenu === desktopMenuKey}
+                                  onClick={() => toggleActionMenu(desktopMenuKey)}
+                                >
                                   <MoreHorizontal className="h-4 w-4" />
                                   <span>Mas</span>
-                                </summary>
-                                <div className="history-actions-more-menu document-list-actions-menu">
-                                  <button type="button" className="history-actions-mobile-item" onClick={() => handleCopyShareLink(doc)}>
+                                </button>
+                                {openActionMenu === desktopMenuKey && (
+                                  <div className="history-actions-more-menu document-list-actions-menu">
+                                    <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleCopyShareLink(doc))}>
+                                      <Share2 className="h-3.5 w-3.5" />
+                                      Copiar enlace
+                                    </button>
+                                    <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenShareChannel(doc, 'whatsapp'))}>
+                                      <MessageCircle className="h-3.5 w-3.5" />
+                                      WhatsApp
+                                    </button>
+                                    <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenShareChannel(doc, 'email'))}>
+                                      <Mail className="h-3.5 w-3.5" />
+                                      Correo
+                                    </button>
+                                    <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenCombinedShare(doc))}>
+                                      <Send className="h-3.5 w-3.5" />
+                                      WhatsApp + correo
+                                    </button>
+                                    {doc.sunat_xml_url && (
+                                      <button
+                                        type="button"
+                                        className="history-actions-mobile-item"
+                                        disabled={downloadingId === `${doc.id}-xml`}
+                                        onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'xml'))}
+                                      >
+                                        {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink className="h-3.5 w-3.5" />}
+                                        Descargar XML
+                                      </button>
+                                    )}
+                                    {doc.sunat_cdr_url && (
+                                      <button
+                                        type="button"
+                                        className="history-actions-mobile-item"
+                                        disabled={downloadingId === `${doc.id}-cdr`}
+                                        onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'cdr'))}
+                                      >
+                                        {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileText className="h-3.5 w-3.5" />}
+                                        Descargar CDR
+                                      </button>
+                                    )}
+                                    {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
+                                      <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(load)}>
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                        Recargar SUNAT
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="history-actions-mobile document-list-actions-mobile">
+                              <button
+                                type="button"
+                                className="history-action-button history-action-button--neutral"
+                                aria-label={`Acciones de ${getFiscalDocumentName(doc)}`}
+                                aria-expanded={openActionMenu === mobileMenuKey}
+                                onClick={() => toggleActionMenu(mobileMenuKey)}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span>Acciones</span>
+                              </button>
+                              {openActionMenu === mobileMenuKey && (
+                                <div className="history-actions-mobile-menu document-list-actions-menu">
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenFiscalPdf(doc))}>
+                                    <Eye className="h-3.5 w-3.5" />
+                                    Ver PDF
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="history-actions-mobile-item"
+                                    disabled={downloadingId === `${doc.id}-pdf`}
+                                    onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'pdf'))}
+                                  >
+                                    {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download className="h-3.5 w-3.5" />}
+                                    Descargar PDF
+                                  </button>
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleCopyShareLink(doc))}>
                                     <Share2 className="h-3.5 w-3.5" />
                                     Copiar enlace
                                   </button>
-                                  <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(doc, 'whatsapp')}>
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenShareChannel(doc, 'whatsapp'))}>
                                     <MessageCircle className="h-3.5 w-3.5" />
                                     WhatsApp
                                   </button>
-                                  <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(doc, 'email')}>
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenShareChannel(doc, 'email'))}>
                                     <Mail className="h-3.5 w-3.5" />
                                     Correo
                                   </button>
-                                  <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenCombinedShare(doc)}>
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenCombinedShare(doc))}>
                                     <Send className="h-3.5 w-3.5" />
                                     WhatsApp + correo
                                   </button>
@@ -714,7 +808,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                       type="button"
                                       className="history-actions-mobile-item"
                                       disabled={downloadingId === `${doc.id}-xml`}
-                                      onClick={() => downloadFiscalFile(doc, 'xml')}
+                                      onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'xml'))}
                                     >
                                       {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink className="h-3.5 w-3.5" />}
                                       Descargar XML
@@ -725,87 +819,21 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                       type="button"
                                       className="history-actions-mobile-item"
                                       disabled={downloadingId === `${doc.id}-cdr`}
-                                      onClick={() => downloadFiscalFile(doc, 'cdr')}
+                                      onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'cdr'))}
                                     >
                                       {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileText className="h-3.5 w-3.5" />}
                                       Descargar CDR
                                     </button>
                                   )}
                                   {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
-                                    <button type="button" className="history-actions-mobile-item" onClick={load}>
+                                    <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(load)}>
                                       <RefreshCw className="h-3.5 w-3.5" />
                                       Recargar SUNAT
                                     </button>
                                   )}
                                 </div>
-                              </details>
+                              )}
                             </div>
-
-                            <details className="history-actions-mobile document-list-actions-mobile">
-                              <summary className="history-action-button history-action-button--neutral" aria-label="Acciones del comprobante">
-                                <MoreHorizontal className="h-4 w-4" />
-                                <span>Acciones</span>
-                              </summary>
-                              <div className="history-actions-mobile-menu document-list-actions-menu">
-                                <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenFiscalPdf(doc)}>
-                                  <Eye className="h-3.5 w-3.5" />
-                                  Ver PDF
-                                </button>
-                                <button
-                                  type="button"
-                                  className="history-actions-mobile-item"
-                                  disabled={downloadingId === `${doc.id}-pdf`}
-                                  onClick={() => downloadFiscalFile(doc, 'pdf')}
-                                >
-                                  {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download className="h-3.5 w-3.5" />}
-                                  Descargar PDF
-                                </button>
-                                <button type="button" className="history-actions-mobile-item" onClick={() => handleCopyShareLink(doc)}>
-                                  <Share2 className="h-3.5 w-3.5" />
-                                  Copiar enlace
-                                </button>
-                                <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(doc, 'whatsapp')}>
-                                  <MessageCircle className="h-3.5 w-3.5" />
-                                  WhatsApp
-                                </button>
-                                <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(doc, 'email')}>
-                                  <Mail className="h-3.5 w-3.5" />
-                                  Correo
-                                </button>
-                                <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenCombinedShare(doc)}>
-                                  <Send className="h-3.5 w-3.5" />
-                                  WhatsApp + correo
-                                </button>
-                                {doc.sunat_xml_url && (
-                                  <button
-                                    type="button"
-                                    className="history-actions-mobile-item"
-                                    disabled={downloadingId === `${doc.id}-xml`}
-                                    onClick={() => downloadFiscalFile(doc, 'xml')}
-                                  >
-                                    {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink className="h-3.5 w-3.5" />}
-                                    Descargar XML
-                                  </button>
-                                )}
-                                {doc.sunat_cdr_url && (
-                                  <button
-                                    type="button"
-                                    className="history-actions-mobile-item"
-                                    disabled={downloadingId === `${doc.id}-cdr`}
-                                    onClick={() => downloadFiscalFile(doc, 'cdr')}
-                                  >
-                                    {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileText className="h-3.5 w-3.5" />}
-                                    Descargar CDR
-                                  </button>
-                                )}
-                                {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
-                                  <button type="button" className="history-actions-mobile-item" onClick={load}>
-                                    <RefreshCw className="h-3.5 w-3.5" />
-                                    Recargar SUNAT
-                                  </button>
-                                )}
-                              </div>
-                            </details>
                           </div>
                         </td>
                       </tr>
