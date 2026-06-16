@@ -15482,6 +15482,7 @@ textarea.input:focus,
 
   .document-list-table .ink-document-table tbody tr {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 10px;
     padding: 14px;
     border: 1px solid var(--color-border);
@@ -15504,7 +15505,10 @@ textarea.input:focus,
     display: grid;
     grid-template-columns: minmax(84px, 0.34fr) minmax(0, 1fr);
     align-items: center;
+    justify-self: stretch;
     gap: 12px;
+    width: 100% !important;
+    max-width: none;
     min-width: 0;
     padding: 0;
     border: 0;
@@ -15540,10 +15544,30 @@ textarea.input:focus,
     padding-right: 2px;
   }
 
+  .document-list-table .ink-document-table tbody td[data-label='Fecha'] .ink-table-cell__primary,
+  .document-list-table .ink-document-table tbody td[data-label='Total'] .document-list-amount {
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label='Tipo'],
+  .document-list-table .ink-document-table tbody td[data-label='Estado SUNAT'],
+  .document-list-table .ink-document-table tbody td[data-label='Acciones'] {
+    align-items: center;
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label='Acciones'] {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding-top: 2px;
+  }
+
   .document-list-table .document-list-folio {
     color: var(--color-primary-text);
     font-size: 17px;
     letter-spacing: -0.01em;
+    white-space: nowrap;
     overflow-wrap: normal;
     word-break: normal;
   }
@@ -15564,6 +15588,7 @@ textarea.input:focus,
 
   .document-list-table .document-list-amount {
     font-size: 15px;
+    text-align: left;
   }
 
   .document-list-table .ink-table-row-actions,
