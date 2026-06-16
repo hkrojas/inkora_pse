@@ -81,6 +81,24 @@ def test_validate_and_normalize_bank_accounts_rejects_invalid_interbank_length()
         validate_and_normalize_bank_accounts(methods)
 
 
+@pytest.mark.parametrize("cuenta", ["1234567890", "12345678901", "123456789012", "1234567890123"])
+def test_validate_and_normalize_bank_accounts_accepts_banco_nacion_range(cuenta):
+    normalized = validate_and_normalize_bank_accounts(
+        [
+            {
+                "tipo": "bank",
+                "banco": "Banco de la Nacion",
+                "tipo_cuenta": "Cuenta Detraccion",
+                "moneda": "Soles",
+                "cuenta": cuenta,
+                "cci": "",
+            }
+        ]
+    )
+
+    assert normalized[0]["cuenta"] == cuenta
+
+
 def test_tenant_admin_update_rejects_invalid_cci_length():
     with pytest.raises(ValidationError, match="20 digitos"):
         TenantAdminUpdate(

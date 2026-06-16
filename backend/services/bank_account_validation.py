@@ -55,7 +55,7 @@ def _get_bank_rule(bank_name: Any, account_type: Any) -> dict[str, Any]:
         return {"allowed_lengths": {10, 14}, "description": "10 o 14 digitos para cuentas Scotiabank"}
 
     if _matches_bank(bank_key, "banco de la nacion", "nacion"):
-        return {"allowed_lengths": {10, 13}, "description": "10 o 13 digitos para cuentas del Banco de la Nacion"}
+        return {"min_length": 10, "max_length": 13, "description": "entre 10 y 13 digitos para cuentas del Banco de la Nacion"}
 
     if _matches_bank(bank_key, "banbif"):
         return {"allowed_lengths": {10, 12}, "description": "10 o 12 digitos para cuentas BanBif"}

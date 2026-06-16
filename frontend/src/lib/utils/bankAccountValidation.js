@@ -64,8 +64,9 @@ export function getBankAccountRule(bankName, accountType = '') {
 
   if (matchesBank(bankKey, ['banco de la nacion', 'banco de la nacion', 'nacion'])) {
     return buildRule({
-      allowedLengths: [10, 13],
-      description: '10 o 13 digitos para cuentas del Banco de la Nacion.',
+      minLength: 10,
+      maxLength: 13,
+      description: '10 a 13 digitos para cuentas del Banco de la Nacion.',
     });
   }
 
