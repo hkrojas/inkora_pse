@@ -991,6 +991,37 @@ def _build_quote_wallet_qr_content(payment_methods, beneficiary_name: str) -> tu
     return beneficiary_name or "PAGO DIGITAL", None
 
 
+_QUOTE_CREDIT_TERM_DAYS = {
+    "credito_7": 7,
+    "credito_15": 15,
+    "credito_30": 30,
+    "credito_60": 60,
+}
+
+
+def _resolve_quote_due_date_display(document_data) -> tuple[str, str]:
+    raw_issue = (
+        _value_from_obj(document_data, "fecha_emision", None)
+        or _value_from_obj(document_data, "created_at", datetime.now())
+    )
+    issue_dt = _parse_datetime_like(raw_issue) or datetime.now()
+    issue_label = issue_dt.strftime("%d/%m/%Y")
+
+    raw_due = _value_from_obj(document_data, "fecha_vencimiento", None)
+    if raw_due:
+        parsed_due = _parse_datetime_like(raw_due)
+        if parsed_due:
+            return issue_label, parsed_due.strftime("%d/%m/%Y")
+        return issue_label, issue_label
+
+    condicion_pago = str(_value_from_obj(document_data, "condicion_pago", "") or "").strip().lower()
+    if condicion_pago == "contado":
+        return issue_label, issue_label
+
+    due_days = _QUOTE_CREDIT_TERM_DAYS.get(condicion_pago, 15)
+    return issue_label, (issue_dt + relativedelta(days=due_days)).strftime("%d/%m/%Y")
+
+
 def _build_generated_qr_flowable(qr_content: str, target_size: float, col_width: float):
     qr_img = qrcode.make(qr_content or "QR")
     qr_buffer = io.BytesIO()
@@ -1159,19 +1190,7 @@ def _build_quote_pdf_buffer(document_data, tenant: models.Tenant):
     simbolo = "S/" if moneda_codigo == "PEN" else "$"
     moneda_texto = "SOLES" if moneda_codigo == "PEN" else "DOLARES"
 
-    raw_fecha = (
-        _value_from_obj(document_data, "fecha_emision", None)
-        or _value_from_obj(document_data, "created_at", datetime.now())
-    )
-    fecha_emision = _format_date_ddmmyyyy(raw_fecha, default=datetime.now().strftime("%d/%m/%Y"))
-
-    raw_venc = _value_from_obj(document_data, "fecha_vencimiento", None)
-    if raw_venc:
-        parsed_venc = _parse_datetime_like(raw_venc)
-        fecha_vencimiento = parsed_venc.strftime("%d/%m/%Y") if parsed_venc else fecha_emision
-    else:
-        base_fecha = _parse_datetime_like(raw_fecha) or datetime.now()
-        fecha_vencimiento = (base_fecha + relativedelta(months=1)).strftime("%d/%m/%Y")
+    fecha_emision, fecha_vencimiento = _resolve_quote_due_date_display(document_data)
 
     client_data = _resolve_document_client_data(document_data)
     nombre_cliente = client_data["name"]
@@ -1920,6 +1939,9 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         or _value_from_obj(document_data, "created_at", datetime.now())
     )
     fecha_emision = _format_date_ddmmyyyy(raw_fecha, default=datetime.now().strftime("%d/%m/%Y"))
+    fecha_vencimiento = ""
+    if not is_comprobante:
+        fecha_emision, fecha_vencimiento = _resolve_quote_due_date_display(document_data)
 
     customer = (parsed_xml or {}).get("customer") or {}
     if parsed_xml:
@@ -2158,27 +2180,50 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         parent=detail_text_style,
         alignment=TA_CENTER,
     )
-    client_body = Table(
+    client_rows = [
         [
-            [
-                Paragraph("<b>Se&#241;ores:</b>", client_label_style),
-                Paragraph(nombre_cliente, client_value_style),
-                Paragraph("<b>Emisi&#243;n:</b>", client_label_style),
-                Paragraph(fecha_emision, client_value_style),
-            ],
-            [
-                Paragraph(f"<b>{tipo_doc_cliente}:</b>", client_label_style),
-                Paragraph(nro_doc_cliente or "-", client_value_style),
-                Paragraph("<b>Moneda:</b>", client_label_style),
-                Paragraph(moneda_texto, client_value_style),
-            ],
-            [
-                Paragraph("<b>Direcci&#243;n:</b>", client_label_style),
-                Paragraph(direccion_cliente, client_value_style),
-                "",
-                "",
-            ],
+            Paragraph("<b>Se&#241;ores:</b>", client_label_style),
+            Paragraph(nombre_cliente, client_value_style),
+            Paragraph("<b>Emisi&#243;n:</b>", client_label_style),
+            Paragraph(fecha_emision, client_value_style),
         ],
+    ]
+    if is_comprobante:
+        client_rows.extend(
+            [
+                [
+                    Paragraph(f"<b>{tipo_doc_cliente}:</b>", client_label_style),
+                    Paragraph(nro_doc_cliente or "-", client_value_style),
+                    Paragraph("<b>Moneda:</b>", client_label_style),
+                    Paragraph(moneda_texto, client_value_style),
+                ],
+                [
+                    Paragraph("<b>Direcci&#243;n:</b>", client_label_style),
+                    Paragraph(direccion_cliente, client_value_style),
+                    "",
+                    "",
+                ],
+            ]
+        )
+    else:
+        client_rows.extend(
+            [
+                [
+                    Paragraph(f"<b>{tipo_doc_cliente}:</b>", client_label_style),
+                    Paragraph(nro_doc_cliente or "-", client_value_style),
+                    Paragraph("<b>Vencimiento:</b>", client_label_style),
+                    Paragraph(fecha_vencimiento, client_value_style),
+                ],
+                [
+                    Paragraph("<b>Direcci&#243;n:</b>", client_label_style),
+                    Paragraph(direccion_cliente, client_value_style),
+                    Paragraph("<b>Moneda:</b>", client_label_style),
+                    Paragraph(moneda_texto, client_value_style),
+                ],
+            ]
+        )
+    client_body = Table(
+        client_rows,
         colWidths=[2.4 * cm, 8.1 * cm, 2.5 * cm, ancho_total - (2.4 * cm) - (8.1 * cm) - (2.5 * cm)],
     )
     client_body.setStyle(

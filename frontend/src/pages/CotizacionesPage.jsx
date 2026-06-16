@@ -71,6 +71,8 @@ const CONDICIONES_PAGO = [
   { value: 'credito_60', label: 'Crédito 60 días' },
 ];
 
+const DEFAULT_QUOTE_PAYMENT_CONDITION = 'credito_15';
+
 const MOTIVOS_NC = [
   { value: '01', label: '01 – Anulación de la operación' },
   { value: '02', label: '02 – Anulación por error en el RUC' },
@@ -1126,8 +1128,8 @@ function NuevaCotizacionForm({
   const [clienteIsNew, setClienteIsNew] = useState(false);
   const [updateExistingClient, setUpdateExistingClient] = useState(true);
   const [moneda, setMoneda]             = useState('PEN');
-  const [condicion, setCondicion]       = useState('contado');
-  const [fechaVenc, setFechaVenc]       = useState('');
+  const [condicion, setCondicion]       = useState(DEFAULT_QUOTE_PAYMENT_CONDITION);
+  const [fechaVenc, setFechaVenc]       = useState(() => calcFechaVencimiento(DEFAULT_QUOTE_PAYMENT_CONDITION));
   const [observationLines, setObservationLines] = useState(buildDefaultObservationLines());
   const [observacionesOpen, setObservacionesOpen] = useState(true);
   const [avanzado, setAvanzado]         = useState(false);
@@ -1340,8 +1342,8 @@ function NuevaCotizacionForm({
     setClienteIsNew(false);
     setUpdateExistingClient(true);
     setMoneda('PEN');
-    setCondicion('contado');
-    setFechaVenc('');
+    setCondicion(DEFAULT_QUOTE_PAYMENT_CONDITION);
+    setFechaVenc(calcFechaVencimiento(DEFAULT_QUOTE_PAYMENT_CONDITION));
     setObservationLines(buildDefaultObservationLines(tenantData));
     setObservacionesOpen(true);
     setItems([emptyItem()]);

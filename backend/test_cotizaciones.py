@@ -306,6 +306,38 @@ def test_cotizacion_con_producto_persiste_sku_fiscal(db_session):
     assert quote.items[0].codigo_producto == "IMP-A4-FC"
 
 
+def test_cotizacion_nueva_usa_credito_15_y_vencimiento_por_defecto(db_session):
+    tenant = make_tenant(db_session, "COT02C15")
+    user = make_user(db_session, tenant, email="cot02c15@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02C15")
+    fecha_emision = datetime(2026, 6, 16, 0, 0, tzinfo=timezone.utc)
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            fecha_emision=fecha_emision,
+            moneda="PEN",
+            tipo_comprobante="00",
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Cotizacion comercial base",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                    unidad_medida="NIU",
+                    tipo_afectacion_igv="10",
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    assert quote.condicion_pago == "credito_15"
+    assert quote.fecha_vencimiento is not None
+    assert quote.fecha_vencimiento.date() == (fecha_emision + timedelta(days=15)).date()
+
+
 def test_documento_fiscal_conserva_fecha_emision_de_la_cotizacion(db_session):
     tenant = make_tenant(db_session, "COT02D")
     user = make_user(db_session, tenant, email="cot02d@test.com")
