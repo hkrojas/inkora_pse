@@ -4,15 +4,15 @@ from services.phone_validation import normalize_peru_mobile, validate_optional_p
 
 
 DEFAULT_WHATSAPP_TEMPLATE = (
-    "Hola {cliente}, le compartimos la cotizacion {numero} por {moneda} {total}.\n\n"
+    "Hola {cliente}, le compartimos {documento_articulo} {documento_tipo} {numero} por {moneda} {total}.\n\n"
     "Puede descargar el documento aqui: {url}\n\n"
     "El enlace es privado y solo debe compartirse con personas autorizadas."
 )
 
-DEFAULT_EMAIL_SUBJECT_TEMPLATE = "Cotizacion {numero} - {empresa}"
+DEFAULT_EMAIL_SUBJECT_TEMPLATE = "{documento_tipo_titulo} {numero} - {empresa}"
 DEFAULT_EMAIL_BODY_TEMPLATE = (
     "Estimado cliente,\n\n"
-    "Le enviamos el enlace para descargar la cotizacion {numero}.\n\n"
+    "Le enviamos el enlace para descargar {documento_articulo} {documento_tipo} {numero}.\n\n"
     "Enlace de descarga:\n{url}\n\n"
     "El enlace es privado y solo debe compartirse con personas autorizadas.\n\n"
     "Quedamos atentos a sus comentarios.\n\n"
@@ -35,10 +35,27 @@ def _document_number(cotizacion) -> str:
     return f"#{getattr(cotizacion, 'id', '')}".strip()
 
 
+def _document_label(cotizacion) -> tuple[str, str, str]:
+    document_kind = getattr(cotizacion, "document_kind", None)
+    tipo_comprobante = getattr(cotizacion, "tipo_comprobante", None)
+    if document_kind == "quotation":
+        return "la", "cotizacion", "Cotizacion"
+    if document_kind == "credit_note" or tipo_comprobante == "07":
+        return "la", "nota de credito", "Nota de credito"
+    if document_kind == "debit_note" or tipo_comprobante == "08":
+        return "la", "nota de debito", "Nota de debito"
+    if tipo_comprobante == "01":
+        return "la", "factura", "Factura"
+    if tipo_comprobante == "03":
+        return "la", "boleta", "Boleta"
+    return "el", "comprobante", "Comprobante"
+
+
 def _template_context(cotizacion, url_publica: str, tenant=None) -> dict:
     cliente = getattr(cotizacion, "cliente", None)
     simbolo = "S/" if getattr(cotizacion, "moneda", None) == "PEN" else "$"
     pin = getattr(cliente, "numero_documento", None) or "N/A"
+    articulo, documento_tipo, documento_tipo_titulo = _document_label(cotizacion)
     return {
         "numero": _document_number(cotizacion),
         "total": f"{float(getattr(cotizacion, 'total_venta', 0) or 0):.2f}",
@@ -47,6 +64,9 @@ def _template_context(cotizacion, url_publica: str, tenant=None) -> dict:
         "pin": pin,
         "cliente": getattr(cliente, "razon_social", None) or "cliente",
         "empresa": getattr(tenant, "business_name", None) or "Inkora",
+        "documento_articulo": articulo,
+        "documento_tipo": documento_tipo,
+        "documento_tipo_titulo": documento_tipo_titulo,
     }
 
 

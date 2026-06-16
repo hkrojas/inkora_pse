@@ -5,11 +5,17 @@ import {
   CheckCircle2,
   Clock3,
   Download,
+  Eye,
   ExternalLink,
   FileText,
+  Mail,
+  MessageCircle,
+  MoreHorizontal,
   Plus,
   RefreshCw,
+  Send,
   Search,
+  Share2,
   XCircle,
   XOctagon,
 } from 'lucide-react';
@@ -148,6 +154,14 @@ function downloadBlobFile(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
+function getFiscalDocumentName(doc) {
+  if (doc?.tipo_comprobante === '01') return 'factura';
+  if (doc?.tipo_comprobante === '03') return 'boleta';
+  if (doc?.tipo_comprobante === '07') return 'nota de credito';
+  if (doc?.tipo_comprobante === '08') return 'nota de debito';
+  return 'comprobante';
+}
+
 export default function DocumentList({ tipo, title, subtitle, newLabel, newHref, endpoint }) {
   const [docs, setDocs] = useState([]);
   const [total, setTotal] = useState(0);
@@ -252,6 +266,85 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
       toast(err.message || 'No se pudo descargar el archivo fiscal.', 'error');
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const resolveSharePayload = async (doc) => {
+    try {
+      return await api.get(`/cotizaciones/${doc.id}/compartir`);
+    } catch (err) {
+      toast(err.message || 'No se pudo preparar el enlace para compartir.', 'error');
+      return null;
+    }
+  };
+
+  const handleOpenFiscalPdf = async (doc) => {
+    try {
+      const data = await api.get(`/cotizaciones/${doc.id}/pdf`, { timeoutMs: 45000 });
+      const url = data?.url || data?.url_compartir || data?.public_url || doc.sunat_pdf_url;
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      toast('No se pudo abrir el PDF del comprobante.', 'error');
+    } catch (err) {
+      toast(err.message || 'No se pudo abrir el PDF del comprobante.', 'error');
+    }
+  };
+
+  const handleCopyShareLink = async (doc) => {
+    const data = await resolveSharePayload(doc);
+    const url = data?.url_compartir || data?.url || data?.public_url;
+    if (!url) {
+      toast('No se pudo generar el enlace publico.', 'error');
+      return;
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        window.prompt('Copia el enlace:', url);
+      }
+      toast('Enlace publico copiado.', 'success');
+    } catch {
+      window.prompt('Copia el enlace:', url);
+    }
+  };
+
+  const openShareLink = (link, channel) => {
+    if (!link) {
+      toast(
+        channel === 'email'
+          ? 'El cliente no tiene correo registrado.'
+          : 'El cliente no tiene WhatsApp valido.',
+        'error',
+      );
+      return false;
+    }
+
+    if (channel === 'email') {
+      window.location.href = link;
+    } else {
+      window.open(link, '_blank', 'noopener,noreferrer');
+    }
+    return true;
+  };
+
+  const handleOpenShareChannel = async (doc, channel) => {
+    const data = await resolveSharePayload(doc);
+    if (!data) return;
+    openShareLink(channel === 'email' ? data.mailto_link : data.whatsapp_link, channel);
+  };
+
+  const handleOpenCombinedShare = async (doc) => {
+    const data = await resolveSharePayload(doc);
+    if (!data) return;
+    const openedWhatsApp = openShareLink(data.whatsapp_link, 'whatsapp');
+    if (data.mailto_link) {
+      window.setTimeout(() => openShareLink(data.mailto_link, 'email'), openedWhatsApp ? 120 : 0);
+    } else {
+      toast('El cliente no tiene correo registrado.', 'error');
     }
   };
 
@@ -572,37 +665,147 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                           )}
                         </td>
                         <td data-label="Acciones">
-                          <div className="ink-table-row-actions document-list-row-actions">
-                            {doc.estado !== 'anulada' && (
+                          <div className="document-list-action-shell">
+                            <div className="history-actions-desktop document-list-actions-desktop">
                               <button
                                 type="button"
-                                className="ink-row-btn"
-                                title="Descargar PDF"
+                                className="history-action-button history-action-button--brand"
+                                onClick={() => handleOpenFiscalPdf(doc)}
+                                aria-label={`Ver PDF de ${getFiscalDocumentName(doc)}`}
+                              >
+                                <Eye className="h-4 w-4" />
+                                <span>Ver</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="history-action-button history-action-button--info"
                                 disabled={downloadingId === `${doc.id}-pdf`}
                                 onClick={() => downloadFiscalFile(doc, 'pdf')}
+                                aria-label={`Descargar PDF de ${getFiscalDocumentName(doc)}`}
                               >
-                                {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download size={14} />}
+                                {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download className="h-4 w-4" />}
+                                <span>PDF</span>
                               </button>
-                            )}
-                            {doc.sunat_xml_url && (
-                              <button
-                                type="button"
-                                className="ink-row-btn"
-                                title="Descargar XML"
-                                disabled={downloadingId === `${doc.id}-xml`}
-                                onClick={() => downloadFiscalFile(doc, 'xml')}
-                              >
-                                {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink size={14} />}
-                              </button>
-                            )}
-                            <Link to={`/cotizaciones/${doc.id}`} className="ink-row-btn" title="Ver detalle">
-                              <FileText size={14} />
-                            </Link>
-                            {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
-                              <button type="button" className="ink-row-btn" title="Recargar estado SUNAT" onClick={load}>
-                                <RefreshCw size={14} />
-                              </button>
-                            )}
+
+                              <details className="history-actions-more document-list-actions-more">
+                                <summary className="history-action-button history-action-button--neutral" aria-label="Mas acciones">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                  <span>Mas</span>
+                                </summary>
+                                <div className="history-actions-more-menu document-list-actions-menu">
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => handleCopyShareLink(doc)}>
+                                    <Share2 className="h-3.5 w-3.5" />
+                                    Copiar enlace
+                                  </button>
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(doc, 'whatsapp')}>
+                                    <MessageCircle className="h-3.5 w-3.5" />
+                                    WhatsApp
+                                  </button>
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(doc, 'email')}>
+                                    <Mail className="h-3.5 w-3.5" />
+                                    Correo
+                                  </button>
+                                  <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenCombinedShare(doc)}>
+                                    <Send className="h-3.5 w-3.5" />
+                                    WhatsApp + correo
+                                  </button>
+                                  {doc.sunat_xml_url && (
+                                    <button
+                                      type="button"
+                                      className="history-actions-mobile-item"
+                                      disabled={downloadingId === `${doc.id}-xml`}
+                                      onClick={() => downloadFiscalFile(doc, 'xml')}
+                                    >
+                                      {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink className="h-3.5 w-3.5" />}
+                                      Descargar XML
+                                    </button>
+                                  )}
+                                  {doc.sunat_cdr_url && (
+                                    <button
+                                      type="button"
+                                      className="history-actions-mobile-item"
+                                      disabled={downloadingId === `${doc.id}-cdr`}
+                                      onClick={() => downloadFiscalFile(doc, 'cdr')}
+                                    >
+                                      {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileText className="h-3.5 w-3.5" />}
+                                      Descargar CDR
+                                    </button>
+                                  )}
+                                  {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
+                                    <button type="button" className="history-actions-mobile-item" onClick={load}>
+                                      <RefreshCw className="h-3.5 w-3.5" />
+                                      Recargar SUNAT
+                                    </button>
+                                  )}
+                                </div>
+                              </details>
+                            </div>
+
+                            <details className="history-actions-mobile document-list-actions-mobile">
+                              <summary className="history-action-button history-action-button--neutral" aria-label="Acciones del comprobante">
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span>Acciones</span>
+                              </summary>
+                              <div className="history-actions-mobile-menu document-list-actions-menu">
+                                <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenFiscalPdf(doc)}>
+                                  <Eye className="h-3.5 w-3.5" />
+                                  Ver PDF
+                                </button>
+                                <button
+                                  type="button"
+                                  className="history-actions-mobile-item"
+                                  disabled={downloadingId === `${doc.id}-pdf`}
+                                  onClick={() => downloadFiscalFile(doc, 'pdf')}
+                                >
+                                  {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download className="h-3.5 w-3.5" />}
+                                  Descargar PDF
+                                </button>
+                                <button type="button" className="history-actions-mobile-item" onClick={() => handleCopyShareLink(doc)}>
+                                  <Share2 className="h-3.5 w-3.5" />
+                                  Copiar enlace
+                                </button>
+                                <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(doc, 'whatsapp')}>
+                                  <MessageCircle className="h-3.5 w-3.5" />
+                                  WhatsApp
+                                </button>
+                                <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenShareChannel(doc, 'email')}>
+                                  <Mail className="h-3.5 w-3.5" />
+                                  Correo
+                                </button>
+                                <button type="button" className="history-actions-mobile-item" onClick={() => handleOpenCombinedShare(doc)}>
+                                  <Send className="h-3.5 w-3.5" />
+                                  WhatsApp + correo
+                                </button>
+                                {doc.sunat_xml_url && (
+                                  <button
+                                    type="button"
+                                    className="history-actions-mobile-item"
+                                    disabled={downloadingId === `${doc.id}-xml`}
+                                    onClick={() => downloadFiscalFile(doc, 'xml')}
+                                  >
+                                    {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink className="h-3.5 w-3.5" />}
+                                    Descargar XML
+                                  </button>
+                                )}
+                                {doc.sunat_cdr_url && (
+                                  <button
+                                    type="button"
+                                    className="history-actions-mobile-item"
+                                    disabled={downloadingId === `${doc.id}-cdr`}
+                                    onClick={() => downloadFiscalFile(doc, 'cdr')}
+                                  >
+                                    {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileText className="h-3.5 w-3.5" />}
+                                    Descargar CDR
+                                  </button>
+                                )}
+                                {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
+                                  <button type="button" className="history-actions-mobile-item" onClick={load}>
+                                    <RefreshCw className="h-3.5 w-3.5" />
+                                    Recargar SUNAT
+                                  </button>
+                                )}
+                              </div>
+                            </details>
                           </div>
                         </td>
                       </tr>
