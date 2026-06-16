@@ -18,7 +18,8 @@ import { tenant as tenantSvc } from '../services/tenant';
 import FiscalDocPreview from '../components/documents/FiscalDocPreview';
 import ClientCombobox from '../components/ui/ClientCombobox';
 import ProductLineCell from '../components/ui/ProductLineCell';
-import { upsertCliente, upsertProductos } from '../lib/utils/upsert';
+import { getCatalogProductOverrides, hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
+import { syncCatalogProductos, upsertCliente, upsertProductos } from '../lib/utils/upsert';
 import Spinner from '../components/ui/Spinner';
 import { PageError } from '../components/ui/PageState';
 import Modal from '../components/ui/Modal';
@@ -62,6 +63,7 @@ const EMPTY_ITEM = () => ({
   precio_unitario: '',
   tipo_afectacion_igv: '10',
   _isNew: false,
+  _catalogSnapshot: null,
 });
 
 function createInitialForm(initialType) {
@@ -350,6 +352,7 @@ function LineRow({
   const priceRef = useRef(null);
   const line = computeLine(item, incluyeIgv);
   const sym = moneda === 'USD' ? '$' : 'S/';
+  const hasCatalogOverride = hasCatalogProductOverrides(item);
 
   const handlePriceKeyDown = (e) => {
     if (e.key === 'Tab' && !e.shiftKey && isLast) {
@@ -403,7 +406,7 @@ function LineRow({
         />
       </div>
 
-      <div>
+      <div className="line-cell-stack">
         <input
           ref={priceRef}
           type="text"
@@ -415,6 +418,9 @@ function LineRow({
           style={{ MozAppearance: 'textfield', WebkitAppearance: 'none', appearance: 'none' }}
           required
         />
+        {hasCatalogOverride && (
+          <span className="line-meta-note">Cambio local. Solo afecta este documento.</span>
+        )}
       </div>
 
       <div>
@@ -673,7 +679,15 @@ export default function ComprobanteNuevoPage() {
         const amount = Number(item.precio_unitario || 0);
         if (!amount) return item;
         const converted = newVal ? amount * IGV_FACTOR : amount / IGV_FACTOR;
-        return { ...item, precio_unitario: converted.toFixed(2) };
+        const nextPrice = converted.toFixed(2);
+        const shouldRefreshSnapshot = item.producto_id && item._catalogSnapshot && !hasCatalogProductOverrides(item);
+        return {
+          ...item,
+          precio_unitario: nextPrice,
+          _catalogSnapshot: shouldRefreshSnapshot
+            ? { ...item._catalogSnapshot, precio_unitario: nextPrice }
+            : item._catalogSnapshot,
+        };
       }),
     }));
   };
@@ -786,6 +800,15 @@ export default function ComprobanteNuevoPage() {
   const handleEmitConfirmed = async () => {
     setSaving(true);
     try {
+      const catalogOverrides = getCatalogProductOverrides(form.items);
+      const shouldSyncCatalog = catalogOverrides.length > 0
+        ? window.confirm(
+            `Modificaste ${catalogOverrides.length} producto${catalogOverrides.length === 1 ? '' : 's'} del catalogo en este comprobante. `
+            + 'Por defecto esos cambios solo afectan este documento. '
+            + '¿Deseas actualizar tambien el catalogo de productos?',
+          )
+        : false;
+
       const clienteId = await upsertCliente({
         id: form.cliente_id,
         isNew: clienteState.isNew,
@@ -793,7 +816,10 @@ export default function ComprobanteNuevoPage() {
         form: form.cliente,
       });
 
-      const resolvedItems = await upsertProductos(form.items);
+      const createdItems = await upsertProductos(form.items, { priceIncludesIgv: form.incluye_igv });
+      const resolvedItems = shouldSyncCatalog
+        ? await syncCatalogProductos(createdItems, { priceIncludesIgv: form.incluye_igv })
+        : createdItems;
       setForm((current) => ({
         ...current,
         cliente_id: String(clienteId),
