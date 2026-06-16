@@ -1478,7 +1478,7 @@ return (
             </article>
 
             <article className="panel">
-              <div className="panel-header">
+              <div className="panel-header line-items-panel-header">
                 <div><h3>Líneas de detalle</h3><p>Agrega productos, servicios o descripciones libres.</p></div>
                 <label className="toggle-chip">
                   <span className={`switch ${avanzado ? 'on' : ''}`} />
@@ -1503,7 +1503,7 @@ return (
                     const hasCatalogOverride = hasCatalogProductOverrides(item);
                     return (
                       <div className="line-row" key={idx}>
-                        <div className="product-input">
+                        <div className="product-input line-row-cell line-row-cell--product" data-mobile-label="Producto">
                           <ProductLineCell
                             value={item}
                             onChange={(next) => setItemAll(idx, next)}
@@ -1514,25 +1514,25 @@ return (
                           />
                         </div>
                         {avanzado && (
-                          <div>
+                          <div className="line-row-cell line-row-cell--unit" data-mobile-label="Unidad">
                             <CustomSelect compact value={item.unidad_medida} onChange={(v) => setItem(idx, 'unidad_medida', v)} options={UNIDADES_MEDIDA} />
                           </div>
                         )}
                         {avanzado && (
-                          <div>
+                          <div className="line-row-cell line-row-cell--tax" data-mobile-label="Afectación IGV">
                             <CustomSelect compact value={item.tipo_afectacion_igv} onChange={(v) => setItem(idx, 'tipo_afectacion_igv', v)} options={AFECTACION_IGV} />
                           </div>
                         )}
-                        <div><input required type="number" min="0.01" step="any" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
-                        <div className="line-cell-stack">
+                        <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad"><input required type="number" min="0.01" step="any" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
+                        <div className="line-row-cell line-row-cell--price line-cell-stack" data-mobile-label="Precio unitario">
                           <input required type="number" min="0.01" step="0.01" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} />
                           {hasCatalogOverride && (
                             <span className="line-meta-note">Cambio local. Solo afecta este documento.</span>
                           )}
                         </div>
-                        <div><input readOnly value="0%" /></div>
-                        <div><input readOnly value={`${sym} ${fmt(lineTotal)}`} /></div>
-                        <div>{items.length > 1 && <button type="button" className="trash-btn" onClick={() => removeItem(idx)}>×</button>}</div>
+                        <div className="line-row-cell line-row-cell--discount" data-mobile-label="Descuento"><input readOnly value="0%" /></div>
+                        <div className="line-row-cell line-row-cell--total" data-mobile-label="Total"><input readOnly value={`${sym} ${fmt(lineTotal)}`} /></div>
+                        <div className="line-row-cell line-row-cell--actions">{items.length > 1 && <button type="button" className="trash-btn" onClick={() => removeItem(idx)}>×</button>}</div>
                       </div>
                     );
                   })}
@@ -2782,4 +2782,3 @@ function SearchBar({ search, onSearch, showFilters, onToggleFilters, onNewAction
     </div>
   );
 }
-

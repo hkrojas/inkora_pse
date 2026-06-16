@@ -8539,6 +8539,7 @@ textarea.input:focus,
 .line-row input::placeholder { color: #98a2b3; font-weight: 400; }
 
 .product-input { display: flex !important; gap: 10px; min-width: 0; }
+.line-row-cell { min-width: 0; }
 .line-table--avanzado .line-head,
 .line-table--avanzado .line-row {
   grid-template-columns: minmax(160px, 1fr) 84px 84px 64px 88px 64px 88px 36px;
@@ -15403,6 +15404,99 @@ textarea.input:focus,
   }
 
   .product-input { grid-column: 1 / -1; }
+
+  .cotizaciones-page .line-items-panel-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .cotizaciones-page .line-items-panel-header .toggle-chip {
+    align-self: flex-start;
+    max-width: min(100%, 220px);
+    white-space: normal;
+    line-height: 1.25;
+  }
+
+  .cotizaciones-page .line-row,
+  .cotizaciones-page .line-table--avanzado .line-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0;
+  }
+
+  .cotizaciones-page .line-row > .line-row-cell,
+  .cotizaciones-page .line-row > .product-input {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+    min-height: 78px;
+  }
+
+  .cotizaciones-page .line-row > .line-row-cell::before,
+  .cotizaciones-page .line-row > .product-input::before {
+    content: attr(data-mobile-label);
+    color: #667085;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .06em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .cotizaciones-page .line-row > .product-input::before {
+    content: "Producto";
+  }
+
+  .cotizaciones-page .product-input,
+  .cotizaciones-page .line-table--avanzado .product-input {
+    grid-column: 1 / -1;
+    align-items: stretch;
+  }
+
+  .cotizaciones-page .product-input > div {
+    width: 100%;
+  }
+
+  .cotizaciones-page .product-input > div > div:first-child {
+    display: grid !important;
+    grid-template-columns: minmax(88px, 108px) minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .cotizaciones-page .product-input input {
+    min-width: 0;
+  }
+
+  .cotizaciones-page .line-row > .line-row-cell input[type="number"],
+  .cotizaciones-page .line-row > .line-row-cell input[type="text"],
+  .cotizaciones-page .line-row > .line-row-cell input[readonly] {
+    text-align: left;
+  }
+
+  .cotizaciones-page .line-row > .line-row-cell .custom-select,
+  .cotizaciones-page .line-row > .line-row-cell .custom-select__trigger,
+  .cotizaciones-page .line-row > .line-row-cell [role="combobox"] {
+    width: 100%;
+  }
+
+  .cotizaciones-page .line-row > .line-row-cell.line-row-cell--price,
+  .cotizaciones-page .line-row > .line-row-cell.line-row-cell--actions {
+    grid-column: 1 / -1;
+  }
+
+  .cotizaciones-page .line-row > .line-row-cell.line-row-cell--actions {
+    min-height: auto;
+    padding-top: 8px;
+    align-items: flex-end;
+  }
+
+  .cotizaciones-page .line-row > .line-row-cell.line-row-cell--actions::before {
+    display: none;
+  }
 
   .toolbar {
     grid-template-columns: 1fr;
