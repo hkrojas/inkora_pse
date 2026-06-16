@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
@@ -26,6 +26,15 @@ from services.document_flow_service import (
 )
 
 
+_QUOTE_DEFAULT_PAYMENT_CONDITION = "credito_15"
+_QUOTE_CREDIT_TERM_DAYS = {
+    "credito_7": 7,
+    "credito_15": 15,
+    "credito_30": 30,
+    "credito_60": 60,
+}
+
+
 def _serialize_cuotas_pago(cuotas_pago) -> list[dict]:
     serialized = []
     for cuota in cuotas_pago or []:
@@ -40,6 +49,25 @@ def _serialize_cuotas_pago(cuotas_pago) -> list[dict]:
             }
         )
     return serialized
+
+
+def _resolve_quote_payment_terms(
+    *,
+    fecha_emision: datetime,
+    fecha_vencimiento: datetime | None,
+    condicion_pago: str | None,
+) -> tuple[str, datetime | None]:
+    resolved_condition = str(condicion_pago or "").strip().lower() or _QUOTE_DEFAULT_PAYMENT_CONDITION
+    if fecha_vencimiento is not None:
+        return resolved_condition, fecha_vencimiento
+    if resolved_condition == "contado":
+        return resolved_condition, None
+
+    due_days = _QUOTE_CREDIT_TERM_DAYS.get(
+        resolved_condition,
+        _QUOTE_CREDIT_TERM_DAYS[_QUOTE_DEFAULT_PAYMENT_CONDITION],
+    )
+    return resolved_condition, fecha_emision + timedelta(days=due_days)
 
 
 def get_cotizaciones(
@@ -106,9 +134,15 @@ def _create_cotizacion_inner(
     )
     nuevo_correlativo, internal_order_number = _next_quote_identity(db, tenant_id)
 
+    fecha_emision = cotizacion.fecha_emision or datetime.now()
     condicion_pago = (
         getattr(cotizacion, "condicion_pago", None)
         or getattr(db_cliente, "condicion_pago", None)
+    )
+    condicion_pago, fecha_vencimiento = _resolve_quote_payment_terms(
+        fecha_emision=fecha_emision,
+        fecha_vencimiento=cotizacion.fecha_vencimiento,
+        condicion_pago=condicion_pago,
     )
     cuotas_pago = _serialize_cuotas_pago(getattr(cotizacion, "cuotas_pago", None))
 
@@ -116,8 +150,8 @@ def _create_cotizacion_inner(
         cliente_id=db_cliente.id,
         usuario_id=usuario_id,
         tenant_id=tenant_id,
-        fecha_emision=cotizacion.fecha_emision or datetime.now(),
-        fecha_vencimiento=cotizacion.fecha_vencimiento,
+        fecha_emision=fecha_emision,
+        fecha_vencimiento=fecha_vencimiento,
         moneda=cotizacion.moneda,
         tipo_comprobante=cotizacion.tipo_comprobante,
         document_kind=DOCUMENT_KIND_QUOTATION,

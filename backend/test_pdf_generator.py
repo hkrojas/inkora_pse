@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -202,6 +202,37 @@ def test_generar_pdf_cotizacion_genera_qr_para_billetera_o_fallback():
     assert isinstance(buffer, BytesIO)
     assert len(buffer.getvalue()) > 0
     qr_make.assert_called()
+
+
+def test_resolve_quote_due_date_display_respeta_vencimiento_explicito():
+    issue_date = datetime(2026, 6, 16, 9, 30)
+    due_date = issue_date + timedelta(days=7)
+
+    fecha_emision, fecha_vencimiento = pdf_generator._resolve_quote_due_date_display(
+        SimpleNamespace(
+            fecha_emision=issue_date,
+            fecha_vencimiento=due_date,
+            condicion_pago="credito_7",
+        )
+    )
+
+    assert fecha_emision == "16/06/2026"
+    assert fecha_vencimiento == "23/06/2026"
+
+
+def test_resolve_quote_due_date_display_usa_credito_15_por_defecto():
+    issue_date = datetime(2026, 6, 16, 9, 30)
+
+    fecha_emision, fecha_vencimiento = pdf_generator._resolve_quote_due_date_display(
+        SimpleNamespace(
+            fecha_emision=issue_date,
+            fecha_vencimiento=None,
+            condicion_pago=None,
+        )
+    )
+
+    assert fecha_emision == "16/06/2026"
+    assert fecha_vencimiento == "01/07/2026"
 
 
 def test_resolve_quote_company_data_usa_email_usuario_y_fallback_bancario():
