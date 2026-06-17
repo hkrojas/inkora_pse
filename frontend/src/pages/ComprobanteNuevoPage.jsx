@@ -412,6 +412,7 @@ function LineRow({
 
       <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad">
         <input
+          className="line-edit-input"
           type="text"
           inputMode="decimal"
           value={item.cantidad}
@@ -423,6 +424,7 @@ function LineRow({
 
       <div className="line-row-cell line-row-cell--price line-cell-stack" data-mobile-label="Precio unitario">
         <input
+          className="line-edit-input"
           ref={priceRef}
           type="text"
           inputMode="decimal"
@@ -440,6 +442,7 @@ function LineRow({
 
       <div className="line-row-cell line-row-cell--total" data-mobile-label="Total">
         <input
+          className="line-static-input"
           readOnly
           value={`${sym} ${Number(line.total).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`}
         />

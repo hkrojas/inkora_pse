@@ -1523,15 +1523,15 @@ return (
                             <CustomSelect compact value={item.tipo_afectacion_igv} onChange={(v) => setItem(idx, 'tipo_afectacion_igv', v)} options={AFECTACION_IGV} />
                           </div>
                         )}
-                        <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad"><input required type="number" min="0.01" step="any" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
+                        <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad"><input className="line-edit-input" required type="number" min="0.01" step="any" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
                         <div className="line-row-cell line-row-cell--price line-cell-stack" data-mobile-label="Precio unitario">
-                          <input required type="number" min="0.01" step="0.01" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} />
+                          <input className="line-edit-input" required type="number" min="0.01" step="0.01" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} />
                           {hasCatalogOverride && (
                             <span className="line-meta-note">Cambio local. Solo afecta este documento.</span>
                           )}
                         </div>
-                        <div className="line-row-cell line-row-cell--discount" data-mobile-label="Descuento"><input readOnly value="0%" /></div>
-                        <div className="line-row-cell line-row-cell--total" data-mobile-label="Total"><input readOnly value={`${sym} ${fmt(lineTotal)}`} /></div>
+                        <div className="line-row-cell line-row-cell--discount" data-mobile-label="Descuento"><input className="line-static-input" readOnly value="0%" /></div>
+                        <div className="line-row-cell line-row-cell--total" data-mobile-label="Total"><input className="line-static-input" readOnly value={`${sym} ${fmt(lineTotal)}`} /></div>
                         <div className="line-row-cell line-row-cell--actions">{items.length > 1 && <button type="button" className="trash-btn" onClick={() => removeItem(idx)}>×</button>}</div>
                       </div>
                     );
