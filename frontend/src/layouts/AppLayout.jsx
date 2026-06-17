@@ -467,7 +467,7 @@ export default function AppLayout() {
               </button>
 
               {openPanel === 'notifications' && (
-                <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[340px] overflow-hidden rounded-[18px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-floating)]">
+                <div className="fixed left-3 right-3 top-[76px] z-50 overflow-hidden rounded-[18px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-floating)] sm:absolute sm:left-auto sm:right-0 sm:top-[calc(100%+10px)] sm:w-[340px]">
                   <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
                     <div>
                       <p className="m-0 text-[11px] font-black uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
