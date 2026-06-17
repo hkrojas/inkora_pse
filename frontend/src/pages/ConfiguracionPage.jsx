@@ -272,6 +272,19 @@ function PaymentMethodCard({ method, index, onChange, onRemove, errors = {} }) {
                 placeholder="20 dígitos"
               />
             </FormField>
+            <div className="settings-quote-visibility-field settings-field-grid-span">
+              <label className="settings-quote-visibility-toggle">
+                <input
+                  type="checkbox"
+                  checked={method.mostrar_en_cotizaciones !== false}
+                  onChange={(event) => onChange('mostrar_en_cotizaciones', event.target.checked)}
+                />
+                <span>
+                  <strong>Mostrar en cotizaciones</strong>
+                  <small>Esta cuenta se selecciona por defecto en nuevas cotizaciones.</small>
+                </span>
+              </label>
+            </div>
           </>
         )}
       </div>

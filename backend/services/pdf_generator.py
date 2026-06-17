@@ -160,6 +160,7 @@ def _normalize_payment_method_entry(entry):
         "moneda": currency,
         "cuenta": account_number,
         "cci": cci,
+        "mostrar_en_cotizaciones": entry.get("mostrar_en_cotizaciones") is not False,
     }
 
 
@@ -232,6 +233,21 @@ def _build_payment_methods_text(payment_methods, beneficiary_name: str = "") -> 
         payment_text += "<br/>"
 
     return payment_text
+
+
+def _resolve_quote_bank_accounts(payment_methods, quote_payment_methods) -> list[dict]:
+    if quote_payment_methods is not None:
+        return [
+            method
+            for method in _normalize_payment_methods(quote_payment_methods)
+            if method.get("tipo") == "bank"
+        ]
+
+    return [
+        method
+        for method in _normalize_payment_methods(payment_methods)
+        if method.get("tipo") == "bank" and method.get("mostrar_en_cotizaciones", True)
+    ]
 
 
 def _build_qr_content(document_data, fallback_content: str) -> str:
@@ -800,6 +816,10 @@ def _resolve_quote_company_data(document_data, tenant: models.Tenant) -> dict:
         "phone": str(company_phone or "").strip(),
         "email": str(company_email or "").strip(),
         "bank_accounts": bank_accounts,
+        "quote_bank_accounts": _resolve_quote_bank_accounts(
+            bank_accounts,
+            getattr(document_data, "quote_payment_methods", None),
+        ),
         "logo_source": logo_source,
     }
 
@@ -1404,7 +1424,7 @@ def _build_quote_pdf_buffer(document_data, tenant: models.Tenant):
         footer_elements.append(Spacer(1, 5))
 
     payment_methods_text = _build_payment_methods_text(
-        company_data["bank_accounts"],
+        company_data["quote_bank_accounts"],
         beneficiary_name=company_data["name"],
     )
     if payment_methods_text:

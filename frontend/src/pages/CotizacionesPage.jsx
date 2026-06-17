@@ -23,7 +23,14 @@ import ProductLineCell from '../components/ui/ProductLineCell';
 import { FieldError } from '../components/ui/FieldError';
 import { useToast } from '../components/ui/Toast';
 import '../styles/cotizacionesHistory.css';
-import { getPaymentMethodPreview, getPaymentQrImageUrl, normalizePaymentMethods } from '../lib/utils/paymentMethods';
+import {
+  getDefaultQuoteBankMethods,
+  getPaymentMethodPreview,
+  getPaymentQrImageUrl,
+  getQuoteBankMethodSignature,
+  getQuoteBankMethods,
+  serializeQuoteBankMethods,
+} from '../lib/utils/paymentMethods';
 import { BASE_URL } from '../lib/utils/config';
 import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/peruPhoneValidation';
 import {
@@ -96,6 +103,22 @@ const MOTIVOS_ND = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const ADVANCED_PREF_KEY = 'cotizaciones.avanzado';
+
+function getQuoteBankKeys(methods = []) {
+  return getQuoteBankMethods(methods)
+    .map((method) => getQuoteBankMethodSignature(method))
+    .filter(Boolean);
+}
+
+function mergeQuoteBankMethods(...groups) {
+  const unique = new Map();
+  groups.flat().forEach((method) => {
+    const key = getQuoteBankMethodSignature(method);
+    if (!key || unique.has(key)) return;
+    unique.set(key, method);
+  });
+  return Array.from(unique.values());
+}
 
 function getSunatStatus(item) {
   if (item.estado === 'anulada')    return { label: 'ANULADO',  variant: 'danger',  icon: XCircle };
@@ -477,6 +500,7 @@ function CotizacionPreviewSheet({
   condicion,
   items,
   observationLines,
+  quotePaymentMethods,
   subtotalGravado,
   igv,
   totalGeneral,
@@ -487,7 +511,9 @@ function CotizacionPreviewSheet({
   const companyAddress = tenantData?.business_address || 'Direccion no especificada';
   const companyPhone = tenantData?.business_phone || '';
   const companyEmail = user?.business_email || user?.email || '';
-  const paymentMethods = normalizePaymentMethods(tenantData?.bank_accounts);
+  const paymentMethods = Array.isArray(quotePaymentMethods)
+    ? getQuoteBankMethods(quotePaymentMethods)
+    : getDefaultQuoteBankMethods(tenantData?.bank_accounts);
   const paymentQrUrl = getPaymentQrImageUrl(tenantData);
   const validItems = items
     .filter((item) => item.descripcion?.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0)
@@ -659,7 +685,7 @@ function CotizacionPreviewSheet({
                 <div className="cotizacion-preview-bank-line">
                   Beneficiario: {companyName.toUpperCase()}
                 </div>
-                {paymentMethods.slice(0, 2).map((method, index) => {
+                {paymentMethods.map((method, index) => {
                   const preview = getPaymentMethodPreview(method);
                   if (!preview) return null;
                   return (
@@ -1139,8 +1165,37 @@ function NuevaCotizacionForm({
   const [previewOpen, setPreviewOpen]   = useState(false);
   const [tenantData, setTenantData]     = useState(null);
   const [observationsInitialized, setObservationsInitialized] = useState(false);
+  const [quoteBankSelectionMode, setQuoteBankSelectionMode] = useState('global');
+  const [selectedQuoteBankKeys, setSelectedQuoteBankKeys] = useState([]);
   const isEditing = Boolean(initialQuote?.id);
   const editDisplayNumber = initialQuote ? getDocumentDisplayNumber(initialQuote) : '';
+  const availableQuoteBankMethods = useMemo(() => mergeQuoteBankMethods(
+    getQuoteBankMethods(tenantData?.bank_accounts),
+    getQuoteBankMethods(initialQuote?.quote_payment_methods),
+  ), [initialQuote?.quote_payment_methods, tenantData?.bank_accounts]);
+  const defaultQuoteBankMethods = useMemo(
+    () => getDefaultQuoteBankMethods(tenantData?.bank_accounts),
+    [tenantData?.bank_accounts],
+  );
+  const defaultQuoteBankKeys = useMemo(
+    () => getQuoteBankKeys(defaultQuoteBankMethods),
+    [defaultQuoteBankMethods],
+  );
+  const selectedQuoteBankKeySet = useMemo(
+    () => new Set(selectedQuoteBankKeys),
+    [selectedQuoteBankKeys],
+  );
+  const effectiveQuoteBankMethods = useMemo(() => {
+    if (quoteBankSelectionMode === 'global') return defaultQuoteBankMethods;
+    return availableQuoteBankMethods.filter((method) => (
+      selectedQuoteBankKeySet.has(getQuoteBankMethodSignature(method))
+    ));
+  }, [
+    availableQuoteBankMethods,
+    defaultQuoteBankMethods,
+    quoteBankSelectionMode,
+    selectedQuoteBankKeySet,
+  ]);
   const formClientes = useMemo(() => (
     initialQuote?.cliente
       ? [
@@ -1230,8 +1285,21 @@ function NuevaCotizacionForm({
     setFechaVenc(toDateInputValue(initialQuote?.fecha_vencimiento));
     setObservationLines(parseObservationValue(initialQuote?.observaciones, tenantData));
     setObservacionesOpen(Boolean(initialQuote?.observaciones));
+    if (Array.isArray(initialQuote?.quote_payment_methods)) {
+      setQuoteBankSelectionMode('custom');
+      setSelectedQuoteBankKeys(getQuoteBankKeys(initialQuote.quote_payment_methods));
+    } else {
+      setQuoteBankSelectionMode('global');
+      setSelectedQuoteBankKeys(defaultQuoteBankKeys);
+    }
     setItems(nextItems.length ? nextItems : [emptyItem()]);
-  }, [initialQuote, isEditing, tenantData]);
+  }, [defaultQuoteBankKeys, initialQuote, isEditing, tenantData]);
+
+  useEffect(() => {
+    if (isEditing || !tenantData) return;
+    setQuoteBankSelectionMode('global');
+    setSelectedQuoteBankKeys(defaultQuoteBankKeys);
+  }, [defaultQuoteBankKeys, isEditing, tenantData]);
 
   // Auto-calc fecha vencimiento según condición
   useEffect(() => {
@@ -1263,6 +1331,23 @@ function NuevaCotizacionForm({
     } catch {
       return '';
     }
+  };
+
+  const handleQuoteBankModeChange = (mode) => {
+    if (mode === 'custom' && selectedQuoteBankKeys.length === 0) {
+      setSelectedQuoteBankKeys(defaultQuoteBankKeys);
+    }
+    setQuoteBankSelectionMode(mode);
+  };
+
+  const toggleQuoteBankMethod = (method) => {
+    const key = getQuoteBankMethodSignature(method);
+    if (!key) return;
+    setSelectedQuoteBankKeys((current) => (
+      current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key]
+    ));
   };
 
   const updateObservationLine = (index, patch) => {
@@ -1328,6 +1413,7 @@ function NuevaCotizacionForm({
         tipo_comprobante:  '00',
         condicion_pago:    condicion,
         fecha_vencimiento: condicion === 'contado' ? undefined : (fechaVenc || undefined),
+        quote_payment_methods: serializeQuoteBankMethods(effectiveQuoteBankMethods),
         observaciones:     observationLines.some((line) => line.text?.trim())
           ? serializeObservationLines(observationLines)
           : undefined,
@@ -1360,6 +1446,8 @@ function NuevaCotizacionForm({
     setFechaVenc(calcFechaVencimiento(DEFAULT_QUOTE_PAYMENT_CONDITION));
     setObservationLines(buildDefaultObservationLines(tenantData));
     setObservacionesOpen(true);
+    setQuoteBankSelectionMode('global');
+    setSelectedQuoteBankKeys(defaultQuoteBankKeys);
     setItems([emptyItem()]);
     onClear?.();
   };
@@ -1474,6 +1562,112 @@ return (
                     </div>
                   </div>
                 </div>
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-header">
+                <div>
+                  <h3>Bancos visibles en el PDF</h3>
+                  <p>El QR se gestiona por separado. Aqui eliges que cuentas apareceran en "Datos para la transferencia".</p>
+                </div>
+              </div>
+              <div className="panel-body">
+                <div className="quote-bank-selector-summary">
+                  <div>
+                    <strong>
+                      {quoteBankSelectionMode === 'global'
+                        ? `Usando seleccion global (${effectiveQuoteBankMethods.length})`
+                        : `Seleccion personalizada (${effectiveQuoteBankMethods.length})`}
+                    </strong>
+                    <span>
+                      {quoteBankSelectionMode === 'global'
+                        ? 'Las nuevas cotizaciones usan las cuentas marcadas en Configuracion.'
+                        : 'Esta cotizacion puede mostrar un subconjunto distinto sin alterar la configuracion general.'}
+                    </span>
+                  </div>
+                  <div className="quote-bank-selector-actions">
+                    <button
+                      type="button"
+                      className={`mini-action${quoteBankSelectionMode === 'global' ? ' is-active' : ''}`}
+                      onClick={() => handleQuoteBankModeChange('global')}
+                    >
+                      Usar global
+                    </button>
+                    <button
+                      type="button"
+                      className={`mini-action${quoteBankSelectionMode === 'custom' ? ' is-active' : ''}`}
+                      onClick={() => handleQuoteBankModeChange('custom')}
+                    >
+                      Personalizar
+                    </button>
+                  </div>
+                </div>
+
+                {availableQuoteBankMethods.length === 0 ? (
+                  <div className="quote-bank-selector-empty">
+                    No hay cuentas bancarias completas para mostrar en cotizaciones. Configuralas en Configuracion.
+                  </div>
+                ) : (
+                  <>
+                    {quoteBankSelectionMode === 'custom' && (
+                      <div className="quote-bank-selector-toolbar">
+                        <button
+                          type="button"
+                          className="link-btn"
+                          onClick={() => setSelectedQuoteBankKeys(getQuoteBankKeys(availableQuoteBankMethods))}
+                        >
+                          Seleccionar todas
+                        </button>
+                        <button
+                          type="button"
+                          className="link-btn"
+                          onClick={() => setSelectedQuoteBankKeys([])}
+                        >
+                          Limpiar
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="quote-bank-selector-grid">
+                      {availableQuoteBankMethods.map((method, index) => {
+                        const key = getQuoteBankMethodSignature(method);
+                        const preview = getPaymentMethodPreview(method);
+                        const isSelected = selectedQuoteBankKeySet.has(key);
+                        const isDefault = defaultQuoteBankKeys.includes(key);
+
+                        return (
+                          <button
+                            key={`${key || 'bank'}-${index}`}
+                            type="button"
+                            className={`quote-bank-option${isSelected ? ' is-selected' : ''}${quoteBankSelectionMode === 'global' ? ' is-disabled' : ''}`}
+                            onClick={() => quoteBankSelectionMode === 'custom' && toggleQuoteBankMethod(method)}
+                            aria-pressed={quoteBankSelectionMode === 'custom' ? isSelected : undefined}
+                          >
+                            <div className="quote-bank-option-copy">
+                              <div className="quote-bank-option-head">
+                                <span className="quote-bank-option-name">{preview?.title || 'Cuenta bancaria'}</span>
+                                <span className={`quote-bank-option-badge${isSelected ? ' is-selected' : ''}`}>
+                                  {quoteBankSelectionMode === 'global'
+                                    ? (isSelected ? 'Global' : 'Oculta')
+                                    : (isSelected ? 'Visible' : 'Oculta')}
+                                </span>
+                              </div>
+                              {preview?.lines?.map((line, lineIndex) => (
+                                <span key={`${key}-${lineIndex}`} className="quote-bank-option-meta">{line}</span>
+                              ))}
+                              <span className="quote-bank-option-meta quote-bank-option-meta--secondary">
+                                {isDefault
+                                  ? 'Disponible por defecto para nuevas cotizaciones.'
+                                  : 'No esta marcada como predeterminada en la configuracion global.'}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
             </article>
 
@@ -1633,6 +1827,7 @@ return (
             condicion={condicion}
             items={items}
             observationLines={observationLines}
+            quotePaymentMethods={effectiveQuoteBankMethods}
             subtotalGravado={subtotalGravado}
             igv={igv}
             totalGeneral={totalGeneral}

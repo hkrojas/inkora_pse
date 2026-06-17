@@ -8620,6 +8620,117 @@ textarea.input:focus,
 .trash-btn:hover { background: #fef2f2; color: #ef4444; border-color: #fecaca; }
 
 .line-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 2px 0; flex-wrap: wrap; }
+.quote-bank-selector-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 0 14px;
+}
+.quote-bank-selector-summary strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+.quote-bank-selector-summary span {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.quote-bank-selector-actions,
+.quote-bank-selector-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.quote-bank-selector-toolbar {
+  padding: 0 0 12px;
+}
+.quote-bank-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.quote-bank-option {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--color-surface-soft) 0%, #ffffff 100%);
+  padding: 14px 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s var(--ease-out), transform .15s var(--ease-out), box-shadow .15s var(--ease-out), background .15s var(--ease-out);
+}
+.quote-bank-option:hover {
+  border-color: rgba(141, 198, 63, 0.42);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+.quote-bank-option.is-selected {
+  border-color: rgba(141, 198, 63, 0.52);
+  background: linear-gradient(135deg, rgba(141, 198, 63, 0.16), rgba(255, 255, 255, 0.96));
+  box-shadow: 0 14px 28px rgba(141, 198, 63, 0.12);
+}
+.quote-bank-option.is-disabled {
+  cursor: default;
+}
+.quote-bank-option.is-disabled:hover {
+  transform: none;
+}
+.quote-bank-option-copy {
+  display: grid;
+  gap: 6px;
+}
+.quote-bank-option-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.quote-bank-option-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+.quote-bank-option-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f4f4f5;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.quote-bank-option-badge.is-selected {
+  background: rgba(141, 198, 63, 0.14);
+  color: #28673d;
+}
+.quote-bank-option-meta {
+  color: #344054;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.quote-bank-option-meta--secondary {
+  color: var(--color-text-muted);
+}
+.quote-bank-selector-empty {
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px dashed var(--color-border);
+  background: var(--color-surface-soft);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
 .line-cell-stack {
   width: 100%;
   display: flex;
@@ -9423,6 +9534,36 @@ textarea.input:focus,
 }
 .settings-field-grid-span {
   grid-column: 1 / -1;
+}
+.settings-quote-visibility-field {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px dashed rgba(141, 198, 63, 0.34);
+  background: linear-gradient(135deg, rgba(141, 198, 63, 0.08), rgba(255, 255, 255, 0.92));
+}
+.settings-quote-visibility-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.settings-quote-visibility-toggle input {
+  margin-top: 2px;
+  accent-color: #8dc63f;
+}
+.settings-quote-visibility-toggle span {
+  display: grid;
+  gap: 2px;
+}
+.settings-quote-visibility-toggle strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+.settings-quote-visibility-toggle small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 /* --- Settings toggle switch --- */
@@ -11842,6 +11983,8 @@ textarea.input:focus,
 .dark .cotizaciones-page .total-line,
 .dark .cotizaciones-page .note-label,
 .dark .cotizaciones-page .check-label,
+.dark .cotizaciones-page .quote-bank-selector-summary span,
+.dark .cotizaciones-page .quote-bank-option-meta--secondary,
 .dark .cotizaciones-page .line-row input::placeholder,
 [data-theme='dark'] .cotizaciones-page .panel-header p,
 [data-theme='dark'] .cotizaciones-page .summary-header p,
@@ -11850,8 +11993,51 @@ textarea.input:focus,
 [data-theme='dark'] .cotizaciones-page .total-line,
 [data-theme='dark'] .cotizaciones-page .note-label,
 [data-theme='dark'] .cotizaciones-page .check-label,
+[data-theme='dark'] .cotizaciones-page .quote-bank-selector-summary span,
+[data-theme='dark'] .cotizaciones-page .quote-bank-option-meta--secondary,
 [data-theme='dark'] .cotizaciones-page .line-row input::placeholder {
   color: var(--color-text-muted);
+}
+
+.dark .cotizaciones-page .quote-bank-option,
+.dark .cotizaciones-page .quote-bank-selector-empty,
+[data-theme='dark'] .cotizaciones-page .quote-bank-option,
+[data-theme='dark'] .cotizaciones-page .quote-bank-selector-empty {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .cotizaciones-page .quote-bank-option:hover,
+[data-theme='dark'] .cotizaciones-page .quote-bank-option:hover {
+  border-color: rgba(141, 198, 63, 0.3);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+}
+
+.dark .cotizaciones-page .quote-bank-option.is-selected,
+[data-theme='dark'] .cotizaciones-page .quote-bank-option.is-selected {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(141, 198, 63, 0.08), transparent 36%),
+    rgba(141, 198, 63, 0.08);
+  border-color: rgba(141, 198, 63, 0.28);
+}
+
+.dark .cotizaciones-page .quote-bank-option-name,
+.dark .cotizaciones-page .quote-bank-option-meta,
+[data-theme='dark'] .cotizaciones-page .quote-bank-option-name,
+[data-theme='dark'] .cotizaciones-page .quote-bank-option-meta {
+  color: var(--color-text);
+}
+
+.dark .cotizaciones-page .quote-bank-option-badge,
+[data-theme='dark'] .cotizaciones-page .quote-bank-option-badge {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-muted);
+}
+
+.dark .cotizaciones-page .quote-bank-option-badge.is-selected,
+[data-theme='dark'] .cotizaciones-page .quote-bank-option-badge.is-selected {
+  background: rgba(141, 198, 63, 0.16);
+  color: #dff7bf;
 }
 
 .dark .cotizaciones-page .tab,
@@ -15248,6 +15434,8 @@ textarea.input:focus,
 .dark .configuracion-page .settings-tax-identity-card,
 .dark .configuracion-page .settings-logo-upload-card,
 .dark .configuracion-page .settings-share-template-card,
+.dark .configuracion-page .settings-quote-visibility-field,
+[data-theme='dark'] .configuracion-page .settings-quote-visibility-field,
 [data-theme='dark'] .configuracion-page .settings-contact-field,
 [data-theme='dark'] .configuracion-page .settings-payment-toolbar,
 [data-theme='dark'] .configuracion-page .settings-tax-identity-card,
@@ -15258,6 +15446,13 @@ textarea.input:focus,
     rgba(255, 255, 255, 0.035);
   border-color: rgba(141, 198, 63, 0.16);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+}
+
+.dark .configuracion-page .settings-quote-visibility-toggle strong,
+.dark .configuracion-page .settings-quote-visibility-toggle small,
+[data-theme='dark'] .configuracion-page .settings-quote-visibility-toggle strong,
+[data-theme='dark'] .configuracion-page .settings-quote-visibility-toggle small {
+  color: var(--color-text);
 }
 
 .dark .configuracion-page .settings-company-summary,
@@ -15559,6 +15754,22 @@ textarea.input:focus,
     max-width: min(100%, 220px);
     white-space: normal;
     line-height: 1.25;
+  }
+
+  .cotizaciones-page .quote-bank-selector-summary,
+  .cotizaciones-page .quote-bank-selector-actions,
+  .cotizaciones-page .quote-bank-selector-toolbar,
+  .cotizaciones-page .quote-bank-option-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cotizaciones-page .quote-bank-selector-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cotizaciones-page .quote-bank-option-badge {
+    align-self: flex-start;
   }
 
   .cotizaciones-page .line-row,
@@ -16348,6 +16559,11 @@ textarea.input:focus,
 /* Mini action — hover lift + shadow (like edit-btn) */
 .mini-action {
   transition: background .15s var(--ease-out), border-color .15s var(--ease-out), transform .15s var(--ease-out), box-shadow .15s var(--ease-out);
+}
+.mini-action.is-active {
+  background: rgba(141, 198, 63, 0.14);
+  border-color: rgba(141, 198, 63, 0.28);
+  color: #245b33;
 }
 .mini-action:hover { background: var(--color-surface-soft); border-color: var(--color-border-strong); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(15,23,42,.07); }
 .mini-action:active { transform: translateY(0); transition-duration: 80ms; box-shadow: none; }

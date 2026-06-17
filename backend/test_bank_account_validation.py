@@ -99,6 +99,24 @@ def test_validate_and_normalize_bank_accounts_accepts_banco_nacion_range(cuenta)
     assert normalized[0]["cuenta"] == cuenta
 
 
+def test_validate_and_normalize_bank_accounts_preserves_quote_visibility_flag():
+    normalized = validate_and_normalize_bank_accounts(
+        [
+            {
+                "tipo": "bank",
+                "banco": "BCP",
+                "tipo_cuenta": "Cta Corriente",
+                "moneda": "Soles",
+                "cuenta": "1919870450013",
+                "cci": "00219100987045001355",
+                "mostrar_en_cotizaciones": False,
+            }
+        ]
+    )
+
+    assert normalized[0]["mostrar_en_cotizaciones"] is False
+
+
 def test_tenant_admin_update_rejects_invalid_cci_length():
     with pytest.raises(ValidationError, match="20 digitos"):
         TenantAdminUpdate(

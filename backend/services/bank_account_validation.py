@@ -20,6 +20,19 @@ def _key(value: Any) -> str:
     return unicodedata.normalize("NFD", _text(value)).encode("ascii", "ignore").decode("ascii").lower()
 
 
+def _bool(value: Any, *, default: bool = True) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = _key(value)
+    if normalized in {"0", "false", "off", "no"}:
+        return False
+    if normalized in {"1", "true", "on", "si", "yes"}:
+        return True
+    return bool(value)
+
+
 def _normalize_communication_template(raw_method: dict[str, Any]) -> dict[str, Any]:
     whatsapp_message = _text(raw_method.get("whatsapp_message"))[:1200]
     email_subject = _text(raw_method.get("email_subject"))[:180]
@@ -148,7 +161,33 @@ def validate_and_normalize_bank_accounts(methods: Any) -> Any:
                 "moneda": currency,
                 "cuenta": account_digits,
                 "cci": cci_digits,
+                "mostrar_en_cotizaciones": _bool(
+                    raw_method.get("mostrar_en_cotizaciones"),
+                    default=True,
+                ),
             }
         )
 
     return normalized_methods
+
+
+def validate_and_normalize_quote_payment_methods(methods: Any) -> Any:
+    normalized_methods = validate_and_normalize_bank_accounts(methods)
+    if normalized_methods is None:
+        return None
+
+    quote_methods: list[dict[str, Any]] = []
+    for method in normalized_methods:
+        if not isinstance(method, dict) or method.get("tipo") != "bank":
+            continue
+        quote_methods.append(
+            {
+                "tipo": "bank",
+                "banco": _text(method.get("banco")),
+                "tipo_cuenta": _text(method.get("tipo_cuenta")) or "Cta Ahorro",
+                "moneda": _text(method.get("moneda")) or "Soles",
+                "cuenta": _digits(method.get("cuenta")),
+                "cci": _digits(method.get("cci")),
+            }
+        )
+    return quote_methods

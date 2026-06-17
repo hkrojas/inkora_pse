@@ -22,6 +22,16 @@ def test_duplicar_cotizacion_crea_copia_con_nueva_orden_y_mismos_items(db_sessio
             tipo_comprobante="00",
             observaciones="Duplicar esta cotizacion",
             condicion_pago="credito_15",
+            quote_payment_methods=[
+                {
+                    "tipo": "bank",
+                    "banco": "BCP",
+                    "tipo_cuenta": "Cta Corriente",
+                    "moneda": "Soles",
+                    "cuenta": "1919870450013",
+                    "cci": "00219100987045001355",
+                }
+            ],
             items=[
                 schemas.CotizacionItemCreate(
                     producto_id=producto.id,
@@ -47,6 +57,7 @@ def test_duplicar_cotizacion_crea_copia_con_nueva_orden_y_mismos_items(db_sessio
     assert copia.estado == "pendiente"
     assert copia.condicion_pago == original.condicion_pago
     assert copia.observaciones == original.observaciones
+    assert copia.quote_payment_methods == original.quote_payment_methods
     assert len(copia.items) == len(original.items)
     assert copia.items[0].producto_id == original.items[0].producto_id
     assert copia.items[0].descripcion == original.items[0].descripcion
@@ -153,6 +164,59 @@ def test_crear_cotizacion_persiste_snapshot_cliente_del_documento(db_session):
     assert payload["cliente_snapshot"]["telefono"] == "987654321"
 
 
+def test_crear_cotizacion_persiste_metodos_bancarios_visibles_en_pdf(db_session):
+    tenant = make_tenant(db_session, "COTBANK")
+    user = make_user(db_session, tenant, email="cotbank@test.com")
+    cliente = make_cliente(db_session, tenant, "COTBANK", numero_documento="20999999993")
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            moneda="PEN",
+            tipo_comprobante="00",
+            quote_payment_methods=[
+                {
+                    "tipo": "bank",
+                    "banco": "BCP",
+                    "tipo_cuenta": "Cta Corriente",
+                    "moneda": "Soles",
+                    "cuenta": "1919870450013",
+                    "cci": "00219100987045001355",
+                },
+                {
+                    "tipo": "bank",
+                    "banco": "Banco de la Nacion",
+                    "tipo_cuenta": "Cuenta Detraccion",
+                    "moneda": "Soles",
+                    "cuenta": "00045115666",
+                    "cci": "01804500004511566655",
+                },
+            ],
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Servicio con bancos visibles",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    assert [method["banco"] for method in quote.quote_payment_methods] == [
+        "BCP",
+        "Banco de la Nacion",
+    ]
+
+    payload = schemas.CotizacionResponse.model_validate(
+        quote,
+        from_attributes=True,
+    ).model_dump()
+    assert payload["quote_payment_methods"][0]["banco"] == "BCP"
+
+
 def test_facturar_cotizacion_copia_snapshot_cliente(db_session):
     tenant = make_tenant(db_session, "COTSNAPF")
     user = make_user(db_session, tenant, email="cotsnapf@test.com")
@@ -215,6 +279,45 @@ def test_actualizar_cotizacion_rechaza_si_tiene_pagos(db_session):
             ),
             user,
         )
+
+
+def test_actualizar_cotizacion_permte_quitar_todos_los_bancos_visibles(db_session):
+    tenant = make_tenant(db_session, "COT02BANK")
+    user = make_user(db_session, tenant, email="cot02bank@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02BANK")
+    quote = make_quote_via_crud(db_session, tenant, user, cliente)
+    quote.quote_payment_methods = [
+        {
+            "tipo": "bank",
+            "banco": "BCP",
+            "tipo_cuenta": "Cta Corriente",
+            "moneda": "Soles",
+            "cuenta": "1919870450013",
+            "cci": "00219100987045001355",
+        }
+    ]
+    db_session.commit()
+
+    updated = crud.update_cotizacion(
+        db_session,
+        quote.id,
+        schemas.CotizacionUpdate(
+            cliente_id=cliente.id,
+            moneda="PEN",
+            tipo_comprobante="00",
+            quote_payment_methods=[],
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Documento sin bancos",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                ),
+            ],
+        ),
+        user,
+    )
+
+    assert updated.quote_payment_methods == []
 
 
 def test_actualizar_cotizacion_rechaza_si_tiene_fiscal_vinculado(db_session):

@@ -14,6 +14,7 @@ from fiscal_catalogs import (
 from schemas._base import StrictInputModel
 from schemas.auth import UserResponse
 from schemas.clientes import ClienteResponse
+from services.bank_account_validation import validate_and_normalize_quote_payment_methods
 
 
 class CotizacionItemCreate(BaseModel):
@@ -94,6 +95,7 @@ class ClienteSnapshot(BaseModel):
 class CotizacionCreate(BaseModel):
     cliente_id: int
     cliente_snapshot: Optional[ClienteSnapshot] = None
+    quote_payment_methods: Optional[List[dict]] = None
     fecha_emision: Optional[datetime] = None
     fecha_vencimiento: Optional[datetime] = None
     moneda: str = "PEN"
@@ -107,6 +109,11 @@ class CotizacionCreate(BaseModel):
     @classmethod
     def normalize_cuotas_pago(cls, value):
         return value or []
+
+    @field_validator("quote_payment_methods")
+    @classmethod
+    def validate_quote_payment_methods(cls, value: Optional[List[dict]]) -> Optional[List[dict]]:
+        return validate_and_normalize_quote_payment_methods(value)
 
 
 class CotizacionUpdate(CotizacionCreate):
@@ -156,6 +163,7 @@ class CotizacionResponse(BaseModel):
     condicion_pago: Optional[str] = None
     cuotas_pago: List[CuotaPagoCreate] = Field(default_factory=list)
     cliente_snapshot: Optional[ClienteSnapshot] = None
+    quote_payment_methods: Optional[List[dict]] = None
     cliente: Optional[ClienteResponse] = None
     usuario: Optional[UserResponse] = None
     items: List[CotizacionItemResponse]

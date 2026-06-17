@@ -158,6 +158,7 @@ def _create_cotizacion_inner(
     db_cotizacion = models.Cotizacion(
         cliente_id=db_cliente.id,
         cliente_snapshot=cliente_snapshot,
+        quote_payment_methods=getattr(cotizacion, "quote_payment_methods", None),
         usuario_id=usuario_id,
         tenant_id=tenant_id,
         fecha_emision=fecha_emision,
@@ -262,6 +263,7 @@ def update_cotizacion(
 
     db_cotizacion.cliente_id = db_cliente.id
     db_cotizacion.cliente_snapshot = cliente_snapshot
+    db_cotizacion.quote_payment_methods = getattr(cotizacion, "quote_payment_methods", None)
     if cotizacion.fecha_emision is not None:
         db_cotizacion.fecha_emision = cotizacion.fecha_emision
     db_cotizacion.fecha_vencimiento = cotizacion.fecha_vencimiento
@@ -312,6 +314,7 @@ def duplicate_cotizacion(
     payload = schemas.CotizacionCreate(
         cliente_id=original.cliente_id,
         cliente_snapshot=original.cliente_snapshot,
+        quote_payment_methods=original.quote_payment_methods,
         fecha_vencimiento=original.fecha_vencimiento,
         moneda=original.moneda,
         tipo_comprobante=original.tipo_comprobante or "00",

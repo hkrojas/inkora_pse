@@ -360,7 +360,65 @@ def test_resolve_quote_company_data_usa_email_usuario_y_fallback_bancario():
 
     assert company_data["email"] == "ventas@inkora.test"
     assert company_data["bank_accounts"] == []
+    assert company_data["quote_bank_accounts"] == []
     assert company_data["name"] == tenant.business_name
+
+
+def test_resolve_quote_company_data_respeta_visibilidad_global_y_override_de_cotizacion():
+    tenant = _fake_tenant()
+    user = _fake_user()
+    user.tenant = tenant
+    tenant.bank_accounts = [
+        {
+            "tipo": "bank",
+            "banco": "BCP",
+            "tipo_cuenta": "Cta Corriente",
+            "moneda": "Soles",
+            "cuenta": "1919870450013",
+            "cci": "00219100987045001355",
+            "mostrar_en_cotizaciones": True,
+        },
+        {
+            "tipo": "bank",
+            "banco": "Banco de la Nacion",
+            "tipo_cuenta": "Cuenta Detraccion",
+            "moneda": "Soles",
+            "cuenta": "00045115666",
+            "cci": "01804500004511566655",
+            "mostrar_en_cotizaciones": False,
+        },
+        {
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Inkora Test SAC",
+            "numero": "999888777",
+        },
+    ]
+
+    fallback = pdf_generator._resolve_quote_company_data(
+        SimpleNamespace(usuario=user),
+        tenant,
+    )
+    override = pdf_generator._resolve_quote_company_data(
+        SimpleNamespace(
+            usuario=user,
+            quote_payment_methods=[
+                {
+                    "tipo": "bank",
+                    "banco": "Banco de la Nacion",
+                    "tipo_cuenta": "Cuenta Detraccion",
+                    "moneda": "Soles",
+                    "cuenta": "00045115666",
+                    "cci": "01804500004511566655",
+                }
+            ],
+        ),
+        tenant,
+    )
+
+    assert [method["banco"] for method in fallback["quote_bank_accounts"]] == ["BCP"]
+    assert [method["banco"] for method in override["quote_bank_accounts"]] == ["Banco de la Nacion"]
+    assert any(method["tipo"] == "wallet" for method in override["bank_accounts"])
 
 
 def test_build_payment_methods_text_soporta_bancos_y_billeteras():

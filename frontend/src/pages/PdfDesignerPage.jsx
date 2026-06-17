@@ -4,7 +4,11 @@ import ColorPickerField from '../components/ui/ColorPickerField';
 import { useToast } from '../components/ui/Toast';
 import { tenant as tenantSvc } from '../services/tenant';
 import { useAuth } from '../context/AuthContext';
-import { getPaymentMethodPreview, getPaymentQrImageUrl, normalizePaymentMethods } from '../lib/utils/paymentMethods';
+import {
+  getDefaultQuoteBankMethods,
+  getPaymentMethodPreview,
+  getPaymentQrImageUrl,
+} from '../lib/utils/paymentMethods';
 import FiscalDocPreview from '../components/documents/FiscalDocPreview';
 import {
   DEFAULT_NOTE_1_COLOR,
@@ -242,7 +246,7 @@ function PdfPreviewSheet({ tenantData }) {
       bold: observationDefaults.line2.bold,
     },
   ].filter((line) => line.text?.trim());
-  const paymentMethods = normalizePaymentMethods(tenantData?.bank_accounts);
+  const paymentMethods = getDefaultQuoteBankMethods(tenantData?.bank_accounts);
   const paymentQrUrl = getPaymentQrImageUrl(tenantData);
   const items = SAMPLE_ITEMS.map((item) => {
     const quantity = Number(item.cantidad) || 0;
@@ -392,7 +396,7 @@ function PdfPreviewSheet({ tenantData }) {
               <div className="cotizacion-preview-bank">
                 <div className="cotizacion-preview-bank-title">Datos para la transferencia</div>
                 <div className="cotizacion-preview-bank-line">Beneficiario: {companyName.toUpperCase()}</div>
-                {paymentMethods.slice(0, 2).map((method, index) => {
+                {paymentMethods.map((method, index) => {
                   const preview = getPaymentMethodPreview(method);
                   if (!preview) return null;
                   return (
