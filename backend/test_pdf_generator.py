@@ -283,10 +283,40 @@ def test_build_payment_methods_text_soporta_bancos_y_billeteras():
     assert "Pago inmediato" in payment_text
 
 
+def test_build_payment_methods_text_puede_excluir_billeteras():
+    payment_text = pdf_generator._build_payment_methods_text(
+        [
+            {
+                "tipo": "bank",
+                "banco": "BCP",
+                "tipo_cuenta": "Cta Corriente",
+                "moneda": "Soles",
+                "cuenta": "1919870450013",
+                "cci": "00219100987045001355",
+            },
+            {
+                "tipo": "wallet",
+                "proveedor": "Yape",
+                "titular": "Inkora Test SAC",
+                "numero": "999888777",
+            },
+        ],
+        beneficiary_name="Inkora Test SAC",
+        exclude_wallets=True,
+    )
+
+    assert "Datos para la Transferencia" in payment_text
+    assert "BCP" in payment_text
+    assert "1919870450013" in payment_text
+    assert "Yape" not in payment_text
+    assert "999888777" not in payment_text
+
+
 def test_build_quote_wallet_qr_content_prefiere_wallet():
     qr_content, wallet = pdf_generator._build_quote_wallet_qr_content(
         [
             {
+                "id": "wallet-yape",
                 "tipo": "wallet",
                 "proveedor": "Yape",
                 "titular": "Inkora Test SAC",
@@ -300,6 +330,69 @@ def test_build_quote_wallet_qr_content_prefiere_wallet():
     assert "Yape" in qr_content
     assert "999888777" in qr_content
     assert wallet is not None
+
+
+def test_build_quote_wallet_qr_content_respeta_wallet_seleccionada():
+    qr_content, wallet = pdf_generator._build_quote_wallet_qr_content(
+        [
+            {
+                "id": "wallet-yape",
+                "tipo": "wallet",
+                "proveedor": "Yape",
+                "titular": "Inkora Test SAC",
+                "numero": "999888777",
+            },
+            {
+                "id": "wallet-plin",
+                "tipo": "wallet",
+                "proveedor": "Plin",
+                "titular": "Inkora Test SAC",
+                "numero": "999111222",
+            },
+        ],
+        beneficiary_name="Inkora Test SAC",
+        selected_wallet_id="wallet-plin",
+    )
+
+    assert "Plin" in qr_content
+    assert "999111222" in qr_content
+    assert wallet is not None
+    assert wallet["id"] == "wallet-plin"
+
+
+def test_resolve_quote_company_data_usa_snapshot_de_medios_de_cobro():
+    tenant = _fake_tenant()
+    tenant.bank_accounts = [
+        {
+            "id": "wallet-yape",
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Tenant actual",
+            "numero": "999888777",
+        }
+    ]
+    user = _fake_user()
+    user.tenant = tenant
+
+    company_data = pdf_generator._resolve_quote_company_data(
+        SimpleNamespace(
+            usuario=user,
+            quote_selected_wallet_id="wallet-plin",
+            quote_payment_methods=[
+                {
+                    "id": "wallet-plin",
+                    "tipo": "wallet",
+                    "proveedor": "Plin",
+                    "titular": "Snapshot historico",
+                    "numero": "999111222",
+                }
+            ],
+        ),
+        tenant,
+    )
+
+    assert company_data["selected_wallet_id"] == "wallet-plin"
+    assert company_data["bank_accounts"][0]["id"] == "wallet-plin"
 
 
 def test_create_comprobante_pdf_crea_binario():

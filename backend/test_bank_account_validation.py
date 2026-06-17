@@ -53,3 +53,29 @@ def test_tenant_admin_update_rejects_invalid_cci_length():
                 }
             ]
         )
+
+
+def test_validate_and_normalize_bank_accounts_preserves_or_generates_ids():
+    methods = [
+        {
+            "id": "wallet-yape",
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Inkora SAC",
+            "numero": "999 888 777",
+        },
+        {
+            "tipo": "bank",
+            "banco": "BCP",
+            "tipo_cuenta": "Cta Corriente",
+            "moneda": "Soles",
+            "cuenta": "1919870450013",
+            "cci": "00219100987045001355",
+        },
+    ]
+
+    normalized = validate_and_normalize_bank_accounts(methods)
+
+    assert normalized[0]["id"] == "wallet-yape"
+    assert normalized[1]["id"]
+    assert normalized[1]["id"] != "wallet-yape"

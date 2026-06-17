@@ -19,6 +19,7 @@ from crud._cotizaciones_shared import (
     _next_quote_identity,
 )
 from services import calculations
+from services.bank_account_validation import validate_and_normalize_bank_accounts
 from services.document_flow_service import (
     DOCUMENT_KIND_QUOTATION,
     DOCUMENT_STATUS_PENDING,
@@ -68,6 +69,24 @@ def _resolve_quote_payment_terms(
         _QUOTE_CREDIT_TERM_DAYS[_QUOTE_DEFAULT_PAYMENT_CONDITION],
     )
     return resolved_condition, fecha_emision + timedelta(days=due_days)
+
+
+def _resolve_quote_selected_wallet_id(
+    payment_methods,
+    *,
+    selected_wallet_id: str | None = None,
+    default_wallet_id: str | None = None,
+) -> str | None:
+    wallet_ids = [
+        str(method.get("id")).strip()
+        for method in payment_methods or []
+        if method.get("tipo") == "wallet" and str(method.get("id") or "").strip()
+    ]
+    for candidate in (selected_wallet_id, default_wallet_id):
+        normalized = str(candidate or "").strip()
+        if normalized and normalized in wallet_ids:
+            return normalized
+    return wallet_ids[0] if wallet_ids else None
 
 
 def get_cotizaciones(
@@ -128,6 +147,16 @@ def _create_cotizacion_inner(
     if not db_cliente:
         raise ValueError("Cliente no encontrado o no pertenece al tenant actual.")
 
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    quote_payment_methods = validate_and_normalize_bank_accounts(
+        getattr(tenant, "bank_accounts", None) or []
+    ) or []
+    quote_selected_wallet_id = _resolve_quote_selected_wallet_id(
+        quote_payment_methods,
+        selected_wallet_id=getattr(cotizacion, "quote_selected_wallet_id", None),
+        default_wallet_id=getattr(tenant, "quote_default_wallet_id", None),
+    )
+
     items_db, items_procesados_para_suma = _build_quote_items(db, cotizacion, tenant_id)
     totales = calculations.sumarizar_cotizacion(
         items_procesados_para_suma
@@ -161,6 +190,8 @@ def _create_cotizacion_inner(
         observaciones=getattr(cotizacion, "observaciones", None),
         condicion_pago=condicion_pago,
         cuotas_pago=cuotas_pago or None,
+        quote_payment_methods=quote_payment_methods or None,
+        quote_selected_wallet_id=quote_selected_wallet_id,
         total_gravada=totales["total_gravada"],
         total_exonerada=totales["total_exonerada"],
         total_inafecta=totales["total_inafecta"],
@@ -214,7 +245,14 @@ def duplicate_cotizacion(
             for item in original.items or []
         ],
     )
-    return create_cotizacion(db, payload, usuario.id, original.tenant_id)
+    copia = create_cotizacion(db, payload, usuario.id, original.tenant_id)
+    if getattr(original, "quote_payment_methods", None):
+        copia.quote_payment_methods = original.quote_payment_methods
+        copia.quote_selected_wallet_id = getattr(original, "quote_selected_wallet_id", None)
+        db.commit()
+        db.refresh(copia)
+        return get_cotizacion(db, copia.id, usuario)
+    return copia
 
 
 def delete_cotizacion(

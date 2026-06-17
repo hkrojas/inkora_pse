@@ -20,6 +20,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import Flowable, Image, KeepInFrame, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from services import fiscal_qr_service, fiscal_xml_service
+from services.bank_account_validation import build_payment_method_id
 from services.calculations import TOTAL_PRECISION, calculate_cotizacion_totals_v3, to_decimal
 from services.quote_observation_service import build_default_observation_lines, parse_quote_observations
 from tenant_access import get_company_bank_accounts
@@ -110,7 +111,7 @@ def _format_quantity(value: Decimal) -> str:
     return f"{value:f}".rstrip("0").rstrip(".")
 
 
-def _normalize_payment_method_entry(entry):
+def _normalize_payment_method_entry(entry, index: int = 0):
     if not isinstance(entry, dict):
         return None
 
@@ -125,6 +126,7 @@ def _normalize_payment_method_entry(entry):
         if not any([provider, holder, number, note]):
             return None
         return {
+            "id": build_payment_method_id(entry, index, "wallet"),
             "tipo": "wallet",
             "proveedor": provider,
             "titular": holder,
@@ -140,6 +142,7 @@ def _normalize_payment_method_entry(entry):
     if not any([bank_name, account_number, cci]):
         return None
     return {
+        "id": build_payment_method_id(entry, index, "bank"),
         "tipo": "bank",
         "banco": bank_name,
         "tipo_cuenta": account_type,
@@ -154,15 +157,24 @@ def _normalize_payment_methods(payment_methods) -> list[dict]:
         return []
 
     normalized = []
-    for entry in payment_methods:
-        payment_method = _normalize_payment_method_entry(entry)
+    for index, entry in enumerate(payment_methods):
+        payment_method = _normalize_payment_method_entry(entry, index)
         if payment_method:
             normalized.append(payment_method)
     return normalized
 
 
-def _build_payment_methods_text(payment_methods, beneficiary_name: str = "") -> str:
+def _build_payment_methods_text(
+    payment_methods,
+    beneficiary_name: str = "",
+    *,
+    exclude_wallets: bool = False,
+) -> str:
     normalized_methods = _normalize_payment_methods(payment_methods)
+    if exclude_wallets:
+        normalized_methods = [
+            method for method in normalized_methods if method["tipo"] != "wallet"
+        ]
     if not normalized_methods:
         return ""
 
@@ -754,11 +766,14 @@ def _resolve_quote_company_data(document_data, tenant: models.Tenant) -> dict:
         or ""
     )
 
-    bank_accounts = []
-    if user is not None:
+    bank_accounts = getattr(document_data, "quote_payment_methods", None) or []
+    if not bank_accounts and user is not None:
         bank_accounts = get_company_bank_accounts(user)
     if not bank_accounts:
         bank_accounts = getattr(tenant, "bank_accounts", None) or []
+    selected_wallet_id = str(
+        getattr(document_data, "quote_selected_wallet_id", None) or ""
+    ).strip() or None
 
     logo_source = tenant if getattr(tenant, "logo_filename", None) else user
 
@@ -769,6 +784,7 @@ def _resolve_quote_company_data(document_data, tenant: models.Tenant) -> dict:
         "phone": str(company_phone or "").strip(),
         "email": str(company_email or "").strip(),
         "bank_accounts": bank_accounts,
+        "selected_wallet_id": selected_wallet_id,
         "logo_source": logo_source,
     }
 
@@ -832,15 +848,31 @@ def _resolve_company_data(document_data, tenant: models.Tenant, parsed_xml: dict
     }
 
 
-def _pick_wallet_payment_method(payment_methods) -> dict | None:
-    for method in _normalize_payment_methods(payment_methods):
+def _pick_wallet_payment_method(payment_methods, *, selected_wallet_id: str | None = None) -> dict | None:
+    normalized_methods = _normalize_payment_methods(payment_methods)
+    selected_wallet_id = str(selected_wallet_id or "").strip()
+
+    if selected_wallet_id:
+        for method in normalized_methods:
+            if method.get("tipo") == "wallet" and str(method.get("id") or "").strip() == selected_wallet_id:
+                return method
+
+    for method in normalized_methods:
         if method.get("tipo") == "wallet":
             return method
     return None
 
 
-def _build_quote_wallet_qr_content(payment_methods, beneficiary_name: str) -> tuple[str, dict | None]:
-    wallet = _pick_wallet_payment_method(payment_methods)
+def _build_quote_wallet_qr_content(
+    payment_methods,
+    beneficiary_name: str,
+    *,
+    selected_wallet_id: str | None = None,
+) -> tuple[str, dict | None]:
+    wallet = _pick_wallet_payment_method(
+        payment_methods,
+        selected_wallet_id=selected_wallet_id,
+    )
     if wallet:
         qr_parts = [
             wallet.get("proveedor") or "Billetera digital",
@@ -2341,6 +2373,7 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
     payment_methods_text = _build_payment_methods_text(
         company_data["bank_accounts"],
         beneficiary_name=company_data["name"],
+        exclude_wallets=not is_comprobante,
     )
     if not is_comprobante:
         quote_notes_elements.extend(_build_observation_paragraphs(document_data, tenant, body))
@@ -2366,7 +2399,11 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         qr_summary_text = _resolve_qr_visible_summary(document_data)
         bottom_left_text = "Puedes descargar el XML, CDR y representación impresa desde nuestro portal."
     else:
-        qr_content, wallet = _build_quote_wallet_qr_content(company_data["bank_accounts"], company_data["name"])
+        qr_content, wallet = _build_quote_wallet_qr_content(
+            company_data["bank_accounts"],
+            company_data["name"],
+            selected_wallet_id=company_data.get("selected_wallet_id"),
+        )
         qr_flowable = _build_generated_qr_flowable(qr_content, 1.75 * inch, qr_col_width)
         provider = (wallet or {}).get("proveedor") or "billetera digital"
         qr_title = Paragraph(

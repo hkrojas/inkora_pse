@@ -4,7 +4,7 @@ import ColorPickerField from '../components/ui/ColorPickerField';
 import { useToast } from '../components/ui/Toast';
 import { tenant as tenantSvc } from '../services/tenant';
 import { useAuth } from '../context/AuthContext';
-import { getPaymentMethodPreview, normalizePaymentMethods } from '../lib/utils/paymentMethods';
+import { getTransferPaymentMethodPreviews, normalizePaymentMethods } from '../lib/utils/paymentMethods';
 import FiscalDocPreview from '../components/documents/FiscalDocPreview';
 import {
   DEFAULT_NOTE_1_COLOR,
@@ -240,6 +240,7 @@ function PdfPreviewSheet({ tenantData }) {
     },
   ].filter((line) => line.text?.trim());
   const paymentMethods = normalizePaymentMethods(tenantData?.bank_accounts);
+  const transferPaymentMethods = getTransferPaymentMethodPreviews(paymentMethods, { excludeWallets: true });
   const items = SAMPLE_ITEMS.map((item) => {
     const quantity = Number(item.cantidad) || 0;
     const unitPrice = Number(item.precio_unitario) || 0;
@@ -348,13 +349,11 @@ function PdfPreviewSheet({ tenantData }) {
             </div>
           ))}
 
-          {paymentMethods.length > 0 && (
+          {transferPaymentMethods.length > 0 && (
             <div className="cotizacion-preview-bank">
               <div className="cotizacion-preview-bank-title">Datos para la Transferencia</div>
               <div className="cotizacion-preview-bank-line">Beneficiario: {companyName.toUpperCase()}</div>
-              {paymentMethods.map((method, index) => {
-                const preview = getPaymentMethodPreview(method);
-                if (!preview) return null;
+              {transferPaymentMethods.map((preview, index) => {
                 return (
                   <div key={`${preview.title}-${index}`} className="cotizacion-preview-bank-item">
                     <div className="cotizacion-preview-bank-name">{preview.title}</div>

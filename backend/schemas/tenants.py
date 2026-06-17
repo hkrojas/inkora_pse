@@ -35,6 +35,7 @@ class TenantUpdate(StrictInputModel):
     pdf_note_1_color: Optional[str] = None
     pdf_note_2: Optional[str] = None
     bank_accounts: Optional[List[dict]] = None
+    quote_default_wallet_id: Optional[str] = None
     apisperu_token: Optional[str] = None
     apisperu_url: Optional[str] = None
     smartpse_company_id: Optional[str] = None
@@ -72,6 +73,7 @@ class TenantAdminUpdate(StrictInputModel):
     pdf_note_1_color: Optional[str] = None
     pdf_note_2: Optional[str] = None
     bank_accounts: Optional[List[dict]] = None
+    quote_default_wallet_id: Optional[str] = None
 
     @field_validator("business_name", "business_address", mode="before")
     @classmethod
@@ -106,6 +108,7 @@ class TenantResponse(TenantSummaryResponse):
     pdf_note_1_color: Optional[str] = None
     pdf_note_2: Optional[str] = None
     bank_accounts: Optional[Any] = None
+    quote_default_wallet_id: Optional[str] = None
     apisperu_token_status: Optional[str] = None
     apisperu_token_checked_at: Optional[datetime] = None
     smartpse_status: Optional[str] = None

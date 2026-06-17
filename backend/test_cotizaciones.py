@@ -160,6 +160,177 @@ def test_cotizacion_nueva_usa_credito_15_y_vencimiento_por_defecto(db_session):
     assert quote.fecha_vencimiento.date() == (fecha_emision + timedelta(days=15)).date()
 
 
+def test_cotizacion_persiste_snapshot_y_billetera_predeterminada(db_session):
+    tenant = make_tenant(db_session, "COT02W01")
+    tenant.bank_accounts = [
+        {
+            "id": "wallet-yape",
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Inkora SAC",
+            "numero": "999888777",
+        },
+        {
+            "id": "wallet-plin",
+            "tipo": "wallet",
+            "proveedor": "Plin",
+            "titular": "Inkora SAC",
+            "numero": "999111222",
+        },
+        {
+            "id": "bank-bcp",
+            "tipo": "bank",
+            "banco": "BCP",
+            "tipo_cuenta": "Cta Corriente",
+            "moneda": "Soles",
+            "cuenta": "1919870450013",
+            "cci": "00219100987045001355",
+        },
+    ]
+    tenant.quote_default_wallet_id = "wallet-plin"
+    db_session.commit()
+
+    user = make_user(db_session, tenant, email="cot02w01@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02W01")
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            moneda="PEN",
+            tipo_comprobante="00",
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Cotizacion con billetera por defecto",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    assert quote.quote_selected_wallet_id == "wallet-plin"
+    assert [method["id"] for method in quote.quote_payment_methods] == [
+        "wallet-yape",
+        "wallet-plin",
+        "bank-bcp",
+    ]
+
+
+def test_cotizacion_permite_override_de_billetera_para_qr(db_session):
+    tenant = make_tenant(db_session, "COT02W02")
+    tenant.bank_accounts = [
+        {
+            "id": "wallet-yape",
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Inkora SAC",
+            "numero": "999888777",
+        },
+        {
+            "id": "wallet-plin",
+            "tipo": "wallet",
+            "proveedor": "Plin",
+            "titular": "Inkora SAC",
+            "numero": "999111222",
+        },
+    ]
+    tenant.quote_default_wallet_id = "wallet-plin"
+    db_session.commit()
+
+    user = make_user(db_session, tenant, email="cot02w02@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02W02")
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            moneda="PEN",
+            tipo_comprobante="00",
+            quote_selected_wallet_id="wallet-yape",
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Cotizacion con override de billetera",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    assert quote.quote_selected_wallet_id == "wallet-yape"
+
+
+def test_duplicar_cotizacion_preserva_snapshot_y_billetera_seleccionada(db_session):
+    tenant = make_tenant(db_session, "COT02W03")
+    tenant.bank_accounts = [
+        {
+            "id": "wallet-yape",
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Inkora SAC",
+            "numero": "999888777",
+        },
+        {
+            "id": "bank-bcp",
+            "tipo": "bank",
+            "banco": "BCP",
+            "tipo_cuenta": "Cta Corriente",
+            "moneda": "Soles",
+            "cuenta": "1919870450013",
+            "cci": "00219100987045001355",
+        },
+    ]
+    tenant.quote_default_wallet_id = "wallet-yape"
+    db_session.commit()
+
+    user = make_user(db_session, tenant, email="cot02w03@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02W03")
+
+    original = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            moneda="PEN",
+            tipo_comprobante="00",
+            quote_selected_wallet_id="wallet-yape",
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Cotizacion original",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    tenant.bank_accounts = [
+        {
+            "id": "wallet-plin",
+            "tipo": "wallet",
+            "proveedor": "Plin",
+            "titular": "Inkora SAC",
+            "numero": "999111222",
+        },
+    ]
+    tenant.quote_default_wallet_id = "wallet-plin"
+    db_session.commit()
+
+    copia = crud.duplicate_cotizacion(db_session, original.id, user)
+
+    assert copia.quote_selected_wallet_id == "wallet-yape"
+    assert [method["id"] for method in copia.quote_payment_methods] == [
+        "wallet-yape",
+        "bank-bcp",
+    ]
+
+
 def test_documento_fiscal_conserva_fecha_emision_de_la_cotizacion(db_session):
     tenant = make_tenant(db_session, "COT02D")
     user = make_user(db_session, tenant, email="cot02d@test.com")
