@@ -389,9 +389,8 @@ function LineRow({
   return (
     <div
       className={`line-row line-row--comprobante${animateIn ? ' line-row--entering' : ''}`}
-      style={{ gridTemplateColumns: 'minmax(240px, 1fr) 92px 80px 110px 110px 44px' }}
     >
-      <div className="product-input">
+      <div className="product-input line-row-cell line-row-cell--product" data-mobile-label="Producto">
         <ProductLineCell
           value={item}
           onChange={(next) => onItemChange(index, next)}
@@ -402,7 +401,7 @@ function LineRow({
         />
       </div>
 
-      <div>
+      <div className="line-row-cell line-row-cell--unit" data-mobile-label="Unidad">
         <CustomSelect
           value={item.unidad_medida}
           onChange={(v) => onFieldChange(index, 'unidad_medida', v)}
@@ -411,7 +410,7 @@ function LineRow({
         />
       </div>
 
-      <div>
+      <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad">
         <input
           type="text"
           inputMode="decimal"
@@ -422,7 +421,7 @@ function LineRow({
         />
       </div>
 
-      <div className="line-cell-stack">
+      <div className="line-row-cell line-row-cell--price line-cell-stack" data-mobile-label="Precio unitario">
         <input
           ref={priceRef}
           type="text"
@@ -439,14 +438,14 @@ function LineRow({
         )}
       </div>
 
-      <div>
+      <div className="line-row-cell line-row-cell--total" data-mobile-label="Total">
         <input
           readOnly
           value={`${sym} ${Number(line.total).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`}
         />
       </div>
 
-      <div>
+      <div className="line-row-cell line-row-cell--actions">
         <button type="button" className="trash-btn" onClick={() => onRemove(index)}>
           <Trash2 size={14} />
         </button>
@@ -1252,10 +1251,7 @@ export default function ComprobanteNuevoPage() {
               </div>
               <div className="panel-body">
                 <div className="line-table line-table--comprobante">
-                  <div
-                    className="line-head"
-                    style={{ gridTemplateColumns: 'minmax(240px, 1fr) 92px 80px 110px 110px 44px' }}
-                  >
+                  <div className="line-head">
                     <div>Código / Producto</div>
                     <div>Unidad</div>
                     <div>Cant.</div>
