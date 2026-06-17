@@ -1,5 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
   <title>Inkora</title>
-  <rect width="32" height="32" rx="8" fill="#001d44"/>
-  <text x="16" y="22" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="700" fill="#ffffff">I</text>
+  <defs>
+    <linearGradient id="inkora-favicon-bg" x1="4" y1="3" x2="28" y2="29" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1C2D1C"/>
+      <stop offset="1" stop-color="#102b16"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#inkora-favicon-bg)"/>
+  <g transform="translate(4 4)" fill="none" stroke="#a3e635" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.6">
+    <path d="M12 6v12"/>
+    <path d="M17.196 9 6.804 15"/>
+    <path d="m6.804 9 10.392 6"/>
+  </g>
 </svg>
