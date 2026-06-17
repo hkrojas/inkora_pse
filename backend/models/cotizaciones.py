@@ -37,7 +37,6 @@ class Cotizacion(Base):
     cliente_id = Column(Integer, ForeignKey("clientes.id"))
     cliente = relationship("Cliente", back_populates="cotizaciones")
     cliente_snapshot = Column(JSON, nullable=True)
-    quote_payment_methods = Column(JSON, nullable=True)
 
     usuario_id = Column(Integer, ForeignKey("users.id"))
     usuario = relationship("User", back_populates="cotizaciones")
@@ -87,6 +86,8 @@ class Cotizacion(Base):
     observaciones = Column(Text, nullable=True)
     condicion_pago = Column(String, nullable=True)
     cuotas_pago = Column(JSON, nullable=True)
+    quote_payment_methods = Column(JSON, nullable=True)
+    quote_selected_wallet_id = Column(String, nullable=True)
 
     monto_pagado = Column(Numeric(12, 2), default=0.0)
     saldo_pendiente = Column(Numeric(12, 2), default=0.0)

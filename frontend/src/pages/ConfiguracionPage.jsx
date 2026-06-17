@@ -22,6 +22,7 @@ import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/
 import {
   buildEmptyBankPaymentMethod,
   buildEmptyWalletPaymentMethod,
+  getWalletOptions,
   normalizePaymentMethods,
   serializePaymentMethods,
 } from '../lib/utils/paymentMethods';
@@ -629,6 +630,7 @@ export default function ConfiguracionPage() {
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [paymentMethodErrors, setPaymentMethodErrors] = useState({});
   const [communicationTemplates, setCommunicationTemplates] = useState(() => extractCommunicationTemplates([]));
+  const [quoteDefaultWalletId, setQuoteDefaultWalletId] = useState('');
   const [activeTab, setActiveTab] = useState(TABS.includes(initialTab) ? initialTab : 'empresa');
   const [tabDirection, setTabDirection] = useState('forward');
 
@@ -644,6 +646,7 @@ export default function ConfiguracionPage() {
         setPhoneError(null);
         setPaymentMethods(normalizePaymentMethods(tenantResponse.bank_accounts));
         setCommunicationTemplates(extractCommunicationTemplates(tenantResponse.bank_accounts));
+        setQuoteDefaultWalletId(String(tenantResponse.quote_default_wallet_id || ''));
         setPaymentMethodErrors({});
       })
       .catch((err) => {
@@ -691,6 +694,7 @@ export default function ConfiguracionPage() {
           serializePaymentMethods(paymentMethods),
           communicationTemplates,
         ),
+        quote_default_wallet_id: quoteDefaultWalletId || null,
       });
       setTenantData(updated);
       setBusinessName(updated.business_name || '');
@@ -698,6 +702,7 @@ export default function ConfiguracionPage() {
       setBusinessErrors({});
       setPaymentMethods(normalizePaymentMethods(updated.bank_accounts));
       setCommunicationTemplates(extractCommunicationTemplates(updated.bank_accounts));
+      setQuoteDefaultWalletId(String(updated.quote_default_wallet_id || ''));
       setPaymentMethodErrors({});
       setPhone(normalizePeruMobileInput(updated.business_phone || ''));
       setPhoneError(null);
@@ -831,7 +836,12 @@ export default function ConfiguracionPage() {
 
   const removePaymentMethod = (index) => {
     setPaymentMethods((current) => {
+      const removedMethod = current[index];
       const next = current.filter((_, methodIndex) => methodIndex !== index);
+      if (removedMethod?.id && removedMethod.id === quoteDefaultWalletId) {
+        const nextWallet = next.find((method) => method.tipo === 'wallet');
+        setQuoteDefaultWalletId(nextWallet?.id || '');
+      }
       setPaymentMethodErrors(buildPaymentMethodErrorMap(next));
       return next;
     });
@@ -861,6 +871,13 @@ export default function ConfiguracionPage() {
     setActiveTab(nextTab);
   };
 
+  useEffect(() => {
+    const validWalletIds = new Set(getWalletOptions(paymentMethods).map((option) => option.value));
+    if (quoteDefaultWalletId && !validWalletIds.has(quoteDefaultWalletId)) {
+      setQuoteDefaultWalletId('');
+    }
+  }, [paymentMethods, quoteDefaultWalletId]);
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -881,6 +898,7 @@ export default function ConfiguracionPage() {
   const collectionsReady = Boolean(phone && paymentMethods.length > 0);
   const setupStatus = fiscalReady && collectionsReady ? 'Lista para operar' : 'Requiere revisión';
   const businessRoleLabel = getBusinessRoleLabel(user);
+  const walletOptions = getWalletOptions(paymentMethods);
   const fiscalConfiguredCount = [
     hasSmartPseCpeCredentials,
     tenantData?.has_sunat_credentials,
@@ -1210,11 +1228,32 @@ export default function ConfiguracionPage() {
                       + Billetera digital
                     </button>
                   </div>
+                  <div className="form-grid settings-payment-default-wallet-grid">
+                    <div className="field span-12">
+                      <label>Billetera mostrada en el QR de cotizaciones</label>
+                      <div className="control">
+                        <CustomSelect
+                          value={quoteDefaultWalletId}
+                          onChange={(value) => setQuoteDefaultWalletId(String(value || ''))}
+                          options={[
+                            { value: '', label: 'Automatica: primera billetera disponible' },
+                            ...walletOptions,
+                          ]}
+                          placeholder="Seleccionar billetera"
+                          searchable
+                          searchPlaceholder="Buscar billetera..."
+                        />
+                      </div>
+                      <p className="field-hint">
+                        Esta billetera se mostrara junto al QR en la cotizacion salvo que una cotizacion concreta use otra.
+                      </p>
+                    </div>
+                  </div>
                   {paymentMethods.length > 0 ? (
                     <div className="space-y-3">
                       {paymentMethods.map((method, index) => (
                         <PaymentMethodCard
-                          key={`${method.tipo}-${index}`}
+                          key={method.id || `${method.tipo}-${index}`}
                           method={method}
                           index={index}
                           errors={paymentMethodErrors[index]}

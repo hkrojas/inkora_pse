@@ -8,6 +8,7 @@ import {
   getDefaultQuoteBankMethods,
   getPaymentMethodPreview,
   getPaymentQrImageUrl,
+  getTransferPaymentMethodPreviews,
 } from '../lib/utils/paymentMethods';
 import FiscalDocPreview from '../components/documents/FiscalDocPreview';
 import {
@@ -248,6 +249,7 @@ function PdfPreviewSheet({ tenantData }) {
   ].filter((line) => line.text?.trim());
   const paymentMethods = getDefaultQuoteBankMethods(tenantData?.bank_accounts);
   const paymentQrUrl = getPaymentQrImageUrl(tenantData);
+  const transferPaymentMethods = getTransferPaymentMethodPreviews(paymentMethods, { excludeWallets: true });
   const items = SAMPLE_ITEMS.map((item) => {
     const quantity = Number(item.cantidad) || 0;
     const unitPrice = Number(item.precio_unitario) || 0;

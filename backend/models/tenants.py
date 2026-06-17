@@ -48,6 +48,7 @@ class Tenant(Base):
     pdf_note_2 = Column(Text, nullable=True)
 
     bank_accounts = Column(JSON, nullable=True)
+    quote_default_wallet_id = Column(String, nullable=True)
 
     apisperu_token = Column(String, nullable=True)
     apisperu_url = Column(String, nullable=True)

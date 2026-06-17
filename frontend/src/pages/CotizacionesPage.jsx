@@ -30,6 +30,10 @@ import {
   getQuoteBankMethodSignature,
   getQuoteBankMethods,
   serializeQuoteBankMethods,
+  getTransferPaymentMethodPreviews,
+  getWalletOptions,
+  normalizePaymentMethods,
+  resolveSelectedWallet,
 } from '../lib/utils/paymentMethods';
 import { BASE_URL } from '../lib/utils/config';
 import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/peruPhoneValidation';
@@ -504,6 +508,7 @@ function CotizacionPreviewSheet({
   subtotalGravado,
   igv,
   totalGeneral,
+  selectedWalletId,
 }) {
   const accentColor = tenantData?.primary_color || 'var(--brand-600)';
   const companyName = tenantData?.business_name || user?.tenant?.business_name || 'Nombre del negocio';
@@ -511,10 +516,17 @@ function CotizacionPreviewSheet({
   const companyAddress = tenantData?.business_address || 'Direccion no especificada';
   const companyPhone = tenantData?.business_phone || '';
   const companyEmail = user?.business_email || user?.email || '';
-  const paymentMethods = Array.isArray(quotePaymentMethods)
-    ? getQuoteBankMethods(quotePaymentMethods)
-    : getDefaultQuoteBankMethods(tenantData?.bank_accounts);
   const paymentQrUrl = getPaymentQrImageUrl(tenantData);
+  const paymentMethods = normalizePaymentMethods(tenantData?.bank_accounts);
+  const transferSourceMethods = Array.isArray(quotePaymentMethods)
+    ? quotePaymentMethods
+    : getDefaultQuoteBankMethods(tenantData?.bank_accounts);
+  const transferPaymentMethods = getTransferPaymentMethodPreviews(transferSourceMethods, { excludeWallets: true });
+  const selectedWallet = resolveSelectedWallet(
+    paymentMethods,
+    selectedWalletId,
+    tenantData?.quote_default_wallet_id,
+  );
   const validItems = items
     .filter((item) => item.descripcion?.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0)
     .map((item) => {
@@ -669,6 +681,23 @@ function CotizacionPreviewSheet({
             <p>QR compatible con la billetera digital configurada por la empresa.</p>
             <p><span>Condición de pago:</span> {getCondicionPagoLabel(condicion)}</p>
 
+            {selectedWallet && (
+              <div className="cotizacion-preview-bank">
+                <div className="cotizacion-preview-bank-title">
+                  QR de cobro: {selectedWallet.proveedor || 'Billetera digital'}
+                </div>
+                {selectedWallet.titular && (
+                  <div className="cotizacion-preview-bank-line">Titular: {selectedWallet.titular}</div>
+                )}
+                {selectedWallet.numero && (
+                  <div className="cotizacion-preview-bank-line">Numero: {selectedWallet.numero}</div>
+                )}
+                {selectedWallet.nota && (
+                  <div className="cotizacion-preview-bank-line">{selectedWallet.nota}</div>
+                )}
+              </div>
+            )}
+
             {displayObservationLines.map((line, index) => (
               <p
                 key={`preview-note-${index}`}
@@ -679,15 +708,13 @@ function CotizacionPreviewSheet({
               </p>
             ))}
 
-            {paymentMethods.length > 0 && (
+            {transferPaymentMethods.length > 0 && (
               <div className="cotizacion-preview-bank">
                 <div className="cotizacion-preview-bank-title">Datos para la transferencia</div>
                 <div className="cotizacion-preview-bank-line">
                   Beneficiario: {companyName.toUpperCase()}
                 </div>
-                {paymentMethods.map((method, index) => {
-                  const preview = getPaymentMethodPreview(method);
-                  if (!preview) return null;
+                {transferPaymentMethods.map((preview, index) => {
                   return (
                     <div key={`${preview.title}-${index}`} className="cotizacion-preview-bank-item">
                       <div className="cotizacion-preview-bank-name">{preview.title}</div>
@@ -1204,6 +1231,7 @@ function NuevaCotizacionForm({
       ]
       : clientes
   ), [clientes, initialQuote?.cliente]);
+  const [quoteWalletId, setQuoteWalletId] = useState('');
 
   // Pre-fill condición de pago desde el cliente seleccionado
   useEffect(() => {
@@ -1224,6 +1252,7 @@ function NuevaCotizacionForm({
       .then((response) => {
         if (!active) return;
         setTenantData(response);
+        setQuoteWalletId('');
         setObservationLines((current) => {
           if (observationsInitialized) return current;
           return buildDefaultObservationLines(response);
@@ -1283,6 +1312,7 @@ function NuevaCotizacionForm({
     setMoneda(initialQuote?.moneda || 'PEN');
     setCondicion(initialQuote?.condicion_pago || 'contado');
     setFechaVenc(toDateInputValue(initialQuote?.fecha_vencimiento));
+    setQuoteWalletId(String(initialQuote?.quote_selected_wallet_id || ''));
     setObservationLines(parseObservationValue(initialQuote?.observaciones, tenantData));
     setObservacionesOpen(Boolean(initialQuote?.observaciones));
     if (Array.isArray(initialQuote?.quote_payment_methods)) {
@@ -1310,6 +1340,14 @@ function NuevaCotizacionForm({
     }
     setFechaVenc(calcFechaVencimiento(condicion));
   }, [condicion, initialQuote?.fecha_vencimiento, isEditing]);
+
+  useEffect(() => {
+    const walletOptions = getWalletOptions(tenantData?.bank_accounts);
+    if (!quoteWalletId) return;
+    if (!walletOptions.some((option) => option.value === quoteWalletId)) {
+      setQuoteWalletId('');
+    }
+  }, [quoteWalletId, tenantData]);
 
   const addItem    = () => setItems((cur) => [...cur, emptyItem()]);
   const removeItem = (idx) => setItems((cur) => cur.filter((_, i) => i !== idx));
@@ -1413,6 +1451,7 @@ function NuevaCotizacionForm({
         tipo_comprobante:  '00',
         condicion_pago:    condicion,
         fecha_vencimiento: condicion === 'contado' ? undefined : (fechaVenc || undefined),
+        quote_selected_wallet_id: quoteWalletId || undefined,
         quote_payment_methods: serializeQuoteBankMethods(effectiveQuoteBankMethods),
         observaciones:     observationLines.some((line) => line.text?.trim())
           ? serializeObservationLines(observationLines)
@@ -1444,6 +1483,7 @@ function NuevaCotizacionForm({
     setMoneda('PEN');
     setCondicion(DEFAULT_QUOTE_PAYMENT_CONDITION);
     setFechaVenc(calcFechaVencimiento(DEFAULT_QUOTE_PAYMENT_CONDITION));
+    setQuoteWalletId('');
     setObservationLines(buildDefaultObservationLines(tenantData));
     setObservacionesOpen(true);
     setQuoteBankSelectionMode('global');
@@ -1470,6 +1510,7 @@ function NuevaCotizacionForm({
   const totalGeneral = totales.gravado + totales.exonerado + totales.inafecto + totales.exportacion;
   const previewClient = getPreviewClientData(clienteId, clienteForm, formClientes);
   const hasObservationLines = observationLines.some((line) => line.text?.trim());
+  const walletOptions = getWalletOptions(tenantData?.bank_accounts);
 
 return (
     <>
@@ -1559,6 +1600,22 @@ return (
                     <label>Fecha vencimiento</label>
                     <div className="control">
                       <DatePicker value={fechaVenc} onChange={setFechaVenc} disabled={condicion === 'contado'} />
+                    </div>
+                  </div>
+                  <div className="field span-12">
+                    <label>Billetera visible junto al QR</label>
+                    <div className="control">
+                      <CustomSelect
+                        value={quoteWalletId}
+                        onChange={(value) => setQuoteWalletId(String(value || ''))}
+                        options={[
+                          { value: '', label: 'Usar billetera predeterminada del negocio' },
+                          ...walletOptions,
+                        ]}
+                        placeholder="Seleccionar billetera"
+                        searchable
+                        searchPlaceholder="Buscar billetera..."
+                      />
                     </div>
                   </div>
                 </div>
@@ -1831,6 +1888,7 @@ return (
             subtotalGravado={subtotalGravado}
             igv={igv}
             totalGeneral={totalGeneral}
+            selectedWalletId={quoteWalletId}
           />
         </div>
       </Modal>

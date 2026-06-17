@@ -32,15 +32,13 @@ def test_validate_and_normalize_bank_accounts_ignores_payment_qr_meta():
         ]
     )
 
-    assert normalized == [
-        {
-            "tipo": "wallet",
-            "proveedor": "Yape",
-            "titular": "",
-            "numero": "999888777",
-            "nota": "",
-        }
-    ]
+    assert len(normalized) == 1
+    assert normalized[0]["tipo"] == "wallet"
+    assert normalized[0]["proveedor"] == "Yape"
+    assert normalized[0]["titular"] == ""
+    assert normalized[0]["numero"] == "999888777"
+    assert normalized[0]["nota"] == ""
+    assert normalized[0]["id"]
 
 
 def test_validate_and_normalize_bank_accounts_preserves_communication_templates():
@@ -132,7 +130,6 @@ def test_tenant_admin_update_rejects_invalid_cci_length():
             ]
         )
 
-
 def test_tenant_response_exposes_payment_qr_image_url():
     payload = TenantResponse.model_validate(
         {
@@ -162,3 +159,29 @@ def test_tenant_response_resolves_payment_qr_from_bank_accounts_meta():
     payload = TenantResponse.model_validate(tenant).model_dump()
 
     assert payload["payment_qr_filename"] == "https://cdn.test/qr-cobro.png"
+
+
+def test_validate_and_normalize_bank_accounts_preserves_or_generates_ids():
+    methods = [
+        {
+            "id": "wallet-yape",
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Inkora SAC",
+            "numero": "999 888 777",
+        },
+        {
+            "tipo": "bank",
+            "banco": "BCP",
+            "tipo_cuenta": "Cta Corriente",
+            "moneda": "Soles",
+            "cuenta": "1919870450013",
+            "cci": "00219100987045001355",
+        },
+    ]
+
+    normalized = validate_and_normalize_bank_accounts(methods)
+
+    assert normalized[0]["id"] == "wallet-yape"
+    assert normalized[1]["id"]
+    assert normalized[1]["id"] != "wallet-yape"

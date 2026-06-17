@@ -102,6 +102,7 @@ class CotizacionCreate(BaseModel):
     tipo_comprobante: str = "00"
     observaciones: Optional[str] = None
     condicion_pago: Optional[str] = None
+    quote_selected_wallet_id: Optional[str] = None
     cuotas_pago: List[CuotaPagoCreate] = Field(default_factory=list)
     items: List[CotizacionItemCreate]
 
@@ -161,9 +162,10 @@ class CotizacionResponse(BaseModel):
     payment_status: str = "pendiente"
     observaciones: Optional[str] = None
     condicion_pago: Optional[str] = None
+    quote_payment_methods: Optional[List[dict]] = None
+    quote_selected_wallet_id: Optional[str] = None
     cuotas_pago: List[CuotaPagoCreate] = Field(default_factory=list)
     cliente_snapshot: Optional[ClienteSnapshot] = None
-    quote_payment_methods: Optional[List[dict]] = None
     cliente: Optional[ClienteResponse] = None
     usuario: Optional[UserResponse] = None
     items: List[CotizacionItemResponse]

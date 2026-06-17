@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
+from hashlib import sha1
 from typing import Any
 
 from services.phone_validation import normalize_and_validate_optional_peru_mobile
@@ -43,6 +45,40 @@ def _normalize_communication_template(raw_method: dict[str, Any]) -> dict[str, A
         "email_subject": email_subject,
         "email_body": email_body,
     }
+
+
+def _slug_token(value: Any) -> str:
+    normalized = _key(value)
+    return re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+
+
+def build_payment_method_id(raw_method: dict[str, Any], index: int, kind: str) -> str:
+    explicit = _text(raw_method.get("id"))
+    if explicit:
+        return explicit
+
+    if kind == "wallet":
+        parts = [
+            _slug_token(raw_method.get("proveedor")),
+            _slug_token(raw_method.get("titular")),
+            _digits(raw_method.get("numero") or raw_method.get("cuenta")),
+            _slug_token(raw_method.get("nota")),
+        ]
+    else:
+        parts = [
+            _slug_token(raw_method.get("banco")),
+            _slug_token(raw_method.get("tipo_cuenta")),
+            _slug_token(raw_method.get("moneda")),
+            _digits(raw_method.get("cuenta")),
+            _digits(raw_method.get("cci")),
+        ]
+
+    visible_part = "-".join(part for part in parts if part)[:48].strip("-")
+    if visible_part:
+        return f"pm-{kind}-{index + 1}-{visible_part}"
+
+    digest_source = "|".join(str(part or "") for part in parts)
+    return f"pm-{kind}-{index + 1}-{sha1(digest_source.encode('utf-8')).hexdigest()[:12]}"
 
 
 def _matches_bank(bank_key: str, *aliases: str) -> bool:
@@ -110,6 +146,7 @@ def validate_and_normalize_bank_accounts(methods: Any) -> Any:
         if is_wallet:
             normalized_methods.append(
                 {
+                    "id": build_payment_method_id(raw_method, index, "wallet"),
                     "tipo": "wallet",
                     "proveedor": _text(raw_method.get("proveedor")),
                     "titular": _text(raw_method.get("titular")),
@@ -155,6 +192,7 @@ def validate_and_normalize_bank_accounts(methods: Any) -> Any:
 
         normalized_methods.append(
             {
+                "id": build_payment_method_id(raw_method, index, "bank"),
                 "tipo": "bank",
                 "banco": bank_name,
                 "tipo_cuenta": account_type,
@@ -182,6 +220,7 @@ def validate_and_normalize_quote_payment_methods(methods: Any) -> Any:
             continue
         quote_methods.append(
             {
+                "id": _text(method.get("id")) or build_payment_method_id(method, len(quote_methods), "bank"),
                 "tipo": "bank",
                 "banco": _text(method.get("banco")),
                 "tipo_cuenta": _text(method.get("tipo_cuenta")) or "Cta Ahorro",

@@ -20,6 +20,7 @@ from crud._cotizaciones_shared import (
     _next_quote_identity,
 )
 from services import calculations
+from services.bank_account_validation import validate_and_normalize_bank_accounts
 from services.client_snapshot_service import build_cliente_snapshot
 from services.document_flow_service import (
     DOCUMENT_KIND_QUOTATION,
@@ -71,6 +72,76 @@ def _resolve_quote_payment_terms(
         _QUOTE_CREDIT_TERM_DAYS[_QUOTE_DEFAULT_PAYMENT_CONDITION],
     )
     return resolved_condition, fecha_emision + timedelta(days=due_days)
+
+
+def _resolve_quote_selected_wallet_id(
+    payment_methods,
+    *,
+    selected_wallet_id: str | None = None,
+    default_wallet_id: str | None = None,
+) -> str | None:
+    wallet_ids = [
+        str(method.get("id")).strip()
+        for method in payment_methods or []
+        if method.get("tipo") == "wallet" and str(method.get("id") or "").strip()
+    ]
+    for candidate in (selected_wallet_id, default_wallet_id):
+        normalized = str(candidate or "").strip()
+        if normalized and normalized in wallet_ids:
+            return normalized
+    return wallet_ids[0] if wallet_ids else None
+
+
+def _pick_quote_wallet_snapshot(payment_methods, selected_wallet_id: str | None) -> dict | None:
+    normalized_selected = str(selected_wallet_id or "").strip()
+    if not normalized_selected:
+        return None
+    for method in payment_methods or []:
+        if method.get("tipo") != "wallet":
+            continue
+        if str(method.get("id") or "").strip() == normalized_selected:
+            return dict(method)
+    return None
+
+
+def _resolve_quote_payment_methods_snapshot(
+    *,
+    tenant_payment_methods,
+    quote_payment_methods,
+    selected_wallet_id: str | None = None,
+    default_wallet_id: str | None = None,
+) -> tuple[list[dict] | None, str | None]:
+    normalized_tenant_methods = validate_and_normalize_bank_accounts(tenant_payment_methods or []) or []
+
+    if quote_payment_methods is None:
+        selected_bank_methods = [
+            dict(method)
+            for method in normalized_tenant_methods
+            if method.get("tipo") == "bank" and method.get("mostrar_en_cotizaciones", True)
+        ]
+    else:
+        selected_bank_methods = [
+            dict(method)
+            for method in quote_payment_methods or []
+            if isinstance(method, dict) and method.get("tipo") == "bank"
+        ]
+
+    resolved_wallet_id = _resolve_quote_selected_wallet_id(
+        normalized_tenant_methods,
+        selected_wallet_id=selected_wallet_id,
+        default_wallet_id=default_wallet_id,
+    )
+    wallet_snapshot = _pick_quote_wallet_snapshot(normalized_tenant_methods, resolved_wallet_id)
+
+    snapshot: list[dict] = []
+    if wallet_snapshot:
+        snapshot.append(wallet_snapshot)
+    snapshot.extend(selected_bank_methods)
+
+    if quote_payment_methods is not None:
+        return snapshot, resolved_wallet_id
+
+    return (snapshot or None), resolved_wallet_id
 
 
 def get_cotizaciones(
@@ -131,10 +202,16 @@ def _create_cotizacion_inner(
     if not db_cliente:
         raise ValueError("Cliente no encontrado o no pertenece al tenant actual.")
 
-    items_db, items_procesados_para_suma = _build_quote_items(db, cotizacion, tenant_id)
-    totales = calculations.sumarizar_cotizacion(
-        items_procesados_para_suma
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    quote_payment_snapshot, quote_selected_wallet_id = _resolve_quote_payment_methods_snapshot(
+        tenant_payment_methods=getattr(tenant, "bank_accounts", None) or [],
+        quote_payment_methods=getattr(cotizacion, "quote_payment_methods", None),
+        selected_wallet_id=getattr(cotizacion, "quote_selected_wallet_id", None),
+        default_wallet_id=getattr(tenant, "quote_default_wallet_id", None),
     )
+
+    items_db, items_procesados_para_suma = _build_quote_items(db, cotizacion, tenant_id)
+    totales = calculations.sumarizar_cotizacion(items_procesados_para_suma)
     nuevo_correlativo, internal_order_number = _next_quote_identity(db, tenant_id)
 
     fecha_emision = cotizacion.fecha_emision or datetime.now()
@@ -158,7 +235,8 @@ def _create_cotizacion_inner(
     db_cotizacion = models.Cotizacion(
         cliente_id=db_cliente.id,
         cliente_snapshot=cliente_snapshot,
-        quote_payment_methods=getattr(cotizacion, "quote_payment_methods", None),
+        quote_payment_methods=quote_payment_snapshot,
+        quote_selected_wallet_id=quote_selected_wallet_id,
         usuario_id=usuario_id,
         tenant_id=tenant_id,
         fecha_emision=fecha_emision,
@@ -243,6 +321,14 @@ def update_cotizacion(
     if not db_cliente:
         raise ValueError("Cliente no encontrado o no pertenece al tenant actual.")
 
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == db_cotizacion.tenant_id).first()
+    quote_payment_snapshot, quote_selected_wallet_id = _resolve_quote_payment_methods_snapshot(
+        tenant_payment_methods=getattr(tenant, "bank_accounts", None) or [],
+        quote_payment_methods=getattr(cotizacion, "quote_payment_methods", None),
+        selected_wallet_id=getattr(cotizacion, "quote_selected_wallet_id", None),
+        default_wallet_id=getattr(tenant, "quote_default_wallet_id", None),
+    )
+
     items_db, items_procesados_para_suma = _build_quote_items(
         db,
         cotizacion,
@@ -263,7 +349,8 @@ def update_cotizacion(
 
     db_cotizacion.cliente_id = db_cliente.id
     db_cotizacion.cliente_snapshot = cliente_snapshot
-    db_cotizacion.quote_payment_methods = getattr(cotizacion, "quote_payment_methods", None)
+    db_cotizacion.quote_payment_methods = quote_payment_snapshot
+    db_cotizacion.quote_selected_wallet_id = quote_selected_wallet_id
     if cotizacion.fecha_emision is not None:
         db_cotizacion.fecha_emision = cotizacion.fecha_emision
     db_cotizacion.fecha_vencimiento = cotizacion.fecha_vencimiento
@@ -280,7 +367,6 @@ def update_cotizacion(
     db_cotizacion.saldo_pendiente = totales["total_venta"]
     db_cotizacion.items = items_db
 
-    # La cotizacion conserva su COT, pero el PDF comercial se regenera bajo demanda.
     db_cotizacion.sunat_pdf_url = None
     db_cotizacion.sunat_xml_url = None
     db_cotizacion.sunat_cdr_url = None
@@ -315,6 +401,7 @@ def duplicate_cotizacion(
         cliente_id=original.cliente_id,
         cliente_snapshot=original.cliente_snapshot,
         quote_payment_methods=original.quote_payment_methods,
+        quote_selected_wallet_id=getattr(original, "quote_selected_wallet_id", None),
         fecha_vencimiento=original.fecha_vencimiento,
         moneda=original.moneda,
         tipo_comprobante=original.tipo_comprobante or "00",
@@ -334,7 +421,17 @@ def duplicate_cotizacion(
             for item in original.items or []
         ],
     )
-    return create_cotizacion(db, payload, usuario.id, original.tenant_id)
+    copia = create_cotizacion(db, payload, usuario.id, original.tenant_id)
+    if (
+        getattr(original, "quote_payment_methods", None) is not None
+        or getattr(original, "quote_selected_wallet_id", None) is not None
+    ):
+        copia.quote_payment_methods = original.quote_payment_methods
+        copia.quote_selected_wallet_id = getattr(original, "quote_selected_wallet_id", None)
+        db.commit()
+        db.refresh(copia)
+        return get_cotizacion(db, copia.id, usuario)
+    return copia
 
 
 def delete_cotizacion(
