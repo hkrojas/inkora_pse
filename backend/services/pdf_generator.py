@@ -1006,7 +1006,8 @@ def _resolve_footer_spacer_height(
     footer_height: float,
     is_comprobante: bool,
 ) -> float:
-    remaining_height = max(0, usable_height - consumed_height - footer_height - 28)
+    layout = _build_document_footer_layout(is_comprobante=is_comprobante)
+    remaining_height = max(0, usable_height - consumed_height - footer_height - layout["bottom_gap"])
     if is_comprobante:
         return remaining_height
     return min(24, remaining_height)
@@ -1177,6 +1178,53 @@ def _build_uploaded_payment_qr_flowable(payment_methods, target_size: float, col
     except Exception as err:
         print(f"Error cargando QR de cobro en PDF: {err}")
         return None
+
+
+def _build_document_footer_layout(*, is_comprobante: bool) -> dict:
+    if is_comprobante:
+        return {
+            "title_font_size": 10.5,
+            "title_leading": 14,
+            "body_font_size": 10.4,
+            "body_leading": 13,
+            "small_font_size": 9.4,
+            "small_leading": 12,
+            "generated_qr_size": 1.75 * inch,
+            "right_left_padding": 14,
+            "right_top_padding": 3,
+            "right_bottom_padding": 5,
+            "block_top_padding": 12,
+            "block_bottom_padding": 12,
+            "footer_top_padding": 6,
+            "bottom_gap": 28,
+        }
+
+    return {
+        "title_font_size": 10.0,
+        "title_leading": 11,
+        "body_font_size": 8.7,
+        "body_leading": 10.2,
+        "small_font_size": 8.2,
+        "small_leading": 9.6,
+        "generated_qr_size": 1.3 * inch,
+        "right_left_padding": 10,
+        "right_top_padding": 1,
+        "right_bottom_padding": 3,
+        "block_top_padding": 8,
+        "block_bottom_padding": 8,
+        "footer_top_padding": 4,
+        "bottom_gap": 0,
+    }
+
+
+def _should_pin_footer_to_page_bottom(
+    *,
+    usable_height: float,
+    consumed_height: float,
+    footer_height: float,
+    is_comprobante: bool,
+) -> bool:
+    return (not is_comprobante) and (consumed_height + footer_height <= usable_height)
 
 
 def _build_logo_block(company_data: dict, color_principal, width: float, name_style: ParagraphStyle):
@@ -2018,7 +2066,25 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         fontSize=8.1,
         leading=10.8,
     )
-    footer_title_style = ParagraphStyle(name="ModernFooterTitleFinal", parent=body_bold_blue, fontSize=10.5, leading=14)
+    footer_layout = _build_document_footer_layout(is_comprobante=is_comprobante)
+    footer_title_style = ParagraphStyle(
+        name="ModernFooterTitleFinal",
+        parent=body_bold_blue,
+        fontSize=footer_layout["title_font_size"],
+        leading=footer_layout["title_leading"],
+    )
+    footer_body_style = ParagraphStyle(
+        name="ModernFooterBodyFinal",
+        parent=body,
+        fontSize=footer_layout["body_font_size"],
+        leading=footer_layout["body_leading"],
+    )
+    footer_small_style = ParagraphStyle(
+        name="ModernFooterSmallFinal",
+        parent=body_small,
+        fontSize=footer_layout["small_font_size"],
+        leading=footer_layout["small_leading"],
+    )
 
     moneda_codigo = (parsed_xml or {}).get("currency") or _value_from_obj(document_data, "moneda", "PEN")
     simbolo = "S/" if moneda_codigo == "PEN" else "$"
@@ -2590,9 +2656,9 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         exclude_wallets=not is_comprobante,
     )
     if not is_comprobante:
-        quote_notes_elements.extend(_build_observation_paragraphs(document_data, tenant, body))
+        quote_notes_elements.extend(_build_observation_paragraphs(document_data, tenant, footer_body_style))
         if payment_methods_text:
-            quote_notes_elements.append(Paragraph(payment_methods_text, body))
+            quote_notes_elements.append(Paragraph(payment_methods_text, footer_body_style))
 
     qr_col_width = ancho_total * 0.22
     if is_comprobante:
@@ -2607,15 +2673,15 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         )
         qr_body = Paragraph(
             "El usuario puede consultar su validez en SUNAT Virtual:",
-            body,
+            footer_body_style,
         )
-        qr_link = Paragraph("www.sunat.gob.pe", body_bold_blue)
+        qr_link = Paragraph("www.sunat.gob.pe", footer_body_style)
         qr_summary_text = _resolve_qr_visible_summary(document_data)
         bottom_left_text = "Puedes descargar el XML, CDR y representación impresa desde nuestro portal."
     else:
         qr_flowable = _build_uploaded_payment_qr_flowable(
             company_data["raw_bank_accounts"],
-            1.75 * inch,
+            footer_layout["generated_qr_size"],
             qr_col_width,
         )
         wallet = _pick_wallet_payment_method(
@@ -2628,7 +2694,11 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
                 company_data["name"],
                 selected_wallet_id=company_data.get("selected_wallet_id"),
             )
-            qr_flowable = _build_generated_qr_flowable(qr_content, 1.75 * inch, qr_col_width)
+            qr_flowable = _build_generated_qr_flowable(
+                qr_content,
+                footer_layout["generated_qr_size"],
+                qr_col_width,
+            )
         provider = (wallet or {}).get("proveedor") or "billetera digital"
         qr_title = Paragraph(
             f"Escanea para pagar con {provider}.",
@@ -2641,8 +2711,11 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
             qr_lines.append(f"Número: {wallet['numero']}")
         if wallet and wallet.get("nota"):
             qr_lines.append(wallet["nota"])
-        qr_body = Paragraph("<br/>".join(qr_lines) if qr_lines else "Usa la billetera digital configurada por el emisor.", body)
-        qr_link = Paragraph("", body)
+        qr_body = Paragraph(
+            "<br/>".join(qr_lines) if qr_lines else "Usa la billetera digital configurada por el emisor.",
+            footer_body_style,
+        )
+        qr_link = Paragraph("", footer_body_style)
         qr_summary_text = None
         bottom_left_text = "Condiciones sujetas a confirmación comercial."
 
@@ -2650,7 +2723,7 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
     if is_comprobante:
         qr_right_rows.append([qr_link])
         if qr_summary_text:
-            qr_right_rows.append([Paragraph(f"Valor resumen: {qr_summary_text}", body_small)])
+            qr_right_rows.append([Paragraph(f"Valor resumen: {qr_summary_text}", footer_small_style)])
     else:
         if qr_link.getPlainText().strip():
             qr_right_rows.append([qr_link])
@@ -2664,10 +2737,10 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
     qr_right.setStyle(
         TableStyle(
             [
-                ("LEFTPADDING", (0, 0), (-1, -1), 14),
+                ("LEFTPADDING", (0, 0), (-1, -1), footer_layout["right_left_padding"]),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), footer_layout["right_top_padding"]),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), footer_layout["right_bottom_padding"]),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ]
         )
@@ -2685,8 +2758,8 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 12),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), footer_layout["block_top_padding"]),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), footer_layout["block_bottom_padding"]),
             ]
         )
     )
@@ -2701,7 +2774,7 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
 
     footer_contact = _build_footer_contact_text(company_data)
     footer_table = Table(
-        [[Paragraph(bottom_left_text, body_small), Paragraph(footer_contact, body_small)]],
+        [[Paragraph(bottom_left_text, footer_small_style), Paragraph(footer_contact, footer_small_style)]],
         colWidths=[ancho_total * 0.62, ancho_total * 0.38],
     )
     footer_table.setStyle(
@@ -2709,7 +2782,7 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
             [
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), footer_layout["footer_top_padding"]),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
                 ("ALIGN", (1, 0), (1, 0), "RIGHT"),
             ]
@@ -2733,32 +2806,50 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         )
     )
 
+    section_gap = 10 if not is_comprobante else 14
     elementos = [
         header_container,
-        Spacer(1, 14),
+        Spacer(1, section_gap),
         client_card,
-        Spacer(1, 14),
+        Spacer(1, section_gap),
         detail_table,
-        Spacer(1, 14),
+        Spacer(1, section_gap),
         totals_row,
-        Spacer(1, 14),
+        Spacer(1, section_gap),
         total_bar,
     ]
 
     usable_height = A4[1] - doc.topMargin - doc.bottomMargin
     consumed_height = sum(_measure_flowable_height(flowable, ancho_total) for flowable in elementos)
     footer_height = _measure_flowable_height(footer_block, ancho_total)
-    remaining_height = _resolve_footer_spacer_height(
+    footer_pinned = _should_pin_footer_to_page_bottom(
         usable_height=usable_height,
         consumed_height=consumed_height,
         footer_height=footer_height,
         is_comprobante=is_comprobante,
     )
 
-    elementos += [Spacer(1, remaining_height), footer_block]
+    build_kwargs = {}
+    if footer_pinned:
+        doc.bottomMargin = margin_tb + footer_height + footer_layout["bottom_gap"]
+        doc._calc()
+
+        def _draw_pinned_footer(pdf_canvas, built_doc):
+            footer_block.wrapOn(pdf_canvas, ancho_total, footer_height)
+            footer_block.drawOn(pdf_canvas, built_doc.leftMargin, margin_tb + footer_layout["bottom_gap"])
+
+        build_kwargs["onFirstPage"] = _draw_pinned_footer
+    else:
+        remaining_height = _resolve_footer_spacer_height(
+            usable_height=usable_height,
+            consumed_height=consumed_height,
+            footer_height=footer_height,
+            is_comprobante=is_comprobante,
+        )
+        elementos += [Spacer(1, remaining_height), footer_block]
 
     try:
-        doc.build(elementos)
+        doc.build(elementos, **build_kwargs)
     except Exception as build_err:
         print(f"ERROR: Fallo la construccion del PDF moderno: {build_err}")
         traceback.print_exc()

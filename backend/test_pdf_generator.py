@@ -502,28 +502,6 @@ def test_build_quote_client_layout_ancla_bloque_derecho():
     assert layout["right_block_left_padding"] == 0
 
 
-def test_resolve_footer_spacer_height_limita_cotizaciones():
-    spacer_height = pdf_generator._resolve_footer_spacer_height(
-        usable_height=700,
-        consumed_height=320,
-        footer_height=180,
-        is_comprobante=False,
-    )
-
-    assert spacer_height == 24
-
-
-def test_resolve_footer_spacer_height_conserva_anclaje_en_comprobantes():
-    spacer_height = pdf_generator._resolve_footer_spacer_height(
-        usable_height=700,
-        consumed_height=320,
-        footer_height=180,
-        is_comprobante=True,
-    )
-
-    assert spacer_height == 172
-
-
 def test_build_payment_methods_text_soporta_bancos_y_billeteras():
     payment_text = pdf_generator._build_payment_methods_text(
         [
@@ -631,6 +609,49 @@ def test_build_quote_wallet_qr_content_respeta_wallet_seleccionada():
     assert "999111222" in qr_content
     assert wallet is not None
     assert wallet["id"] == "wallet-plin"
+
+
+def test_build_document_footer_layout_compacta_cotizacion():
+    layout = pdf_generator._build_document_footer_layout(is_comprobante=False)
+
+    assert layout["generated_qr_size"] == 1.3 * pdf_generator.inch
+    assert layout["block_top_padding"] == 8
+    assert layout["block_bottom_padding"] == 8
+    assert layout["footer_top_padding"] == 4
+    assert layout["bottom_gap"] == 0
+
+
+def test_should_pin_footer_to_page_bottom_en_cotizacion_que_cabe():
+    should_pin = pdf_generator._should_pin_footer_to_page_bottom(
+        usable_height=700,
+        consumed_height=320,
+        footer_height=180,
+        is_comprobante=False,
+    )
+
+    assert should_pin is True
+
+
+def test_resolve_footer_spacer_height_limita_cotizacion_en_fallback():
+    spacer_height = pdf_generator._resolve_footer_spacer_height(
+        usable_height=700,
+        consumed_height=320,
+        footer_height=180,
+        is_comprobante=False,
+    )
+
+    assert spacer_height == 24
+
+
+def test_resolve_footer_spacer_height_conserva_colchon_en_comprobantes():
+    spacer_height = pdf_generator._resolve_footer_spacer_height(
+        usable_height=700,
+        consumed_height=320,
+        footer_height=180,
+        is_comprobante=True,
+    )
+
+    assert spacer_height == 172
 
 
 def test_resolve_quote_company_data_usa_snapshot_de_medios_de_cobro():
