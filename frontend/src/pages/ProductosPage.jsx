@@ -38,6 +38,7 @@ import {
   normalizeInternalProductCode,
   normalizeSunatUnitCode,
 } from '../lib/utils/sunatCatalogs';
+import { forceUppercaseText, normalizeUppercaseFieldValue, normalizeUppercaseShape } from '../lib/utils/uppercase';
 
 const IGV_FACTOR = 1.18;
 const AVATAR_COLORS = ['a-green', 'a-blue', 'a-purple', 'a-yellow', 'a-red'];
@@ -121,22 +122,22 @@ function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving, onGenera
   const [generatingCode, setGeneratingCode] = useState(false);
 
   useEffect(() => {
-    setForm({
+    setForm(normalizeUppercaseShape({
       ...EMPTY_FORM,
       ...initial,
       moneda: initial?.moneda || 'PEN',
       unidad_medida: normalizeSunatUnitCode(initial?.unidad_medida || 'NIU'),
       tipo_afectacion_igv: initial?.tipo_afectacion_igv || '10',
       precio_incluye_igv: initial?.precio_incluye_igv ?? true,
-    });
+    }));
     setErrors({});
   }, [initial]);
 
   const set = (key) => (event) =>
     setForm((current) => {
       const value = key === 'codigo_interno'
-        ? event.target.value.toUpperCase()
-        : event.target.value;
+        ? forceUppercaseText(event.target.value)
+        : normalizeUppercaseFieldValue(key, event.target.value);
       return { ...current, [key]: value };
     });
 

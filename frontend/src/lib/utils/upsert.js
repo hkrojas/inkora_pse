@@ -20,6 +20,7 @@ import {
   buildProductCatalogPayloadFromLine,
   hasCatalogProductOverrides,
 } from './productCatalogSync';
+import { normalizeUppercaseShape } from './uppercase';
 
 export function clienteSnapshotFromForm(form = {}) {
   const normalizedForm = {
@@ -33,7 +34,7 @@ export function clienteSnapshotFromForm(form = {}) {
     throw new Error(clientError);
   }
 
-  return {
+  return normalizeUppercaseShape({
     id: normalizedForm.id ? Number(normalizedForm.id) : undefined,
     tipo_documento: normalizedForm.tipo_documento,
     numero_documento: String(normalizedForm.numero_documento || '').trim(),
@@ -45,7 +46,7 @@ export function clienteSnapshotFromForm(form = {}) {
     telefono: normalizedForm.telefono,
     whatsapp: normalizedForm.telefono,
     contacto: String(normalizedForm.contacto || '').trim(),
-  };
+  });
 }
 
 /**
@@ -86,7 +87,7 @@ export async function upsertProductos(items, { priceIncludesIgv = true } = {}) {
     items.map(async (item) => {
       if (!item._isNew) return item;
 
-      const nombre = String(item.descripcion || '').trim();
+      const nombre = String(item.descripcion || '').trim().toUpperCase();
       if (!nombre) return item;
 
       const created = await productosSvc.create({

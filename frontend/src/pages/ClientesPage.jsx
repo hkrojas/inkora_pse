@@ -37,6 +37,7 @@ import {
   getLookupName,
   getLookupUbigeo,
 } from '../lib/utils/documentLookup';
+import { normalizeUppercaseFieldValue, normalizeUppercaseShape } from '../lib/utils/uppercase';
 
 const DOC_TYPE_OPTIONS = [
   { value: '6', label: 'RUC' },
@@ -115,14 +116,14 @@ function validateUbigeo(value) {
 }
 
 function normalizeClientForm(initial) {
-  return {
+  return normalizeUppercaseShape({
     ...EMPTY_FORM,
     ...initial,
     numero_documento: normalizeDocumentNumber(initial?.tipo_documento || '6', initial?.numero_documento || ''),
     ubigeo: normalizeUbigeo(initial?.ubigeo || ''),
     telefono: normalizePeruMobileInput(initial?.telefono || ''),
     whatsapp: normalizePeruMobileInput(initial?.whatsapp || ''),
-  };
+  });
 }
 
 function getClientDisplayName(item = {}) {
@@ -214,7 +215,8 @@ function ClienteForm({ initial = EMPTY_FORM, onSave, onCancel, saving }) {
   }, [initial]);
 
   const set = (key) => (event) => {
-    setForm((current) => ({ ...current, [key]: event.target.value }));
+    const nextValue = normalizeUppercaseFieldValue(key, event.target.value);
+    setForm((current) => ({ ...current, [key]: nextValue }));
     setErrors((current) => ({ ...current, [key]: undefined }));
   };
 

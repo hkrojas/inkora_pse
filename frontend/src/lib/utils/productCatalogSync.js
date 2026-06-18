@@ -2,9 +2,10 @@ import {
   normalizeInternalProductCode,
   normalizeSunatUnitCode,
 } from './sunatCatalogs';
+import { forceUppercaseText } from './uppercase';
 
 function normalizeText(value) {
-  return String(value || '').trim();
+  return forceUppercaseText(String(value || '').trim());
 }
 
 function normalizePrice(value) {

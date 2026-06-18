@@ -23,6 +23,7 @@ import {
   getLookupName,
   getLookupUbigeo,
 } from '../../lib/utils/documentLookup';
+import { normalizeUppercaseFieldValue } from '../../lib/utils/uppercase';
 
 const EMPTY = {
   tipo_documento: '6',
@@ -287,7 +288,7 @@ export default function ClientCombobox({
         ? normalizeFiscalDocumentNumber(form.tipo_documento, safeRawValue)
         : key === 'ubigeo'
           ? normalizeFiscalUbigeo(safeRawValue)
-          : safeRawValue;
+          : normalizeUppercaseFieldValue(key, safeRawValue);
 
     const nextForm = { ...form, [key]: nextValue };
     if (key === 'tipo_documento') {
