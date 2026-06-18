@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from io import BytesIO
+import re
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -114,6 +115,10 @@ SIMPLE_QR_SVG = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 TINY_PNG_BYTES = _make_png_bytes()
+
+
+def _count_pdf_pages(buffer: BytesIO) -> int:
+    return len(re.findall(br"/Type /Page\b", buffer.getvalue()))
 
 
 def _fake_tenant():
@@ -282,6 +287,71 @@ def test_generar_pdf_cotizacion_genera_qr_para_billetera_o_fallback():
     assert len(buffer.getvalue()) > 0
     qr_make.assert_called()
 
+
+def test_generar_pdf_cotizacion_compacta_permanece_en_una_sola_pagina_con_tres_items():
+    tenant = _fake_tenant()
+    tenant.pdf_note_1 = "TODO TRABAJO SE REALIZA CON EL 50% DE ADELANTO"
+    tenant.pdf_note_2 = "LOS PRECIOS NO INCLUYEN ENVIOS"
+    tenant.bank_accounts = [
+        {
+            "tipo": "payment_qr_image",
+            "url": "https://cdn.test/qr-cobro.png",
+        },
+        {
+            "id": "wallet-yape",
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Papeleria Grafica y Publicitaria SAC.",
+            "numero": "949985395",
+        },
+        {
+            "tipo": "bank",
+            "banco": "BCP",
+            "tipo_cuenta": "Cta Corriente",
+            "moneda": "Soles",
+            "cuenta": "1919870450013",
+            "cci": "00219100987045001355",
+            "mostrar_en_cotizaciones": True,
+        },
+        {
+            "tipo": "bank",
+            "banco": "Banco de la Nacion",
+            "tipo_cuenta": "Cuenta Detraccion",
+            "moneda": "Soles",
+            "cuenta": "00045115666",
+            "cci": "01804500004511566655",
+            "mostrar_en_cotizaciones": True,
+        },
+    ]
+    cotizacion = SimpleNamespace(
+        cliente=SimpleNamespace(
+            razon_social="LOPEZ TITO ROQUE ROGER",
+            tipo_documento="6",
+            numero_documento="10446458243",
+            direccion="JR. MARIANO MELGAR 568 URB. REYNOSO COLEGIO POLITECNICO PROV. CONST. DEL CALLAO PROV. CONST. DEL CALLAO-CARMEN DE LA LEGUA REYNOSO",
+        ),
+        items=[
+            SimpleNamespace(codigo="001", descripcion="bolsa de papel kraft n20 con imp a un color en una cara", cantidad=1000, precio_unitario=0.27),
+            SimpleNamespace(codigo="002", descripcion="bolsa de papel kraft N4 con imp un color en una cara", cantidad=1000, precio_unitario=0.11),
+            SimpleNamespace(codigo="003", descripcion="bolsa de papel kraft N2 con impresion a un color en una cara", cantidad=1000, precio_unitario=0.08),
+        ],
+        moneda="PEN",
+        serie="COT",
+        correlativo=1,
+        created_at=datetime(2026, 6, 17, 9, 30),
+        fecha_emision=datetime(2026, 6, 17, 9, 30),
+        fecha_vencimiento=datetime(2026, 6, 17, 9, 30),
+        usuario=_fake_user(),
+        quote_selected_wallet_id="wallet-yape",
+    )
+
+    with patch("services.pdf_generator._load_remote_logo_bytes", return_value=TINY_PNG_BYTES):
+        buffer = pdf_generator.generar_pdf_cotizacion(cotizacion, tenant)
+
+    assert isinstance(buffer, BytesIO)
+    assert len(buffer.getvalue()) > 0
+    assert _count_pdf_pages(buffer) == 1
+
 def test_generar_pdf_cotizacion_usa_qr_subido_en_lugar_de_generar_qr():
     tenant = _fake_tenant()
     tenant.bank_accounts = [
@@ -419,6 +489,39 @@ def test_resolve_quote_company_data_respeta_visibilidad_global_y_override_de_cot
     assert [method["banco"] for method in fallback["quote_bank_accounts"]] == ["BCP"]
     assert [method["banco"] for method in override["quote_bank_accounts"]] == ["Banco de la Nacion"]
     assert any(method["tipo"] == "wallet" for method in override["bank_accounts"])
+
+
+def test_build_quote_client_layout_ancla_bloque_derecho():
+    total_width = 540
+
+    layout = pdf_generator._build_quote_client_layout(total_width)
+
+    assert round(sum(layout["col_widths"]), 6) == total_width
+    assert layout["col_widths"][3] <= total_width * 0.12
+    assert layout["right_block_align"] == "RIGHT"
+    assert layout["right_block_left_padding"] == 0
+
+
+def test_resolve_footer_spacer_height_limita_cotizaciones():
+    spacer_height = pdf_generator._resolve_footer_spacer_height(
+        usable_height=700,
+        consumed_height=320,
+        footer_height=180,
+        is_comprobante=False,
+    )
+
+    assert spacer_height == 24
+
+
+def test_resolve_footer_spacer_height_conserva_anclaje_en_comprobantes():
+    spacer_height = pdf_generator._resolve_footer_spacer_height(
+        usable_height=700,
+        consumed_height=320,
+        footer_height=180,
+        is_comprobante=True,
+    )
+
+    assert spacer_height == 172
 
 
 def test_build_payment_methods_text_soporta_bancos_y_billeteras():

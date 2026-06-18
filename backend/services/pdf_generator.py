@@ -981,6 +981,37 @@ def _build_quote_detail_col_widths(
     return widths
 
 
+def _build_quote_client_layout(total_width: float) -> dict:
+    left_label_width = 2.4 * cm
+    right_label_width = 2.15 * cm
+    right_value_width = min(2.1 * cm, total_width * 0.12)
+    left_value_width = total_width - left_label_width - right_label_width - right_value_width
+    return {
+        "col_widths": [
+            left_label_width,
+            left_value_width,
+            right_label_width,
+            right_value_width,
+        ],
+        "right_block_align": "RIGHT",
+        "right_block_left_padding": 0,
+        "detail_vertical_padding": 7.2,
+    }
+
+
+def _resolve_footer_spacer_height(
+    *,
+    usable_height: float,
+    consumed_height: float,
+    footer_height: float,
+    is_comprobante: bool,
+) -> float:
+    remaining_height = max(0, usable_height - consumed_height - footer_height - 28)
+    if is_comprobante:
+        return remaining_height
+    return min(24, remaining_height)
+
+
 def _resolve_company_data(document_data, tenant: models.Tenant, parsed_xml: dict | None) -> dict:
     user = getattr(document_data, "usuario", None)
     supplier = (parsed_xml or {}).get("supplier") or {}
@@ -2293,9 +2324,10 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
                 ],
             ]
         )
+    quote_client_layout = _build_quote_client_layout(ancho_total)
     client_body = Table(
         client_rows,
-        colWidths=[2.4 * cm, 8.1 * cm, 2.5 * cm, ancho_total - (2.4 * cm) - (8.1 * cm) - (2.5 * cm)],
+        colWidths=quote_client_layout["col_widths"],
     )
     client_body.setStyle(
         TableStyle(
@@ -2306,15 +2338,14 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
                 ("RIGHTPADDING", (0, 0), (0, -1), 8),
                 ("LEFTPADDING", (1, 0), (1, -1), 6),
                 ("RIGHTPADDING", (1, 0), (1, -1), 8),
-                ("LEFTPADDING", (2, 0), (2, 1), 12),
-                ("RIGHTPADDING", (2, 0), (2, 1), 6),
-                ("LEFTPADDING", (3, 0), (3, 1), 6),
-                ("RIGHTPADDING", (3, 0), (3, 1), 6),
+                ("LEFTPADDING", (2, 0), (3, -1), quote_client_layout["right_block_left_padding"]),
+                ("RIGHTPADDING", (2, 0), (2, -1), 6),
+                ("RIGHTPADDING", (3, 0), (3, -1), 0),
                 ("TOPPADDING", (0, 0), (-1, -1), 6),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("ALIGN", (0, 0), (0, -1), "LEFT"),
-                ("ALIGN", (2, 0), (2, 1), "LEFT"),
+                ("ALIGN", (2, 0), (3, -1), quote_client_layout["right_block_align"]),
                 ("LINEABOVE", (0, 0), (-1, 0), 1.6, color_strip),
                 ("LINEBELOW", (0, 2), (-1, 2), 1.6, color_strip),
             ]
@@ -2435,8 +2466,8 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
                 ("ALIGN", (4, 0), (-1, -1), "CENTER"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 3),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("TOPPADDING", (0, 0), (-1, -1), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), quote_client_layout["detail_vertical_padding"]),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), quote_client_layout["detail_vertical_padding"]),
             ]
         )
     )
@@ -2717,7 +2748,12 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
     usable_height = A4[1] - doc.topMargin - doc.bottomMargin
     consumed_height = sum(_measure_flowable_height(flowable, ancho_total) for flowable in elementos)
     footer_height = _measure_flowable_height(footer_block, ancho_total)
-    remaining_height = max(0, usable_height - consumed_height - footer_height - 28)
+    remaining_height = _resolve_footer_spacer_height(
+        usable_height=usable_height,
+        consumed_height=consumed_height,
+        footer_height=footer_height,
+        is_comprobante=is_comprobante,
+    )
 
     elementos += [Spacer(1, remaining_height), footer_block]
 
