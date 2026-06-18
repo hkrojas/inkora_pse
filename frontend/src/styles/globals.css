@@ -15969,6 +15969,68 @@ textarea.input:focus,
     padding: 14px;
   }
 
+  .clients-page .list-head {
+    display: none;
+  }
+
+  .clients-page .client-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 22px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .clients-page .client-row:last-child {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .clients-page .client-row::before {
+    top: 14px;
+    bottom: 14px;
+    transform: scaleY(1);
+  }
+
+  .clients-page .client-main,
+  .clients-page .client-name-line,
+  .clients-page .commercial {
+    flex-wrap: wrap;
+  }
+
+  .clients-page .client-name,
+  .clients-page .meta,
+  .clients-page .contact-block strong,
+  .clients-page .contact-block span,
+  .clients-page .activity-block strong,
+  .clients-page .activity-block span {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    word-break: break-word;
+  }
+
+  .clients-page .actions-col {
+    opacity: 1;
+    justify-content: stretch;
+    gap: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .clients-page .actions-col .edit-btn {
+    flex: 1 1 auto;
+    min-height: 40px;
+    justify-content: center;
+  }
+
+  .clients-page .actions-col .more-btn {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+  }
+
   .document-hero {
     grid-template-columns: 1fr;
   }
