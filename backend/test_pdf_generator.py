@@ -360,6 +360,38 @@ def test_build_quote_wallet_qr_content_respeta_wallet_seleccionada():
     assert wallet["id"] == "wallet-plin"
 
 
+def test_build_document_footer_layout_compacta_cotizacion():
+    layout = pdf_generator._build_document_footer_layout(is_comprobante=False)
+
+    assert layout["generated_qr_size"] == 1.5 * pdf_generator.inch
+    assert layout["block_top_padding"] == 10
+    assert layout["block_bottom_padding"] == 10
+    assert layout["footer_top_padding"] == 5
+    assert layout["bottom_gap"] == 0
+
+
+def test_resolve_footer_spacer_height_ancla_cotizacion_al_margen_inferior():
+    spacer_height = pdf_generator._resolve_footer_spacer_height(
+        usable_height=700,
+        consumed_height=320,
+        footer_height=180,
+        is_comprobante=False,
+    )
+
+    assert spacer_height == 200
+
+
+def test_resolve_footer_spacer_height_conserva_colchon_en_comprobantes():
+    spacer_height = pdf_generator._resolve_footer_spacer_height(
+        usable_height=700,
+        consumed_height=320,
+        footer_height=180,
+        is_comprobante=True,
+    )
+
+    assert spacer_height == 172
+
+
 def test_resolve_quote_company_data_usa_snapshot_de_medios_de_cobro():
     tenant = _fake_tenant()
     tenant.bank_accounts = [
