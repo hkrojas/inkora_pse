@@ -1,4 +1,5 @@
 import { normalizePeruMobileInput, validatePeruMobilePhone } from './peruPhoneValidation';
+import { normalizeUppercaseShape } from './uppercase';
 
 export const FISCAL_DOC_TYPE_OPTIONS = [
   { value: '6', label: 'RUC' },
@@ -92,7 +93,7 @@ export function getFiscalClientErrorMessage(form = {}) {
 }
 
 export function normalizeFiscalClientForm(initial = {}) {
-  return {
+  return normalizeUppercaseShape({
     tipo_documento: initial.tipo_documento || '6',
     numero_documento: normalizeFiscalDocumentNumber(initial.tipo_documento || '6', initial.numero_documento || ''),
     razon_social: String(initial.razon_social || '').trim(),
@@ -101,5 +102,5 @@ export function normalizeFiscalClientForm(initial = {}) {
     ubigeo: normalizeFiscalUbigeo(initial.ubigeo || ''),
     email: String(initial.email || '').trim(),
     telefono: normalizePeruMobileInput(initial.telefono || initial.whatsapp || ''),
-  };
+  });
 }

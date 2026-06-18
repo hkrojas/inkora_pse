@@ -30,6 +30,7 @@ import {
 } from '../lib/utils/paymentMethods';
 import { BASE_URL } from '../lib/utils/config';
 import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/peruPhoneValidation';
+import { normalizeUppercaseFieldValue } from '../lib/utils/uppercase';
 import {
   FISCAL_DOC_TYPE_OPTIONS,
   buildFiscalClientErrors,
@@ -624,7 +625,7 @@ function NuevoClienteModal({ onClose, onCreated, initialName = '' }) {
         ? normalizeFiscalDocumentNumber(form.tipo_documento, rawValue)
         : key === 'ubigeo'
           ? normalizeFiscalUbigeo(rawValue)
-          : rawValue;
+          : normalizeUppercaseFieldValue(key, rawValue);
     const nextForm = { ...form, [key]: nextValue };
     if (key === 'tipo_documento') {
       nextForm.numero_documento = normalizeFiscalDocumentNumber(nextValue, form.numero_documento);

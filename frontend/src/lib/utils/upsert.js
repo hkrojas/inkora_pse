@@ -20,6 +20,7 @@ import {
   buildProductCatalogPayloadFromLine,
   hasCatalogProductOverrides,
 } from './productCatalogSync';
+import { normalizeUppercaseShape } from './uppercase';
 
 /**
  * Create or update a client.
@@ -43,7 +44,7 @@ export async function upsertCliente({ id, isNew, isDirty, form }) {
     throw new Error(clientError);
   }
 
-  const payload = {
+  const payload = normalizeUppercaseShape({
     tipo_documento: normalizedForm.tipo_documento,
     numero_documento: String(normalizedForm.numero_documento || '').trim(),
     razon_social: String(normalizedForm.razon_social || '').trim(),
@@ -54,7 +55,7 @@ export async function upsertCliente({ id, isNew, isDirty, form }) {
     telefono: normalizedForm.telefono,
     whatsapp: normalizedForm.telefono,
     contacto: '',
-  };
+  });
 
   if (isNew) {
     const created = await clientesSvc.create(payload);
@@ -76,7 +77,7 @@ export async function upsertProductos(items, { priceIncludesIgv = true } = {}) {
     items.map(async (item) => {
       if (!item._isNew) return item;
 
-      const nombre = String(item.descripcion || '').trim();
+      const nombre = String(item.descripcion || '').trim().toUpperCase();
       if (!nombre) return item;
 
       const created = await productosSvc.create({

@@ -20,6 +20,7 @@ import { createPortal } from 'react-dom';
 import { RotateCw, X } from 'lucide-react';
 import { productos as productosSvc } from '../../services/productos';
 import { buildCatalogSnapshotFromProduct } from '../../lib/utils/productCatalogSync';
+import { forceUppercaseText } from '../../lib/utils/uppercase';
 
 const NARROW = '90px'; // code input fixed width
 const SEARCH_DEBOUNCE_MS = 250;
@@ -176,8 +177,8 @@ export default function ProductLineCell({
     onChange({
       ...value,
       producto_id:         String(product.id),
-      codigo:              product.codigo_interno || '',
-      descripcion:         product.nombre || '',
+      codigo:              forceUppercaseText(product.codigo_interno || ''),
+      descripcion:         forceUppercaseText(product.nombre || ''),
       precio_unitario:     price ? price.toFixed(2) : value.precio_unitario,
       unidad_medida:       product.unidad_medida || value.unidad_medida || 'NIU',
       tipo_afectacion_igv: product.tipo_afectacion_igv || value.tipo_afectacion_igv || '10',
@@ -202,13 +203,13 @@ export default function ProductLineCell({
   };
 
   const handleCodigoChange = (e) => {
-    const v = e.target.value;
+    const v = forceUppercaseText(e.target.value);
     onChange({ ...value, codigo: v, producto_id: '', _isNew: false, _catalogSnapshot: null });
     openFor('codigo');
   };
 
   const handleNombreChange = (e) => {
-    const v = e.target.value;
+    const v = forceUppercaseText(e.target.value);
     onChange({ ...value, descripcion: v, producto_id: '', _isNew: false, _catalogSnapshot: null });
     openFor('nombre');
   };
@@ -220,7 +221,7 @@ export default function ProductLineCell({
       const code = await onGenerateCode();
       onChange({
         ...value,
-        codigo: code,
+        codigo: forceUppercaseText(code),
         producto_id: '',
         _isNew: true,
         _catalogSnapshot: null,
@@ -274,7 +275,7 @@ export default function ProductLineCell({
           ref={nombreRef}
           placeholder={isExisting ? '' : 'Producto o descripcion...'}
           value={value.descripcion}
-          onChange={isExisting ? (e) => onChange({ ...value, descripcion: e.target.value }) : handleNombreChange}
+          onChange={isExisting ? (e) => onChange({ ...value, descripcion: forceUppercaseText(e.target.value) }) : handleNombreChange}
           onFocus={() => { if (!isExisting) openFor('nombre'); }}
           style={{
             flex: 1,

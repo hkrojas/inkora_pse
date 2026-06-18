@@ -16,6 +16,7 @@ import {
   normalizeFiscalDocumentNumber,
   normalizeFiscalUbigeo,
 } from '../../lib/utils/fiscalClientValidation';
+import { normalizeUppercaseFieldValue } from '../../lib/utils/uppercase';
 
 const EMPTY = {
   tipo_documento: '6',
@@ -207,9 +208,9 @@ export default function ClientCombobox({
       ? rawValue.replace(/\D/g, '').slice(0, 9)
       : key === 'numero_documento'
         ? normalizeFiscalDocumentNumber(form.tipo_documento, rawValue)
-        : key === 'ubigeo'
+      : key === 'ubigeo'
           ? normalizeFiscalUbigeo(rawValue)
-          : rawValue;
+          : normalizeUppercaseFieldValue(key, rawValue);
 
     const nextForm = { ...form, [key]: nextValue };
     if (key === 'tipo_documento') {
