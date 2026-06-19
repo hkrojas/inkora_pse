@@ -51,6 +51,7 @@ import {
   isValidTaxAffectationCode,
   normalizeInternalProductCode,
 } from '../lib/utils/sunatCatalogs';
+import { normalizeFiscalClientForm } from '../lib/utils/fiscalClientValidation';
 import { useFieldValidation, rules } from '../lib/utils/useFieldValidation';
 
 const EMPTY_ITEM = () => ({
@@ -635,6 +636,14 @@ export default function ComprobanteNuevoPage() {
     clearField('numero_documento');
   }, [clearField]);
 
+  const mergeClienteIntoCatalog = useCallback((client) => {
+    if (!client?.id) return;
+    setClientes((current) => {
+      const next = current.filter((item) => String(item.id) !== String(client.id));
+      return [client, ...next];
+    });
+  }, []);
+
   const setItemField = useCallback((index, key, value) => {
     setForm((current) => ({
       ...current,
@@ -863,13 +872,27 @@ export default function ComprobanteNuevoPage() {
     setSaving(true);
     try {
 
-      const clienteId = await upsertCliente({
+      const {
+        id: clienteId,
+        client: persistedClient,
+      } = await upsertCliente({
         id: form.cliente_id,
         isNew: clienteState.isNew,
         isDirty: clienteState.isDirty,
         form: form.cliente,
         updateExisting: updateExistingClient,
       });
+
+      if (persistedClient) {
+        const normalizedClient = normalizeFiscalClientForm(persistedClient);
+        mergeClienteIntoCatalog({ ...persistedClient, ...normalizedClient, id: persistedClient.id });
+        setClienteState({ isDirty: false, isNew: false });
+        setForm((current) => ({
+          ...current,
+          cliente_id: String(persistedClient.id),
+          cliente: normalizedClient,
+        }));
+      }
 
       const createdItems = await upsertProductos(form.items, { priceIncludesIgv: form.incluye_igv });
       const resolvedItems = await syncCatalogProductos(createdItems, { priceIncludesIgv: form.incluye_igv });

@@ -124,6 +124,7 @@ export default function ClientCombobox({
   const containerRef = useRef(null);
   const searchCacheRef = useRef(new Map());
   const searchAbortRef = useRef(null);
+  const lastSyncedValueRef = useRef('');
 
   const notify = useCallback((nextForm, nextLocked, nextIsDirty, nextIsNew) => {
     onFormChange?.(nextForm, { isDirty: nextIsDirty, isNew: nextIsNew, id: nextLocked ? value : null });
@@ -131,6 +132,7 @@ export default function ClientCombobox({
 
   useEffect(() => {
     if (!value) return;
+    if (locked && isDirty && lastSyncedValueRef.current === String(value)) return;
     const found = mergeClients(clients, remoteClients)
       .filter((client) => isDocumentTypeAllowed(client?.tipo_documento))
       .find((client) => String(client.id) === String(value));
@@ -141,8 +143,9 @@ export default function ClientCombobox({
     setIsDirty(false);
     setIsNew(false);
     setErrors({});
+    lastSyncedValueRef.current = String(found.id);
     notify(nextForm, true, false, false);
-  }, [value, clients, remoteClients, notify, isDocumentTypeAllowed]);
+  }, [value, clients, remoteClients, notify, isDocumentTypeAllowed, locked, isDirty]);
 
   const fillFromClient = useCallback((client) => {
     if (!isDocumentTypeAllowed(client?.tipo_documento)) return;
@@ -154,6 +157,7 @@ export default function ClientCombobox({
     setIsNew(false);
     setActiveField(null);
     setErrors({});
+    lastSyncedValueRef.current = String(client.id);
     notify(nextForm, true, false, false);
   }, [notify, isDocumentTypeAllowed]);
 
@@ -349,6 +353,7 @@ export default function ClientCombobox({
     setIsNew(false);
     setErrors({});
     setActiveField(null);
+    lastSyncedValueRef.current = '';
     notify(emptyForm, false, false, false);
     setTimeout(() => numeroRef.current?.focus(), 0);
   };

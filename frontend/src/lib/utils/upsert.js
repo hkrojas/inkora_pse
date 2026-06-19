@@ -52,28 +52,49 @@ export function clienteSnapshotFromForm(form = {}) {
 /**
  * Create or update a client.
  * @param {{ id: string|null, isNew: boolean, isDirty: boolean, form: object, updateExisting?: boolean }} clientState
- * @returns {Promise<number>} resolved cliente_id
+ * @returns {Promise<{ id: number, client: object | null, updated: boolean }>} resolved cliente payload
  */
 export async function upsertCliente({ id, isNew, isDirty, form, updateExisting = true }) {
   if (!isNew && !isDirty) {
     if (!id) throw new Error('No hay cliente seleccionado');
-    return Number(id);
+    return { id: Number(id), client: null, updated: false };
   }
 
   const payload = clienteSnapshotFromForm(form);
 
   if (isNew) {
     const created = await clientesSvc.create(payload);
-    return created.id;
+    return {
+      id: created.id,
+      client: {
+        ...payload,
+        id: created.id,
+      },
+      updated: true,
+    };
   }
 
   if (isDirty && !updateExisting) {
     if (!id) throw new Error('No hay cliente seleccionado');
-    return Number(id);
+    return {
+      id: Number(id),
+      client: {
+        ...payload,
+        id: Number(id),
+      },
+      updated: false,
+    };
   }
 
   const updated = await clientesSvc.update(Number(id), payload);
-  return updated.id;
+  return {
+    id: updated.id,
+    client: {
+      ...payload,
+      id: updated.id,
+    },
+    updated: true,
+  };
 }
 
 /**

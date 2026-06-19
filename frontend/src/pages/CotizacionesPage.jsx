@@ -1155,6 +1155,7 @@ function NuevaCotizacionForm({
   onSave,
   onClear,
   onCancelEdit,
+  onClientePersisted,
   saving,
   clientes,
   productosDisp,
@@ -1430,13 +1431,25 @@ function NuevaCotizacionForm({
     try {
 
       // 1. Upsert client if needed
-      const resolvedClienteId = await upsertCliente({
+      const {
+        id: resolvedClienteId,
+        client: persistedClient,
+      } = await upsertCliente({
         id:      clienteId,
         isNew:   clienteIsNew,
         isDirty: clienteDirty,
         form:    clienteForm || {},
         updateExisting: updateExistingClient,
       });
+
+      if (persistedClient) {
+        const normalizedClient = normalizeFiscalClientForm(persistedClient);
+        onClientePersisted?.({ ...persistedClient, ...normalizedClient, id: persistedClient.id });
+        setClienteId(String(persistedClient.id));
+        setClienteForm(normalizedClient);
+        setClienteDirty(false);
+        setClienteIsNew(false);
+      }
 
       // 2. Upsert new products
       const createdItems = await upsertProductos(items, { priceIncludesIgv: true });
@@ -2090,6 +2103,15 @@ export default function CotizacionesPage() {
     toast('Cliente anadido al catalogo');
   };
 
+  const handlePersistedCliente = useCallback((client) => {
+    if (!client?.id) return;
+    setClientes((prev) => {
+      const next = prev.filter((item) => String(item.id) !== String(client.id));
+      return [client, ...next];
+    });
+    setRecentClientIds((prev) => (prev.includes(client.id) ? prev : [...prev, client.id]));
+  }, []);
+
   const handleEmitirSuccess = () => {
     setEmitirDoc(null);
     setView('fiscal');
@@ -2267,6 +2289,7 @@ export default function CotizacionesPage() {
               <NuevaCotizacionForm
                 onSave={handleSave}
                 onClear={() => {}}
+                onClientePersisted={handlePersistedCliente}
                 saving={saving}
                 clientes={clientes}
                 productosDisp={productosDisp}

@@ -109,15 +109,23 @@ test('quote and invoice client edits require explicit catalog update', () => {
   const upsertSource = readSource('./upsert.js');
   const quoteSource = readSource('../../pages/CotizacionesPage.jsx');
   const comprobanteSource = readSource('../../pages/ComprobanteNuevoPage.jsx');
+  const comboboxSource = readSource('../../components/ui/ClientCombobox.jsx');
 
   assert.match(upsertSource, /updateExisting\s*=\s*true/);
   assert.match(upsertSource, /isDirty\s*&&\s*!updateExisting/);
+  assert.match(upsertSource, /return\s*\{\s*id:\s*Number\(id\),\s*client:\s*null,\s*updated:\s*false\s*\}/);
   assert.match(upsertSource, /clienteSnapshotFromForm/);
+  assert.match(comboboxSource, /lastSyncedValueRef/);
+  assert.match(comboboxSource, /locked && isDirty && lastSyncedValueRef\.current === String\(value\)/);
   assert.match(quoteSource, /Actualizar ficha del cliente/);
   assert.match(quoteSource, /updateExistingClient/);
+  assert.match(quoteSource, /onClientePersisted/);
+  assert.match(quoteSource, /persistedClient/);
   assert.match(quoteSource, /cliente_snapshot/);
   assert.match(comprobanteSource, /Actualizar ficha del cliente/);
   assert.match(comprobanteSource, /updateExistingClient/);
+  assert.match(comprobanteSource, /mergeClienteIntoCatalog/);
+  assert.match(comprobanteSource, /persistedClient/);
   assert.match(comprobanteSource, /cliente_snapshot/);
 });
 
