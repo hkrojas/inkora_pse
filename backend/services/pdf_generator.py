@@ -29,6 +29,8 @@ from tenant_access import get_company_bank_accounts
 getcontext().prec = 50
 
 MODERN_PDF_HEADER_HEIGHT = 5.0 * cm
+MODERN_PDF_DETAIL_VERTICAL_PADDING = 6.8
+MODERN_QUOTE_DETAIL_VERTICAL_PADDING = 6.12
 
 
 def monto_a_letras(amount, currency_symbol):
@@ -997,7 +999,7 @@ def _build_quote_client_layout(total_width: float) -> dict:
         ],
         "right_block_align": "RIGHT",
         "right_block_left_padding": 0,
-        "detail_vertical_padding": 7.2,
+        "detail_vertical_padding": MODERN_QUOTE_DETAIL_VERTICAL_PADDING,
     }
 
 
@@ -2309,8 +2311,8 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
                 ("BACKGROUND", (0, 0), (-1, 0), color_suave),
                 ("LEFTPADDING", (0, 0), (-1, -1), 14),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 14),
-                ("TOPPADDING", (0, 0), (-1, -1), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), MODERN_PDF_DETAIL_VERTICAL_PADDING),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), MODERN_PDF_DETAIL_VERTICAL_PADDING),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LINEBELOW", (0, 0), (-1, 0), 1, color_borde),
                 ("TOPPADDING", (0, 1), (-1, -1), 10),

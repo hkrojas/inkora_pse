@@ -500,6 +500,7 @@ def test_build_quote_client_layout_ancla_bloque_derecho():
     assert layout["col_widths"][3] <= total_width * 0.12
     assert layout["right_block_align"] == "RIGHT"
     assert layout["right_block_left_padding"] == 0
+    assert layout["detail_vertical_padding"] == pdf_generator.MODERN_QUOTE_DETAIL_VERTICAL_PADDING
 
 
 def test_build_payment_methods_text_soporta_bancos_y_billeteras():
@@ -623,6 +624,11 @@ def test_build_document_footer_layout_compacta_cotizacion():
 
 def test_modern_pdf_header_height_is_5cm():
     assert pdf_generator.MODERN_PDF_HEADER_HEIGHT == 5.0 * pdf_generator.cm
+
+
+def test_modern_pdf_detail_row_padding_is_reduced():
+    assert pdf_generator.MODERN_PDF_DETAIL_VERTICAL_PADDING == 6.8
+    assert pdf_generator.MODERN_QUOTE_DETAIL_VERTICAL_PADDING == 6.12
 
 
 def test_should_pin_footer_to_page_bottom_en_cotizacion_que_cabe():
