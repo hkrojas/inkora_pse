@@ -212,6 +212,7 @@ export default function ProductLineCell({
       unidad_medida:       product.unidad_medida || value.unidad_medida || 'NIU',
       tipo_afectacion_igv: product.tipo_afectacion_igv || value.tipo_afectacion_igv || '10',
       _isNew:              false,
+      _syncCatalogChanges: false,
       _catalogSnapshot:    buildCatalogSnapshotFromProduct(product, { priceIncludesIgv: incluyeIgv }),
     });
     setActiveInput(null);
@@ -224,6 +225,7 @@ export default function ProductLineCell({
       codigo: '',
       descripcion: '',
       _isNew: false,
+      _syncCatalogChanges: false,
       _catalogSnapshot: null,
     });
     setRemoteProducts([]);
@@ -233,13 +235,27 @@ export default function ProductLineCell({
 
   const handleCodigoChange = (e) => {
     const v = forceUppercaseText(e.target.value);
-    onChange({ ...value, codigo: v, producto_id: '', _isNew: false, _catalogSnapshot: null });
+    onChange({
+      ...value,
+      codigo: v,
+      producto_id: '',
+      _isNew: false,
+      _syncCatalogChanges: false,
+      _catalogSnapshot: null,
+    });
     openFor('codigo');
   };
 
   const handleNombreChange = (e) => {
     const v = forceUppercaseText(e.target.value);
-    onChange({ ...value, descripcion: v, producto_id: '', _isNew: false, _catalogSnapshot: null });
+    onChange({
+      ...value,
+      descripcion: v,
+      producto_id: '',
+      _isNew: false,
+      _syncCatalogChanges: false,
+      _catalogSnapshot: null,
+    });
     openFor('nombre');
   };
 
@@ -253,6 +269,7 @@ export default function ProductLineCell({
         codigo: forceUppercaseText(code),
         producto_id: '',
         _isNew: true,
+        _syncCatalogChanges: false,
         _catalogSnapshot: null,
       });
     } catch {
@@ -268,6 +285,7 @@ export default function ProductLineCell({
     if (!selected) return;
     onChange({
       ...value,
+      _syncCatalogChanges: false,
       _catalogSnapshot: buildCatalogSnapshotFromProduct(selected, { priceIncludesIgv: incluyeIgv }),
     });
   }, [incluyeIgv, onChange, products, value]);

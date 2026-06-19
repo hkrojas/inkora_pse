@@ -1,8 +1,8 @@
 import {
   normalizeInternalProductCode,
   normalizeSunatUnitCode,
-} from './sunatCatalogs';
-import { forceUppercaseText } from './uppercase';
+} from './sunatCatalogs.js';
+import { forceUppercaseText } from './uppercase.js';
 
 function normalizeText(value) {
   return forceUppercaseText(String(value || '').trim());
@@ -66,6 +66,14 @@ export function hasCatalogProductOverrides(item) {
 
 export function getCatalogProductOverrides(items = []) {
   return items.filter((item) => hasCatalogProductOverrides(item));
+}
+
+export function shouldSyncCatalogProduct(item) {
+  return hasCatalogProductOverrides(item) && Boolean(item?._syncCatalogChanges);
+}
+
+export function getCatalogProductsToSync(items = []) {
+  return items.filter((item) => shouldSyncCatalogProduct(item));
 }
 
 export function buildProductCatalogPayloadFromLine(item, { priceIncludesIgv = true } = {}) {

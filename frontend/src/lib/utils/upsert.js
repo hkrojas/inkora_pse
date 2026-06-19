@@ -18,7 +18,7 @@ import {
 import {
   buildCatalogSnapshotFromProduct,
   buildProductCatalogPayloadFromLine,
-  hasCatalogProductOverrides,
+  shouldSyncCatalogProduct,
 } from './productCatalogSync';
 import { normalizeUppercaseShape } from './uppercase';
 
@@ -113,7 +113,7 @@ export async function upsertProductos(items, { priceIncludesIgv = true } = {}) {
 export async function syncCatalogProductos(items, { priceIncludesIgv = true } = {}) {
   return Promise.all(
     items.map(async (item) => {
-      if (!hasCatalogProductOverrides(item)) return item;
+      if (!shouldSyncCatalogProduct(item)) return item;
 
       const updated = await productosSvc.update(
         Number(item.producto_id),
@@ -122,6 +122,7 @@ export async function syncCatalogProductos(items, { priceIncludesIgv = true } = 
 
       return {
         ...item,
+        _syncCatalogChanges: false,
         _catalogSnapshot: buildCatalogSnapshotFromProduct(updated, { priceIncludesIgv }),
       };
     }),

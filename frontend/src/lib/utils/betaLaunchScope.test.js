@@ -163,3 +163,19 @@ test('payment QR cropper stays above app chrome and fits the viewport', () => {
     'cropper panel should use the dynamic viewport height',
   );
 });
+
+
+test('quote and invoice product edits require explicit catalog opt-in', () => {
+  const syncSource = readSource('./productCatalogSync.js');
+  const upsertSource = readSource('./upsert.js');
+  const quoteSource = readSource('../../pages/CotizacionesPage.jsx');
+  const comprobanteSource = readSource('../../pages/ComprobanteNuevoPage.jsx');
+
+  assert.match(syncSource, /shouldSyncCatalogProduct/);
+  assert.match(syncSource, /_syncCatalogChanges/);
+  assert.match(upsertSource, /shouldSyncCatalogProduct/);
+  assert.match(quoteSource, /Actualizar catalogo:\s*Si/);
+  assert.match(comprobanteSource, /Actualizar catalogo:\s*Si/);
+  assert.doesNotMatch(quoteSource, /catalogo de productos\?/);
+  assert.doesNotMatch(comprobanteSource, /catalogo de productos\?/);
+});

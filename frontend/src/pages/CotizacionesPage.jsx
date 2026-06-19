@@ -66,7 +66,7 @@ import {
   SUNAT_UNIT_OPTIONS,
   normalizeInternalProductCode,
 } from '../lib/utils/sunatCatalogs';
-import { getCatalogProductOverrides, hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
+import { hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
 import { clienteSnapshotFromForm, syncCatalogProductos, upsertCliente, upsertProductos } from '../lib/utils/upsert';
 import { useAuth } from '../context/AuthContext';
 
@@ -1175,6 +1175,7 @@ function NuevaCotizacionForm({
     unidad_medida: 'NIU',
     tipo_afectacion_igv: '10',
     _isNew: false,
+    _syncCatalogChanges: false,
     _catalogSnapshot: null,
   });
 
@@ -1303,6 +1304,7 @@ function NuevaCotizacionForm({
       unidad_medida: item.unidad_medida || 'NIU',
       tipo_afectacion_igv: item.tipo_afectacion_igv || '10',
       _isNew: false,
+      _syncCatalogChanges: false,
     }));
 
     setClienteId(nextClient?.id ? String(nextClient.id) : String(initialQuote?.cliente_id || ''));
@@ -1356,6 +1358,12 @@ function NuevaCotizacionForm({
     setItems((cur) => cur.map((it, i) => (i === idx ? { ...it, ...next } : it)));
   const setItem    = (idx, key, val) =>
     setItems((cur) => cur.map((it, i) => (i === idx ? { ...it, [key]: val } : it)));
+  const toggleItemCatalogSync = (idx) =>
+    setItems((current) => current.map((item, itemIndex) => (
+      itemIndex === idx
+        ? { ...item, _syncCatalogChanges: !item._syncCatalogChanges }
+        : item
+    )));
 
   const handleClientFormChange = (formData, { isDirty, isNew }) => {
     setClienteForm(formData);
@@ -1420,14 +1428,6 @@ function NuevaCotizacionForm({
     }
 
     try {
-      const catalogOverrides = getCatalogProductOverrides(items);
-      const shouldSyncCatalog = catalogOverrides.length > 0
-        ? window.confirm(
-            `Modificaste ${catalogOverrides.length} producto${catalogOverrides.length === 1 ? '' : 's'} del catalogo en esta cotizacion. `
-            + 'Por defecto esos cambios solo afectan este documento. '
-            + '¿Deseas actualizar tambien el catalogo de productos?',
-          )
-        : false;
 
       // 1. Upsert client if needed
       const resolvedClienteId = await upsertCliente({
@@ -1440,9 +1440,7 @@ function NuevaCotizacionForm({
 
       // 2. Upsert new products
       const createdItems = await upsertProductos(items, { priceIncludesIgv: true });
-      const resolvedItems = shouldSyncCatalog
-        ? await syncCatalogProductos(createdItems, { priceIncludesIgv: true })
-        : createdItems;
+      const resolvedItems = await syncCatalogProductos(createdItems, { priceIncludesIgv: true });
 
       // 3. Create quote
       onSave({
@@ -1779,7 +1777,21 @@ return (
                         <div className="line-row-cell line-row-cell--price line-cell-stack" data-mobile-label="Precio unitario">
                           <input className="line-edit-input" required type="number" min="0.01" step="0.01" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} />
                           {hasCatalogOverride && (
-                            <span className="line-meta-note">Cambio local. Solo afecta este documento.</span>
+                            <div className="line-meta-actions">
+                              <span className="line-meta-note">
+                                {item._syncCatalogChanges
+                                  ? 'Se actualizara el catalogo al guardar.'
+                                  : 'Cambio local. Solo afecta este documento.'}
+                              </span>
+                              <button
+                                type="button"
+                                className={`mini-action line-sync-action${item._syncCatalogChanges ? ' is-active' : ''}`}
+                                aria-pressed={item._syncCatalogChanges}
+                                onClick={() => toggleItemCatalogSync(idx)}
+                              >
+                                {item._syncCatalogChanges ? 'Actualizar catalogo: Si' : 'Actualizar catalogo: No'}
+                              </button>
+                            </div>
                           )}
                         </div>
                         <div className="line-row-cell line-row-cell--discount" data-mobile-label="Descuento"><input className="line-static-input" readOnly value="0%" /></div>

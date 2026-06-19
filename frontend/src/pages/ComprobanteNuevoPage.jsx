@@ -18,7 +18,7 @@ import { tenant as tenantSvc } from '../services/tenant';
 import FiscalDocPreview from '../components/documents/FiscalDocPreview';
 import ClientCombobox from '../components/ui/ClientCombobox';
 import ProductLineCell from '../components/ui/ProductLineCell';
-import { getCatalogProductOverrides, hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
+import { hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
 import { clienteSnapshotFromForm, syncCatalogProductos, upsertCliente, upsertProductos } from '../lib/utils/upsert';
 import Spinner from '../components/ui/Spinner';
 import { PageError } from '../components/ui/PageState';
@@ -64,6 +64,7 @@ const EMPTY_ITEM = () => ({
   tipo_afectacion_igv: '10',
   _isNew: false,
   _catalogSnapshot: null,
+  _syncCatalogChanges: false,
 });
 
 const RUC_ONLY_DOCUMENT_TYPES = ['6'];
@@ -364,6 +365,7 @@ function LineRow({
   onFieldChange,
   onRemove,
   onAddNext,
+  onToggleCatalogSync,
 }) {
   const priceRef = useRef(null);
   const line = computeLine(item, incluyeIgv);
@@ -436,7 +438,21 @@ function LineRow({
           required
         />
         {hasCatalogOverride && (
-          <span className="line-meta-note">Cambio local. Solo afecta este documento.</span>
+          <div className="line-meta-actions">
+            <span className="line-meta-note">
+              {item._syncCatalogChanges
+                ? 'Se actualizara el catalogo al guardar.'
+                : 'Cambio local. Solo afecta este documento.'}
+            </span>
+            <button
+              type="button"
+              className={`mini-action line-sync-action${item._syncCatalogChanges ? ' is-active' : ''}`}
+              aria-pressed={item._syncCatalogChanges}
+              onClick={() => onToggleCatalogSync(index)}
+            >
+              {item._syncCatalogChanges ? 'Actualizar catalogo: Si' : 'Actualizar catalogo: No'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -633,6 +649,17 @@ export default function ComprobanteNuevoPage() {
       ...current,
       items: current.items.map((item, itemIndex) => (
         itemIndex === index ? { ...item, ...next } : item
+      )),
+    }));
+  }, []);
+
+  const toggleItemCatalogSync = useCallback((index) => {
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((item, itemIndex) => (
+        itemIndex === index
+          ? { ...item, _syncCatalogChanges: !item._syncCatalogChanges }
+          : item
       )),
     }));
   }, []);
@@ -835,14 +862,6 @@ export default function ComprobanteNuevoPage() {
   const handleEmitConfirmed = async () => {
     setSaving(true);
     try {
-      const catalogOverrides = getCatalogProductOverrides(form.items);
-      const shouldSyncCatalog = catalogOverrides.length > 0
-        ? window.confirm(
-            `Modificaste ${catalogOverrides.length} producto${catalogOverrides.length === 1 ? '' : 's'} del catalogo en este comprobante. `
-            + 'Por defecto esos cambios solo afectan este documento. '
-            + '¿Deseas actualizar tambien el catalogo de productos?',
-          )
-        : false;
 
       const clienteId = await upsertCliente({
         id: form.cliente_id,
@@ -853,9 +872,7 @@ export default function ComprobanteNuevoPage() {
       });
 
       const createdItems = await upsertProductos(form.items, { priceIncludesIgv: form.incluye_igv });
-      const resolvedItems = shouldSyncCatalog
-        ? await syncCatalogProductos(createdItems, { priceIncludesIgv: form.incluye_igv })
-        : createdItems;
+      const resolvedItems = await syncCatalogProductos(createdItems, { priceIncludesIgv: form.incluye_igv });
       setForm((current) => ({
         ...current,
         cliente_id: String(clienteId),
@@ -1276,7 +1293,8 @@ export default function ComprobanteNuevoPage() {
                     onItemChange={handleItemChange}
                     onFieldChange={setItemField}
                     onRemove={removeItem}
-                      onAddNext={addItem}
+                    onAddNext={addItem}
+                    onToggleCatalogSync={toggleItemCatalogSync}
                     />
                   ))}
                 </div>
