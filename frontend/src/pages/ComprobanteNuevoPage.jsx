@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -366,12 +366,10 @@ function LineRow({
   onFieldChange,
   onRemove,
   onAddNext,
-  onToggleCatalogSync,
 }) {
   const priceRef = useRef(null);
   const line = computeLine(item, incluyeIgv);
   const sym = moneda === 'USD' ? '$' : 'S/';
-  const hasCatalogOverride = hasCatalogProductOverrides(item);
 
   const handlePriceKeyDown = (e) => {
     if (e.key === 'Tab' && !e.shiftKey && isLast) {
@@ -425,7 +423,7 @@ function LineRow({
         />
       </div>
 
-      <div className="line-row-cell line-row-cell--price line-cell-stack" data-mobile-label="Precio unitario">
+      <div className="line-row-cell line-row-cell--price" data-mobile-label="Precio unitario">
         <input
           className="line-edit-input"
           ref={priceRef}
@@ -438,23 +436,6 @@ function LineRow({
           style={{ MozAppearance: 'textfield', WebkitAppearance: 'none', appearance: 'none' }}
           required
         />
-        {hasCatalogOverride && (
-          <div className="line-meta-actions">
-            <span className="line-meta-note">
-              {item._syncCatalogChanges
-                ? 'Se actualizara el catalogo al guardar.'
-                : 'Cambio local. Solo afecta este documento.'}
-            </span>
-            <button
-              type="button"
-              className={`mini-action line-sync-action${item._syncCatalogChanges ? ' is-active' : ''}`}
-              aria-pressed={item._syncCatalogChanges}
-              onClick={() => onToggleCatalogSync(index)}
-            >
-              {item._syncCatalogChanges ? 'Actualizar catalogo: Si' : 'Actualizar catalogo: No'}
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="line-row-cell line-row-cell--total" data-mobile-label="Total">
@@ -662,15 +643,28 @@ export default function ComprobanteNuevoPage() {
     }));
   }, []);
 
-  const toggleItemCatalogSync = useCallback((index) => {
-    setForm((current) => ({
-      ...current,
-      items: current.items.map((item, itemIndex) => (
-        itemIndex === index
-          ? { ...item, _syncCatalogChanges: !item._syncCatalogChanges }
-          : item
-      )),
-    }));
+  const catalogSyncEligibleCount = useMemo(
+    () => form.items.filter((item) => hasCatalogProductOverrides(item)).length,
+    [form.items],
+  );
+  const catalogSyncSelectedCount = useMemo(
+    () => form.items.filter((item) => hasCatalogProductOverrides(item) && item._syncCatalogChanges).length,
+    [form.items],
+  );
+  const syncCatalogOnSave = catalogSyncEligibleCount > 0 && catalogSyncSelectedCount === catalogSyncEligibleCount;
+  const toggleCatalogSyncForEligible = useCallback(() => {
+    setForm((current) => {
+      const eligible = current.items.filter((item) => hasCatalogProductOverrides(item));
+      const nextValue = !(eligible.length > 0 && eligible.every((item) => item._syncCatalogChanges));
+      return {
+        ...current,
+        items: current.items.map((item) => (
+          hasCatalogProductOverrides(item)
+            ? { ...item, _syncCatalogChanges: nextValue }
+            : item
+        )),
+      };
+    });
   }, []);
 
   const addItem = useCallback(() => {
@@ -1287,12 +1281,35 @@ export default function ComprobanteNuevoPage() {
                 </div>
                 <div className="document-lines-actions">
                   <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleImportCsv} />
+                  {catalogSyncEligibleCount > 0 && (
+                    <button
+                      type="button"
+                      className={`toggle-chip line-sync-chip${syncCatalogOnSave ? ' is-active' : ''}`}
+                      aria-pressed={syncCatalogOnSave}
+                      onClick={toggleCatalogSyncForEligible}
+                    >
+                      <span className={`switch ${syncCatalogOnSave ? 'on' : ''}`} />
+                      {syncCatalogOnSave ? 'Actualizar catalogo al guardar' : 'Aplicar cambios al catalogo'}
+                    </button>
+                  )}
                   <button type="button" className="mini-action document-lines-upload" onClick={() => fileRef.current?.click()}>
                     <FileUp size={14} /> Subir CSV
                   </button>
                 </div>
               </div>
               <div className="panel-body">
+                {catalogSyncEligibleCount > 0 && (
+                  <div className={`line-sync-banner${syncCatalogOnSave ? ' is-active' : ''}`}>
+                    <strong>
+                      {catalogSyncEligibleCount} producto{catalogSyncEligibleCount !== 1 ? 's' : ''} con cambios de catalogo
+                    </strong>
+                    <span>
+                      {syncCatalogOnSave
+                        ? 'Se actualizaran en la base al guardar este comprobante.'
+                        : 'Los cambios quedaran solo en este comprobante hasta que actives el guardado global.'}
+                    </span>
+                  </div>
+                )}
                 <div className="line-table line-table--comprobante">
                   <div className="line-head">
                     <div>Código / Producto</div>
@@ -1317,7 +1334,6 @@ export default function ComprobanteNuevoPage() {
                     onFieldChange={setItemField}
                     onRemove={removeItem}
                     onAddNext={addItem}
-                    onToggleCatalogSync={toggleItemCatalogSync}
                     />
                   ))}
                 </div>

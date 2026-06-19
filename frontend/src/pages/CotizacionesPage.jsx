@@ -1359,12 +1359,25 @@ function NuevaCotizacionForm({
     setItems((cur) => cur.map((it, i) => (i === idx ? { ...it, ...next } : it)));
   const setItem    = (idx, key, val) =>
     setItems((cur) => cur.map((it, i) => (i === idx ? { ...it, [key]: val } : it)));
-  const toggleItemCatalogSync = (idx) =>
-    setItems((current) => current.map((item, itemIndex) => (
-      itemIndex === idx
-        ? { ...item, _syncCatalogChanges: !item._syncCatalogChanges }
-        : item
-    )));
+  const catalogSyncEligibleCount = useMemo(
+    () => items.filter((item) => hasCatalogProductOverrides(item)).length,
+    [items],
+  );
+  const catalogSyncSelectedCount = useMemo(
+    () => items.filter((item) => hasCatalogProductOverrides(item) && item._syncCatalogChanges).length,
+    [items],
+  );
+  const syncCatalogOnSave = catalogSyncEligibleCount > 0 && catalogSyncSelectedCount === catalogSyncEligibleCount;
+  const toggleCatalogSyncForEligible = () =>
+    setItems((current) => {
+      const eligible = current.filter((item) => hasCatalogProductOverrides(item));
+      const nextValue = !(eligible.length > 0 && eligible.every((item) => item._syncCatalogChanges));
+      return current.map((item) => (
+        hasCatalogProductOverrides(item)
+          ? { ...item, _syncCatalogChanges: nextValue }
+          : item
+      ));
+    });
 
   const handleClientFormChange = (formData, { isDirty, isNew }) => {
     setClienteForm(formData);
@@ -1743,13 +1756,38 @@ return (
             <article className="panel">
               <div className="panel-header line-items-panel-header">
                 <div><h3>Líneas de detalle</h3><p>Agrega productos, servicios o descripciones libres.</p></div>
-                <label className="toggle-chip">
-                  <span className={`switch ${avanzado ? 'on' : ''}`} />
-                  Mostrar unidad e IGV
-                  <input type="checkbox" checked={avanzado} onChange={() => setAvanzado((c) => !c)} style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} />
-                </label>
+                <div className="line-items-panel-controls">
+                  {catalogSyncEligibleCount > 0 && (
+                    <button
+                      type="button"
+                      className={`toggle-chip line-sync-chip${syncCatalogOnSave ? ' is-active' : ''}`}
+                      aria-pressed={syncCatalogOnSave}
+                      onClick={toggleCatalogSyncForEligible}
+                    >
+                      <span className={`switch ${syncCatalogOnSave ? 'on' : ''}`} />
+                      {syncCatalogOnSave ? 'Actualizar catalogo al guardar' : 'Aplicar cambios al catalogo'}
+                    </button>
+                  )}
+                  <label className="toggle-chip">
+                    <span className={`switch ${avanzado ? 'on' : ''}`} />
+                    Mostrar unidad e IGV
+                    <input type="checkbox" checked={avanzado} onChange={() => setAvanzado((c) => !c)} style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} />
+                  </label>
+                </div>
               </div>
               <div className="panel-body">
+                {catalogSyncEligibleCount > 0 && (
+                  <div className={`line-sync-banner${syncCatalogOnSave ? ' is-active' : ''}`}>
+                    <strong>
+                      {catalogSyncEligibleCount} producto{catalogSyncEligibleCount !== 1 ? 's' : ''} con cambios de catalogo
+                    </strong>
+                    <span>
+                      {syncCatalogOnSave
+                        ? 'Se actualizaran en la base al guardar este documento.'
+                        : 'Los cambios quedaran solo en este documento hasta que actives el guardado global.'}
+                    </span>
+                  </div>
+                )}
                 <div className={`line-table${avanzado ? ' line-table--avanzado' : ''}`}>
                   <div className="line-head">
                     <div>Código / Producto</div>
@@ -1763,7 +1801,6 @@ return (
                   </div>
                   {items.map((item, idx) => {
                     const lineTotal = Number(item.cantidad) * Number(item.precio_unitario) || 0;
-                    const hasCatalogOverride = hasCatalogProductOverrides(item);
                     return (
                       <div className="line-row" key={idx}>
                         <div className="product-input line-row-cell line-row-cell--product" data-mobile-label="Producto">
@@ -1787,25 +1824,8 @@ return (
                           </div>
                         )}
                         <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad"><input className="line-edit-input" required type="number" min="0.01" step="any" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
-                        <div className="line-row-cell line-row-cell--price line-cell-stack" data-mobile-label="Precio unitario">
+                        <div className="line-row-cell line-row-cell--price" data-mobile-label="Precio unitario">
                           <input className="line-edit-input" required type="number" min="0.01" step="0.01" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} />
-                          {hasCatalogOverride && (
-                            <div className="line-meta-actions">
-                              <span className="line-meta-note">
-                                {item._syncCatalogChanges
-                                  ? 'Se actualizara el catalogo al guardar.'
-                                  : 'Cambio local. Solo afecta este documento.'}
-                              </span>
-                              <button
-                                type="button"
-                                className={`mini-action line-sync-action${item._syncCatalogChanges ? ' is-active' : ''}`}
-                                aria-pressed={item._syncCatalogChanges}
-                                onClick={() => toggleItemCatalogSync(idx)}
-                              >
-                                {item._syncCatalogChanges ? 'Actualizar catalogo: Si' : 'Actualizar catalogo: No'}
-                              </button>
-                            </div>
-                          )}
                         </div>
                         <div className="line-row-cell line-row-cell--discount" data-mobile-label="Descuento"><input className="line-static-input" readOnly value="0%" /></div>
                         <div className="line-row-cell line-row-cell--total" data-mobile-label="Total"><input className="line-static-input" readOnly value={`${sym} ${fmt(lineTotal)}`} /></div>

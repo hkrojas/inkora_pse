@@ -8745,6 +8745,54 @@ textarea.input:focus,
   color: #b54708;
   letter-spacing: .01em;
 }
+.line-items-panel-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+.line-sync-chip {
+  border-color: rgba(180, 119, 6, 0.18);
+  background: rgba(255, 250, 235, 0.96);
+}
+.line-sync-chip.is-active {
+  border-color: rgba(140, 198, 63, 0.28);
+  background: rgba(236, 253, 243, 0.98);
+  color: #206533;
+}
+.line-sync-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border: 1px solid rgba(180, 119, 6, 0.14);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 251, 245, 0.98), rgba(255, 247, 237, 0.92));
+}
+.line-sync-banner strong {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .02em;
+  color: #9a3412;
+}
+.line-sync-banner span {
+  flex: 1 1 280px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #9a3412;
+}
+.line-sync-banner.is-active {
+  border-color: rgba(34, 197, 94, 0.18);
+  background: linear-gradient(180deg, rgba(240, 253, 244, 0.98), rgba(236, 253, 243, 0.94));
+}
+.line-sync-banner.is-active strong,
+.line-sync-banner.is-active span {
+  color: #166534;
+}
 .line-meta-actions {
   display: flex;
   flex-wrap: wrap;
@@ -13010,6 +13058,62 @@ textarea.input:focus,
   color: #f6c453;
 }
 
+.dark .cotizaciones-page .line-sync-chip,
+[data-theme='dark'] .cotizaciones-page .line-sync-chip,
+.dark .comprobante-nuevo-page .line-sync-chip,
+[data-theme='dark'] .comprobante-nuevo-page .line-sync-chip {
+  background: rgba(180, 119, 6, 0.12);
+  border-color: rgba(251, 191, 36, 0.24);
+  color: #fdba74;
+}
+
+.dark .cotizaciones-page .line-sync-chip.is-active,
+[data-theme='dark'] .cotizaciones-page .line-sync-chip.is-active,
+.dark .comprobante-nuevo-page .line-sync-chip.is-active,
+[data-theme='dark'] .comprobante-nuevo-page .line-sync-chip.is-active {
+  background: rgba(22, 101, 52, 0.22);
+  border-color: rgba(140, 198, 63, 0.28);
+  color: #d9f99d;
+}
+
+.dark .cotizaciones-page .line-sync-banner,
+[data-theme='dark'] .cotizaciones-page .line-sync-banner,
+.dark .comprobante-nuevo-page .line-sync-banner,
+[data-theme='dark'] .comprobante-nuevo-page .line-sync-banner {
+  background: rgba(180, 119, 6, 0.12);
+  border-color: rgba(251, 191, 36, 0.18);
+}
+
+.dark .cotizaciones-page .line-sync-banner strong,
+.dark .cotizaciones-page .line-sync-banner span,
+[data-theme='dark'] .cotizaciones-page .line-sync-banner strong,
+[data-theme='dark'] .cotizaciones-page .line-sync-banner span,
+.dark .comprobante-nuevo-page .line-sync-banner strong,
+.dark .comprobante-nuevo-page .line-sync-banner span,
+[data-theme='dark'] .comprobante-nuevo-page .line-sync-banner strong,
+[data-theme='dark'] .comprobante-nuevo-page .line-sync-banner span {
+  color: #fdba74;
+}
+
+.dark .cotizaciones-page .line-sync-banner.is-active,
+[data-theme='dark'] .cotizaciones-page .line-sync-banner.is-active,
+.dark .comprobante-nuevo-page .line-sync-banner.is-active,
+[data-theme='dark'] .comprobante-nuevo-page .line-sync-banner.is-active {
+  background: rgba(22, 101, 52, 0.22);
+  border-color: rgba(140, 198, 63, 0.24);
+}
+
+.dark .cotizaciones-page .line-sync-banner.is-active strong,
+.dark .cotizaciones-page .line-sync-banner.is-active span,
+[data-theme='dark'] .cotizaciones-page .line-sync-banner.is-active strong,
+[data-theme='dark'] .cotizaciones-page .line-sync-banner.is-active span,
+.dark .comprobante-nuevo-page .line-sync-banner.is-active strong,
+.dark .comprobante-nuevo-page .line-sync-banner.is-active span,
+[data-theme='dark'] .comprobante-nuevo-page .line-sync-banner.is-active strong,
+[data-theme='dark'] .comprobante-nuevo-page .line-sync-banner.is-active span {
+  color: #d9f99d;
+}
+
 .dark .comprobante-nuevo-page .trash-btn:hover,
 [data-theme='dark'] .comprobante-nuevo-page .trash-btn:hover {
   background: rgba(248, 113, 113, 0.14);
@@ -15768,11 +15872,20 @@ textarea.input:focus,
     gap: 12px;
   }
 
-  .cotizaciones-page .line-items-panel-header .toggle-chip {
+  .cotizaciones-page .line-items-panel-controls {
+    justify-content: flex-start;
+  }
+
+  .cotizaciones-page .line-items-panel-header .toggle-chip,
+  .comprobante-nuevo-page .document-lines-actions .toggle-chip {
     align-self: flex-start;
-    max-width: min(100%, 220px);
+    max-width: min(100%, 280px);
     white-space: normal;
     line-height: 1.25;
+  }
+
+  .line-sync-banner {
+    align-items: flex-start;
   }
 
   .cotizaciones-page .quote-bank-selector-summary,
