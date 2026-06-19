@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import traceback
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, getcontext
@@ -122,6 +123,19 @@ def _format_date_ddmmyyyy(value, default: str = "") -> str:
     return default
 
 
+def _format_phone_display(value: str | None) -> str:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return ""
+
+    digits = re.sub(r"\D", "", raw_value)
+    if raw_value.startswith("+") and digits.startswith("51") and len(digits) == 11:
+        return f"+51 {digits[2:5]} {digits[5:8]} {digits[8:]}"
+    if len(digits) == 9 and digits.startswith("9"):
+        return f"{digits[:3]} {digits[3:6]} {digits[6:]}"
+    return raw_value
+
+
 def _format_quantity(value: Decimal) -> str:
     value = to_decimal(value)
     if value % 1 == 0:
@@ -224,7 +238,7 @@ def _build_payment_methods_text(
             if method["titular"]:
                 payment_text += f"Titular: {method['titular']}<br/>"
             if method["numero"]:
-                payment_text += f"Numero: {method['numero']}<br/>"
+                payment_text += f"Numero: {_format_phone_display(method['numero'])}<br/>"
             if method["nota"]:
                 payment_text += f"{method['nota']}<br/>"
             payment_text += "<br/>"
@@ -847,7 +861,7 @@ def _resolve_quote_company_data(document_data, tenant: models.Tenant) -> dict:
         "name": str(company_name or "").strip(),
         "ruc": str(company_ruc or "").strip(),
         "address": str(company_address or "").strip(),
-        "phone": str(company_phone or "").strip(),
+        "phone": _format_phone_display(company_phone),
         "email": str(company_email or "").strip(),
         "raw_bank_accounts": raw_bank_accounts,
         "bank_accounts": bank_accounts,
@@ -1039,7 +1053,7 @@ def _resolve_company_data(document_data, tenant: models.Tenant, parsed_xml: dict
         "name": str(company_name or "").strip(),
         "ruc": str(company_ruc or "").strip(),
         "address": str(company_address or "").strip(),
-        "phone": str(company_phone or "").strip(),
+        "phone": _format_phone_display(company_phone),
         "email": str(company_email or "").strip(),
         "bank_accounts": bank_accounts,
         "logo_source": logo_source or tenant,
@@ -1193,14 +1207,14 @@ def _build_document_footer_layout(*, is_comprobante: bool) -> dict:
             "body_leading": 13,
             "small_font_size": 9.4,
             "small_leading": 12,
-            "generated_qr_size": 1.75 * inch,
-            "right_left_padding": 14,
-            "right_top_padding": 3,
-            "right_bottom_padding": 5,
-            "block_top_padding": 12,
-            "block_bottom_padding": 12,
-            "footer_top_padding": 6,
-            "bottom_gap": 28,
+        "generated_qr_size": 1.75 * inch,
+        "right_left_padding": 14,
+        "right_top_padding": 3,
+        "right_bottom_padding": 5,
+        "block_top_padding": 11.28,
+        "block_bottom_padding": 11.28,
+        "footer_top_padding": 6,
+        "bottom_gap": 28,
         }
 
     return {
@@ -1214,8 +1228,8 @@ def _build_document_footer_layout(*, is_comprobante: bool) -> dict:
         "right_left_padding": 10,
         "right_top_padding": 1,
         "right_bottom_padding": 3,
-        "block_top_padding": 8,
-        "block_bottom_padding": 8,
+        "block_top_padding": 7.52,
+        "block_bottom_padding": 7.52,
         "footer_top_padding": 4,
         "bottom_gap": 0,
     }
@@ -1268,7 +1282,7 @@ def _build_observation_paragraphs(document_data, tenant, base_style: ParagraphSt
 def _build_footer_contact_text(company_data: dict) -> str:
     parts = []
     if company_data.get("phone"):
-        parts.append(company_data["phone"])
+        parts.append(_format_phone_display(company_data["phone"]))
     if company_data.get("email"):
         parts.append(company_data["email"])
     return "  |  ".join(parts)
@@ -2712,7 +2726,7 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         if wallet and wallet.get("titular"):
             qr_lines.append(f"Titular: {wallet['titular']}")
         if wallet and wallet.get("numero"):
-            qr_lines.append(f"Número: {wallet['numero']}")
+            qr_lines.append(f"Número: {_format_phone_display(wallet['numero'])}")
         if wallet and wallet.get("nota"):
             qr_lines.append(wallet["nota"])
         qr_body = Paragraph(

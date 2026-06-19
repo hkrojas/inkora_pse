@@ -531,7 +531,7 @@ def test_build_payment_methods_text_soporta_bancos_y_billeteras():
     assert "Cuenta Detraccion en Soles" in payment_text
     assert "Yape" in payment_text
     assert "Titular: Inkora Test SAC" in payment_text
-    assert "Numero: 999888777" in payment_text
+    assert "Numero: 999 888 777" in payment_text
     assert "Pago inmediato" in payment_text
 
 
@@ -616,10 +616,21 @@ def test_build_document_footer_layout_compacta_cotizacion():
     layout = pdf_generator._build_document_footer_layout(is_comprobante=False)
 
     assert layout["generated_qr_size"] == 1.3 * pdf_generator.inch
-    assert layout["block_top_padding"] == 8
-    assert layout["block_bottom_padding"] == 8
+    assert layout["block_top_padding"] == 7.52
+    assert layout["block_bottom_padding"] == 7.52
     assert layout["footer_top_padding"] == 4
     assert layout["bottom_gap"] == 0
+
+
+def test_build_footer_contact_text_formatea_celular_empresa():
+    footer_contact = pdf_generator._build_footer_contact_text(
+        {
+            "phone": "949985395",
+            "email": "papeleragyp@gmail.com",
+        }
+    )
+
+    assert footer_contact == "949 985 395  |  papeleragyp@gmail.com"
 
 
 def test_modern_pdf_header_height_is_5cm():
