@@ -26,6 +26,23 @@ def test_create_producto_con_precio_ingresado_con_igv(db_session):
     assert producto.valor_unitario == Decimal("100.00")
 
 
+def test_create_producto_con_precio_unitario_menor_a_un_centimo(db_session):
+    tenant = make_tenant(db_session, "PR01U")
+
+    producto = crud.create_producto(
+        db_session,
+        schemas.ProductoCreate(
+            nombre="Producto unitario preciso",
+            precio_unitario=Decimal("0.035"),
+            precio_incluye_igv=True,
+        ),
+        tenant.id,
+    )
+
+    assert producto.precio_unitario == Decimal("0.0350")
+    assert producto.valor_unitario == Decimal("0.0296610169")
+
+
 def test_create_producto_con_precio_ingresado_sin_igv(db_session):
     tenant = make_tenant(db_session, "PR02")
 

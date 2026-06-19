@@ -1825,7 +1825,7 @@ return (
                         )}
                         <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad"><input className="line-edit-input" required type="number" min="0.01" step="any" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
                         <div className="line-row-cell line-row-cell--price" data-mobile-label="Precio unitario">
-                          <input className="line-edit-input" required type="number" min="0.01" step="0.01" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} />
+                          <input className="line-edit-input" required type="text" inputMode="decimal" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} />
                         </div>
                         <div className="line-row-cell line-row-cell--discount" data-mobile-label="Descuento"><input className="line-static-input" readOnly value="0%" /></div>
                         <div className="line-row-cell line-row-cell--total" data-mobile-label="Total"><input className="line-static-input" readOnly value={`${sym} ${fmt(lineTotal)}`} /></div>

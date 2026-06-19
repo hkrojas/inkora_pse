@@ -885,7 +885,12 @@ def _format_detail_money(symbol: str, amount: Decimal | int | float | str) -> st
         value = max_amount
     elif value < -max_amount:
         value = -max_amount
-    return f"{symbol} {value:,.2f}"
+    formatted = f"{value:,.4f}".rstrip("0").rstrip(".")
+    if "." not in formatted:
+        formatted = f"{formatted}.00"
+    elif len(formatted.rsplit(".", 1)[1]) == 1:
+        formatted = f"{formatted}0"
+    return f"{symbol} {formatted}"
 
 
 def _format_money_inline(symbol: str, amount: Decimal | int | float | str) -> str:
@@ -1459,7 +1464,7 @@ def _build_quote_pdf_buffer(document_data, tenant: models.Tenant):
             [
                 Paragraph(item_data["descripcion"], body),
                 Paragraph(_format_quantity(item_data["cantidad"]), body_center),
-                Paragraph(f"{simbolo} {to_decimal(item_data['p_unit_con_igv']):.2f}", body_center),
+                Paragraph(_format_detail_money(simbolo, item_data["p_unit_con_igv"]), body_center),
                 Paragraph(f"{simbolo} {to_decimal(item_data['igv_item']):.2f}", body_center),
                 Paragraph(f"{simbolo} {to_decimal(item_data['precio_total_item']):.2f}", body_center),
             ]
@@ -1803,7 +1808,7 @@ def create_pdf_buffer(document_data, tenant: models.Tenant, document_type: str):
             [
                 Paragraph(item_data["descripcion"], body),
                 Paragraph(_format_quantity(item_data["cantidad"]), body_center),
-                Paragraph(f"{simbolo} {to_decimal(item_data['p_unit_con_igv']):.2f}", body_center),
+                Paragraph(_format_detail_money(simbolo, item_data["p_unit_con_igv"]), body_center),
                 Paragraph(f"{simbolo} {to_decimal(item_data['igv_item']):.2f}", body_center),
                 Paragraph(f"{simbolo} {to_decimal(item_data['precio_total_item']):.2f}", body_center),
             ]

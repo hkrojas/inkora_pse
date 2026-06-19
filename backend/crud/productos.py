@@ -63,16 +63,16 @@ def _resolve_product_prices(
     precio = calculations.to_decimal(precio_referencia)
 
     if tipo_afectacion_igv != "10":
-        precio_final = calculations.redondear(precio)
-        return precio_final, precio_final
+        precio_final = calculations.redondear_precio_unitario(precio)
+        return precio_final, calculations.redondear_extendido(precio_final)
 
     if precio_incluye_igv:
-        precio_final = calculations.redondear(precio)
-        valor_unitario = calculations.redondear(precio / calculations.FACTOR_IGV)
+        precio_final = calculations.redondear_precio_unitario(precio)
+        valor_unitario = calculations.redondear_extendido(precio_final / calculations.FACTOR_IGV)
         return precio_final, valor_unitario
 
-    valor_unitario = calculations.redondear(precio)
-    precio_final = calculations.redondear(precio * calculations.FACTOR_IGV)
+    valor_unitario = calculations.redondear_extendido(precio)
+    precio_final = calculations.redondear_precio_unitario(precio * calculations.FACTOR_IGV)
     return precio_final, valor_unitario
 
 

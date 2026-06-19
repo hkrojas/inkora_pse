@@ -9,6 +9,7 @@ from fiscal_catalogs import tax_affectation_bucket
 # Tasa de IGV (18%)
 IGV_RATE = Decimal("0.18")
 FACTOR_IGV = Decimal("1.00") + IGV_RATE # 1.18
+UNIT_PRICE_PRECISION = Decimal("0.0001")
 TOTAL_PRECISION = Decimal("0.01") # Precisión a 2 decimales
 EXTENDED_PRECISION = Decimal("0.0000000001") # Precisión UBL 2.1 (10 decimales)
 
@@ -35,6 +36,12 @@ def redondear_extendido(valor: Decimal) -> Decimal:
         valor = to_decimal(valor)
     return valor.quantize(EXTENDED_PRECISION, rounding=ROUND_HALF_UP)
 
+def redondear_precio_unitario(valor: Decimal) -> Decimal:
+    """Redondeo a 4 decimales para precios unitarios comerciales menores a un centimo."""
+    if not isinstance(valor, Decimal):
+        valor = to_decimal(valor)
+    return valor.quantize(UNIT_PRICE_PRECISION, rounding=ROUND_HALF_UP)
+
 def calcular_item(
     cantidad: Decimal,
     precio_con_igv: Decimal,
@@ -42,7 +49,7 @@ def calcular_item(
 ):
     """Calcula el desglose de un item segun su afectacion SUNAT."""
     qty = to_decimal(cantidad)
-    precio_final = to_decimal(precio_con_igv)
+    precio_final = redondear_precio_unitario(to_decimal(precio_con_igv))
     bucket = tax_affectation_bucket(tipo_afectacion_igv)
 
     if bucket != "gravada":

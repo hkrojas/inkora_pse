@@ -27,6 +27,13 @@ const SEARCH_DEBOUNCE_MS = 250;
 const SEARCH_MIN_CHARS = 2;
 const SEARCH_LIMIT = 20;
 
+function formatUnitPriceInput(value) {
+  return Number(value || 0)
+    .toFixed(4)
+    .replace(/0+$/, '')
+    .replace(/\.$/, '.00');
+}
+
 function productKey(product) {
   if (product?.id !== undefined && product?.id !== null) return `id:${product.id}`;
   return `product:${product?.codigo_interno || ''}:${product?.nombre || ''}`;
@@ -58,7 +65,7 @@ function formatPrice(product, incluyeIgv, sym) {
   const amount = incluyeIgv
     ? Number(product.precio_unitario || 0)
     : Number(product.valor_unitario || product.precio_unitario || 0);
-  return `${sym} ${amount.toFixed(2)}`;
+  return `${sym} ${formatUnitPriceInput(amount)}`;
 }
 
 export default function ProductLineCell({
@@ -208,7 +215,7 @@ export default function ProductLineCell({
       producto_id:         String(product.id),
       codigo:              forceUppercaseText(product.codigo_interno || ''),
       descripcion:         forceUppercaseText(product.nombre || ''),
-      precio_unitario:     price ? price.toFixed(2) : value.precio_unitario,
+      precio_unitario:     price ? formatUnitPriceInput(price) : value.precio_unitario,
       unidad_medida:       product.unidad_medida || value.unidad_medida || 'NIU',
       tipo_afectacion_igv: product.tipo_afectacion_igv || value.tipo_afectacion_igv || '10',
       _isNew:              false,

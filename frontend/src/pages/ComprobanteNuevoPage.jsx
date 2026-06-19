@@ -743,7 +743,7 @@ export default function ComprobanteNuevoPage() {
         const amount = Number(item.precio_unitario || 0);
         if (!amount) return item;
         const converted = newVal ? amount * IGV_FACTOR : amount / IGV_FACTOR;
-        const nextPrice = converted.toFixed(2);
+        const nextPrice = converted.toFixed(4).replace(/0+$/, '').replace(/\.$/, '.00');
         const shouldRefreshSnapshot = item.producto_id && item._catalogSnapshot && !hasCatalogProductOverrides(item);
         return {
           ...item,
@@ -854,7 +854,7 @@ export default function ComprobanteNuevoPage() {
           descripcion: item.descripcion.trim(),
           cantidad: Number(item.cantidad),
           precio_unitario: Number(
-            (form.incluye_igv ? Number(item.precio_unitario) : Number(item.precio_unitario) * IGV_FACTOR).toFixed(2),
+            (form.incluye_igv ? Number(item.precio_unitario) : Number(item.precio_unitario) * IGV_FACTOR).toFixed(4),
           ),
           unidad_medida: item.unidad_medida || 'NIU',
           tipo_afectacion_igv: item.tipo_afectacion_igv || '10',

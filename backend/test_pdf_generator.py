@@ -503,6 +503,11 @@ def test_build_quote_client_layout_ancla_bloque_derecho():
     assert layout["detail_vertical_padding"] == pdf_generator.MODERN_QUOTE_DETAIL_VERTICAL_PADDING
 
 
+def test_format_detail_money_preserva_precio_unitario_extendido():
+    assert pdf_generator._format_detail_money("S/", "0.035") == "S/ 0.035"
+    assert pdf_generator._format_detail_money("S/", "118.00") == "S/ 118.00"
+
+
 def test_build_payment_methods_text_soporta_bancos_y_billeteras():
     payment_text = pdf_generator._build_payment_methods_text(
         [

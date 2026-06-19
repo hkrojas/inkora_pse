@@ -191,3 +191,22 @@ test('quote and invoice product edits require explicit catalog opt-in', () => {
   assert.doesNotMatch(quoteSource, /catalogo de productos\?/);
   assert.doesNotMatch(comprobanteSource, /catalogo de productos\?/);
 });
+
+test('quote and invoice line prices support extended unit precision', () => {
+  const quoteSource = readSource('../../pages/CotizacionesPage.jsx');
+  const comprobanteSource = readSource('../../pages/ComprobanteNuevoPage.jsx');
+  const quoteModel = readSource('../../../../backend/models/cotizaciones.py');
+  const productModel = readSource('../../../../backend/models/productos.py');
+  const migrationSource = readSource('../../../../backend/alembic/versions/0011_extended_unit_price_precision.py');
+
+  assert.doesNotMatch(quoteSource, /precio_unitario[^>]+type="number"[^>]+step="0\.01"/);
+  assert.match(quoteSource, /type="text"\s+inputMode="decimal"[\s\S]+precio_unitario/);
+  assert.match(comprobanteSource, /type="text"[\s\S]+inputMode="decimal"[\s\S]+precio_unitario/);
+  assert.doesNotMatch(comprobanteSource, /precio_unitario:\s*Number\(\s*\([^)]*precio_unitario[^)]*\)\.toFixed\(2\)/);
+  assert.match(quoteModel, /precio_unitario\s*=\s*Column\(Numeric\(18,\s*4\)\)/);
+  assert.match(quoteModel, /valor_unitario\s*=\s*Column\(Numeric\(18,\s*10\)\)/);
+  assert.match(productModel, /precio_unitario\s*=\s*Column\(Numeric\(18,\s*4\)\)/);
+  assert.match(productModel, /valor_unitario\s*=\s*Column\(Numeric\(18,\s*10\)\)/);
+  assert.match(migrationSource, /alter_column\(\s*"cotizacion_items",\s*"precio_unitario"/);
+  assert.match(migrationSource, /alter_column\(\s*"productos",\s*"precio_unitario"/);
+});
