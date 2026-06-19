@@ -621,6 +621,10 @@ def test_build_document_footer_layout_compacta_cotizacion():
     assert layout["bottom_gap"] == 0
 
 
+def test_modern_pdf_header_height_is_5cm():
+    assert pdf_generator.MODERN_PDF_HEADER_HEIGHT == 5.0 * pdf_generator.cm
+
+
 def test_should_pin_footer_to_page_bottom_en_cotizacion_que_cabe():
     should_pin = pdf_generator._should_pin_footer_to_page_bottom(
         usable_height=700,
