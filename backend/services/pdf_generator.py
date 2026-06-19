@@ -27,6 +27,8 @@ from tenant_access import get_company_bank_accounts
 
 getcontext().prec = 50
 
+MODERN_PDF_HEADER_HEIGHT = 5.0 * cm
+
 
 def monto_a_letras(amount, currency_symbol):
     """Convierte un monto numerico a su representacion en palabras."""
@@ -1731,7 +1733,7 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
 
     margin_lr = 0.7 * cm
     margin_tb = 0.5 * cm
-    header_height = 5.3 * cm
+    header_height = MODERN_PDF_HEADER_HEIGHT
     ancho_total = A4[0] - (margin_lr * 2)
     color_principal = colors.HexColor(getattr(tenant, "primary_color", None) or "#2563EB")
     color_borde = colors.HexColor("#C9D4E5")

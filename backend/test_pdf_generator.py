@@ -370,6 +370,10 @@ def test_build_document_footer_layout_compacta_cotizacion():
     assert layout["bottom_gap"] == 0
 
 
+def test_modern_pdf_header_height_is_5cm():
+    assert pdf_generator.MODERN_PDF_HEADER_HEIGHT == 5.0 * pdf_generator.cm
+
+
 def test_resolve_footer_spacer_height_ancla_cotizacion_al_margen_inferior():
     spacer_height = pdf_generator._resolve_footer_spacer_height(
         usable_height=700,
