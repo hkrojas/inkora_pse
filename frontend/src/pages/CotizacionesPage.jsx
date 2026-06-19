@@ -2130,19 +2130,16 @@ export default function CotizacionesPage() {
   };
 
   const resolveShareLinks = async (item) => {
-    const fallback = {
-      whatsapp: getWhatsAppLink(item.cliente, item),
-      email: getEmailLink(item.cliente, item),
-    };
-
     try {
       const data = await svc.share(item.id);
       return {
-        whatsapp: data?.whatsapp_link || fallback.whatsapp,
-        email: data?.mailto_link || fallback.email,
+        url: data?.url_compartir || data?.url || getPublicShareUrl(item),
+        whatsapp: data?.whatsapp_link || '',
+        email: data?.mailto_link || '',
       };
-    } catch {
-      return fallback;
+    } catch (err) {
+      toast(err.message, 'error');
+      return null;
     }
   };
 
@@ -2167,11 +2164,13 @@ export default function CotizacionesPage() {
 
   const handleOpenShareChannel = async (item, channel) => {
     const links = await resolveShareLinks(item);
+    if (!links) return;
     openShareLink(channel === 'email' ? links.email : links.whatsapp, channel);
   };
 
   const handleOpenCombinedShare = async (item) => {
     const links = await resolveShareLinks(item);
+    if (!links) return;
     const openedWhatsApp = openShareLink(links.whatsapp, 'whatsapp');
     if (links.email) {
       window.setTimeout(() => openShareLink(links.email, 'email'), openedWhatsApp ? 120 : 0);
