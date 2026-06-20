@@ -7,6 +7,7 @@ import {
   Download,
   Eye,
   ExternalLink,
+  FileArchive,
   FileText,
   Mail,
   MessageCircle,
@@ -27,7 +28,12 @@ import CustomSelect from '../ui/CustomSelect';
 import DatePicker from '../ui/DatePicker';
 import { DocumentTypeBadge } from './DocumentType';
 import { formatCurrency } from '../../lib/utils/documents';
-import { buildFiscalDownloadRequest, formatFiscalDate, getFiscalDocumentStatus } from '../../lib/utils/documentArtifacts';
+import {
+  buildFiscalDownloadRequest,
+  formatFiscalDate,
+  getFiscalDocumentStatus,
+  hasFiscalDownload,
+} from '../../lib/utils/documentArtifacts';
 import EmptyState from '../ui/EmptyState';
 import { PageError } from '../ui/PageState';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
@@ -689,25 +695,53 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                         <td data-label="Acciones">
                           <div className="document-list-action-shell">
                             <div className="history-actions-desktop document-list-actions-desktop">
-                              <button
-                                type="button"
-                                className="history-action-button history-action-button--brand"
-                                onClick={() => handleOpenFiscalPdf(doc)}
-                                aria-label={`Ver PDF de ${getFiscalDocumentName(doc)}`}
-                              >
-                                <Eye className="h-4 w-4" />
-                                <span>Ver</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="history-action-button history-action-button--info"
-                                disabled={downloadingId === `${doc.id}-pdf`}
-                                onClick={() => downloadFiscalFile(doc, 'pdf')}
-                                aria-label={`Descargar PDF de ${getFiscalDocumentName(doc)}`}
-                              >
-                                {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download className="h-4 w-4" />}
-                                <span>PDF</span>
-                              </button>
+                              {hasFiscalDownload(doc, 'pdf') && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="history-action-button history-action-button--brand"
+                                    onClick={() => handleOpenFiscalPdf(doc)}
+                                    aria-label={`Ver PDF de ${getFiscalDocumentName(doc)}`}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                    <span>Ver</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="history-action-button history-action-button--info"
+                                    disabled={downloadingId === `${doc.id}-pdf`}
+                                    onClick={() => downloadFiscalFile(doc, 'pdf')}
+                                    aria-label={`Descargar PDF de ${getFiscalDocumentName(doc)}`}
+                                  >
+                                    {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download className="h-4 w-4" />}
+                                    <span>PDF</span>
+                                  </button>
+                                </>
+                              )}
+                              {hasFiscalDownload(doc, 'xml') && (
+                                <button
+                                  type="button"
+                                  className="history-action-button history-action-button--neutral"
+                                  disabled={downloadingId === `${doc.id}-xml`}
+                                  onClick={() => downloadFiscalFile(doc, 'xml')}
+                                  aria-label={`Descargar XML de ${getFiscalDocumentName(doc)}`}
+                                >
+                                  {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink className="h-4 w-4" />}
+                                  <span>XML</span>
+                                </button>
+                              )}
+                              {hasFiscalDownload(doc, 'cdr') && (
+                                <button
+                                  type="button"
+                                  className="history-action-button history-action-button--neutral"
+                                  disabled={downloadingId === `${doc.id}-cdr`}
+                                  onClick={() => downloadFiscalFile(doc, 'cdr')}
+                                  aria-label={`Descargar CDR de ${getFiscalDocumentName(doc)}`}
+                                >
+                                  {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileArchive className="h-4 w-4" />}
+                                  <span>CDR</span>
+                                </button>
+                              )}
 
                               <div className="history-actions-more document-list-actions-more">
                                 <button
@@ -738,28 +772,6 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                       <Send className="h-3.5 w-3.5" />
                                       WhatsApp + correo
                                     </button>
-                                    {doc.sunat_xml_url && (
-                                      <button
-                                        type="button"
-                                        className="history-actions-mobile-item"
-                                        disabled={downloadingId === `${doc.id}-xml`}
-                                        onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'xml'))}
-                                      >
-                                        {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink className="h-3.5 w-3.5" />}
-                                        Descargar XML
-                                      </button>
-                                    )}
-                                    {doc.sunat_cdr_url && (
-                                      <button
-                                        type="button"
-                                        className="history-actions-mobile-item"
-                                        disabled={downloadingId === `${doc.id}-cdr`}
-                                        onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'cdr'))}
-                                      >
-                                        {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileText className="h-3.5 w-3.5" />}
-                                        Descargar CDR
-                                      </button>
-                                    )}
                                     {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
                                       <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(load)}>
                                         <RefreshCw className="h-3.5 w-3.5" />
@@ -784,19 +796,23 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                               </button>
                               {openActionMenu === mobileMenuKey && (
                                 <div className="history-actions-mobile-menu document-list-actions-menu">
-                                  <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenFiscalPdf(doc))}>
-                                    <Eye className="h-3.5 w-3.5" />
-                                    Ver PDF
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="history-actions-mobile-item"
-                                    disabled={downloadingId === `${doc.id}-pdf`}
-                                    onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'pdf'))}
-                                  >
-                                    {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download className="h-3.5 w-3.5" />}
-                                    Descargar PDF
-                                  </button>
+                                  {hasFiscalDownload(doc, 'pdf') && (
+                                    <>
+                                      <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenFiscalPdf(doc))}>
+                                        <Eye className="h-3.5 w-3.5" />
+                                        Ver PDF
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="history-actions-mobile-item"
+                                        disabled={downloadingId === `${doc.id}-pdf`}
+                                        onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'pdf'))}
+                                      >
+                                        {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download className="h-3.5 w-3.5" />}
+                                        Descargar PDF
+                                      </button>
+                                    </>
+                                  )}
                                   <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleCopyShareLink(doc))}>
                                     <Share2 className="h-3.5 w-3.5" />
                                     Copiar enlace
@@ -813,7 +829,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                     <Send className="h-3.5 w-3.5" />
                                     WhatsApp + correo
                                   </button>
-                                  {doc.sunat_xml_url && (
+                                  {hasFiscalDownload(doc, 'xml') && (
                                     <button
                                       type="button"
                                       className="history-actions-mobile-item"
@@ -824,14 +840,14 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                       Descargar XML
                                     </button>
                                   )}
-                                  {doc.sunat_cdr_url && (
+                                  {hasFiscalDownload(doc, 'cdr') && (
                                     <button
                                       type="button"
                                       className="history-actions-mobile-item"
                                       disabled={downloadingId === `${doc.id}-cdr`}
                                       onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'cdr'))}
                                     >
-                                      {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileText className="h-3.5 w-3.5" />}
+                                      {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileArchive className="h-3.5 w-3.5" />}
                                       Descargar CDR
                                     </button>
                                   )}

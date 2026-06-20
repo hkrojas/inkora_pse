@@ -4,6 +4,7 @@ import {
   buildFiscalDownloadRequest,
   formatFiscalDate,
   getFiscalDocumentStatus,
+  hasFiscalDownload,
 } from './documentArtifacts.js';
 
 test('formatFiscalDate keeps fiscal day from ISO string without timezone drift', () => {
@@ -47,4 +48,18 @@ test('getFiscalDocumentStatus accepts fiscal document with CDR evidence', () => 
 
   assert.equal(status.kind, 'ok');
   assert.equal(status.label, 'ACEPTADO');
+});
+
+test('hasFiscalDownload uses backend flags for XML and CDR buttons', () => {
+  const doc = {
+    id: 42,
+    has_sunat_xml: true,
+    has_sunat_cdr: true,
+    sunat_xml_url: null,
+    sunat_cdr_url: null,
+  };
+
+  assert.equal(hasFiscalDownload(doc, 'pdf'), true);
+  assert.equal(hasFiscalDownload(doc, 'xml'), true);
+  assert.equal(hasFiscalDownload(doc, 'cdr'), true);
 });
