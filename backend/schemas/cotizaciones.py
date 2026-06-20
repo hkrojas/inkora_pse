@@ -208,6 +208,8 @@ class CotizacionListResponse(BaseModel):
     provider_endpoint: Optional[str] = None
     provider_status_code: Optional[int] = None
     sunat_accepted: bool = False
+    has_sunat_xml: bool = False
+    has_sunat_cdr: bool = False
     monto_pagado: Decimal = Decimal("0.00")
     saldo_pendiente: Decimal = Decimal("0.00")
 
@@ -258,6 +260,8 @@ class FiscalDocumentListResponse(BaseModel):
     provider_endpoint: Optional[str] = None
     provider_status_code: Optional[int] = None
     sunat_accepted: bool = False
+    has_sunat_xml: bool = False
+    has_sunat_cdr: bool = False
     monto_pagado: Decimal = Decimal("0.00")
     saldo_pendiente: Decimal = Decimal("0.00")
 
@@ -288,6 +292,8 @@ class NoteReferenceDocumentListResponse(BaseModel):
     provider_endpoint: Optional[str] = None
     provider_status_code: Optional[int] = None
     sunat_accepted: bool = False
+    has_sunat_xml: bool = False
+    has_sunat_cdr: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -322,6 +328,8 @@ class FiscalNoteListResponse(BaseModel):
     provider_endpoint: Optional[str] = None
     provider_status_code: Optional[int] = None
     sunat_accepted: bool = False
+    has_sunat_xml: bool = False
+    has_sunat_cdr: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

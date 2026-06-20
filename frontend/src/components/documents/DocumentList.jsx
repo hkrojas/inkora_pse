@@ -7,6 +7,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  FileArchive,
   Plus,
   RefreshCw,
   Search,
@@ -21,7 +22,12 @@ import CustomSelect from '../ui/CustomSelect';
 import DatePicker from '../ui/DatePicker';
 import { DocumentTypeBadge } from './DocumentType';
 import { formatCurrency } from '../../lib/utils/documents';
-import { buildFiscalDownloadRequest, formatFiscalDate, getFiscalDocumentStatus } from '../../lib/utils/documentArtifacts';
+import {
+  buildFiscalDownloadRequest,
+  formatFiscalDate,
+  getFiscalDocumentStatus,
+  hasFiscalDownload,
+} from '../../lib/utils/documentArtifacts';
 import EmptyState from '../ui/EmptyState';
 import { PageError } from '../ui/PageState';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
@@ -583,7 +589,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                         </td>
                         <td data-label="Acciones">
                           <div className="ink-table-row-actions document-list-row-actions">
-                            {doc.estado !== 'anulada' && (
+                            {hasFiscalDownload(doc, 'pdf') && (
                               <button
                                 type="button"
                                 className="ink-row-btn"
@@ -594,7 +600,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                 {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download size={14} />}
                               </button>
                             )}
-                            {doc.sunat_xml_url && (
+                            {hasFiscalDownload(doc, 'xml') && (
                               <button
                                 type="button"
                                 className="ink-row-btn"
@@ -603,6 +609,17 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                 onClick={() => downloadFiscalFile(doc, 'xml')}
                               >
                                 {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink size={14} />}
+                              </button>
+                            )}
+                            {hasFiscalDownload(doc, 'cdr') && (
+                              <button
+                                type="button"
+                                className="ink-row-btn"
+                                title="Descargar CDR"
+                                disabled={downloadingId === `${doc.id}-cdr`}
+                                onClick={() => downloadFiscalFile(doc, 'cdr')}
+                              >
+                                {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileArchive size={14} />}
                               </button>
                             )}
                             <Link to={`/cotizaciones/${doc.id}`} className="ink-row-btn" title="Ver detalle">

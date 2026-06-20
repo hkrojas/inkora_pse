@@ -24,6 +24,19 @@ export function buildFiscalDownloadRequest(doc, type) {
   };
 }
 
+export function hasFiscalDownload(doc = {}, type) {
+  if (type === 'pdf') {
+    return doc.estado !== 'anulada';
+  }
+  if (type === 'xml') {
+    return Boolean(doc.has_sunat_xml || doc.sunat_xml_url);
+  }
+  if (type === 'cdr') {
+    return Boolean(doc.has_sunat_cdr || doc.sunat_cdr_url);
+  }
+  return false;
+}
+
 export function getFiscalDocumentStatus(item = {}) {
   if (item.estado === 'anulada') {
     return { label: 'ANULADO', variant: 'danger', kind: 'voided' };
@@ -31,7 +44,7 @@ export function getFiscalDocumentStatus(item = {}) {
   if (item.sunat_error) {
     return { label: 'RECHAZADO', variant: 'danger', kind: 'error', tooltip: item.sunat_error };
   }
-  if (item.sunat_accepted || item.sunat_cdr_url) {
+  if (item.sunat_accepted || item.has_sunat_cdr || item.sunat_cdr_url) {
     return { label: 'ACEPTADO', variant: 'success', kind: 'ok' };
   }
   if (item.document_kind !== 'quotation') {

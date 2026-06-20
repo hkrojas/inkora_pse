@@ -106,6 +106,14 @@ class Cotizacion(Base):
         return bool((self.sunat_cdr_url or self.sunat_cdr_content) and not self.sunat_error)
 
     @property
+    def has_sunat_xml(self):
+        return bool(self.sunat_xml_url or self.sunat_xml_content)
+
+    @property
+    def has_sunat_cdr(self):
+        return bool(self.sunat_cdr_url or self.sunat_cdr_content)
+
+    @property
     def linked_fiscal_document(self):
         if self.document_kind != "quotation":
             return None

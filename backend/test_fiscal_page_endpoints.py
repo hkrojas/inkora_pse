@@ -1,5 +1,6 @@
 from conftest import make_cliente, make_cotizacion, make_tenant, make_user
 from routers import facturacion as facturacion_router
+import schemas
 from services.document_flow_service import (
     DOCUMENT_KIND_CREDIT_NOTE,
     DOCUMENT_KIND_FISCAL_DOCUMENT,
@@ -154,6 +155,32 @@ def test_guardar_respuesta_sunat_persiste_trazabilidad_smartpse(db_session):
     assert updated.provider_response == provider_response
     assert updated.provider_endpoint == "/api/cpe/procesar"
     assert updated.provider_status_code == 200
+
+
+def test_fiscal_document_list_response_expone_flags_de_archivos_sin_contenido(db_session):
+    tenant = make_tenant(db_session, "FP13")
+    user = make_user(db_session, tenant, email="fiscal-files@test.com")
+    cliente = make_cliente(db_session, tenant, "FP13")
+    doc = _numbered(db_session, make_cotizacion(
+        db_session,
+        tenant,
+        user,
+        cliente,
+        document_kind=DOCUMENT_KIND_FISCAL_DOCUMENT,
+        tipo_comprobante="01",
+        estado="facturada",
+    ), "F001", 1)
+    doc.sunat_xml_content = "<Invoice/>"
+    doc.sunat_cdr_content = "<ApplicationResponse/>"
+    db_session.commit()
+    db_session.refresh(doc)
+
+    payload = schemas.FiscalDocumentListResponse.model_validate(doc).model_dump()
+
+    assert payload["has_sunat_xml"] is True
+    assert payload["has_sunat_cdr"] is True
+    assert "sunat_xml_content" not in payload
+    assert "sunat_cdr_content" not in payload
 
 
 def test_facturas_emitidas_page_busqueda_no_filtra_otro_tenant(db_session):
