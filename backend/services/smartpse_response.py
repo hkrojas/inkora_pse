@@ -95,6 +95,7 @@ def build_smartpse_result(
     endpoint: str,
     status_code: int,
     ticket: str | None = None,
+    require_cdr: bool = False,
 ) -> dict:
     payload = payload or {}
     data = data or {}
@@ -112,6 +113,10 @@ def build_smartpse_result(
     signed_xml = extract_xml_from_signed_zip(data.get("xml_firmado") or data.get("xml"))
     cdr_xml = _decode_base64_text(data.get("cdr"))
     pending = str(data.get("estado") or "").strip() == "202" or _is_pending(data)
+    if require_cdr and not cdr_xml:
+        raise SmartPSEException(
+            "Smart PSE no devolvio CDR de aceptacion; el documento no puede marcarse como aceptado."
+        )
 
     result = {
         "success": True,

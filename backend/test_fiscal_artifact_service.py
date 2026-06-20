@@ -100,3 +100,17 @@ def test_descargar_archivo_cdr_uses_private_storage_reference(db_session):
 
     assert content == b"cdr-zip"
     download.assert_called_once_with(fiscal.sunat_cdr_url)
+
+
+def test_descargar_archivo_cdr_packages_persisted_cdr_content(db_session):
+    _, user, fiscal = _make_fiscal_document(db_session)
+    fiscal.sunat_cdr_content = "<ApplicationResponse>OK</ApplicationResponse>"
+    db_session.commit()
+
+    content = facturacion_service.descargar_archivo("cdr", fiscal, user)
+
+    with zipfile.ZipFile(BytesIO(content)) as archive:
+        assert archive.namelist() == ["R-F001-00000042.xml"]
+        assert archive.read("R-F001-00000042.xml").decode("utf-8") == (
+            "<ApplicationResponse>OK</ApplicationResponse>"
+        )

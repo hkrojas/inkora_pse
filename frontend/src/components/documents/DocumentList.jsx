@@ -20,7 +20,8 @@ import Badge from '../ui/Badge';
 import CustomSelect from '../ui/CustomSelect';
 import DatePicker from '../ui/DatePicker';
 import { DocumentTypeBadge } from './DocumentType';
-import { getSunatStatus, formatCurrency } from '../../lib/utils/documents';
+import { formatCurrency } from '../../lib/utils/documents';
+import { buildFiscalDownloadRequest, formatFiscalDate, getFiscalDocumentStatus } from '../../lib/utils/documentArtifacts';
 import EmptyState from '../ui/EmptyState';
 import { PageError } from '../ui/PageState';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
@@ -225,10 +226,10 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
 
     const headers = ['folio', 'fecha_emision', 'cliente', 'documento_cliente', 'tipo', 'moneda', 'total', 'estado', 'sunat'];
     const rows = docs.map((doc) => {
-      const sunat = getSunatStatus(doc);
+      const sunat = getFiscalDocumentStatus(doc);
       return [
         formatDocNumber(doc),
-        doc.fecha_emision ? new Date(doc.fecha_emision).toLocaleDateString('es-PE') : '',
+        doc.fecha_emision ? formatFiscalDate(doc.fecha_emision) : '',
         doc.cliente?.razon_social || doc.cliente?.nombre || '',
         doc.cliente?.numero_documento || '',
         doc.tipo_comprobante || '',
@@ -245,8 +246,17 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
   const downloadFiscalFile = async (doc, type) => {
     setDownloadingId(`${doc.id}-${type}`);
     try {
-      const { blob, disposition } = await api.blob(`/facturacion/${type}`, { comprobante_id: doc.id }, { timeoutMs: 45000 });
       const fallback = `${formatDocNumber(doc)}.${type === 'cdr' ? 'zip' : type}`;
+      const target = buildFiscalDownloadRequest(doc, type);
+      if (target.method === 'get') {
+        const data = await api.get(target.path, { timeoutMs: 45000 });
+        if (data?.url) {
+          window.open(data.url, '_blank', 'noopener,noreferrer');
+          return;
+        }
+        throw new Error('No se pudo preparar la descarga del PDF.');
+      }
+      const { blob, disposition } = await api.blob(target.path, target.body, { timeoutMs: 45000 });
       downloadBlobFile(blob, filenameFromDisposition(disposition, fallback));
     } catch (err) {
       toast(err.message || 'No se pudo descargar el archivo fiscal.', 'error');
@@ -270,9 +280,9 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
   }, [docs, tabCounts]);
 
   const visibleMetrics = useMemo(() => {
-    const accepted = docs.filter((doc) => getSunatStatus(doc)?.kind === 'ok').length;
-    const pending = docs.filter((doc) => getSunatStatus(doc)?.kind === 'pending').length;
-    const rejected = docs.filter((doc) => getSunatStatus(doc)?.kind === 'error').length;
+    const accepted = docs.filter((doc) => getFiscalDocumentStatus(doc)?.kind === 'ok').length;
+    const pending = docs.filter((doc) => getFiscalDocumentStatus(doc)?.kind === 'pending').length;
+    const rejected = docs.filter((doc) => getFiscalDocumentStatus(doc)?.kind === 'error').length;
     const amount = docs.reduce((sum, doc) => sum + Number(doc.total_venta || 0), 0);
     return { accepted, pending, rejected, amount };
   }, [docs]);
@@ -525,7 +535,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                 </thead>
                 <tbody>
                   {pageItems.map((doc) => {
-                    const sunat = getSunatStatus(doc);
+                    const sunat = getFiscalDocumentStatus(doc);
                     const num = formatDocNumber(doc);
                     const clienteName = doc.cliente?.razon_social || doc.cliente?.nombre || '-';
                     const clienteDoc = doc.cliente?.numero_documento || doc.cliente?.ruc || doc.cliente?.dni;
@@ -546,7 +556,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                         </td>
                         <td data-label="Fecha">
                           <div className="ink-table-cell__primary">
-                            {doc.fecha_emision ? new Date(doc.fecha_emision).toLocaleDateString('es-PE') : '-'}
+                            {doc.fecha_emision ? formatFiscalDate(doc.fecha_emision) : '-'}
                           </div>
                           <div className="ink-table-cell__meta">{doc.moneda || 'PEN'}</div>
                         </td>

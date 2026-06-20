@@ -66,23 +66,21 @@ def _parse_date_bounds(desde: str | None, hasta: str | None) -> tuple[datetime |
 
 def _fiscal_doc_tab_filter(tab: str | None):
     normalized = (tab or "all").strip().lower()
+    accepted_artifact = or_(
+        models.Cotizacion.sunat_cdr_url.isnot(None),
+        models.Cotizacion.sunat_cdr_content.isnot(None),
+    )
     if normalized == "draft":
         return models.Cotizacion.estado == "borrador"
     if normalized == "emitted":
-        return or_(
-            models.Cotizacion.estado == DOCUMENT_STATUS_FACTURADA,
-            models.Cotizacion.sunat_xml_url.isnot(None),
-            models.Cotizacion.sunat_xml_content.isnot(None),
-        )
+        return accepted_artifact & models.Cotizacion.sunat_error.is_(None)
     if normalized == "pending":
         return (
             models.Cotizacion.estado.notin_([
                 "borrador",
-                DOCUMENT_STATUS_FACTURADA,
                 DOCUMENT_STATUS_ANULADA,
             ])
-            & models.Cotizacion.sunat_xml_url.is_(None)
-            & models.Cotizacion.sunat_xml_content.is_(None)
+            & ~accepted_artifact
             & models.Cotizacion.sunat_error.is_(None)
         )
     if normalized == "rejected":

@@ -1052,6 +1052,7 @@ def _enviar_a_smartpse(
             data,
             endpoint=provider_endpoint,
             status_code=200,
+            require_cdr=endpoint in {"/invoice/send", "/note/send"},
         )
     except smartpse_client.SmartPSEException as exc:
         raise FacturacionException(str(exc)) from exc
@@ -1789,6 +1790,14 @@ def descargar_archivo(tipo_archivo: str, comprobante: models.Cotizacion, user: m
         cdr_reference = getattr(comprobante, "sunat_cdr_url", None)
         if storage_service.is_private_storage_reference(cdr_reference):
             return storage_service.download_private_storage_reference(cdr_reference)
+        cdr_content = getattr(comprobante, "sunat_cdr_content", None)
+        if isinstance(cdr_content, str) and cdr_content.strip():
+            from services import fiscal_artifact_service
+
+            return fiscal_artifact_service.package_cdr_xml_as_zip(
+                cdr_content,
+                filename=f"R-{comprobante.serie}-{str(comprobante.correlativo).zfill(8)}.xml",
+            )
         raise FacturacionException(
             f"No hay CDR Smart PSE almacenado para {_document_number(comprobante)}."
         )
