@@ -102,8 +102,16 @@ def guardar_respuesta_sunat(
 
         if data_sunat.get("xml"):
             db_cot.sunat_xml_content = data_sunat.get("xml")
+        if data_sunat.get("cdr_xml"):
+            db_cot.sunat_cdr_content = data_sunat.get("cdr_xml")
         if data_sunat.get("hash"):
             db_cot.sunat_hash = data_sunat.get("hash")
+        if "provider_response" in data_sunat:
+            db_cot.provider_response = data_sunat.get("provider_response")
+        if "provider_endpoint" in data_sunat:
+            db_cot.provider_endpoint = data_sunat.get("provider_endpoint")
+        if "provider_status_code" in data_sunat:
+            db_cot.provider_status_code = data_sunat.get("provider_status_code")
         qr_payload = data_sunat.get("qr_payload") or fiscal_qr_service.build_sunat_qr_payload(
             data_sunat.get("xml") or db_cot.sunat_xml_content,
             provider_hash=data_sunat.get("hash") or db_cot.sunat_hash,

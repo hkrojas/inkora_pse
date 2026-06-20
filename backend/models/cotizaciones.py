@@ -61,9 +61,13 @@ class Cotizacion(Base):
     sunat_cdr_url = Column(String, nullable=True)
     sunat_error = Column(Text, nullable=True)
     sunat_xml_content = Column(Text, nullable=True)
+    sunat_cdr_content = Column(Text, nullable=True)
     sunat_hash = Column(String, nullable=True)
     sunat_qr_payload = Column(JSON, nullable=True)
     sunat_qr_svg = Column(Text, nullable=True)
+    provider_response = Column(JSON, nullable=True)
+    provider_endpoint = Column(String, nullable=True)
+    provider_status_code = Column(Integer, nullable=True)
 
     tipo_de_cambio = Column(Numeric(10, 4), nullable=True)
     sujeta_detraccion = Column(Boolean, default=False)
@@ -100,7 +104,7 @@ class Cotizacion(Base):
 
     @property
     def sunat_accepted(self):
-        return bool((self.sunat_xml_url or self.sunat_xml_content) and not self.sunat_error)
+        return bool((self.sunat_cdr_url or self.sunat_cdr_content) and not self.sunat_error)
 
     @property
     def linked_fiscal_document(self):

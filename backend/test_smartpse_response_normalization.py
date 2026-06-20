@@ -123,3 +123,46 @@ def test_cdr_zip_base64_is_normalized_to_xml_content():
     )
 
     assert result["cdr_xml"] == cdr_xml
+
+
+def test_sale_response_without_cdr_is_not_accepted_when_cdr_required():
+    payload = {"serie": "F001", "correlativo": "00000001", "tipoDoc": "01"}
+    data = {
+        "estado": 200,
+        "mensaje": "Procesado sin CDR",
+        "xml_firmado": "<Invoice/>",
+        "rechazado": False,
+    }
+
+    with pytest.raises(SmartPSEException) as exc_info:
+        build_smartpse_result(
+            payload,
+            data,
+            endpoint="/api/cpe/procesar",
+            status_code=200,
+            require_cdr=True,
+        )
+
+    assert "CDR" in str(exc_info.value)
+
+
+def test_sale_ticket_response_without_cdr_is_not_accepted_when_cdr_required():
+    payload = {"serie": "F001", "correlativo": "00000001", "tipoDoc": "01"}
+    data = {
+        "estado": 200,
+        "mensaje": "Documento enviado, consulte ticket",
+        "ticket": "TICKET-1",
+        "xml_firmado": "<Invoice/>",
+        "rechazado": False,
+    }
+
+    with pytest.raises(SmartPSEException) as exc_info:
+        build_smartpse_result(
+            payload,
+            data,
+            endpoint="/api/cpe/procesar",
+            status_code=200,
+            require_cdr=True,
+        )
+
+    assert "CDR" in str(exc_info.value)

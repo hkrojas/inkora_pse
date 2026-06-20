@@ -31,6 +31,7 @@ def test_facturas_emitidas_page_filtra_tipo_conteos_y_tenant(db_session):
         tipo_comprobante="01",
         estado="facturada",
     ), "F001", 1)
+    emitted.sunat_cdr_content = "<ApplicationResponse/>"
     pending = _numbered(db_session, make_cotizacion(
         db_session,
         tenant,
@@ -50,7 +51,7 @@ def test_facturas_emitidas_page_filtra_tipo_conteos_y_tenant(db_session):
         estado="pendiente",
     ), "B001", 1)
     rejected.sunat_error = "Rechazado por SUNAT"
-    _numbered(db_session, make_cotizacion(
+    other_emitted = _numbered(db_session, make_cotizacion(
         db_session,
         other_tenant,
         other_user,
@@ -59,6 +60,7 @@ def test_facturas_emitidas_page_filtra_tipo_conteos_y_tenant(db_session):
         tipo_comprobante="01",
         estado="facturada",
     ), "F001", 1)
+    other_emitted.sunat_cdr_content = "<ApplicationResponse/>"
     db_session.commit()
 
     page = facturacion_router.list_facturas_emitidas_page(
@@ -83,14 +85,11 @@ def test_facturas_emitidas_page_filtra_tipo_conteos_y_tenant(db_session):
     assert page["counts"]["rejected"] == 0
 
 
-def test_facturas_emitidas_page_busqueda_no_filtra_otro_tenant(db_session):
-    tenant = make_tenant(db_session, "FP03")
-    other_tenant = make_tenant(db_session, "FP04")
-    user = make_user(db_session, tenant, email="fiscal-search@test.com")
-    cliente = make_cliente(db_session, tenant, "FP03", numero_documento="20191308868")
-    other_user = make_user(db_session, other_tenant, email="other-search@test.com")
-    other_cliente = make_cliente(db_session, other_tenant, "FP04")
-    _numbered(db_session, make_cotizacion(
+def test_facturas_emitidas_page_no_cuenta_xml_sin_cdr_como_aceptada(db_session):
+    tenant = make_tenant(db_session, "FP11")
+    user = make_user(db_session, tenant, email="fiscal-pending-cdr@test.com")
+    cliente = make_cliente(db_session, tenant, "FP11")
+    doc = _numbered(db_session, make_cotizacion(
         db_session,
         tenant,
         user,
@@ -99,7 +98,82 @@ def test_facturas_emitidas_page_busqueda_no_filtra_otro_tenant(db_session):
         tipo_comprobante="01",
         estado="facturada",
     ), "F001", 1)
-    _numbered(db_session, make_cotizacion(
+    doc.sunat_xml_content = "<Invoice/>"
+    db_session.commit()
+
+    page = facturacion_router.list_facturas_emitidas_page(
+        skip=0,
+        limit=15,
+        tipo_comprobante="01",
+        tab="all",
+        estado=None,
+        moneda=None,
+        desde=None,
+        hasta=None,
+        q=None,
+        db=db_session,
+        current_user=user,
+    )
+
+    assert page["counts"]["emitted"] == 0
+    assert page["counts"]["pending"] == 1
+    assert page["items"][0].sunat_accepted is False
+
+
+def test_guardar_respuesta_sunat_persiste_trazabilidad_smartpse(db_session):
+    import crud
+
+    tenant = make_tenant(db_session, "FP12")
+    user = make_user(db_session, tenant, email="fiscal-trace@test.com")
+    cliente = make_cliente(db_session, tenant, "FP12")
+    doc = _numbered(db_session, make_cotizacion(
+        db_session,
+        tenant,
+        user,
+        cliente,
+        document_kind=DOCUMENT_KIND_FISCAL_DOCUMENT,
+        tipo_comprobante="01",
+        estado="pendiente",
+    ), "F001", 1)
+    provider_response = {"estado": 200, "mensaje": "Aceptado por SUNAT", "cdr": "<ApplicationResponse/>"}
+
+    updated = crud.guardar_respuesta_sunat(
+        db_session,
+        doc.id,
+        {
+            "success": True,
+            "xml": "<Invoice/>",
+            "cdr_xml": "<ApplicationResponse/>",
+            "provider_response": provider_response,
+            "provider_endpoint": "/api/cpe/procesar",
+            "provider_status_code": 200,
+        },
+        tenant_id=tenant.id,
+    )
+
+    assert updated.provider_response == provider_response
+    assert updated.provider_endpoint == "/api/cpe/procesar"
+    assert updated.provider_status_code == 200
+
+
+def test_facturas_emitidas_page_busqueda_no_filtra_otro_tenant(db_session):
+    tenant = make_tenant(db_session, "FP03")
+    other_tenant = make_tenant(db_session, "FP04")
+    user = make_user(db_session, tenant, email="fiscal-search@test.com")
+    cliente = make_cliente(db_session, tenant, "FP03", numero_documento="20191308868")
+    other_user = make_user(db_session, other_tenant, email="other-search@test.com")
+    other_cliente = make_cliente(db_session, other_tenant, "FP04")
+    emitted = _numbered(db_session, make_cotizacion(
+        db_session,
+        tenant,
+        user,
+        cliente,
+        document_kind=DOCUMENT_KIND_FISCAL_DOCUMENT,
+        tipo_comprobante="01",
+        estado="facturada",
+    ), "F001", 1)
+    emitted.sunat_cdr_content = "<ApplicationResponse/>"
+    other_emitted = _numbered(db_session, make_cotizacion(
         db_session,
         other_tenant,
         other_user,
@@ -108,6 +182,8 @@ def test_facturas_emitidas_page_busqueda_no_filtra_otro_tenant(db_session):
         tipo_comprobante="01",
         estado="facturada",
     ), "F001", 1)
+    other_emitted.sunat_cdr_content = "<ApplicationResponse/>"
+    db_session.commit()
 
     page = facturacion_router.list_facturas_emitidas_page(
         skip=0,
@@ -141,6 +217,7 @@ def test_notas_page_conteos_credito_debito(db_session):
         tipo_comprobante="07",
         estado="facturada",
     ), "FC01", 1)
+    credit_note.sunat_cdr_content = "<ApplicationResponse/>"
     debit_note = _numbered(db_session, make_cotizacion(
         db_session,
         tenant,
