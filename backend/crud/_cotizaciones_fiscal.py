@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 import models
@@ -112,6 +114,16 @@ def guardar_respuesta_sunat(
             db_cot.provider_endpoint = data_sunat.get("provider_endpoint")
         if "provider_status_code" in data_sunat:
             db_cot.provider_status_code = data_sunat.get("provider_status_code")
+        if "provider_document_name" in data_sunat:
+            db_cot.provider_document_name = data_sunat.get("provider_document_name")
+        if "provider_verification_status" in data_sunat:
+            db_cot.provider_verification_status = data_sunat.get("provider_verification_status")
+            if data_sunat.get("provider_verification_status") == "verified":
+                db_cot.provider_verified_at = data_sunat.get("provider_verified_at") or datetime.now()
+        if "cdr_artifact_status" in data_sunat:
+            db_cot.cdr_artifact_status = data_sunat.get("cdr_artifact_status")
+        if "pdf_artifact_status" in data_sunat:
+            db_cot.pdf_artifact_status = data_sunat.get("pdf_artifact_status")
         qr_payload = data_sunat.get("qr_payload") or fiscal_qr_service.build_sunat_qr_payload(
             data_sunat.get("xml") or db_cot.sunat_xml_content,
             provider_hash=data_sunat.get("hash") or db_cot.sunat_hash,
@@ -143,6 +155,10 @@ def guardar_respuesta_sunat(
         if data_sunat.get("success"):
             db_cot.estado = DOCUMENT_STATUS_ISSUED
             db_cot.sunat_error = None
+            if data_sunat.get("cdr_xml") and not db_cot.sunat_cdr_url and not db_cot.cdr_artifact_status:
+                db_cot.cdr_artifact_status = "pending"
+            if not db_cot.sunat_pdf_url and not db_cot.pdf_artifact_status:
+                db_cot.pdf_artifact_status = "pending"
         else:
             db_cot.sunat_error = _resolve_provider_error_message(data_sunat)
 

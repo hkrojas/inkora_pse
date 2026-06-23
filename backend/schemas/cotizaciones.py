@@ -178,6 +178,11 @@ class CotizacionResponse(BaseModel):
     sunat_pdf_url: Optional[str] = None
     sunat_cdr_url: Optional[str] = None
     sunat_error: Optional[str] = None
+    provider_document_name: Optional[str] = None
+    provider_verified_at: Optional[datetime] = None
+    provider_verification_status: Optional[str] = None
+    cdr_artifact_status: Optional[str] = None
+    pdf_artifact_status: Optional[str] = None
 
     monto_pagado: Decimal = Decimal("0.00")
     saldo_pendiente: Decimal = Decimal("0.00")
@@ -235,6 +240,11 @@ class CotizacionListResponse(BaseModel):
     sunat_error: Optional[str] = None
     provider_endpoint: Optional[str] = None
     provider_status_code: Optional[int] = None
+    provider_document_name: Optional[str] = None
+    provider_verified_at: Optional[datetime] = None
+    provider_verification_status: Optional[str] = None
+    cdr_artifact_status: Optional[str] = None
+    pdf_artifact_status: Optional[str] = None
     sunat_accepted: bool = False
     has_sunat_xml: bool = False
     has_sunat_cdr: bool = False
@@ -287,6 +297,11 @@ class FiscalDocumentListResponse(BaseModel):
     sunat_error: Optional[str] = None
     provider_endpoint: Optional[str] = None
     provider_status_code: Optional[int] = None
+    provider_document_name: Optional[str] = None
+    provider_verified_at: Optional[datetime] = None
+    provider_verification_status: Optional[str] = None
+    cdr_artifact_status: Optional[str] = None
+    pdf_artifact_status: Optional[str] = None
     sunat_accepted: bool = False
     has_sunat_xml: bool = False
     has_sunat_cdr: bool = False

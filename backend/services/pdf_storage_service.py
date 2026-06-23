@@ -18,6 +18,8 @@ async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion):
         storage_service.is_private_storage_reference(existing_reference)
         or not storage_service.is_remote_url(existing_reference)
     ):
+        cotizacion.pdf_artifact_status = "ready"
+        db.commit()
         return existing_reference
 
     import time
@@ -60,6 +62,7 @@ async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion):
     )
 
     cotizacion.sunat_pdf_url = private_reference
+    cotizacion.pdf_artifact_status = "ready"
     db.commit()
 
     return private_reference
@@ -82,7 +85,12 @@ async def process_pdf_background(cotizacion_id: int, tenant_id: int):
             .first()
         )
         if cotizacion:
-            await generate_and_upload_pdf(db, cotizacion)
+            try:
+                await generate_and_upload_pdf(db, cotizacion)
+            except Exception:
+                cotizacion.pdf_artifact_status = "failed"
+                db.commit()
+                raise
     finally:
         if tenant_token is not None:
             reset_tenant_context(tenant_token)

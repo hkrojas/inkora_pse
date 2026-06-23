@@ -46,6 +46,8 @@ async def persist_cdr_artifact(db, cotizacion: models.Cotizacion, cdr_xml: str |
 
     existing = getattr(cotizacion, "sunat_cdr_url", None)
     if storage_service.is_private_storage_reference(existing):
+        cotizacion.cdr_artifact_status = "ready"
+        db.commit()
         return existing
 
     basename = _cdr_basename(cotizacion)
@@ -59,6 +61,7 @@ async def persist_cdr_artifact(db, cotizacion: models.Cotizacion, cdr_xml: str |
         "application/zip",
     )
     cotizacion.sunat_cdr_url = reference
+    cotizacion.cdr_artifact_status = "ready"
     db.commit()
     db.refresh(cotizacion)
     return reference
@@ -83,6 +86,20 @@ async def process_cdr_background(cotizacion_id: int, tenant_id: int, cdr_xml: st
         if cotizacion:
             await persist_cdr_artifact(db, cotizacion, cdr_xml)
     except Exception as exc:
+        try:
+            failed = (
+                db.query(models.Cotizacion)
+                .filter(
+                    models.Cotizacion.id == cotizacion_id,
+                    models.Cotizacion.tenant_id == tenant_id,
+                )
+                .first()
+            )
+            if failed:
+                failed.cdr_artifact_status = "failed"
+                db.commit()
+        except Exception:
+            db.rollback()
         logger.warning(
             "cdr_artifact_persist_failed",
             extra={

@@ -1031,6 +1031,71 @@ def _poll_smartpse_ticket(
     )
 
 
+def _verify_smartpse_document(
+    client,
+    tenant,
+    payload: dict,
+    consult_name: str,
+    initial_result: dict,
+) -> dict:
+    last_error = None
+    last_data = None
+    for attempt in range(1, ASYNC_STATUS_MAX_ATTEMPTS + 1):
+        try:
+            data = client.consult_ticket(tenant, consult_name)
+        except Exception as exc:
+            last_error = exc
+            if attempt < ASYNC_STATUS_MAX_ATTEMPTS:
+                time.sleep(ASYNC_STATUS_RETRY_SECONDS)
+                continue
+            raise FacturacionException(
+                f"No se pudo verificar el documento en Smart PSE ({consult_name}): {exc}"
+            ) from exc
+
+        last_data = data if isinstance(data, dict) else {"raw": str(data)}
+        if str(last_data.get("estado") or "").strip() == "202":
+            if attempt < ASYNC_STATUS_MAX_ATTEMPTS:
+                time.sleep(ASYNC_STATUS_RETRY_SECONDS)
+                continue
+            raise FacturacionException(
+                f"Smart PSE dejo el documento pendiente de verificacion ({consult_name})."
+            )
+
+        merged = dict(last_data)
+        if initial_result.get("xml") and not merged.get("xml_firmado"):
+            merged["xml_firmado"] = initial_result.get("xml")
+        if initial_result.get("hash") and not merged.get("codigo_hash"):
+            merged["codigo_hash"] = initial_result.get("hash")
+        if initial_result.get("cdr_xml") and not merged.get("cdr"):
+            merged["cdr"] = initial_result.get("cdr_xml")
+
+        try:
+            verified = smartpse_response.build_smartpse_result(
+                payload,
+                merged,
+                endpoint=f"/api/cpe/consultar/{consult_name}",
+                status_code=200,
+                ticket=initial_result.get("ticket"),
+                require_cdr=True,
+            )
+        except smartpse_client.SmartPSEException as exc:
+            raise FacturacionException(str(exc)) from exc
+
+        verified["provider_document_name"] = consult_name
+        verified["provider_verification_status"] = "verified"
+        verified["provider_endpoint"] = initial_result.get("provider_endpoint") or verified.get("provider_endpoint")
+        verified["provider_response"] = {
+            "process": initial_result.get("provider_response"),
+            "verification": merged,
+        }
+        return verified
+
+    raise FacturacionException(
+        f"No se pudo verificar el documento en Smart PSE ({consult_name}): "
+        f"{_extract_provider_error_message(last_data or {}) if last_data else str(last_error or '')}"
+    )
+
+
 def _enviar_a_smartpse(
     payload,
     user,
@@ -1082,6 +1147,14 @@ def _enviar_a_smartpse(
             nombre_archivo,
             result.get("xml"),
             result.get("hash"),
+        )
+    if endpoint in {"/invoice/send", "/note/send"}:
+        return _verify_smartpse_document(
+            client,
+            tenant,
+            provider_payload,
+            nombre_archivo,
+            result,
         )
     return result
 

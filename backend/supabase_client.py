@@ -18,6 +18,11 @@ def get_supabase_client() -> Client:
 
     # Server-side storage operations must use the secret/service key. The
     # publishable key is kept only as a local-development fallback.
-    storage_key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_KEY
+    storage_key = settings.SUPABASE_SERVICE_ROLE_KEY.strip()
+    if settings.is_non_local and not storage_key:
+        raise RuntimeError(
+            "SUPABASE_SERVICE_ROLE_KEY es obligatoria para Storage en staging/produccion."
+        )
+    storage_key = storage_key or settings.SUPABASE_KEY
     _supabase_client = create_client(settings.SUPABASE_URL, storage_key)
     return _supabase_client

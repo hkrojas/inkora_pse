@@ -30,7 +30,9 @@ import { DocumentTypeBadge } from './DocumentType';
 import { formatCurrency } from '../../lib/utils/documents';
 import {
   buildFiscalDownloadRequest,
+  canRetryFiscalArtifacts,
   formatFiscalDate,
+  getFiscalArtifactStatus,
   getFiscalDocumentStatus,
   hasFiscalDownload,
 } from '../../lib/utils/documentArtifacts';
@@ -176,6 +178,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
+  const [retryingArtifactsId, setRetryingArtifactsId] = useState(null);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ desde: '', hasta: '', estado: 'all', moneda: 'all' });
   const [page, setPage] = useState(1);
@@ -315,6 +318,19 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
       toast('No se pudo abrir el PDF del comprobante.', 'error');
     } catch (err) {
       toast(err.message || 'No se pudo abrir el PDF del comprobante.', 'error');
+    }
+  };
+
+  const handleRetryArtifacts = async (doc) => {
+    setRetryingArtifactsId(doc.id);
+    try {
+      await api.post(`/facturacion/${doc.id}/artifacts/retry`, {}, { timeoutMs: 60000 });
+      toast('Artefactos fiscales reconstruidos.', 'success');
+      await load();
+    } catch (err) {
+      toast(err.message || 'No se pudieron reconstruir los artefactos fiscales.', 'error');
+    } finally {
+      setRetryingArtifactsId(null);
     }
   };
 
@@ -656,6 +672,9 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                         : sunat?.kind === 'pending'
                           ? 'ink-table-row--active'
                           : '';
+                    const pdfArtifact = getFiscalArtifactStatus(doc, 'pdf');
+                    const cdrArtifact = getFiscalArtifactStatus(doc, 'cdr');
+                    const canRetryArtifacts = canRetryFiscalArtifacts(doc);
 
                     return (
                       <tr key={doc.id} className={rowClass}>
@@ -690,6 +709,25 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                             </Badge>
                           ) : (
                             <Badge variant="default">Sin estado</Badge>
+                          )}
+                          {(doc.provider_verification_status || pdfArtifact || cdrArtifact) && (
+                            <div className="document-artifact-stack">
+                              {doc.provider_verification_status && (
+                                <span className={`document-artifact-pill document-artifact-pill--${doc.provider_verification_status}`}>
+                                  Smart PSE {doc.provider_verification_status === 'verified' ? 'verificado' : doc.provider_verification_status}
+                                </span>
+                              )}
+                              {pdfArtifact && (
+                                <span className={`document-artifact-pill document-artifact-pill--${pdfArtifact.kind}`}>
+                                  {pdfArtifact.label}
+                                </span>
+                              )}
+                              {cdrArtifact && (
+                                <span className={`document-artifact-pill document-artifact-pill--${cdrArtifact.kind}`}>
+                                  {cdrArtifact.label}
+                                </span>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td data-label="Acciones">
@@ -742,6 +780,18 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                   <span>CDR</span>
                                 </button>
                               )}
+                              {canRetryArtifacts && (
+                                <button
+                                  type="button"
+                                  className="history-action-button history-action-button--warning"
+                                  disabled={retryingArtifactsId === doc.id}
+                                  onClick={() => handleRetryArtifacts(doc)}
+                                  aria-label={`Reintentar artefactos de ${getFiscalDocumentName(doc)}`}
+                                >
+                                  {retryingArtifactsId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-4 w-4" />}
+                                  <span>Reintentar</span>
+                                </button>
+                              )}
 
                               <div className="history-actions-more document-list-actions-more">
                                 <button
@@ -776,6 +826,12 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                       <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(load)}>
                                         <RefreshCw className="h-3.5 w-3.5" />
                                         Recargar SUNAT
+                                      </button>
+                                    )}
+                                    {canRetryArtifacts && (
+                                      <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleRetryArtifacts(doc))}>
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                        Reintentar PDF/CDR
                                       </button>
                                     )}
                                   </div>
@@ -849,6 +905,17 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                     >
                                       {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileArchive className="h-3.5 w-3.5" />}
                                       Descargar CDR
+                                    </button>
+                                  )}
+                                  {canRetryArtifacts && (
+                                    <button
+                                      type="button"
+                                      className="history-actions-mobile-item"
+                                      disabled={retryingArtifactsId === doc.id}
+                                      onClick={() => runActionMenuItem(() => handleRetryArtifacts(doc))}
+                                    >
+                                      {retryingArtifactsId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
+                                      Reintentar PDF/CDR
                                     </button>
                                   )}
                                   {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (

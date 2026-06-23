@@ -68,6 +68,11 @@ class Cotizacion(Base):
     provider_response = Column(JSON, nullable=True)
     provider_endpoint = Column(String, nullable=True)
     provider_status_code = Column(Integer, nullable=True)
+    provider_document_name = Column(String, nullable=True)
+    provider_verified_at = Column(DateTime, nullable=True)
+    provider_verification_status = Column(String, nullable=True)
+    cdr_artifact_status = Column(String, nullable=True)
+    pdf_artifact_status = Column(String, nullable=True)
 
     tipo_de_cambio = Column(Numeric(10, 4), nullable=True)
     sujeta_detraccion = Column(Boolean, default=False)
@@ -104,6 +109,9 @@ class Cotizacion(Base):
 
     @property
     def sunat_accepted(self):
+        verification_status = (self.provider_verification_status or "").strip().lower()
+        if verification_status in {"failed", "pending"}:
+            return False
         return bool((self.sunat_cdr_url or self.sunat_cdr_content) and not self.sunat_error)
 
     @property

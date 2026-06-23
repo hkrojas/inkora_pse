@@ -71,10 +71,14 @@ def _fiscal_doc_tab_filter(tab: str | None):
         models.Cotizacion.sunat_cdr_url.isnot(None),
         models.Cotizacion.sunat_cdr_content.isnot(None),
     )
+    provider_verified_or_legacy = or_(
+        models.Cotizacion.provider_verification_status.is_(None),
+        models.Cotizacion.provider_verification_status == "verified",
+    )
     if normalized == "draft":
         return models.Cotizacion.estado == "borrador"
     if normalized == "emitted":
-        return accepted_artifact & models.Cotizacion.sunat_error.is_(None)
+        return accepted_artifact & provider_verified_or_legacy & models.Cotizacion.sunat_error.is_(None)
     if normalized == "pending":
         return (
             models.Cotizacion.estado.notin_([
@@ -82,6 +86,14 @@ def _fiscal_doc_tab_filter(tab: str | None):
                 DOCUMENT_STATUS_ANULADA,
             ])
             & ~accepted_artifact
+            & models.Cotizacion.sunat_error.is_(None)
+        ) | (
+            models.Cotizacion.estado.notin_([
+                "borrador",
+                DOCUMENT_STATUS_ANULADA,
+            ])
+            & accepted_artifact
+            & ~provider_verified_or_legacy
             & models.Cotizacion.sunat_error.is_(None)
         )
     if normalized == "rejected":
@@ -1768,6 +1780,56 @@ def recuperar_archivo_api(
             "No se pudo recuperar el archivo solicitado.",
             exc,
         )
+
+
+@router.post("/facturacion/{comprobante_id}/artifacts/retry")
+async def retry_fiscal_artifacts(
+    comprobante_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+):
+    comprobante = _resolve_fiscal_document_or_404(
+        db,
+        comprobante_id,
+        current_user.tenant_id,
+        not_found_message="Comprobante no encontrado",
+    )
+
+    if not comprobante.sunat_cdr_content and not comprobante.sunat_cdr_url:
+        raise HTTPException(
+            409,
+            "No hay CDR persistido para reconstruir los artefactos del comprobante.",
+        )
+
+    cdr_reference = comprobante.sunat_cdr_url
+    if comprobante.sunat_cdr_content and not cdr_reference:
+        try:
+            cdr_reference = await fiscal_artifact_service.persist_cdr_artifact(
+                db,
+                comprobante,
+                comprobante.sunat_cdr_content,
+            )
+        except Exception as exc:
+            comprobante.cdr_artifact_status = "failed"
+            db.commit()
+            raise HTTPException(503, "No se pudo reconstruir el CDR en Storage.") from exc
+
+    try:
+        pdf_reference = await pdf_storage_service.generate_and_upload_pdf(db, comprobante)
+    except Exception as exc:
+        comprobante.pdf_artifact_status = "failed"
+        db.commit()
+        raise HTTPException(503, "No se pudo regenerar el PDF del comprobante.") from exc
+
+    db.refresh(comprobante)
+    return {
+        "ok": True,
+        "comprobante_id": comprobante.id,
+        "cdr_artifact_status": comprobante.cdr_artifact_status,
+        "pdf_artifact_status": comprobante.pdf_artifact_status,
+        "has_cdr": bool(cdr_reference or comprobante.sunat_cdr_content),
+        "has_pdf": bool(pdf_reference),
+    }
 
 
 @router.get(

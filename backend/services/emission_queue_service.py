@@ -606,6 +606,8 @@ def _process_emit_fiscal_job(
                 )
             )
         except Exception as cdr_err:
+            persisted_document.cdr_artifact_status = "failed"
+            db.commit()
             logger.warning(
                 "cdr_artifact_persist_failed_but_emission_ok",
                 extra={
@@ -619,6 +621,10 @@ def _process_emit_fiscal_job(
     try:
         _run_async_syncsafe(pdf_storage_service.process_pdf_background(fiscal_document.id, job.tenant_id))
     except Exception as pdf_err:
+        failed_document = _get_tenant_cotizacion(db, job.tenant_id, fiscal_document.id)
+        if failed_document:
+            failed_document.pdf_artifact_status = "failed"
+            db.commit()
         logger.error(
             "pdf_generation_failed_but_emission_ok",
             extra={
@@ -668,6 +674,8 @@ def _process_emit_note_job(
                 )
             )
         except Exception as cdr_err:
+            updated_note.cdr_artifact_status = "failed"
+            db.commit()
             logger.warning(
                 "cdr_artifact_persist_failed_but_emission_ok",
                 extra={
@@ -688,6 +696,10 @@ def _process_emit_note_job(
     try:
         _run_async_syncsafe(pdf_storage_service.process_pdf_background(nota.id, job.tenant_id))
     except Exception as pdf_err:
+        failed_note = _get_tenant_cotizacion(db, job.tenant_id, nota.id)
+        if failed_note:
+            failed_note.pdf_artifact_status = "failed"
+            db.commit()
         logger.error(
             "pdf_generation_failed_but_emission_ok",
             extra={

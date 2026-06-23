@@ -179,10 +179,11 @@ class Settings(BaseSettings):
 
     @property
     def has_supabase_storage(self) -> bool:
-        return bool(
-            self.SUPABASE_URL.strip()
-            and (self.SUPABASE_SERVICE_ROLE_KEY.strip() or self.SUPABASE_KEY.strip())
-        )
+        if not self.SUPABASE_URL.strip():
+            return False
+        if self.is_non_local:
+            return bool(self.SUPABASE_SERVICE_ROLE_KEY.strip())
+        return bool(self.SUPABASE_SERVICE_ROLE_KEY.strip() or self.SUPABASE_KEY.strip())
 
     @property
     def is_fiscal_beta(self) -> bool:

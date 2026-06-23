@@ -1,4 +1,5 @@
 from services import storage_service
+import supabase_client
 
 
 def test_upload_to_storage_does_not_request_upsert(monkeypatch):
@@ -83,6 +84,18 @@ def test_check_storage_ready_verifies_bucket_access(monkeypatch):
             captured["list_options"] = options
             return []
 
+        def upload(self, *, path, file, file_options):
+            captured["probe_path"] = path
+            captured["probe_file"] = file
+            captured["probe_options"] = file_options
+
+        def download(self, path):
+            captured["download_path"] = path
+            return b"ok"
+
+        def remove(self, paths):
+            captured["remove_paths"] = paths
+
     class FakeStorage:
         def get_bucket(self, bucket):
             captured["get_bucket"].append(bucket)
@@ -110,13 +123,39 @@ def test_check_storage_ready_verifies_bucket_access(monkeypatch):
     assert result["uses_server_key"] is True
     assert result["bucket_accessible"] is True
     assert result["objects_listable"] is True
+    assert result["probe_writable"] is True
     assert result["bucket_error"] is None
     assert result["list_error"] is None
+    assert result["probe_error"] is None
     assert result["public_assets_bucket_accessible"] is True
     assert result["public_assets_objects_listable"] is True
     assert result["public_assets_bucket_error"] is None
     assert result["public_assets_list_error"] is None
     assert captured["get_bucket"] == ["test-bucket", "public-assets"]
-    assert captured["from_bucket"] == ["test-bucket", "public-assets"]
+    assert captured["from_bucket"].count("test-bucket") == 4
+    assert captured["from_bucket"].count("public-assets") == 1
     assert captured["list_path"] == ""
     assert captured["list_options"] == {"limit": 1}
+    assert captured["probe_path"] == "_health/storage-readiness.txt"
+    assert captured["probe_file"] == b"ok"
+    assert captured["probe_options"] == {"content-type": "text/plain", "upsert": "true"}
+    assert captured["download_path"] == "_health/storage-readiness.txt"
+    assert captured["remove_paths"] == ["_health/storage-readiness.txt"]
+
+
+def test_storage_client_requires_service_role_key_outside_local(monkeypatch):
+    supabase_client._supabase_client = None
+    monkeypatch.setattr(supabase_client.settings, "ENVIRONMENT", "staging")
+    monkeypatch.setattr(supabase_client.settings, "SUPABASE_URL", "https://project.supabase.co")
+    monkeypatch.setattr(supabase_client.settings, "SUPABASE_KEY", "anon-key")
+    monkeypatch.setattr(supabase_client.settings, "SUPABASE_SERVICE_ROLE_KEY", "")
+
+    try:
+        try:
+            supabase_client.get_supabase_client()
+        except RuntimeError as exc:
+            assert "SUPABASE_SERVICE_ROLE_KEY" in str(exc)
+        else:
+            raise AssertionError("Expected service-role requirement outside local")
+    finally:
+        supabase_client._supabase_client = None
