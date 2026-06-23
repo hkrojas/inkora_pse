@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 import time
 
 import models
+from config import settings
 from access_control import can_access_all_tenant_resources
 from services import calculations
 from services.document_flow_service import (
@@ -40,6 +41,14 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # con backoff exponencial corto (50ms, 100ms, 150ms).
 MAX_CORRELATIVO_RETRIES = 3
 _CORRELATIVO_CONSTRAINT = "uq_cotizaciones_tenant_serie_correlativo"
+_SMARTPSE_KNOWN_SERIES_FLOORS = {
+    # Empresa demo creada directamente en Smart PSE antes de sincronizar Inkora.
+    # Evita reutilizar folios remotos mientras no exista consulta remota de correlativos.
+    "20606751509": {
+        "F001": 11,
+        "B001": 5,
+    },
+}
 
 
 def _retry_on_correlativo_conflict(func, *args, **kwargs):
@@ -102,13 +111,73 @@ def _clone_cotizacion_items(source_items):
     return items_clonados
 
 
+def _digits_only(value: str | None) -> str:
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
+def _parse_smartpse_series_floors(raw: str | None) -> dict[str, dict[str, int]]:
+    floors: dict[str, dict[str, int]] = {}
+    for tenant_chunk in str(raw or "").split(";"):
+        tenant_chunk = tenant_chunk.strip()
+        if not tenant_chunk or ":" not in tenant_chunk:
+            continue
+        ruc_raw, series_raw = tenant_chunk.split(":", 1)
+        ruc = _digits_only(ruc_raw)
+        if not ruc:
+            continue
+        series_floors: dict[str, int] = {}
+        for pair in series_raw.split(","):
+            pair = pair.strip()
+            if not pair or "=" not in pair:
+                continue
+            serie_raw, floor_raw = pair.split("=", 1)
+            serie = serie_raw.strip().upper()
+            try:
+                floor = int(str(floor_raw).strip())
+            except ValueError:
+                continue
+            if serie and floor > 0:
+                series_floors[serie] = floor
+        if series_floors:
+            floors[ruc] = series_floors
+    return floors
+
+
+def _smartpse_series_floor_for_tenant(db: Session, tenant_id: int, serie: str) -> int:
+    normalized_serie = str(serie or "").strip().upper()
+    if not normalized_serie:
+        return 0
+
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if not tenant:
+        return 0
+
+    has_smartpse_cpe = bool(
+        getattr(tenant, "smartpse_company_id", None)
+        or getattr(tenant, "smartpse_usuario_secundaria", None)
+        or getattr(tenant, "smartpse_token_acceso", None)
+    )
+    if not has_smartpse_cpe:
+        return 0
+
+    ruc = _digits_only(getattr(tenant, "business_ruc", None))
+    if not ruc:
+        return 0
+
+    configured = _parse_smartpse_series_floors(settings.SMARTPSE_SERIES_FLOORS)
+    configured_floor = configured.get(ruc, {}).get(normalized_serie, 0)
+    known_floor = _SMARTPSE_KNOWN_SERIES_FLOORS.get(ruc, {}).get(normalized_serie, 0)
+    return max(configured_floor, known_floor)
+
+
 def _next_correlativo_for_series(db: Session, tenant_id: int, serie: str) -> int:
     last_doc = db.query(models.Cotizacion).filter(
         models.Cotizacion.tenant_id == tenant_id,
         models.Cotizacion.serie == serie,
     ).order_by(models.Cotizacion.correlativo.desc()).with_for_update().first()
     ultimo_correlativo = last_doc.correlativo if last_doc else 0
-    return ultimo_correlativo + 1
+    smartpse_floor = _smartpse_series_floor_for_tenant(db, tenant_id, serie)
+    return max(ultimo_correlativo or 0, smartpse_floor) + 1
 
 
 def get_source_quote(db: Session, document: models.Cotizacion | None):

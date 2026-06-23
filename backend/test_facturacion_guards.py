@@ -643,6 +643,49 @@ class TestFlujoQuoteToFiscal:
         fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
         assert fiscal.estado == "pendiente"
 
+    def test_smartpse_demo_ruc_respeta_piso_remoto_de_correlativos(self, db_session):
+        tenant = make_tenant(db_session, "SPF01")
+        tenant.business_ruc = "20606751509"
+        tenant.smartpse_company_id = "384"
+        tenant.smartpse_environment = "demo"
+        db_session.commit()
+        user = make_user(db_session, tenant, email="smartpse-floor@test.com")
+        cliente = make_cliente(db_session, tenant, "SPF01")
+
+        factura_quote = make_quote_via_crud(db_session, tenant, user, cliente)
+        factura = crud.create_fiscal_document_from_quote(
+            db_session,
+            factura_quote,
+            user.id,
+            "01",
+        )
+
+        boleta_quote = make_quote_via_crud(db_session, tenant, user, cliente)
+        boleta = crud.create_fiscal_document_from_quote(
+            db_session,
+            boleta_quote,
+            user.id,
+            "03",
+        )
+
+        assert factura.serie == "F001"
+        assert factura.correlativo == 12
+        assert boleta.serie == "B001"
+        assert boleta.correlativo == 6
+
+    def test_tenant_sin_smartpse_no_usa_piso_remoto_de_correlativos(self, db_session):
+        tenant = make_tenant(db_session, "SPF02")
+        tenant.business_ruc = "20606751509"
+        db_session.commit()
+        user = make_user(db_session, tenant, email="no-smartpse-floor@test.com")
+        cliente = make_cliente(db_session, tenant, "SPF02")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+
+        fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+
+        assert fiscal.serie == "F001"
+        assert fiscal.correlativo == 1
+
     def test_nota_credito_y_debito_usan_series_apisperu_reales(self, db_session):
         tenant = make_tenant(db_session, "FF06")
         user = make_user(db_session, tenant, email="ff06@test.com")

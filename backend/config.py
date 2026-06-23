@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     SMARTPSE_BASE_URL: str = "https://panel.smartpse.pe"
     SMARTPSE_API_TOKEN: str = ""
     SMARTPSE_TIMEOUT_SECONDS: int = 30
+    SMARTPSE_SERIES_FLOORS: str = ""
     DNIRUC_API_URL: str = "https://dniruc.apisperu.com/api/v1"
     DNIRUC_TOKEN: str = ""
     GEMINI_API_KEY: str = ""
