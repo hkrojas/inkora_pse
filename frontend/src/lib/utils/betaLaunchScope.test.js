@@ -197,16 +197,19 @@ test('quote and invoice line prices support extended unit precision', () => {
   const comprobanteSource = readSource('../../pages/ComprobanteNuevoPage.jsx');
   const quoteModel = readSource('../../../../backend/models/cotizaciones.py');
   const productModel = readSource('../../../../backend/models/productos.py');
-  const migrationSource = readSource('../../../../backend/alembic/versions/0011_extended_unit_price_precision.py');
+  const priceMigrationSource = readSource('../../../../backend/alembic/versions/0011_extended_unit_price_precision.py');
+  const quantityMigrationSource = readSource('../../../../backend/alembic/versions/0013_quote_quantity_precision.py');
 
   assert.doesNotMatch(quoteSource, /precio_unitario[^>]+type="number"[^>]+step="0\.01"/);
   assert.match(quoteSource, /type="text"\s+inputMode="decimal"[\s\S]+precio_unitario/);
   assert.match(comprobanteSource, /type="text"[\s\S]+inputMode="decimal"[\s\S]+precio_unitario/);
   assert.doesNotMatch(comprobanteSource, /precio_unitario:\s*Number\(\s*\([^)]*precio_unitario[^)]*\)\.toFixed\(2\)/);
+  assert.match(quoteModel, /cantidad\s*=\s*Column\(Numeric\(18,\s*4\)\)/);
   assert.match(quoteModel, /precio_unitario\s*=\s*Column\(Numeric\(18,\s*4\)\)/);
   assert.match(quoteModel, /valor_unitario\s*=\s*Column\(Numeric\(18,\s*10\)\)/);
   assert.match(productModel, /precio_unitario\s*=\s*Column\(Numeric\(18,\s*4\)\)/);
   assert.match(productModel, /valor_unitario\s*=\s*Column\(Numeric\(18,\s*10\)\)/);
-  assert.match(migrationSource, /alter_column\(\s*"cotizacion_items",\s*"precio_unitario"/);
-  assert.match(migrationSource, /alter_column\(\s*"productos",\s*"precio_unitario"/);
+  assert.match(priceMigrationSource, /alter_column\(\s*"cotizacion_items",\s*"precio_unitario"/);
+  assert.match(priceMigrationSource, /alter_column\(\s*"productos",\s*"precio_unitario"/);
+  assert.match(quantityMigrationSource, /alter_column\(\s*"cotizacion_items",\s*"cantidad"/);
 });

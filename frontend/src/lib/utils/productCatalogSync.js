@@ -10,7 +10,10 @@ function normalizeText(value) {
 
 function normalizePrice(value) {
   const amount = Number(value || 0);
-  return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+  if (!Number.isFinite(amount)) return '0.00';
+
+  const formatted = amount.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+  return formatted.includes('.') ? formatted : `${formatted}.00`;
 }
 
 function normalizeSnapshot(snapshot = {}) {

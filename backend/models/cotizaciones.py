@@ -187,7 +187,7 @@ class CotizacionItem(Base):
     codigo_producto = Column(String, nullable=True)
 
     descripcion = Column(String)
-    cantidad = Column(Numeric(12, 2))
+    cantidad = Column(Numeric(18, 4))
     precio_unitario = Column(Numeric(18, 4))
     valor_unitario = Column(Numeric(18, 10))
     total_base_igv = Column(Numeric(12, 2))

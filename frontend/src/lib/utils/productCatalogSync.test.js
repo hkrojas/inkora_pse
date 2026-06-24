@@ -59,3 +59,29 @@ test('getCatalogProductsToSync devuelve solo productos existentes marcados para 
 
   assert.deepEqual(result, [selected]);
 });
+
+test('catalog snapshots preserve extended unit price precision', () => {
+  const preciseItem = buildCatalogItem({
+    precio_unitario: '0.365',
+    _catalogSnapshot: {
+      codigo: 'PROD-001',
+      descripcion: 'BOLSA KRAFT',
+      precio_unitario: '0.3650',
+      unidad_medida: 'NIU',
+      tipo_afectacion_igv: '10',
+    },
+  });
+  const integerItem = buildCatalogItem({
+    precio_unitario: '12',
+    _catalogSnapshot: {
+      codigo: 'PROD-001',
+      descripcion: 'BOLSA KRAFT',
+      precio_unitario: '12.00',
+      unidad_medida: 'NIU',
+      tipo_afectacion_igv: '10',
+    },
+  });
+
+  assert.equal(hasCatalogProductOverrides(preciseItem), false);
+  assert.equal(hasCatalogProductOverrides(integerItem), false);
+});
