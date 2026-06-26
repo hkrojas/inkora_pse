@@ -1126,12 +1126,13 @@ def _enviar_a_smartpse(
             xml_content.encode("utf-8"),
             **process_kwargs,
         )
+        is_sync_cpe = endpoint in {"/invoice/send", "/note/send"}
         result = smartpse_response.build_smartpse_result(
             provider_payload,
             data,
             endpoint=provider_endpoint,
             status_code=200,
-            require_cdr=False,
+            require_cdr=is_sync_cpe,
         )
     except smartpse_client.SmartPSEException as exc:
         raise FacturacionException(str(exc)) from exc
@@ -1149,13 +1150,9 @@ def _enviar_a_smartpse(
             result.get("hash"),
         )
     if endpoint in {"/invoice/send", "/note/send"}:
-        return _verify_smartpse_document(
-            client,
-            tenant,
-            provider_payload,
-            nombre_archivo,
-            result,
-        )
+        result["provider_document_name"] = nombre_archivo
+        result["provider_verification_status"] = "verified"
+        return result
     return result
 
 

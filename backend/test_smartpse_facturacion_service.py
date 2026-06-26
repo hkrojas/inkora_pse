@@ -56,12 +56,7 @@ def test_emitir_factura_uses_smartpse_xml_flow_without_apisperu_http(db_session)
         "cdr": "<ApplicationResponse/>",
         "rechazado": False,
     }
-    fake_client.consult_ticket.return_value = {
-        "estado": 200,
-        "mensaje": "Aceptado por SUNAT",
-        "cdr": "<ApplicationResponse/>",
-        "rechazado": False,
-    }
+    fake_client.consult_ticket.side_effect = AssertionError("Facturas Smart PSE son sincronas")
 
     with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client), patch(
         "services.facturacion_service.requests.post",
@@ -79,7 +74,7 @@ def test_emitir_factura_uses_smartpse_xml_flow_without_apisperu_http(db_session)
     assert filename.startswith(f"{tenant.business_ruc}-01-")
     assert b"<ns0:Invoice" in xml_content or b"<Invoice" in xml_content
     assert fake_client.process_xml.call_args.kwargs["demo"] is True
-    fake_client.consult_ticket.assert_called_once_with(tenant, filename)
+    fake_client.consult_ticket.assert_not_called()
     assert result["provider_verification_status"] == "verified"
     assert result["provider_document_name"] == filename
 
@@ -97,12 +92,7 @@ def test_smartpse_production_tenant_still_uses_demo_when_fiscal_env_is_beta(monk
         "cdr": "<ApplicationResponse/>",
         "rechazado": False,
     }
-    fake_client.consult_ticket.return_value = {
-        "estado": 200,
-        "mensaje": "Aceptado demo",
-        "cdr": "<ApplicationResponse/>",
-        "rechazado": False,
-    }
+    fake_client.consult_ticket.side_effect = AssertionError("Facturas Smart PSE son sincronas")
     monkeypatch.setattr(facturacion_service.settings, "FISCAL_ENV", "beta")
 
     with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
@@ -111,7 +101,7 @@ def test_smartpse_production_tenant_still_uses_demo_when_fiscal_env_is_beta(monk
     assert fake_client.process_xml.call_args.kwargs["demo"] is True
 
 
-def test_emitir_factura_no_acepta_si_smartpse_no_verifica_documento(db_session):
+def test_emitir_factura_no_acepta_si_smartpse_no_devuelve_cdr(db_session):
     _, user, fiscal = _make_smartpse_fiscal_document(db_session)
     fake_client = MagicMock()
     fake_client.process_xml.return_value = {
@@ -119,19 +109,19 @@ def test_emitir_factura_no_acepta_si_smartpse_no_verifica_documento(db_session):
         "mensaje": "Aceptado por SUNAT",
         "xml_firmado": _zip_b64("signed.xml", "<Invoice/>"),
         "codigo_hash": "hash-smart",
-        "cdr": "<ApplicationResponse/>",
         "rechazado": False,
     }
-    fake_client.consult_ticket.side_effect = Exception("ticket no existe")
+    fake_client.consult_ticket.side_effect = AssertionError("Facturas Smart PSE son sincronas")
 
     with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
         with pytest.raises(facturacion_service.FacturacionException) as exc_info:
             facturacion_service.emitir_factura(fiscal, db_session, user)
 
-    assert "verificar" in str(exc_info.value).lower()
+    assert "cdr" in str(exc_info.value).lower()
+    fake_client.consult_ticket.assert_not_called()
 
 
-def test_emitir_factura_acepta_cdr_desde_verificacion_remota(db_session):
+def test_emitir_factura_acepta_cdr_desde_respuesta_sincrona(db_session):
     tenant, user, fiscal = _make_smartpse_fiscal_document(db_session)
     signed_xml = f"""<?xml version='1.0'?>
 <Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'
@@ -153,16 +143,10 @@ def test_emitir_factura_acepta_cdr_desde_verificacion_remota(db_session):
         "mensaje": "Aceptado por SUNAT",
         "xml_firmado": _zip_b64("signed.xml", signed_xml),
         "codigo_hash": "hash-smart",
-        "rechazado": False,
-    }
-    fake_client.consult_ticket.return_value = {
-        "estado": 200,
-        "mensaje": "Aceptado por SUNAT",
-        "xml_firmado": _zip_b64("signed.xml", signed_xml),
-        "codigo_hash": "hash-smart",
         "cdr": "<ApplicationResponse/>",
         "rechazado": False,
     }
+    fake_client.consult_ticket.side_effect = AssertionError("Facturas Smart PSE son sincronas")
 
     with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
         result = facturacion_service.emitir_factura(fiscal, db_session, user)
@@ -170,7 +154,7 @@ def test_emitir_factura_acepta_cdr_desde_verificacion_remota(db_session):
     assert result["success"] is True
     assert result["cdr_xml"] == "<ApplicationResponse/>"
     assert result["provider_verification_status"] == "verified"
-    fake_client.consult_ticket.assert_called_once()
+    fake_client.consult_ticket.assert_not_called()
 
 
 def test_retenciones_and_percepciones_are_blocked_for_smartpse_v1(db_session):
