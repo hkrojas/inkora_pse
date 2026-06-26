@@ -131,6 +131,48 @@ def test_emitir_factura_no_acepta_si_smartpse_no_verifica_documento(db_session):
     assert "verificar" in str(exc_info.value).lower()
 
 
+def test_emitir_factura_acepta_cdr_desde_verificacion_remota(db_session):
+    tenant, user, fiscal = _make_smartpse_fiscal_document(db_session)
+    signed_xml = f"""<?xml version='1.0'?>
+<Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'
+    xmlns:cac='urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
+    xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'>
+  <cbc:ID>F001-000001</cbc:ID>
+  <cbc:IssueDate>{fiscal.fecha_emision.date().isoformat()}</cbc:IssueDate>
+  <cbc:IssueTime>10:30:00</cbc:IssueTime>
+  <cbc:InvoiceTypeCode>01</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>PEN</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID='6'>{tenant.business_ruc}</cbc:ID></cac:PartyIdentification><cac:PartyLegalEntity><cbc:RegistrationName>INKORA TEST SAC</cbc:RegistrationName></cac:PartyLegalEntity></cac:Party></cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID='6'>20191308868</cbc:ID></cac:PartyIdentification><cac:PartyLegalEntity><cbc:RegistrationName>CLIENTE SAC</cbc:RegistrationName></cac:PartyLegalEntity></cac:Party></cac:AccountingCustomerParty>
+  <cac:TaxTotal><cbc:TaxAmount currencyID='PEN'>18.00</cbc:TaxAmount></cac:TaxTotal>
+  <cac:LegalMonetaryTotal><cbc:PayableAmount currencyID='PEN'>118.00</cbc:PayableAmount></cac:LegalMonetaryTotal>
+</Invoice>"""
+    fake_client = MagicMock()
+    fake_client.process_xml.return_value = {
+        "estado": 200,
+        "mensaje": "Aceptado por SUNAT",
+        "xml_firmado": _zip_b64("signed.xml", signed_xml),
+        "codigo_hash": "hash-smart",
+        "rechazado": False,
+    }
+    fake_client.consult_ticket.return_value = {
+        "estado": 200,
+        "mensaje": "Aceptado por SUNAT",
+        "xml_firmado": _zip_b64("signed.xml", signed_xml),
+        "codigo_hash": "hash-smart",
+        "cdr": "<ApplicationResponse/>",
+        "rechazado": False,
+    }
+
+    with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
+        result = facturacion_service.emitir_factura(fiscal, db_session, user)
+
+    assert result["success"] is True
+    assert result["cdr_xml"] == "<ApplicationResponse/>"
+    assert result["provider_verification_status"] == "verified"
+    fake_client.consult_ticket.assert_called_once()
+
+
 def test_retenciones_and_percepciones_are_blocked_for_smartpse_v1(db_session):
     _, user, _ = _make_smartpse_fiscal_document(db_session)
 

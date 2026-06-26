@@ -1131,7 +1131,7 @@ def _enviar_a_smartpse(
             data,
             endpoint=provider_endpoint,
             status_code=200,
-            require_cdr=endpoint in {"/invoice/send", "/note/send"},
+            require_cdr=False,
         )
     except smartpse_client.SmartPSEException as exc:
         raise FacturacionException(str(exc)) from exc
