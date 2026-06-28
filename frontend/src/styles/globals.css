@@ -10188,7 +10188,7 @@ textarea.input:focus,
 }
 
 .document-list-panel {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .document-list-page-actions {
@@ -10257,6 +10257,33 @@ textarea.input:focus,
 
 .document-list-table .ink-table-scroll {
   overflow: visible;
+}
+
+.document-list-table .ink-document-table tbody tr {
+  z-index: 0;
+}
+
+.document-list-table .ink-document-table tbody tr:has(.document-list-actions-menu) {
+  z-index: 80;
+}
+
+.document-list-table .ink-document-table tbody td {
+  overflow: visible;
+}
+
+.document-list-actions-more,
+.document-list-actions-mobile {
+  position: relative;
+  z-index: 1;
+}
+
+.document-list-actions-more:has(.document-list-actions-menu),
+.document-list-actions-mobile:has(.document-list-actions-menu) {
+  z-index: 90;
+}
+
+.document-list-actions-menu {
+  z-index: 100;
 }
 
 .document-list-table-meta {
