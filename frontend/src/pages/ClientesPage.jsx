@@ -162,7 +162,9 @@ function getAvatarColor(item) {
 
 function getPaymentLabel(item = {}) {
   const value = item.condicion_pago || 'contado';
-  return value.replace(/_/g, ' ');
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function getPaymentTone(item = {}) {
