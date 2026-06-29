@@ -10253,10 +10253,87 @@ textarea.input:focus,
   margin: 18px;
   border-radius: 24px;
   overflow: visible;
+  border-color: rgba(148, 163, 184, 0.22);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.07);
 }
 
 .document-list-table .ink-table-scroll {
   overflow: visible;
+}
+
+.document-list-table .ink-table-header {
+  align-items: center;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid var(--color-border);
+  background:
+    radial-gradient(circle at 98% 0%, rgba(132, 204, 22, 0.1) 0, rgba(132, 204, 22, 0.1) 70px, transparent 71px),
+    linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
+}
+
+.document-list-table .ink-table-title {
+  gap: 6px;
+}
+
+.document-list-table .ink-table-title strong {
+  font-size: 20px;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
+.document-list-table .ink-table-title span {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.document-list-table .ink-document-table {
+  min-width: 1240px;
+  table-layout: fixed;
+}
+
+.document-list-table .ink-document-table th:nth-child(1),
+.document-list-table .ink-document-table td:nth-child(1) {
+  width: 14%;
+}
+
+.document-list-table .ink-document-table th:nth-child(2),
+.document-list-table .ink-document-table td:nth-child(2) {
+  width: 10%;
+}
+
+.document-list-table .ink-document-table th:nth-child(3),
+.document-list-table .ink-document-table td:nth-child(3) {
+  width: 26%;
+}
+
+.document-list-table .ink-document-table th:nth-child(4),
+.document-list-table .ink-document-table td:nth-child(4) {
+  width: 8%;
+}
+
+.document-list-table .ink-document-table th:nth-child(5),
+.document-list-table .ink-document-table td:nth-child(5) {
+  width: 10%;
+}
+
+.document-list-table .ink-document-table th:nth-child(6),
+.document-list-table .ink-document-table td:nth-child(6) {
+  width: 15%;
+}
+
+.document-list-table .ink-document-table th:nth-child(7),
+.document-list-table .ink-document-table td:nth-child(7) {
+  width: 17%;
+}
+
+.document-list-table .ink-document-table thead th {
+  padding: 12px 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  background: linear-gradient(180deg, #f8fafc 0%, #f3f6f1 100%);
+  color: #667085;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
 }
 
 .document-list-table .ink-document-table tbody tr {
@@ -10290,20 +10367,21 @@ textarea.input:focus,
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 7px;
 }
 
 .document-list-table-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 11px;
+  min-height: 36px;
+  padding: 0 12px;
   border-radius: 999px;
-  background: var(--color-surface-soft);
+  background: rgba(255, 255, 255, 0.72);
   color: var(--color-text-muted);
   font-size: 12px;
-  font-weight: 800;
-  border: 1px solid var(--color-border);
+  font-weight: 850;
+  border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .document-list-folio,
@@ -10316,11 +10394,28 @@ textarea.input:focus,
   min-height: 28px;
 }
 
+.document-list-actions-desktop {
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.document-list-actions-desktop .history-action-button {
+  min-height: 36px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
+.document-list-status-stack {
+  display: grid;
+  gap: 7px;
+  justify-items: start;
+}
+
 .document-artifact-stack {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin-top: 7px;
+  margin-top: 0;
   max-width: 220px;
 }
 
@@ -16387,7 +16482,7 @@ textarea.input:focus,
   }
 
   .document-list-table .ink-document-table tbody td[data-label='Tipo'],
-  .document-list-table .ink-document-table tbody td[data-label='Estado SUNAT'],
+  .document-list-table .ink-document-table tbody td[data-label='Estado'],
   .document-list-table .ink-document-table tbody td[data-label='Acciones'] {
     align-items: center;
   }

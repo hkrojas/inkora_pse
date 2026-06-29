@@ -80,11 +80,11 @@ export function getFiscalDocumentStatus(item = {}) {
       label: 'RECHAZADO',
       variant: 'danger',
       kind: 'error',
-      tooltip: 'Smart PSE no pudo verificar este comprobante.',
+      tooltip: 'No se pudo validar este comprobante.',
     };
   }
   if (item.provider_verification_status === 'pending') {
-    return { label: 'PENDIENTE', variant: 'warning', kind: 'pending', tooltip: 'Verificación Smart PSE pendiente.' };
+    return { label: 'PENDIENTE', variant: 'warning', kind: 'pending', tooltip: 'Validacion pendiente.' };
   }
   const providerVerified = item.provider_verification_status === 'verified' || item.provider_verification_status == null;
   if (providerVerified && (item.sunat_accepted || item.has_sunat_cdr || item.sunat_cdr_url)) {

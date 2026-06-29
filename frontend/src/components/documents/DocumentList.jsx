@@ -44,7 +44,7 @@ const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos' },
   { value: 'aceptado', label: 'Aceptado' },
   { value: 'pendiente', label: 'Pendiente' },
-  { value: 'error', label: 'Error SUNAT' },
+  { value: 'error', label: 'Observadas' },
   { value: 'anulado', label: 'Anulado' },
 ];
 
@@ -76,7 +76,7 @@ function getDocumentFamily(tipo, title) {
   if (tipo === '01') {
     return {
       pageTitle: 'Facturas',
-      heroSubtitle: 'Emitidas ante SUNAT y listas para seguimiento.',
+      heroSubtitle: 'Aceptacion, archivos y seguimiento en una sola vista.',
       emptyTitle: 'Aun no tienes facturas emitidas',
       emptyDescription: 'Crea tu primera factura usando un cliente registrado o una cotizacion aprobada.',
       filteredEmptyTitle: 'No hay facturas para esta vista',
@@ -87,7 +87,7 @@ function getDocumentFamily(tipo, title) {
   if (tipo === '03') {
     return {
       pageTitle: 'Boletas',
-      heroSubtitle: 'Emitidas ante SUNAT y listas para seguimiento.',
+      heroSubtitle: 'Aceptacion, archivos y seguimiento en una sola vista.',
       emptyTitle: 'Aun no tienes boletas emitidas',
       emptyDescription: 'Emite la primera boleta cuando el cliente necesite un comprobante rapido y validado.',
       filteredEmptyTitle: 'No hay boletas para esta vista',
@@ -115,10 +115,20 @@ function getVisibleRange(page, pageSize, total) {
 function getStateEmptyCopy(activeTab, family) {
   if (activeTab === 'draft') return `No hay ${family.pageTitle.toLowerCase()} en borrador.`;
   if (activeTab === 'emitted') return `No hay ${family.pageTitle.toLowerCase()} aceptadas en esta vista.`;
-  if (activeTab === 'pending') return `No hay ${family.pageTitle.toLowerCase()} pendientes de respuesta SUNAT.`;
+  if (activeTab === 'pending') return `No hay ${family.pageTitle.toLowerCase()} pendientes de validacion.`;
   if (activeTab === 'rejected') return `No hay ${family.pageTitle.toLowerCase()} rechazadas u observadas.`;
   if (activeTab === 'voided') return `No hay ${family.pageTitle.toLowerCase()} anuladas en esta vista.`;
   return family.filteredEmptyTitle;
+}
+
+const PROVIDER_VERIFICATION_LABELS = {
+  verified: { label: 'Validada', kind: 'verified' },
+  pending: { label: 'Pendiente de validacion', kind: 'pending' },
+  failed: { label: 'Validacion fallida', kind: 'failed' },
+};
+
+function getProviderVerificationMeta(status) {
+  return PROVIDER_VERIFICATION_LABELS[status] || null;
 }
 
 function normalizeActionLabel(label, fallback) {
@@ -428,7 +438,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
     {
       key: 'emitted',
       value: metrics.accepted,
-      label: 'Aceptadas SUNAT',
+      label: 'Aceptadas',
       text: `${acceptedRate}% del total actual`,
       link: 'Abrir emitidas',
       icon: <CheckCircle2 size={16} />,
@@ -445,7 +455,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
       key: 'rejected',
       value: metrics.rejected,
       label: 'Observadas',
-      text: metrics.rejected ? 'Necesitan corrección o reenvío' : 'Sin errores SUNAT',
+      text: metrics.rejected ? 'Necesitan correccion' : 'Sin observaciones',
       link: 'Ver observadas',
       icon: <XOctagon size={16} />,
     },
@@ -484,7 +494,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
           <div className="document-list-hero-pagecopy">
             <h2>{family.pageTitle}</h2>
             <p>
-              {family.heroSubtitle || subtitle || `Administra ${family.pageTitle.toLowerCase()} emitidas, estados SUNAT y acciones pendientes.`}
+              {family.heroSubtitle || subtitle || `Administra ${family.pageTitle.toLowerCase()} emitidas, estados y acciones pendientes.`}
             </p>
           </div>
 
@@ -543,7 +553,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
 
         <div className="document-list-filters">
           <div className="document-list-filter">
-            <span>Estado SUNAT</span>
+            <span>Estado</span>
             <CustomSelect compact value={filters.estado} onChange={(v) => setFilter('estado', v)} options={STATUS_OPTIONS} />
           </div>
           <div className="document-list-filter">
@@ -654,7 +664,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                     <th>Cliente</th>
                     <th>Tipo</th>
                     <th className="text-right">Total</th>
-                    <th>Estado SUNAT</th>
+                    <th>Estado</th>
                     <th className="text-right">Acciones</th>
                   </tr>
                 </thead>
@@ -675,6 +685,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                     const pdfArtifact = getFiscalArtifactStatus(doc, 'pdf');
                     const cdrArtifact = getFiscalArtifactStatus(doc, 'cdr');
                     const canRetryArtifacts = canRetryFiscalArtifacts(doc);
+                    const verificationMeta = getProviderVerificationMeta(doc.provider_verification_status);
 
                     return (
                       <tr key={doc.id} className={rowClass}>
@@ -702,33 +713,35 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                             {formatCurrency(doc.total_venta, doc.moneda)}
                           </div>
                         </td>
-                        <td data-label="Estado SUNAT">
-                          {sunat ? (
-                            <Badge variant={sunat.variant === 'danger' ? 'error' : sunat.variant} title={sunat.tooltip}>
-                              {sunat.label}
-                            </Badge>
-                          ) : (
-                            <Badge variant="default">Sin estado</Badge>
-                          )}
-                          {(doc.provider_verification_status || pdfArtifact || cdrArtifact) && (
-                            <div className="document-artifact-stack">
-                              {doc.provider_verification_status && (
-                                <span className={`document-artifact-pill document-artifact-pill--${doc.provider_verification_status}`}>
-                                  Smart PSE {doc.provider_verification_status === 'verified' ? 'verificado' : doc.provider_verification_status}
-                                </span>
-                              )}
-                              {pdfArtifact && (
-                                <span className={`document-artifact-pill document-artifact-pill--${pdfArtifact.kind}`}>
-                                  {pdfArtifact.label}
-                                </span>
-                              )}
-                              {cdrArtifact && (
-                                <span className={`document-artifact-pill document-artifact-pill--${cdrArtifact.kind}`}>
-                                  {cdrArtifact.label}
-                                </span>
-                              )}
-                            </div>
-                          )}
+                        <td data-label="Estado">
+                          <div className="document-list-status-stack">
+                            {sunat ? (
+                              <Badge variant={sunat.variant === 'danger' ? 'error' : sunat.variant} title={sunat.tooltip}>
+                                {sunat.label}
+                              </Badge>
+                            ) : (
+                              <Badge variant="default">Sin estado</Badge>
+                            )}
+                            {(doc.provider_verification_status || pdfArtifact || cdrArtifact) && (
+                              <div className="document-artifact-stack">
+                                {verificationMeta && (
+                                  <span className={`document-artifact-pill document-artifact-pill--${verificationMeta.kind}`}>
+                                    {verificationMeta.label}
+                                  </span>
+                                )}
+                                {pdfArtifact && (
+                                  <span className={`document-artifact-pill document-artifact-pill--${pdfArtifact.kind}`}>
+                                    {pdfArtifact.label}
+                                  </span>
+                                )}
+                                {cdrArtifact && (
+                                  <span className={`document-artifact-pill document-artifact-pill--${cdrArtifact.kind}`}>
+                                    {cdrArtifact.label}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td data-label="Acciones">
                           <div className="document-list-action-shell">
@@ -756,43 +769,6 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                   </button>
                                 </>
                               )}
-                              {hasFiscalDownload(doc, 'xml') && (
-                                <button
-                                  type="button"
-                                  className="history-action-button history-action-button--neutral"
-                                  disabled={downloadingId === `${doc.id}-xml`}
-                                  onClick={() => downloadFiscalFile(doc, 'xml')}
-                                  aria-label={`Descargar XML de ${getFiscalDocumentName(doc)}`}
-                                >
-                                  {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink className="h-4 w-4" />}
-                                  <span>XML</span>
-                                </button>
-                              )}
-                              {hasFiscalDownload(doc, 'cdr') && (
-                                <button
-                                  type="button"
-                                  className="history-action-button history-action-button--neutral"
-                                  disabled={downloadingId === `${doc.id}-cdr`}
-                                  onClick={() => downloadFiscalFile(doc, 'cdr')}
-                                  aria-label={`Descargar CDR de ${getFiscalDocumentName(doc)}`}
-                                >
-                                  {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileArchive className="h-4 w-4" />}
-                                  <span>CDR</span>
-                                </button>
-                              )}
-                              {canRetryArtifacts && (
-                                <button
-                                  type="button"
-                                  className="history-action-button history-action-button--warning"
-                                  disabled={retryingArtifactsId === doc.id}
-                                  onClick={() => handleRetryArtifacts(doc)}
-                                  aria-label={`Reintentar artefactos de ${getFiscalDocumentName(doc)}`}
-                                >
-                                  {retryingArtifactsId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-4 w-4" />}
-                                  <span>Reintentar</span>
-                                </button>
-                              )}
-
                               <div className="history-actions-more document-list-actions-more">
                                 <button
                                   type="button"
@@ -806,6 +782,39 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                 </button>
                                 {openActionMenu === desktopMenuKey && (
                                   <div className="history-actions-more-menu document-list-actions-menu">
+                                    {hasFiscalDownload(doc, 'xml') && (
+                                      <button
+                                        type="button"
+                                        className="history-actions-mobile-item"
+                                        disabled={downloadingId === `${doc.id}-xml`}
+                                        onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'xml'))}
+                                      >
+                                        {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink className="h-3.5 w-3.5" />}
+                                        Descargar XML
+                                      </button>
+                                    )}
+                                    {hasFiscalDownload(doc, 'cdr') && (
+                                      <button
+                                        type="button"
+                                        className="history-actions-mobile-item"
+                                        disabled={downloadingId === `${doc.id}-cdr`}
+                                        onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'cdr'))}
+                                      >
+                                        {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileArchive className="h-3.5 w-3.5" />}
+                                        Descargar CDR
+                                      </button>
+                                    )}
+                                    {canRetryArtifacts && (
+                                      <button
+                                        type="button"
+                                        className="history-actions-mobile-item"
+                                        disabled={retryingArtifactsId === doc.id}
+                                        onClick={() => runActionMenuItem(() => handleRetryArtifacts(doc))}
+                                      >
+                                        {retryingArtifactsId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
+                                        Reintentar archivos
+                                      </button>
+                                    )}
                                     <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleCopyShareLink(doc))}>
                                       <Share2 className="h-3.5 w-3.5" />
                                       Copiar enlace
@@ -825,13 +834,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                     {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
                                       <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(load)}>
                                         <RefreshCw className="h-3.5 w-3.5" />
-                                        Recargar SUNAT
-                                      </button>
-                                    )}
-                                    {canRetryArtifacts && (
-                                      <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleRetryArtifacts(doc))}>
-                                        <RefreshCw className="h-3.5 w-3.5" />
-                                        Reintentar PDF/CDR
+                                        Recargar estado
                                       </button>
                                     )}
                                   </div>
@@ -915,13 +918,13 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                       onClick={() => runActionMenuItem(() => handleRetryArtifacts(doc))}
                                     >
                                       {retryingArtifactsId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
-                                      Reintentar PDF/CDR
+                                      Reintentar archivos
                                     </button>
                                   )}
                                   {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
                                     <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(load)}>
                                       <RefreshCw className="h-3.5 w-3.5" />
-                                      Recargar SUNAT
+                                      Recargar estado
                                     </button>
                                   )}
                                 </div>
