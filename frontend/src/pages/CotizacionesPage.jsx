@@ -73,6 +73,7 @@ import { useAuth } from '../context/AuthContext';
 // ─── Constantes de dominio ────────────────────────────────────────────────────
 
 const UNIDADES_MEDIDA = SUNAT_UNIT_OPTIONS;
+const HISTORY_PAGE_SIZE = 15;
 
 const AFECTACION_IGV = SUNAT_TAX_AFFECTATION_OPTIONS;
 
@@ -1987,6 +1988,7 @@ export default function CotizacionesPage() {
   const [emitirDoc, setEmitirDoc]   = useState(null);
   const [anularDoc, setAnularDoc]   = useState(null);
   const [notaDoc, setNotaDoc]       = useState(null);
+  const [historyPage, setHistoryPage] = useState(1);
 
   // Carga de datos maestros (clientes y productos) con una página inicial acotada.
   useEffect(() => {
@@ -2039,6 +2041,16 @@ export default function CotizacionesPage() {
     const matchHasta = !filters.hasta || new Date(item.fecha_emision) <= new Date(filters.hasta);
     return matchSearch && matchDesde && matchHasta;
   });
+
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [search, filters.desde, filters.hasta, quotations.length]);
+
+  const historyPageCount = Math.max(1, Math.ceil(filteredHistory.length / HISTORY_PAGE_SIZE));
+  const safeHistoryPage = Math.min(historyPage, historyPageCount);
+  const historyPageStart = filteredHistory.length ? (safeHistoryPage - 1) * HISTORY_PAGE_SIZE : 0;
+  const historyPageEnd = Math.min(historyPageStart + HISTORY_PAGE_SIZE, filteredHistory.length);
+  const historyPageItems = filteredHistory.slice(historyPageStart, historyPageEnd);
 
   // Filtrado emitidas
   const filteredFiscal = fiscalDocs.filter((item) => {
@@ -2430,7 +2442,11 @@ export default function CotizacionesPage() {
                   <p>Seguimiento de cotizaciones, conversiones y cobranza asociada.</p>
                 </div>
                 <div className="proto-pagination">
-                  <span>{filteredHistory.length} registros visibles</span>
+                  <span>
+                    {filteredHistory.length
+                      ? `${historyPageStart + 1}-${historyPageEnd} de ${filteredHistory.length}`
+                      : 'Sin registros'}
+                  </span>
                 </div>
               </div>
               <div className="ink-table-scroll cotizaciones-history-scroll">
@@ -2449,7 +2465,7 @@ export default function CotizacionesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredHistory.map((item) => {
+                  {historyPageItems.map((item) => {
                     const hasLinked = !!item.linked_fiscal_document_number && item.linked_fiscal_document_status !== 'anulada';
                     const sym = item.moneda === 'USD' ? '$' : 'S/';
                     const linkedSunat = getLinkedSunatStatus(item);
@@ -2458,34 +2474,34 @@ export default function CotizacionesPage() {
                     const canDelete = !hasLinked && item.estado !== 'anulada';
                     return (
                       <tr key={item.id} className="ink-tr">
-                        <td className="ink-td" data-label="F. emision">
-                          <span className="font-mono-label text-[10px] uppercase">
+                        <td className="ink-td history-date-cell" data-label="F. emision">
+                          <span className="history-date-value">
                             {item.fecha_emision ? new Date(item.fecha_emision).toLocaleDateString('es-PE') : '--'}
                           </span>
                         </td>
                         <td className="ink-td font-mono-label text-xs" data-label="N° cotización">
-                          {getDocumentDisplayNumber(item)}
+                          <span className="history-quote-number">{getDocumentDisplayNumber(item)}</span>
                         </td>
                         <td className="ink-td" data-label="Cliente">
-                          <div className="flex flex-col">
-                            <span className="font-bold text-xs uppercase">{item.cliente?.razon_social || '--'}</span>
-                            <span className="text-[10px] text-[var(--text-tertiary)]">{item.cliente?.numero_documento || ''}</span>
+                          <div className="history-client-cell">
+                            <span>{item.cliente?.razon_social || '--'}</span>
+                            {item.cliente?.numero_documento && <small>{item.cliente.numero_documento}</small>}
                           </div>
                         </td>
-                        <td className="ink-td text-center font-mono-label text-[10px]" data-label="M.">{sym}</td>
-                        <td className="ink-td text-right font-bold font-mono-label text-xs" data-label="Total">{sym} {fmt(item.total_venta)}</td>
-                        <td className="ink-td text-right font-mono-label text-xs text-[var(--text-tertiary)]" data-label="Saldo">
-                          {sym} {fmt(item.saldo_pendiente)}
+                        <td className="ink-td text-center" data-label="M."><span className="history-currency">{sym}</span></td>
+                        <td className="ink-td text-right" data-label="Total"><span className="history-money history-money--strong">{sym} {fmt(item.total_venta)}</span></td>
+                        <td className="ink-td text-right" data-label="Saldo">
+                          <span className="history-money">{sym} {fmt(item.saldo_pendiente)}</span>
                         </td>
                         <td className="ink-td" data-label="Pago">
-                          <Badge variant={statusBadge(item.payment_status)}>
+                          <Badge variant={statusBadge(item.payment_status)} className="history-payment-badge">
                             {getPaymentStatusLabel(item.payment_status)}
                           </Badge>
                         </td>
                         <td className="ink-td" data-label="Comprobante">
                           {hasLinked ? (
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: 'var(--color-primary)' }}>
+                            <div className="history-linked-doc">
+                              <span className="history-linked-number">
                                 {item.linked_fiscal_document_number}
                               </span>
                               {linkedSunat && (
@@ -2496,7 +2512,7 @@ export default function CotizacionesPage() {
                               )}
                             </div>
                           ) : (
-                            <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>Sin emitir</span>
+                            <span className="history-unissued-pill">Sin comprobante</span>
                           )}
                         </td>
                         <td className="ink-td" data-label="Acciones">
@@ -2651,6 +2667,34 @@ export default function CotizacionesPage() {
                   })}
                 </tbody>
               </table>
+              </div>
+              <div className="history-table-footer">
+                <span>
+                  Pag. {safeHistoryPage} de {historyPageCount} · {HISTORY_PAGE_SIZE} por página
+                </span>
+                <div className="pagination">
+                  <button
+                    type="button"
+                    className="page-btn"
+                    disabled={safeHistoryPage <= 1}
+                    onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}
+                    aria-label="Página anterior"
+                  >
+                    ‹
+                  </button>
+                  <button type="button" className="page-btn active" aria-current="page">
+                    {safeHistoryPage}
+                  </button>
+                  <button
+                    type="button"
+                    className="page-btn"
+                    disabled={safeHistoryPage >= historyPageCount}
+                    onClick={() => setHistoryPage((page) => Math.min(historyPageCount, page + 1))}
+                    aria-label="Página siguiente"
+                  >
+                    ›
+                  </button>
+                </div>
               </div>
             </div>
           )}
