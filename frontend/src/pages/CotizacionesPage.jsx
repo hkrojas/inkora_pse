@@ -2376,14 +2376,14 @@ export default function CotizacionesPage() {
           )}
 
           {!loading && filteredHistory.length > 0 && (
-            <div className="summary-strip">
+            <div className="summary-strip summary-strip--history">
               <div className="summary-items">
                 <div className="summary-item">
                   <div className="summary-icon"><History size={16} /></div>
                   <div>
                     <span>Cotizaciones visibles</span>
                     <strong>{filteredHistory.length}</strong>
-                    <span>Segun la busqueda y el rango elegido</span>
+                    <span>En esta vista</span>
                   </div>
                 </div>
                 <div className="summary-item">
@@ -2391,7 +2391,7 @@ export default function CotizacionesPage() {
                   <div>
                     <span>Total visible</span>
                     <strong>S/ {fmt(historyTotal)}</strong>
-                    <span>Base comercial del historial actual</span>
+                    <span>Monto filtrado</span>
                   </div>
                 </div>
                 <div className="summary-item">
@@ -2399,7 +2399,7 @@ export default function CotizacionesPage() {
                   <div>
                     <span>Saldo pendiente</span>
                     <strong>S/ {fmt(historyPendingBalance)}</strong>
-                    <span>{historyLinkedCount} ya pasaron a comprobante</span>
+                    <span>{historyLinkedCount} convertidas a comprobante</span>
                   </div>
                 </div>
               </div>

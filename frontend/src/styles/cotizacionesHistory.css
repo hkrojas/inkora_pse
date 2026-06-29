@@ -8,13 +8,124 @@
   z-index: 80;
 }
 
+.cotizaciones-page .summary-strip--history {
+  position: relative;
+  align-items: stretch;
+  gap: 16px;
+  padding: 18px 22px;
+  overflow: hidden;
+  border-color: rgba(132, 204, 22, 0.2);
+  background:
+    radial-gradient(circle at 96% 12%, rgba(132, 204, 22, 0.13) 0, rgba(132, 204, 22, 0.13) 78px, transparent 79px),
+    linear-gradient(135deg, var(--color-surface) 0%, #fcfdfb 58%, #f2f9ea 100%);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+.cotizaciones-page .summary-strip--history::before {
+  content: "";
+  position: absolute;
+  inset: 18px auto 18px 0;
+  width: 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--color-primary) 0%, #17612d 100%);
+}
+
+.cotizaciones-page .summary-strip--history .summary-items {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.cotizaciones-page .summary-strip--history .summary-item {
+  min-height: 104px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+.cotizaciones-page .summary-strip--history .summary-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(132, 204, 22, 0.18);
+}
+
+.cotizaciones-page .summary-strip--history .summary-item span:first-child {
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+
+.cotizaciones-page .summary-strip--history .summary-item strong {
+  margin-top: 4px;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.cotizaciones-page .summary-strip--history .summary-item span:last-child {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cotizaciones-page .summary-strip--history > .proto-pagination {
+  align-self: stretch;
+  min-width: 142px;
+  justify-content: center;
+  padding: 0 4px 0 18px;
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.cotizaciones-page .summary-strip--history > .proto-pagination span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(132, 204, 22, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .cotizaciones-history-card {
   overflow: visible;
+  border-color: rgba(148, 163, 184, 0.22);
+  border-radius: 24px;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.07);
 }
 
 .cotizaciones-history-card .panel-header {
-  padding: 20px 26px 16px;
+  align-items: center;
+  padding: 22px 26px 18px;
   border-bottom: 1px solid var(--color-border);
+  background:
+    radial-gradient(circle at 98% 0%, rgba(132, 204, 22, 0.1) 0, rgba(132, 204, 22, 0.1) 70px, transparent 71px),
+    linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
+}
+
+.cotizaciones-history-card .panel-header h3 {
+  font-size: 20px;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
+.cotizaciones-history-card .panel-header p {
+  margin-top: 6px;
+  max-width: 540px;
+  line-height: 1.45;
+}
+
+.cotizaciones-history-card .panel-header .proto-pagination {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  background: var(--color-surface-soft);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .cotizaciones-history-scroll {
@@ -27,6 +138,12 @@
 
 .cotizaciones-history-table thead th {
   padding: 12px 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  background: linear-gradient(180deg, #f8fafc 0%, #f3f6f1 100%);
+  color: #667085;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
 }
 
 .cotizaciones-history-table tbody td {
@@ -308,7 +425,88 @@
   font-weight: 750;
 }
 
+.dark .cotizaciones-page .summary-strip--history,
+[data-theme='dark'] .cotizaciones-page .summary-strip--history {
+  border-color: rgba(132, 204, 22, 0.22);
+  background:
+    radial-gradient(circle at 96% 12%, rgba(132, 204, 22, 0.13) 0, rgba(132, 204, 22, 0.13) 78px, transparent 79px),
+    linear-gradient(135deg, rgba(12, 37, 22, 0.98) 0%, rgba(17, 48, 28, 0.98) 100%);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+}
+
+.dark .cotizaciones-page .summary-strip--history .summary-item,
+[data-theme='dark'] .cotizaciones-page .summary-strip--history .summary-item {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.11);
+  box-shadow: none;
+}
+
+.dark .cotizaciones-page .summary-strip--history > .proto-pagination span,
+[data-theme='dark'] .cotizaciones-page .summary-strip--history > .proto-pagination span {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(132, 204, 22, 0.25);
+}
+
+.dark .cotizaciones-history-card,
+[data-theme='dark'] .cotizaciones-history-card {
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.dark .cotizaciones-history-card .panel-header,
+[data-theme='dark'] .cotizaciones-history-card .panel-header {
+  background:
+    radial-gradient(circle at 98% 0%, rgba(132, 204, 22, 0.12) 0, rgba(132, 204, 22, 0.12) 70px, transparent 71px),
+    linear-gradient(180deg, rgba(12, 37, 22, 0.98) 0%, rgba(9, 28, 17, 0.98) 100%);
+}
+
+.dark .cotizaciones-history-card .panel-header .proto-pagination,
+[data-theme='dark'] .cotizaciones-history-card .panel-header .proto-pagination {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.dark .cotizaciones-history-table thead th,
+[data-theme='dark'] .cotizaciones-history-table thead th {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.035) 100%);
+  color: rgba(255, 255, 255, 0.66);
+}
+
 @media (max-width: 768px) {
+  .cotizaciones-page .summary-strip--history {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 20px;
+  }
+
+  .cotizaciones-page .summary-strip--history::before {
+    inset: 0 18px auto 18px;
+    width: auto;
+    height: 4px;
+  }
+
+  .cotizaciones-page .summary-strip--history .summary-items {
+    grid-template-columns: 1fr;
+  }
+
+  .cotizaciones-page .summary-strip--history .summary-item {
+    min-height: 82px;
+    padding: 14px;
+  }
+
+  .cotizaciones-page .summary-strip--history .summary-item strong {
+    font-size: 24px;
+  }
+
+  .cotizaciones-page .summary-strip--history > .proto-pagination {
+    justify-content: flex-start;
+    min-width: 0;
+    padding: 10px 0 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    border-left: 0;
+  }
+
   .cotizaciones-history-card {
     border-radius: 18px;
     overflow: visible;
