@@ -215,12 +215,12 @@ function getEmailLink(cliente, doc) {
 function getLinkedSunatStatus(item) {
   if (!item?.linked_fiscal_document_number) return null;
   if (item.linked_fiscal_document_status === 'anulada') {
-    return { label: 'ANULADO', variant: 'danger', icon: XCircle };
+    return { label: 'Anulado', variant: 'danger', icon: XCircle };
   }
   if (item.linked_fiscal_document_status === 'facturada') {
-    return { label: 'ACEPTADO', variant: 'success', icon: CheckCircle2 };
+    return { label: 'Aceptado', variant: 'success', icon: CheckCircle2 };
   }
-  return { label: 'PENDIENTE', variant: 'warning', icon: Clock };
+  return { label: 'Pendiente', variant: 'warning', icon: Clock };
 }
 
 function docLabel(tipo) {
