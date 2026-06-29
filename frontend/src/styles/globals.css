@@ -10372,7 +10372,7 @@ textarea.input:focus,
 
 .document-list-table .ink-document-table th:nth-child(3),
 .document-list-table .ink-document-table td:nth-child(3) {
-  width: 24.5%;
+  width: 22.5%;
 }
 
 .document-list-table .ink-document-table th:nth-child(4),
@@ -10383,7 +10383,7 @@ textarea.input:focus,
 
 .document-list-table .ink-document-table th:nth-child(5),
 .document-list-table .ink-document-table td:nth-child(5) {
-  width: 11.5%;
+  width: 10.5%;
   text-align: center;
 }
 
@@ -10394,7 +10394,8 @@ textarea.input:focus,
 
 .document-list-table .ink-document-table th:nth-child(7),
 .document-list-table .ink-document-table td:nth-child(7) {
-  width: 17%;
+  width: 20%;
+  padding-right: 24px;
 }
 
 .document-list-table .ink-document-table thead th {
@@ -10509,6 +10510,7 @@ textarea.input:focus,
 .document-list-actions-desktop {
   justify-content: flex-end;
   gap: 7px;
+  padding-right: 2px;
 }
 
 .document-list-actions-desktop .history-action-button {
