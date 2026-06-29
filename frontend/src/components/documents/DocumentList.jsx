@@ -32,7 +32,6 @@ import {
   buildFiscalDownloadRequest,
   canRetryFiscalArtifacts,
   formatFiscalDate,
-  getFiscalArtifactStatus,
   getFiscalDocumentStatus,
   hasFiscalDownload,
 } from '../../lib/utils/documentArtifacts';
@@ -119,16 +118,6 @@ function getStateEmptyCopy(activeTab, family) {
   if (activeTab === 'rejected') return `No hay ${family.pageTitle.toLowerCase()} rechazadas u observadas.`;
   if (activeTab === 'voided') return `No hay ${family.pageTitle.toLowerCase()} anuladas en esta vista.`;
   return family.filteredEmptyTitle;
-}
-
-const PROVIDER_VERIFICATION_LABELS = {
-  verified: { label: 'Validada', kind: 'verified' },
-  pending: { label: 'Pendiente de validacion', kind: 'pending' },
-  failed: { label: 'Validacion fallida', kind: 'failed' },
-};
-
-function getProviderVerificationMeta(status) {
-  return PROVIDER_VERIFICATION_LABELS[status] || null;
 }
 
 function normalizeActionLabel(label, fallback) {
@@ -663,7 +652,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                     <th>Fecha</th>
                     <th>Cliente</th>
                     <th>Tipo</th>
-                    <th className="text-right">Total</th>
+                    <th className="text-center">Total</th>
                     <th>Estado</th>
                     <th className="text-right">Acciones</th>
                   </tr>
@@ -679,13 +668,10 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                     const rowClass =
                       sunat?.kind === 'ok'
                         ? 'ink-table-row--accepted'
-                        : sunat?.kind === 'pending'
-                          ? 'ink-table-row--active'
-                          : '';
-                    const pdfArtifact = getFiscalArtifactStatus(doc, 'pdf');
-                    const cdrArtifact = getFiscalArtifactStatus(doc, 'cdr');
+                          : sunat?.kind === 'pending'
+                            ? 'ink-table-row--active'
+                            : '';
                     const canRetryArtifacts = canRetryFiscalArtifacts(doc);
-                    const verificationMeta = getProviderVerificationMeta(doc.provider_verification_status);
 
                     return (
                       <tr key={doc.id} className={rowClass}>
@@ -708,7 +694,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                         <td data-label="Tipo">
                           <DocumentTypeBadge tipo={doc.tipo_comprobante} size="sm" />
                         </td>
-                        <td className="text-right" data-label="Total">
+                        <td className="text-center" data-label="Total">
                           <div className="ink-table-cell__primary document-list-amount">
                             {formatCurrency(doc.total_venta, doc.moneda)}
                           </div>
@@ -721,25 +707,6 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                               </Badge>
                             ) : (
                               <Badge variant="default">Sin estado</Badge>
-                            )}
-                            {(doc.provider_verification_status || pdfArtifact || cdrArtifact) && (
-                              <div className="document-artifact-stack">
-                                {verificationMeta && (
-                                  <span className={`document-artifact-pill document-artifact-pill--${verificationMeta.kind}`}>
-                                    {verificationMeta.label}
-                                  </span>
-                                )}
-                                {pdfArtifact && (
-                                  <span className={`document-artifact-pill document-artifact-pill--${pdfArtifact.kind}`}>
-                                    {pdfArtifact.label}
-                                  </span>
-                                )}
-                                {cdrArtifact && (
-                                  <span className={`document-artifact-pill document-artifact-pill--${cdrArtifact.kind}`}>
-                                    {cdrArtifact.label}
-                                  </span>
-                                )}
-                              </div>
                             )}
                           </div>
                         </td>
