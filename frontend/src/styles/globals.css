@@ -8120,6 +8120,87 @@ textarea.input:focus,
   opacity: 1;
 }
 
+.productos-page .segments {
+  gap: 10px;
+}
+
+.productos-page .segment {
+  min-height: 36px;
+  height: auto;
+  padding: 0 15px;
+  border-width: 1.5px;
+  background: #fff;
+}
+
+.productos-page .segment:nth-child(2) {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+
+.productos-page .segment:nth-child(3) {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.productos-page .segment:nth-child(4) {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.productos-page .segment:nth-child(5) {
+  background: #fefce8;
+  border-color: #fde68a;
+  color: #854d0e;
+}
+
+.productos-page .segment.active {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+}
+
+.productos-page .segment:nth-child(1).active {
+  background: #0f2f17;
+  border-color: #0f2f17;
+  color: #fff;
+}
+
+.productos-page .commercial {
+  gap: 7px;
+}
+
+.productos-page .pill.company {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+
+.productos-page .pill.person {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.productos-page .pill.ok {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.productos-page .pill.new {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #2563eb;
+}
+
+.productos-page .pill.inactive {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+  color: #667085;
+}
+
 /* Cobranza list — 5 columns: cliente/doc | vencimiento | saldo | mora | accion */
 .cobranza-list {
   padding: 8px 14px 6px;
@@ -16281,6 +16362,130 @@ textarea.input:focus,
 
   .cotizaciones-page .quote-bank-option-badge {
     align-self: flex-start;
+  }
+
+  .productos-page .segments-row {
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .productos-page .segments {
+    gap: 8px;
+  }
+
+  .productos-page .segment {
+    min-height: 32px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .productos-page .sort-text {
+    font-size: 12px;
+  }
+
+  .productos-page .product-list {
+    overflow: visible;
+    padding: 12px;
+  }
+
+  .productos-page .product-list-head {
+    display: none;
+  }
+
+  .productos-page .product-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+    padding: 16px;
+    margin-bottom: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 20px;
+    background: var(--color-surface);
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+  }
+
+  .productos-page .product-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .productos-page .product-row::before {
+    top: 16px;
+    bottom: 16px;
+    border-radius: 999px;
+  }
+
+  .productos-page .product-row > * {
+    min-width: 0;
+  }
+
+  .productos-page .product-row > .contact-block,
+  .productos-page .product-row > .commercial,
+  .productos-page .product-row > .activity-block,
+  .productos-page .product-row > div:nth-child(5) {
+    display: grid;
+    grid-template-columns: minmax(88px, 0.34fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+  }
+
+  .productos-page .product-row > .contact-block::before,
+  .productos-page .product-row > .commercial::before,
+  .productos-page .product-row > .activity-block::before,
+  .productos-page .product-row > div:nth-child(5)::before {
+    color: var(--color-text-soft);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .productos-page .product-row > .contact-block::before {
+    content: "SKU";
+  }
+
+  .productos-page .product-row > .commercial::before {
+    content: "Tipo";
+  }
+
+  .productos-page .product-row > .activity-block::before {
+    content: "Precio";
+  }
+
+  .productos-page .product-row > div:nth-child(5)::before {
+    content: "Estado";
+  }
+
+  .productos-page .product-row .commercial {
+    grid-template-columns: minmax(88px, 0.34fr) minmax(0, 1fr);
+  }
+
+  .productos-page .product-row .commercial .pill {
+    grid-column: 2;
+    width: fit-content;
+    margin-right: 6px;
+    margin-bottom: 6px;
+  }
+
+  .productos-page .product-row > .activity-block > strong,
+  .productos-page .product-row > .activity-block > span,
+  .productos-page .product-row > div:nth-child(5) > .pill {
+    grid-column: 2;
+  }
+
+  .productos-page .product-row .activity-block {
+    text-align: left;
+  }
+
+  .productos-page .product-row .activity-block strong {
+    font-size: 17px;
+  }
+
+  .productos-page .actions-col {
+    justify-content: flex-start;
+    opacity: 1;
+    padding-top: 4px;
   }
 
   .cotizaciones-page .line-row,
