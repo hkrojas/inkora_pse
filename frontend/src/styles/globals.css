@@ -10372,12 +10372,13 @@ textarea.input:focus,
 
 .document-list-table .ink-document-table th:nth-child(3),
 .document-list-table .ink-document-table td:nth-child(3) {
-  width: 27%;
+  width: 29%;
 }
 
 .document-list-table .ink-document-table th:nth-child(4),
 .document-list-table .ink-document-table td:nth-child(4) {
-  width: 6%;
+  width: 4.5%;
+  text-align: center;
 }
 
 .document-list-table .ink-document-table th:nth-child(5),
@@ -10388,7 +10389,7 @@ textarea.input:focus,
 
 .document-list-table .ink-document-table th:nth-child(6),
 .document-list-table .ink-document-table td:nth-child(6) {
-  width: 16%;
+  width: 15.5%;
 }
 
 .document-list-table .ink-document-table th:nth-child(7),
@@ -10485,6 +10486,20 @@ textarea.input:focus,
   width: 100%;
   justify-content: center;
   text-align: center;
+}
+
+.document-list-table td[data-label='Tipo'] .document-type-badge {
+  gap: 4px;
+  padding: 2px 5px;
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.document-list-table td[data-label='Tipo'] .document-type-badge__key {
+  min-width: 16px;
+  height: 16px;
+  font-size: 8px;
 }
 
 .document-list-row-actions {
