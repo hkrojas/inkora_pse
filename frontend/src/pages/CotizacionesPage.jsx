@@ -2495,7 +2495,7 @@ export default function CotizacionesPage() {
                         </td>
                         <td className="ink-td" data-label="Pago">
                           <Badge variant={statusBadge(item.payment_status)} className="history-payment-badge">
-                            {getPaymentStatusLabel(item.payment_status)}
+                            {item.payment_status === 'pendiente' ? 'Por cobrar' : getPaymentStatusLabel(item.payment_status)}
                           </Badge>
                         </td>
                         <td className="ink-td" data-label="Comprobante">

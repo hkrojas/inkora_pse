@@ -35,45 +35,53 @@
 
 .cotizaciones-history-table th:nth-child(1),
 .cotizaciones-history-table td:nth-child(1) {
-  width: 7.5%;
+  width: 8%;
   min-width: 88px;
 }
 
 .cotizaciones-history-table th:nth-child(2),
 .cotizaciones-history-table td:nth-child(2) {
-  width: 10%;
+  width: 9%;
 }
 
 .cotizaciones-history-table th:nth-child(3),
 .cotizaciones-history-table td:nth-child(3) {
-  width: 23%;
+  width: 20%;
 }
 
 .cotizaciones-history-table th:nth-child(4),
 .cotizaciones-history-table td:nth-child(4) {
-  width: 4%;
+  width: 3.5%;
 }
 
 .cotizaciones-history-table th:nth-child(5),
 .cotizaciones-history-table td:nth-child(5),
 .cotizaciones-history-table th:nth-child(6),
 .cotizaciones-history-table td:nth-child(6) {
-  width: 8.5%;
+  width: 7%;
 }
 
 .cotizaciones-history-table th:nth-child(7),
 .cotizaciones-history-table td:nth-child(7) {
-  width: 9.5%;
+  width: 9%;
 }
 
 .cotizaciones-history-table th:nth-child(8),
 .cotizaciones-history-table td:nth-child(8) {
-  width: 13%;
+  width: 15%;
 }
 
 .cotizaciones-history-table th:nth-child(9),
 .cotizaciones-history-table td:nth-child(9) {
-  width: 16%;
+  width: 24.5%;
+}
+
+.cotizaciones-history-table td:nth-child(8) {
+  padding-right: 20px;
+}
+
+.cotizaciones-history-table td:nth-child(9) {
+  padding-left: 10px;
 }
 
 .history-actions-more {
@@ -98,6 +106,22 @@
 
 .history-actions-mobile-menu {
   z-index: 100;
+}
+
+.cotizaciones-history-table .history-actions-desktop {
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.cotizaciones-history-table .history-action-button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.cotizaciones-history-table .history-action-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 .history-date-value,
