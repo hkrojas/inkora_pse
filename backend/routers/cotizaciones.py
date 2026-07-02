@@ -36,7 +36,7 @@ def _resolve_pdf_download_url(documento_pdf) -> str:
 @router.get("/cotizaciones/", response_model=List[schemas.CotizacionListResponse])
 def read_cotizaciones(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=15, ge=1, le=50),
+    limit: int = Query(default=15, ge=1, le=500),
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
