@@ -16,6 +16,7 @@ import ColorPickerField from '../components/ui/ColorPickerField';
 import EmptyState from '../components/ui/EmptyState';
 import Badge, { statusBadge } from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
+import Pagination from '../components/ui/Pagination';
 import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
 import ClientCombobox from '../components/ui/ClientCombobox';
@@ -2672,29 +2673,12 @@ export default function CotizacionesPage() {
                 <span>
                   Pag. {safeHistoryPage} de {historyPageCount} · {HISTORY_PAGE_SIZE} por página
                 </span>
-                <div className="pagination">
-                  <button
-                    type="button"
-                    className="page-btn"
-                    disabled={safeHistoryPage <= 1}
-                    onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}
-                    aria-label="Página anterior"
-                  >
-                    ‹
-                  </button>
-                  <button type="button" className="page-btn active" aria-current="page">
-                    {safeHistoryPage}
-                  </button>
-                  <button
-                    type="button"
-                    className="page-btn"
-                    disabled={safeHistoryPage >= historyPageCount}
-                    onClick={() => setHistoryPage((page) => Math.min(historyPageCount, page + 1))}
-                    aria-label="Página siguiente"
-                  >
-                    ›
-                  </button>
-                </div>
+                <Pagination
+                  page={safeHistoryPage}
+                  totalPages={historyPageCount}
+                  onPageChange={setHistoryPage}
+                  ariaLabel="Paginacion de cotizaciones"
+                />
               </div>
             </div>
           )}

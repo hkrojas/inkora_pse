@@ -22,6 +22,7 @@ import EmptyState from '../components/ui/EmptyState';
 import Drawer from '../components/ui/Drawer';
 import FormField from '../components/ui/FormField';
 import CustomSelect from '../components/ui/CustomSelect';
+import Pagination from '../components/ui/Pagination';
 import { PageError } from '../components/ui/PageState';
 import { useToast } from '../components/ui/Toast';
 import useDebouncedValue from '../hooks/useDebouncedValue';
@@ -749,27 +750,12 @@ export default function ProductosPage() {
               <div>
                 Mostrando <strong>{filtered.length}</strong> de <strong>{total}</strong> ítems
               </div>
-              <div className="pagination">
-                <button
-                  type="button"
-                  className="page-btn"
-                  disabled={page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  &#8249;
-                </button>
-                <button type="button" className="page-btn active">
-                  {page}
-                </button>
-                <button
-                  type="button"
-                  className="page-btn"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                >
-                  &#8250;
-                </button>
-              </div>
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                ariaLabel="Paginacion de productos"
+              />
             </div>
           </>
         )}
