@@ -621,6 +621,8 @@ def test_build_document_footer_layout_compacta_cotizacion():
     layout = pdf_generator._build_document_footer_layout(is_comprobante=False)
 
     assert layout["generated_qr_size"] == 1.3 * pdf_generator.inch
+    assert layout["middle_left_padding"] == 16
+    assert layout["transfer_left_padding"] == 14
     assert layout["block_top_padding"] == 7.52
     assert layout["block_bottom_padding"] == 7.52
     assert layout["footer_top_padding"] == 4

@@ -1233,6 +1233,8 @@ def _build_document_footer_layout(*, is_comprobante: bool) -> dict:
         "right_left_padding": 10,
         "right_top_padding": 1,
         "right_bottom_padding": 3,
+        "middle_left_padding": 16,
+        "transfer_left_padding": 14,
         "block_top_padding": 7.52,
         "block_bottom_padding": 7.52,
         "footer_top_padding": 4,
@@ -2680,8 +2682,6 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
     )
     if not is_comprobante:
         quote_notes_elements.extend(_build_observation_paragraphs(document_data, tenant, footer_body_style))
-        if payment_methods_text:
-            quote_notes_elements.append(Paragraph(payment_methods_text, footer_body_style))
 
     qr_col_width = ancho_total * 0.22
     if is_comprobante:
@@ -2742,38 +2742,62 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         qr_summary_text = None
         bottom_left_text = "Condiciones sujetas a confirmación comercial."
 
-    qr_right_rows = [[qr_title], [qr_body]]
     if is_comprobante:
-        qr_right_rows.append([qr_link])
+        qr_right_rows = [[qr_title], [qr_body], [qr_link]]
         if qr_summary_text:
             qr_right_rows.append([Paragraph(f"Valor resumen: {qr_summary_text}", footer_small_style)])
-    else:
-        if qr_link.getPlainText().strip():
-            qr_right_rows.append([qr_link])
-        for paragraph in quote_notes_elements:
-            qr_right_rows.append([paragraph])
-
-    qr_right = Table(
-        qr_right_rows,
-        colWidths=[ancho_total * 0.58],
-    )
-    qr_right.setStyle(
-        TableStyle(
-            [
-                ("LEFTPADDING", (0, 0), (-1, -1), footer_layout["right_left_padding"]),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), footer_layout["right_top_padding"]),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), footer_layout["right_bottom_padding"]),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ]
+        qr_right = Table(
+            qr_right_rows,
+            colWidths=[ancho_total * 0.58],
         )
-    )
+        qr_right.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), footer_layout["right_left_padding"]),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), footer_layout["right_top_padding"]),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), footer_layout["right_bottom_padding"]),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        qr_block_table = Table(
+            [[qr_flowable, "", qr_right]],
+            colWidths=[qr_col_width, ancho_total * 0.03, ancho_total * 0.75],
+        )
+        divider_positions = [qr_col_width]
+    else:
+        content_height = footer_layout["generated_qr_size"]
+        middle_col_width = ancho_total * 0.38
+        transfer_col_width = ancho_total - qr_col_width - middle_col_width
 
-    qr_block = Table(
-        [[qr_flowable, "", qr_right]],
-        colWidths=[qr_col_width, ancho_total * 0.03, ancho_total * 0.75],
-    )
-    qr_block.setStyle(
+        middle_elements = [qr_title, qr_body, Spacer(1, 5)]
+        middle_elements.extend(quote_notes_elements)
+        middle_content = KeepInFrame(
+            middle_col_width - footer_layout["middle_left_padding"] - 8,
+            content_height,
+            middle_elements,
+            mode="shrink",
+            hAlign="LEFT",
+            vAlign="MIDDLE",
+        )
+
+        transfer_content = KeepInFrame(
+            transfer_col_width - footer_layout["transfer_left_padding"] - 4,
+            content_height,
+            [Paragraph(payment_methods_text, footer_body_style)] if payment_methods_text else [],
+            mode="shrink",
+            hAlign="LEFT",
+            vAlign="MIDDLE",
+        )
+
+        qr_block_table = Table(
+            [[qr_flowable, middle_content, transfer_content]],
+            colWidths=[qr_col_width, middle_col_width, transfer_col_width],
+        )
+        divider_positions = [qr_col_width, qr_col_width + middle_col_width]
+
+    qr_block_table.setStyle(
         TableStyle(
             [
                 ("LINEABOVE", (0, 0), (-1, -1), 1.5, color_principal),
@@ -2783,13 +2807,15 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
                 ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ("TOPPADDING", (0, 0), (-1, -1), footer_layout["block_top_padding"]),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), footer_layout["block_bottom_padding"]),
+                ("LEFTPADDING", (1, 0), (1, 0), footer_layout.get("middle_left_padding", 0)),
+                ("LEFTPADDING", (2, 0), (2, 0), footer_layout.get("transfer_left_padding", 0)),
             ]
         )
     )
     qr_block = _AutoVerticalDividerBox(
-        child=qr_block,
+        child=qr_block_table,
         width=ancho_total,
-        divider_positions=[qr_col_width],
+        divider_positions=divider_positions,
         divider_color=color_borde,
         inset_y=0.3 * cm,
         stroke_width=1,
