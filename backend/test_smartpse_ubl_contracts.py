@@ -91,6 +91,42 @@ def test_invoice_xml_and_filename_follow_sunat_contract():
     assert build_smartpse_filename(payload) == "20123456789-01-F001-00000001"
 
 
+def test_invoice_xml_preserves_unit_price_precision_for_small_amounts():
+    payload = _sale_payload("01")
+    payload.update(
+        {
+            "mtoOperGravadas": "109.32",
+            "mtoIGV": "19.68",
+            "valorVenta": "109.32",
+            "totalImpuestos": "19.68",
+            "mtoImpVenta": "129.00",
+        }
+    )
+    payload["details"] = [
+        {
+            "codProducto": "BKN2SI",
+            "unidad": "NIU",
+            "descripcion": "BOLSA DE PAPEL KRAFT N2",
+            "cantidad": "3000.0000",
+            "mtoValorUnitario": "0.0364406780",
+            "mtoValorVenta": "109.32",
+            "mtoBaseIgv": "109.32",
+            "porcentajeIgv": "18.00",
+            "igv": "19.68",
+            "tipAfeIgv": "10",
+            "totalImpuestos": "19.68",
+            "mtoPrecioUnitario": "0.0430",
+        }
+    ]
+
+    root = ET.fromstring(build_sale_document_xml(payload))
+    line = root.find("./cac:InvoiceLine", NS)
+
+    assert line.find("./cbc:LineExtensionAmount", NS).text == "109.32"
+    assert line.find("./cac:Price/cbc:PriceAmount", NS).text == "0.0364406780"
+    assert line.find("./cac:PricingReference/cac:AlternativeConditionPrice/cbc:PriceAmount", NS).text == "0.0430000000"
+
+
 def test_credit_and_debit_notes_use_note_roots_and_affected_document_reference():
     credit = _sale_payload("07")
     credit.update(

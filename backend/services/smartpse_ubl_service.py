@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import re
 from xml.etree import ElementTree as ET
 
@@ -41,6 +41,14 @@ def _money(value) -> str:
         return f"{Decimal(str(value or 0)):.2f}"
     except Exception:
         return "0.00"
+
+
+def _unit_price(value) -> str:
+    try:
+        normalized = Decimal(str(value or 0)).quantize(Decimal("0.0000000001"), rounding=ROUND_HALF_UP)
+        return f"{normalized:f}"
+    except Exception:
+        return "0.0000000000"
 
 
 def _quantity(value) -> str:
@@ -245,7 +253,7 @@ def _add_sale_lines(root: ET.Element, payload: dict, *, tipo_doc: str) -> None:
         _add(line, "cbc", "LineExtensionAmount", _money(item.get("mtoValorVenta")), currencyID=payload.get("tipoMoneda") or "PEN")
         pricing = _add(line, "cac", "PricingReference")
         price_condition = _add(pricing, "cac", "AlternativeConditionPrice")
-        _add(price_condition, "cbc", "PriceAmount", _money(item.get("mtoPrecioUnitario")), currencyID=payload.get("tipoMoneda") or "PEN")
+        _add(price_condition, "cbc", "PriceAmount", _unit_price(item.get("mtoPrecioUnitario")), currencyID=payload.get("tipoMoneda") or "PEN")
         _add(price_condition, "cbc", "PriceTypeCode", "01")
         _add_tax_total(line, item.get("mtoBaseIgv"), item.get("igv"))
         product = _add(line, "cac", "Item")
@@ -253,7 +261,7 @@ def _add_sale_lines(root: ET.Element, payload: dict, *, tipo_doc: str) -> None:
         sellers = _add(product, "cac", "SellersItemIdentification")
         _add(sellers, "cbc", "ID", item.get("codProducto") or f"ITEM-{index:03d}")
         price = _add(line, "cac", "Price")
-        _add(price, "cbc", "PriceAmount", _money(item.get("mtoValorUnitario")), currencyID=payload.get("tipoMoneda") or "PEN")
+        _add(price, "cbc", "PriceAmount", _unit_price(item.get("mtoValorUnitario")), currencyID=payload.get("tipoMoneda") or "PEN")
 
 
 def build_sale_document_xml(payload: dict) -> str:
