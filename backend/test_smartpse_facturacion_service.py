@@ -79,26 +79,60 @@ def test_emitir_factura_uses_smartpse_xml_flow_without_apisperu_http(db_session)
     assert result["provider_document_name"] == filename
 
 
-def test_smartpse_production_tenant_still_uses_demo_when_fiscal_env_is_beta(monkeypatch, db_session):
+def test_smartpse_production_tenant_blocks_when_fiscal_env_is_beta(monkeypatch, db_session):
     tenant, user, fiscal = _make_smartpse_fiscal_document(db_session)
     tenant.smartpse_environment = "produccion"
     db_session.commit()
     fake_client = MagicMock()
+    monkeypatch.setattr(facturacion_service.settings, "FISCAL_ENV", "beta")
+
+    with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
+        with pytest.raises(facturacion_service.FacturacionException) as exc_info:
+            facturacion_service.emitir_factura(fiscal, db_session, user)
+
+    assert "FISCAL_ENV=production" in str(exc_info.value)
+    fake_client.process_xml.assert_not_called()
+
+
+def test_smartpse_production_tenant_uses_production_endpoint_when_fiscal_env_is_production(
+    monkeypatch, db_session
+):
+    tenant, user, fiscal = _make_smartpse_fiscal_document(db_session)
+    tenant.smartpse_environment = "produccion"
+    db_session.commit()
+    signed_xml = f"""<?xml version='1.0'?>
+<Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'
+    xmlns:cac='urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
+    xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'>
+  <cbc:ID>F001-000001</cbc:ID>
+  <cbc:IssueDate>{fiscal.fecha_emision.date().isoformat()}</cbc:IssueDate>
+  <cbc:IssueTime>10:30:00</cbc:IssueTime>
+  <cbc:InvoiceTypeCode>01</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>PEN</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID='6'>{tenant.business_ruc}</cbc:ID></cac:PartyIdentification><cac:PartyLegalEntity><cbc:RegistrationName>INKORA TEST SAC</cbc:RegistrationName></cac:PartyLegalEntity></cac:Party></cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID='6'>20191308868</cbc:ID></cac:PartyIdentification><cac:PartyLegalEntity><cbc:RegistrationName>CLIENTE SAC</cbc:RegistrationName></cac:PartyLegalEntity></cac:Party></cac:AccountingCustomerParty>
+  <cac:TaxTotal><cbc:TaxAmount currencyID='PEN'>18.00</cbc:TaxAmount></cac:TaxTotal>
+  <cac:LegalMonetaryTotal><cbc:PayableAmount currencyID='PEN'>118.00</cbc:PayableAmount></cac:LegalMonetaryTotal>
+</Invoice>"""
+    fake_client = MagicMock()
     fake_client.process_xml.return_value = {
         "estado": 200,
-        "mensaje": "Aceptado demo",
-        "xml_firmado": _zip_b64("signed.xml", "<Invoice/>"),
+        "mensaje": "Aceptado por SUNAT",
+        "xml_firmado": _zip_b64("signed.xml", signed_xml),
         "codigo_hash": "hash-smart",
         "cdr": "<ApplicationResponse/>",
         "rechazado": False,
     }
     fake_client.consult_ticket.side_effect = AssertionError("Facturas Smart PSE son sincronas")
-    monkeypatch.setattr(facturacion_service.settings, "FISCAL_ENV", "beta")
+    monkeypatch.setattr(facturacion_service.settings, "FISCAL_ENV", "production")
 
     with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
-        facturacion_service.emitir_factura(fiscal, db_session, user)
+        result = facturacion_service.emitir_factura(fiscal, db_session, user)
 
-    assert fake_client.process_xml.call_args.kwargs["demo"] is True
+    assert result["success"] is True
+    assert result["provider_endpoint"] == "/api/cpe/procesar"
+    assert result["provider_verification_status"] == "verified"
+    assert fake_client.process_xml.call_args.kwargs["demo"] is False
 
 
 def test_emitir_factura_no_acepta_si_smartpse_no_devuelve_cdr(db_session):

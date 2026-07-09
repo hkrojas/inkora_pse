@@ -947,8 +947,16 @@ def _poll_async_status(user, payload: dict, ticket: str, status_endpoint: str, *
 def _smartpse_demo_mode(user) -> bool:
     tenant = getattr(user, "tenant", None)
     environment = str(getattr(tenant, "smartpse_environment", "") or "").strip().lower()
+    if environment == "produccion":
+        if not settings.is_fiscal_production:
+            raise FacturacionException(
+                "Smart PSE esta configurado en produccion para el tenant, "
+                "pero el runtime fiscal no tiene FISCAL_ENV=production. "
+                "Emision bloqueada para evitar envio por ambiente demo."
+            )
+        return False
     if environment:
-        return not (environment == "produccion" and settings.is_fiscal_production)
+        return True
     return not settings.is_fiscal_production
 
 
