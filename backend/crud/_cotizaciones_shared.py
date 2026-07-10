@@ -215,13 +215,33 @@ def _ensure_subscription_capacity(db: Session, tenant_id: int) -> None:
         )
 
 
+def _configured_fiscal_series(tenant: models.Tenant, tipo_comprobante: str) -> str:
+    attribute = "fiscal_invoice_series" if tipo_comprobante == "01" else "fiscal_boleta_series"
+    configured = str(getattr(tenant, attribute, "") or "").strip().upper()
+    if configured:
+        return configured
+    return FACTURA_SERIE if tipo_comprobante == "01" else BOLETA_SERIE
+
+
 def _resolve_fiscal_series(
+    tenant: models.Tenant,
     tipo_comprobante: str,
     serie_override: str | None = None,
 ) -> str:
-    if serie_override:
-        return serie_override
-    return FACTURA_SERIE if tipo_comprobante == "01" else BOLETA_SERIE
+    configured = _configured_fiscal_series(tenant, tipo_comprobante)
+    requested = str(serie_override or "").strip().upper()
+    if requested and requested != configured:
+        raise ValueError(
+            f"La serie {requested} no coincide con la serie fiscal configurada ({configured})."
+        )
+
+    is_production = str(getattr(tenant, "smartpse_environment", "") or "").strip().lower() == "produccion"
+    floor_attribute = "fiscal_invoice_series_floor" if tipo_comprobante == "01" else "fiscal_boleta_series_floor"
+    if is_production and getattr(tenant, floor_attribute, None) is None:
+        raise ValueError(
+            "La emision en produccion requiere configurar la serie y el ultimo correlativo confirmado ante SUNAT."
+        )
+    return configured
 
 
 def _build_fiscal_document(

@@ -64,7 +64,11 @@ def _create_fiscal_document_from_quote_inner(
     _ensure_quote_has_no_active_fiscal_document(db, quote)
     _ensure_subscription_capacity(db, quote.tenant_id)
 
-    serie = _resolve_fiscal_series(tipo_comprobante, serie_override)
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == quote.tenant_id).first()
+    if not tenant:
+        raise ValueError("No se encontro la empresa emisora.")
+
+    serie = _resolve_fiscal_series(tenant, tipo_comprobante, serie_override)
     nuevo_correlativo = _next_correlativo_for_series(db, quote.tenant_id, serie)
     fiscal_document = _build_fiscal_document(
         quote,

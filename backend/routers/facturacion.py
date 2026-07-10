@@ -556,18 +556,6 @@ def _validate_serie_override(tipo_comprobante: str, serie_override: str | None) 
             "Pre-validacion fallida: La serie debe tener 4 caracteres alfanumericos.",
         )
 
-    if serie.isdigit():
-        return
-    if tipo_comprobante == "01" and not serie.startswith("F"):
-        raise HTTPException(
-            400,
-            "Pre-validacion fallida: Las facturas deben usar serie Fxxx o serie numerica de contingencia.",
-        )
-    if tipo_comprobante == "03" and not serie.startswith("B"):
-        raise HTTPException(
-            400,
-            "Pre-validacion fallida: Las boletas deben usar serie Bxxx o serie numerica de contingencia.",
-        )
 
 
 def _validar_pre_emision(quote, tipo_comprobante: str):

@@ -26,6 +26,7 @@ class TenantCreate(TenantBase):
 
 
 HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+FISCAL_SERIE_RE = re.compile(r"^[A-Z0-9]{4}$")
 
 
 def _normalize_optional_hex_color(value: Optional[str]) -> Optional[str]:
@@ -78,6 +79,17 @@ def _normalize_optional_business_text(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
     return " ".join(str(value).strip().split())
+
+
+def _normalize_optional_fiscal_series(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip().upper()
+    if not normalized:
+        return None
+    if not FISCAL_SERIE_RE.fullmatch(normalized):
+        raise ValueError("La serie fiscal debe tener 4 caracteres alfanumericos.")
+    return normalized
 
 
 class TenantAdminUpdate(StrictInputModel):
@@ -147,6 +159,10 @@ class TenantResponse(TenantSummaryResponse):
     smartpse_start_date: Optional[datetime] = None
     smartpse_end_date: Optional[datetime] = None
     smartpse_firmas_usadas: Optional[int] = None
+    fiscal_invoice_series: Optional[str] = None
+    fiscal_invoice_series_floor: Optional[int] = None
+    fiscal_boleta_series: Optional[str] = None
+    fiscal_boleta_series_floor: Optional[int] = None
     smartpse_gre_status: Optional[str] = None
     smartpse_gre_checked_at: Optional[datetime] = None
 
@@ -261,6 +277,11 @@ class TenantSaaSUpdate(StrictInputModel):
     smartpse_environment: Optional[str] = None
     smartpse_usuario_secundaria: Optional[str] = None
     smartpse_token_acceso: Optional[str] = None
+    # Solo superadmin puede confirmar series y ultimo correlativo fiscal.
+    fiscal_invoice_series: Optional[str] = None
+    fiscal_invoice_series_floor: Optional[int] = Field(default=None, ge=0, le=99_999_999)
+    fiscal_boleta_series: Optional[str] = None
+    fiscal_boleta_series_floor: Optional[int] = Field(default=None, ge=0, le=99_999_999)
     # Credenciales SUNAT Nueva GRE (requeridas para guía de remisión electrónica)
     sunat_gre_client_id: Optional[str] = None
     sunat_gre_client_secret: Optional[str] = None
@@ -269,6 +290,11 @@ class TenantSaaSUpdate(StrictInputModel):
     sunat_clave_sol: Optional[str] = None
     sunat_cert_password: Optional[str] = None
     sunat_cert_url: Optional[str] = None
+
+    @field_validator("fiscal_invoice_series", "fiscal_boleta_series")
+    @classmethod
+    def normalize_fiscal_series(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_optional_fiscal_series(value)
 
 
 class SuperadminTenantCreate(StrictInputModel):

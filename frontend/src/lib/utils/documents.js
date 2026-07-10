@@ -95,9 +95,12 @@ export function fmt(value) {
   return Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 });
 }
 
-export function deriveSeries(tipoComprobante, modoEmision) {
+export function deriveSeries(tipoComprobante, modoEmision, tenant = null) {
   if (modoEmision === 'contingencia') return '0001';
-  return tipoComprobante === '01' ? 'F001' : 'B001';
+  const configured = tipoComprobante === '01'
+    ? tenant?.fiscal_invoice_series
+    : tenant?.fiscal_boleta_series;
+  return String(configured || (tipoComprobante === '01' ? 'F001' : 'B001')).toUpperCase();
 }
 
 export function computeLine(item, incluyeIgv) {

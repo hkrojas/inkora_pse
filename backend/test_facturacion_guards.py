@@ -643,11 +643,15 @@ class TestFlujoQuoteToFiscal:
         fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
         assert fiscal.estado == "pendiente"
 
-    def test_smartpse_demo_ruc_respeta_piso_remoto_de_correlativos(self, db_session):
+    def test_production_uses_configured_series_and_remote_floors(self, db_session):
         tenant = make_tenant(db_session, "SPF01")
         tenant.business_ruc = "20606751509"
         tenant.smartpse_company_id = "384"
-        tenant.smartpse_environment = "demo"
+        tenant.smartpse_environment = "produccion"
+        tenant.fiscal_invoice_series = "E001"
+        tenant.fiscal_invoice_series_floor = 7244
+        tenant.fiscal_boleta_series = "EB01"
+        tenant.fiscal_boleta_series_floor = 280
         db_session.commit()
         user = make_user(db_session, tenant, email="smartpse-floor@test.com")
         cliente = make_cliente(db_session, tenant, "SPF01")
@@ -668,10 +672,42 @@ class TestFlujoQuoteToFiscal:
             "03",
         )
 
-        assert factura.serie == "F001"
-        assert factura.correlativo == 12
-        assert boleta.serie == "B001"
-        assert boleta.correlativo == 6
+        assert factura.serie == "E001"
+        assert factura.correlativo == 7245
+        assert boleta.serie == "EB01"
+        assert boleta.correlativo == 281
+
+    def test_production_blocks_emission_without_confirmed_series_floor(self, db_session):
+        tenant = make_tenant(db_session, "SPF01B")
+        tenant.smartpse_company_id = "384"
+        tenant.smartpse_environment = "produccion"
+        db_session.commit()
+        user = make_user(db_session, tenant, email="smartpse-production-series@test.com")
+        cliente = make_cliente(db_session, tenant, "SPF01B")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+
+        with pytest.raises(ValueError, match="ultimo correlativo confirmado"):
+            crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+
+    def test_production_rejects_series_override_outside_configured_series(self, db_session):
+        tenant = make_tenant(db_session, "SPF01C")
+        tenant.smartpse_company_id = "384"
+        tenant.smartpse_environment = "produccion"
+        tenant.fiscal_invoice_series = "E001"
+        tenant.fiscal_invoice_series_floor = 7244
+        db_session.commit()
+        user = make_user(db_session, tenant, email="smartpse-series-override@test.com")
+        cliente = make_cliente(db_session, tenant, "SPF01C")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+
+        with pytest.raises(ValueError, match="no coincide con la serie fiscal configurada"):
+            crud.create_fiscal_document_from_quote(
+                db_session,
+                quote,
+                user.id,
+                "01",
+                serie_override="F001",
+            )
 
     def test_tenant_sin_smartpse_no_usa_piso_remoto_de_correlativos(self, db_session):
         tenant = make_tenant(db_session, "SPF02")

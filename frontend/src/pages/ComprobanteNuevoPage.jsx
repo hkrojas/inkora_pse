@@ -285,7 +285,7 @@ function BuilderSwitch({ label, checked, onChange }) {
 }
 
 function PreviewModal({ open, onClose, form, totals, tenantData }) {
-  const series = deriveSeries(form.tipo_comprobante, form.modo_emision);
+  const series = deriveSeries(form.tipo_comprobante, form.modo_emision, tenantData);
   const tipoLabel = form.tipo_comprobante === '01' ? 'FACTURA' : 'BOLETA DE VENTA';
   const tipoDocLabel = getIdentityLabel(form.cliente.tipo_documento);
   const condPagoLabel = PAYMENT_OPTIONS.find((o) => o.value === form.condicion_pago)?.label?.toUpperCase() || 'CONTADO';
@@ -530,7 +530,7 @@ export default function ComprobanteNuevoPage() {
     loadBaseData();
   }, [loadBaseData]);
 
-  const seriesPreview = deriveSeries(form.tipo_comprobante, form.modo_emision);
+  const seriesPreview = deriveSeries(form.tipo_comprobante, form.modo_emision, tenantData);
   const totals = computeDocumentTotals(form.items, form.incluye_igv);
   const isCreditPayment = isCreditCondition(form.condicion_pago);
   const cuotasMontoTotal = cuotasTotal(form.cuotas_pago);
@@ -900,7 +900,6 @@ export default function ComprobanteNuevoPage() {
       await cotizacionesSvc.facturar(quote.id, {
         tipo_comprobante: form.tipo_comprobante,
         tipo_operacion: form.tipo_operacion,
-        serie_override: seriesPreview,
       });
 
       if (form.enviar_correo) {

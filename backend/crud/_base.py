@@ -41,16 +41,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # con backoff exponencial corto (50ms, 100ms, 150ms).
 MAX_CORRELATIVO_RETRIES = 3
 _CORRELATIVO_CONSTRAINT = "uq_cotizaciones_tenant_serie_correlativo"
-_SMARTPSE_KNOWN_SERIES_FLOORS = {
-    # Empresa demo creada directamente en Smart PSE antes de sincronizar Inkora.
-    # Evita reutilizar folios remotos mientras no exista consulta remota de correlativos.
-    "20606751509": {
-        "F001": 11,
-        "B001": 5,
-    },
-}
-
-
 def _retry_on_correlativo_conflict(func, *args, **kwargs):
     """Ejecuta *func* reintentando ante IntegrityError de correlativo.
 
@@ -164,10 +154,21 @@ def _smartpse_series_floor_for_tenant(db: Session, tenant_id: int, serie: str) -
     if not ruc:
         return 0
 
+    configured_pairs = (
+        (getattr(tenant, "fiscal_invoice_series", None), getattr(tenant, "fiscal_invoice_series_floor", None)),
+        (getattr(tenant, "fiscal_boleta_series", None), getattr(tenant, "fiscal_boleta_series_floor", None)),
+    )
+    for configured_serie, configured_floor in configured_pairs:
+        if str(configured_serie or "").strip().upper() != normalized_serie:
+            continue
+        try:
+            return max(int(configured_floor or 0), 0)
+        except (TypeError, ValueError):
+            return 0
+
     configured = _parse_smartpse_series_floors(settings.SMARTPSE_SERIES_FLOORS)
     configured_floor = configured.get(ruc, {}).get(normalized_serie, 0)
-    known_floor = _SMARTPSE_KNOWN_SERIES_FLOORS.get(ruc, {}).get(normalized_serie, 0)
-    return max(configured_floor, known_floor)
+    return configured_floor
 
 
 def _next_correlativo_for_series(db: Session, tenant_id: int, serie: str) -> int:

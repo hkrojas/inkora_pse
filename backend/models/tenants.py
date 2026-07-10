@@ -67,6 +67,13 @@ class Tenant(Base):
     smartpse_end_date = Column(DateTime, nullable=True)
     smartpse_firmas_usadas = Column(Integer, nullable=True)
 
+    # Series confirmadas contra el historial productivo del emisor.
+    # Solo superadmin puede cambiarlas porque determinan la identidad fiscal.
+    fiscal_invoice_series = Column(String, nullable=True)
+    fiscal_invoice_series_floor = Column(Integer, nullable=True)
+    fiscal_boleta_series = Column(String, nullable=True)
+    fiscal_boleta_series_floor = Column(Integer, nullable=True)
+
     sunat_gre_client_id = Column(String, nullable=True)
     sunat_gre_client_secret = Column(String, nullable=True)
     smartpse_gre_sol_username = Column(String, nullable=True)

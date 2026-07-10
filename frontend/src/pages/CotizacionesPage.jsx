@@ -915,7 +915,6 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [tipo, setTipo] = useState(() => getRecommendedFiscalReceiptType(cotizacion?.cliente));
-  const [serieOverride, setSerieOverride] = useState('');
 
   const cliente = cotizacion?.cliente;
   const tipoDocCliente = cliente?.tipo_documento;
@@ -934,7 +933,6 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
     try {
       await svc.facturar(cotizacion.id, {
         tipo_comprobante: tipo,
-        serie_override: serieOverride || undefined,
       });
       toast(`Comprobante ${tipo === '01' ? 'Factura' : 'Boleta'} emitido correctamente`);
       onSuccess();
@@ -984,16 +982,6 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
           corresponde emitir Factura.
         </div>
       )}
-
-      <div>
-        <label className="label">Serie (opcional — deja vacío para usar la serie por defecto)</label>
-        <input
-          className="input"
-          value={serieOverride}
-          onChange={(e) => setSerieOverride(e.target.value)}
-          placeholder={tipo === '01' ? 'F001' : 'B001'}
-        />
-      </div>
 
       <div className="flex justify-end gap-3">
         <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
