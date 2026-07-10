@@ -86,7 +86,7 @@ function getDocumentTitle(tipoLabel = 'FACTURA') {
 function formatDocumentNumber(serie, numero) {
   const raw = String(numero || '000001');
   const normalized = /^\d+$/.test(raw) ? raw.padStart(6, '0') : raw;
-  return `${serie || 'F001'}-${normalized}`;
+  return `${serie || 'SERIE'}-${normalized}`;
 }
 
 function FiscalQrMark() {

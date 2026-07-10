@@ -100,6 +100,7 @@ export function deriveSeries(tipoComprobante, modoEmision, tenant = null) {
   const configured = tipoComprobante === '01'
     ? tenant?.fiscal_invoice_series
     : tenant?.fiscal_boleta_series;
+  if (tenant?.smartpse_environment === 'produccion' && !configured) return 'SERIE';
   return String(configured || (tipoComprobante === '01' ? 'F001' : 'B001')).toUpperCase();
 }
 

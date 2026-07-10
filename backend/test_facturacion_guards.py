@@ -681,12 +681,26 @@ class TestFlujoQuoteToFiscal:
         tenant = make_tenant(db_session, "SPF01B")
         tenant.smartpse_company_id = "384"
         tenant.smartpse_environment = "produccion"
+        tenant.fiscal_invoice_series = "E001"
         db_session.commit()
         user = make_user(db_session, tenant, email="smartpse-production-series@test.com")
         cliente = make_cliente(db_session, tenant, "SPF01B")
         quote = make_quote_via_crud(db_session, tenant, user, cliente)
 
         with pytest.raises(ValueError, match="ultimo correlativo confirmado"):
+            crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+
+    def test_production_blocks_emission_without_explicit_fiscal_series(self, db_session):
+        tenant = make_tenant(db_session, "SPF01SERIE")
+        tenant.smartpse_company_id = "384"
+        tenant.smartpse_environment = "produccion"
+        tenant.fiscal_invoice_series_floor = 7244
+        db_session.commit()
+        user = make_user(db_session, tenant, email="smartpse-production-series-required@test.com")
+        cliente = make_cliente(db_session, tenant, "SPF01SERIE")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+
+        with pytest.raises(ValueError, match="serie fiscal autorizada"):
             crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
 
     def test_production_rejects_series_override_outside_configured_series(self, db_session):
