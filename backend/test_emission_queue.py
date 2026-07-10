@@ -174,6 +174,37 @@ def test_process_emission_job_schedules_retry_for_timeout(db_session):
     assert "Timeout" in updated_job.last_error
 
 
+def test_process_emission_job_persists_final_provider_error_on_document(db_session):
+    _, user, fiscal = _make_fiscal_document(db_session, "EQ03B")
+    job, _ = emission_queue_service.enqueue_fiscal_document_job(
+        db_session,
+        fiscal,
+        user,
+        tipo_comprobante="01",
+    )
+    job.max_attempts = 1
+    db_session.commit()
+    crud.claim_next_emission_job(db_session)
+
+    provider_error = "Smart PSE rechazo procesar 20606751509-01-F001-000019"
+    with patch(
+        "services.emission_queue_service.facturacion_service.emitir_factura",
+        side_effect=facturacion_service.FacturacionException(provider_error),
+    ):
+        processed = emission_queue_service.process_emission_job(job.id, db_session=db_session)
+
+    db_session.expire_all()
+    updated_job = crud.get_emission_job(db_session, job.id)
+    updated_doc = crud.get_cotizacion(db_session, fiscal.id, user)
+
+    assert processed is False
+    assert updated_job.status == models.EMISSION_JOB_STATUS_FAILED
+    assert provider_error in updated_job.last_error
+    assert updated_doc.sunat_error == provider_error
+    assert updated_doc.provider_verification_status == "failed"
+    assert updated_doc.provider_verification_error == provider_error
+
+
 def test_process_emission_job_fails_without_provider_when_tenant_suspended_after_enqueue(db_session):
     tenant, user, fiscal = _make_fiscal_document(db_session, "EQ06")
     job, _ = emission_queue_service.enqueue_fiscal_document_job(

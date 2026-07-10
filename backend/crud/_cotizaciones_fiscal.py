@@ -222,7 +222,10 @@ def guardar_error_sunat(
         query = query.filter(models.Cotizacion.tenant_id == tenant_id)
     db_cot = query.first()
     if db_cot:
-        db_cot.sunat_error = str(error)
+        message = str(error)
+        db_cot.sunat_error = message
+        db_cot.provider_verification_status = "failed"
+        db_cot.provider_verification_error = message
         db.commit()
         db.refresh(db_cot)
     return db_cot

@@ -745,6 +745,17 @@ def _process_emit_guide_job(
     return result
 
 
+def _persist_final_job_error_to_resource(
+    db: Session,
+    job: models.DocumentEmissionJob,
+    message: str,
+) -> None:
+    if job.resource_type == models.EMISSION_JOB_RESOURCE_COTIZACION:
+        crud.guardar_error_sunat(db, job.resource_id, message, tenant_id=job.tenant_id)
+    elif job.resource_type == models.EMISSION_JOB_RESOURCE_GUIA:
+        crud.guardar_error_sunat_gre(db, job.resource_id, message, tenant_id=job.tenant_id)
+
+
 def process_emission_job(job_id: int, *, db_session: Session | None = None) -> bool:
     db = db_session or SessionLocal()
     owns_session = db_session is None
@@ -795,6 +806,7 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
         job = crud.get_emission_job(db, job_id)
         if job:
             crud.mark_emission_job_failed(db, job.id, error_message=message)
+            _persist_final_job_error_to_resource(db, job, message)
             logger.warning(
                 "emission_job_validation_failed",
                 extra={
@@ -824,6 +836,7 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
                 )
             else:
                 crud.mark_emission_job_failed(db, job.id, error_message=message)
+                _persist_final_job_error_to_resource(db, job, message)
                 logger.error(
                     "emission_job_failed",
                     extra={"event": "emission_job_failed", "context": f"job_id={job.id}"},
