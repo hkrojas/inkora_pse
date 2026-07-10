@@ -4,7 +4,8 @@ from __future__ import annotations
 from alembic import op
 
 
-revision = "0014_tenant_fiscal_series_configuration"
+# Alembic stores revision IDs in alembic_version.version_num VARCHAR(32).
+revision = "0014_tenant_fiscal_series"
 # The production database is currently stamped at this revision. Attach the
 # additive series configuration after it so Railway has one unambiguous head.
 down_revision = "0008_fiscal_doc_provider_trace"
