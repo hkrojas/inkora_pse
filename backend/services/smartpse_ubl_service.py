@@ -74,6 +74,7 @@ def _date_time(value: str | None) -> tuple[str, str]:
 _BATCH_DOC_TYPES = {"RC", "RA", "RR"}
 _COMPACT_DATE_RE = re.compile(r"^\d{8}$")
 _DATE_PREFIXED_CORRELATIVO_RE = re.compile(r"^\d{8}-\d+(?:-\d+)?$")
+_SMARTPSE_DOCUMENT_CORRELATIVO_WIDTH = 8
 
 
 def _compact_date(value) -> str:
@@ -117,12 +118,26 @@ def normalize_batch_correlativo(payload: dict, tipo_doc: str) -> str:
     return f"{_compact_date(_batch_reference_date(payload, tipo_doc))}-{suffix}"
 
 
+def normalize_smartpse_document_correlativo(value) -> str:
+    """Format regular CPE correlatives for Smart PSE XML and ZIP names.
+
+    Smart PSE requires the document identifier to use an eight-digit numeric
+    correlative (for example, E001-00007245). The database keeps the numeric
+    value itself, so this formatting is intentionally limited to provider
+    payload generation.
+    """
+    normalized = str(value or "").strip()
+    if normalized.isdigit():
+        return normalized.zfill(_SMARTPSE_DOCUMENT_CORRELATIVO_WIDTH)
+    return normalized
+
+
 def _date_only(value: str | None) -> str:
     return _date_time(value)[0]
 
 
 def _document_id(payload: dict) -> str:
-    return f"{payload.get('serie')}-{payload.get('correlativo')}"
+    return f"{payload.get('serie')}-{normalize_smartpse_document_correlativo(payload.get('correlativo'))}"
 
 
 def _company(payload: dict) -> dict:
@@ -476,4 +491,5 @@ def build_smartpse_filename(payload: dict) -> str:
     if tipo_doc in _BATCH_DOC_TYPES:
         batch_correlativo = normalize_batch_correlativo(payload, tipo_doc)
         return f"{ruc}-{tipo_doc}-{batch_correlativo}"
-    return f"{ruc}-{tipo_doc}-{payload.get('serie')}-{payload.get('correlativo')}"
+    correlativo = normalize_smartpse_document_correlativo(payload.get("correlativo"))
+    return f"{ruc}-{tipo_doc}-{payload.get('serie')}-{correlativo}"
