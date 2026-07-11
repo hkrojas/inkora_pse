@@ -84,6 +84,23 @@ def _resolve_document_client_data(document_data) -> dict:
     }
 
 
+def _resolve_pdf_customer_data(document_data, parsed_xml: dict | None) -> dict:
+    """Prefer provider data, but keep document snapshots for optional XML fields."""
+    snapshot_data = _resolve_document_client_data(document_data)
+    customer = (parsed_xml or {}).get("customer") or {}
+    live_client = _value_from_obj(document_data, "cliente", None)
+    live_address = str(getattr(live_client, "direccion", "") or "").strip()
+    snapshot_address = str(snapshot_data.get("address") or "").strip()
+
+    return {
+        "name": str(customer.get("name") or snapshot_data["name"] or "Cliente General"),
+        "doc_type": customer.get("doc_type") or snapshot_data["doc_type"],
+        "doc_type_label": obtener_etiqueta_tipo_doc(customer.get("doc_type") or snapshot_data["doc_type"] or "0"),
+        "doc_number": str(customer.get("doc_number") or snapshot_data["doc_number"] or ""),
+        "address": str(customer.get("address") or snapshot_address or live_address or "-"),
+    }
+
+
 def _resolver_titulo_documento(tipo_doc_sunat: str | None, is_comprobante: bool) -> str:
     if not is_comprobante:
         return "COTIZACION"
@@ -1681,20 +1698,19 @@ def create_pdf_buffer(document_data, tenant: models.Tenant, document_type: str):
         fecha_vencimiento = (base_fecha + relativedelta(months=1)).strftime("%d/%m/%Y")
 
     supplier = (parsed_xml or {}).get("supplier") or {}
-    customer = (parsed_xml or {}).get("customer") or {}
     business_name_render = supplier.get("name") or tenant.business_name or "Nombre del Negocio"
     business_address_render = supplier.get("address") or tenant.business_address or "Direccion no especificada"
     ruc_para_cuadro = supplier.get("doc_number") or tenant.business_ruc or ""
 
+    client_data = _resolve_pdf_customer_data(document_data, parsed_xml)
     if parsed_xml:
-        nombre_cliente = customer.get("name") or "Cliente General"
-        tipo_doc_cliente_str = obtener_etiqueta_tipo_doc(customer.get("doc_type") or "0")
-        nro_doc_cliente = str(customer.get("doc_number") or "00000000")
-        direccion_cliente = str(customer.get("address") or "-").replace("\n", "<br/>")
+        nombre_cliente = client_data["name"]
+        tipo_doc_cliente_str = obtener_etiqueta_tipo_doc(client_data["doc_type"] or "0")
+        nro_doc_cliente = client_data["doc_number"] or "00000000"
+        direccion_cliente = client_data["address"].replace("\n", "<br/>")
         line_context = _build_xml_line_context(parsed_xml)
         monto_en_letras_str = parsed_xml.get("amount_in_words") or ""
     else:
-        client_data = _resolve_document_client_data(document_data)
         nombre_cliente = client_data["name"]
         tipo_doc_cliente_str = client_data["doc_type_label"]
         nro_doc_cliente = client_data["doc_number"] or "00000000"
@@ -2133,16 +2149,15 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
     if not is_comprobante:
         fecha_emision, fecha_vencimiento = _resolve_quote_due_date_display(document_data)
 
-    customer = (parsed_xml or {}).get("customer") or {}
+    client_data = _resolve_pdf_customer_data(document_data, parsed_xml)
     if parsed_xml:
-        nombre_cliente = customer.get("name") or "Cliente General"
-        tipo_doc_cliente = obtener_etiqueta_tipo_doc(customer.get("doc_type") or "0")
-        nro_doc_cliente = str(customer.get("doc_number") or "")
-        direccion_cliente = str(customer.get("address") or "-").replace("\n", "<br/>")
+        nombre_cliente = client_data["name"]
+        tipo_doc_cliente = obtener_etiqueta_tipo_doc(client_data["doc_type"] or "0")
+        nro_doc_cliente = client_data["doc_number"]
+        direccion_cliente = client_data["address"].replace("\n", "<br/>")
         line_context = _build_xml_line_context(parsed_xml)
         monto_en_letras_str = parsed_xml.get("amount_in_words") or ""
     else:
-        client_data = _resolve_document_client_data(document_data)
         nombre_cliente = client_data["name"]
         tipo_doc_cliente = client_data["doc_type_label"]
         nro_doc_cliente = client_data["doc_number"]

@@ -210,6 +210,31 @@ def test_resolve_document_client_data_prefiere_snapshot_sobre_ficha_actual():
     assert client_data["address"] == "Jr. Historico 789"
 
 
+def test_pdf_customer_data_uses_snapshot_address_when_provider_xml_omits_it():
+    document = SimpleNamespace(
+        cliente=_fake_cliente(),
+        cliente_snapshot={
+            "razon_social": "Cliente historico PDF",
+            "tipo_documento": "6",
+            "numero_documento": "20999999991",
+            "direccion": "Jr. Historico 789",
+        },
+    )
+    parsed_xml = {
+        "customer": {
+            "name": "Cliente XML SAC",
+            "doc_type": "6",
+            "doc_number": "20999999991",
+            "address": None,
+        }
+    }
+
+    customer_data = pdf_generator._resolve_pdf_customer_data(document, parsed_xml)
+
+    assert customer_data["name"] == "Cliente XML SAC"
+    assert customer_data["address"] == "Jr. Historico 789"
+
+
 def test_quote_detail_col_widths_expande_codigo_sin_cambiar_ancho_total():
     styles = pdf_generator.getSampleStyleSheet()
     base = styles["Normal"]
