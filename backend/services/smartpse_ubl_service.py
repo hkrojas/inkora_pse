@@ -5,6 +5,8 @@ from decimal import Decimal, ROUND_HALF_UP
 import re
 from xml.etree import ElementTree as ET
 
+from services.fiscal_clock import now_in_peru
+
 
 NS = {
     "invoice": "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2",
@@ -67,7 +69,7 @@ def _date_time(value: str | None) -> tuple[str, str]:
         return date_part, time_part or "00:00:00"
     if len(text) >= 10:
         return text[:10], "00:00:00"
-    now = datetime.now()
+    now = now_in_peru()
     return now.date().isoformat(), now.time().replace(microsecond=0).isoformat()
 
 
@@ -87,7 +89,7 @@ def _compact_date(value) -> str:
     if len(text) >= 10 and text[4] == "-" and text[7] == "-":
         return text[:10].replace("-", "")
 
-    return datetime.now().strftime("%Y%m%d")
+    return now_in_peru().strftime("%Y%m%d")
 
 
 def _strip_batch_prefix(value) -> str:

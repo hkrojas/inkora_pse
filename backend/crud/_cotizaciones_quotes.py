@@ -20,6 +20,7 @@ from crud._cotizaciones_shared import (
     _next_quote_identity,
 )
 from services import calculations
+from services.fiscal_clock import now_in_peru_naive
 from services.bank_account_validation import validate_and_normalize_bank_accounts
 from services.client_snapshot_service import build_cliente_snapshot
 from services.document_flow_service import (
@@ -214,7 +215,7 @@ def _create_cotizacion_inner(
     totales = calculations.sumarizar_cotizacion(items_procesados_para_suma)
     nuevo_correlativo, internal_order_number = _next_quote_identity(db, tenant_id)
 
-    fecha_emision = cotizacion.fecha_emision or datetime.now()
+    fecha_emision = cotizacion.fecha_emision or now_in_peru_naive()
     condicion_pago = (
         getattr(cotizacion, "condicion_pago", None)
         or getattr(db_cliente, "condicion_pago", None)

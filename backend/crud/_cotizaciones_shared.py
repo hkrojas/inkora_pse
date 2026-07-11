@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import desc
@@ -16,6 +15,7 @@ from crud._base import (
 )
 from crud.tenants import get_subscription_by_tenant
 from services import calculations
+from services.fiscal_clock import now_in_peru_naive
 from services.client_snapshot_service import build_cliente_snapshot
 from services.document_flow_service import (
     DOCUMENT_KIND_FISCAL_DOCUMENT,
@@ -270,7 +270,7 @@ def _build_fiscal_document(
         cliente_snapshot=quote.cliente_snapshot or build_cliente_snapshot(getattr(quote, "cliente", None)),
         usuario_id=usuario_id,
         tenant_id=quote.tenant_id,
-        fecha_emision=quote.fecha_emision or datetime.now(),
+        fecha_emision=quote.fecha_emision or now_in_peru_naive(),
         fecha_vencimiento=quote.fecha_vencimiento,
         moneda=quote.moneda,
         tipo_comprobante=tipo_comprobante,

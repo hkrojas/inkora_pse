@@ -30,6 +30,7 @@ from api_utils import raise_internal_server_error
 from rate_limit import limiter
 from services import fiscal_artifact_service, pdf_storage_service
 from services.client_snapshot_service import resolve_document_cliente_snapshot
+from services.fiscal_clock import fiscal_datetime_in_peru, fiscal_today
 from services.facturacion_background_service import process_direct_sunat_emission_bg
 from models.tenants import (
     USAGE_LIMIT_KIND_BOLETA,
@@ -391,12 +392,7 @@ def _validate_issue_date_not_future(quote) -> None:
     if not fecha_emision:
         return
 
-    today = (
-        datetime.now(fecha_emision.tzinfo).date()
-        if fecha_emision.tzinfo is not None
-        else datetime.now().date()
-    )
-    if fecha_emision.date() > today:
+    if fiscal_datetime_in_peru(fecha_emision).date() > fiscal_today():
         raise HTTPException(
             400,
             "Pre-validacion fallida: La fecha de emision no puede ser futura.",

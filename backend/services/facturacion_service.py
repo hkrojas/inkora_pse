@@ -14,6 +14,7 @@ from services import calculations
 from services.client_snapshot_service import resolve_document_cliente_snapshot
 from services import fiscal_xml_service
 from services import fiscal_qr_service
+from services.fiscal_clock import fiscal_datetime_in_peru, now_in_peru
 from services import smartpse_client
 from services import smartpse_gre_credentials
 from services import smartpse_response
@@ -344,16 +345,14 @@ def _build_client_payload(cliente, snapshot: dict | None = None) -> dict:
 
 
 def _current_issue_datetime(value: datetime | None = None, *, plus_minutes: int = 0) -> str:
-    issued_at = value or datetime.now().astimezone()
-    if issued_at.tzinfo is None:
-        issued_at = issued_at.astimezone()
+    issued_at = fiscal_datetime_in_peru(value)
     if plus_minutes:
         issued_at = issued_at + timedelta(minutes=plus_minutes)
     return issued_at.replace(microsecond=0).isoformat()
 
 
 def _build_batch_correlativo(reference_datetime=None) -> str:
-    now = datetime.now()
+    now = now_in_peru()
     seconds_of_day = now.hour * 3600 + now.minute * 60 + now.second
     reference = reference_datetime or now.isoformat()
     return smartpse_ubl_service.normalize_batch_correlativo(
