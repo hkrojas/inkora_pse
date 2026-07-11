@@ -291,10 +291,21 @@ class TenantSaaSUpdate(StrictInputModel):
     sunat_cert_password: Optional[str] = None
     sunat_cert_url: Optional[str] = None
 
-    @field_validator("fiscal_invoice_series", "fiscal_boleta_series")
+    @field_validator("fiscal_invoice_series")
     @classmethod
-    def normalize_fiscal_series(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_optional_fiscal_series(value)
+    def normalize_fiscal_invoice_series(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_optional_fiscal_series(value)
+        if normalized and not normalized.startswith("F"):
+            raise ValueError("La serie de factura debe iniciar con F.")
+        return normalized
+
+    @field_validator("fiscal_boleta_series")
+    @classmethod
+    def normalize_fiscal_boleta_series(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_optional_fiscal_series(value)
+        if normalized and not normalized.startswith("B"):
+            raise ValueError("La serie de boleta debe iniciar con B.")
+        return normalized
 
 
 class SuperadminTenantCreate(StrictInputModel):

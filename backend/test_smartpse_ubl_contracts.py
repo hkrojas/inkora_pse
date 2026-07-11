@@ -91,16 +91,28 @@ def test_invoice_xml_and_filename_follow_sunat_contract():
     assert build_smartpse_filename(payload) == "20123456789-01-F001-00000001"
 
 
-def test_regular_document_filename_and_xml_normalize_to_eight_digit_correlative():
+def test_configured_invoice_series_normalizes_to_eight_digit_correlative():
     payload = _sale_payload("01")
-    payload["serie"] = "E001"
-    payload["correlativo"] = "7245"
+    payload["serie"] = "FA01"
+    payload["correlativo"] = "1"
 
     xml = build_sale_document_xml(payload)
     root = ET.fromstring(xml)
 
-    assert root.find("./cbc:ID", NS).text == "E001-00007245"
-    assert build_smartpse_filename(payload) == "20123456789-01-E001-00007245"
+    assert root.find("./cbc:ID", NS).text == "FA01-00000001"
+    assert build_smartpse_filename(payload) == "20123456789-01-FA01-00000001"
+
+
+def test_configured_boleta_series_normalizes_to_eight_digit_correlative():
+    payload = _sale_payload("03")
+    payload["serie"] = "BB01"
+    payload["correlativo"] = "1"
+
+    xml = build_sale_document_xml(payload)
+    root = ET.fromstring(xml)
+
+    assert root.find("./cbc:ID", NS).text == "BB01-00000001"
+    assert build_smartpse_filename(payload) == "20123456789-03-BB01-00000001"
 
 
 def test_invoice_xml_preserves_unit_price_precision_for_small_amounts():

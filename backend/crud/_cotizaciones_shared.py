@@ -239,9 +239,15 @@ def _resolve_fiscal_series(
 
     is_production = str(getattr(tenant, "smartpse_environment", "") or "").strip().lower() == "produccion"
     floor_attribute = "fiscal_invoice_series_floor" if tipo_comprobante == "01" else "fiscal_boleta_series_floor"
+    expected_prefix = "F" if tipo_comprobante == "01" else "B"
     if is_production and not explicitly_configured:
         raise ValueError(
             "La emision en produccion requiere configurar la serie fiscal autorizada ante SUNAT."
+        )
+    if is_production and not configured.startswith(expected_prefix):
+        document_label = "factura" if tipo_comprobante == "01" else "boleta"
+        raise ValueError(
+            f"La serie de {document_label} en produccion debe iniciar con {expected_prefix}."
         )
     if is_production and getattr(tenant, floor_attribute, None) is None:
         raise ValueError(
