@@ -1,7 +1,8 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from services import comunicacion_service
@@ -11,7 +12,7 @@ import schemas
 from api_dependencies import get_current_user, get_db, get_db_tenant
 from config import settings
 from rate_limit import limiter
-from services import pdf_storage_service, storage_service
+from services import document_download_service, pdf_storage_service, storage_service
 from services.client_snapshot_service import resolve_document_cliente_snapshot
 
 router = APIRouter(tags=["cotizaciones"])
@@ -199,6 +200,53 @@ async def descargar_pdf_interno(
         current_user.tenant_id,
     )
     raise HTTPException(202, "Generando PDF en segundo plano... Reintente en un momento.")
+
+
+@router.get("/cotizaciones/{cotizacion_id}/pdf/download")
+@limiter.limit("30/minute")
+async def descargar_pdf_interno_como_archivo(
+    request: Request,
+    cotizacion_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Download a stored PDF with the recipient-aware filename expected by users."""
+    cotizacion = crud.get_cotizacion(db, cotizacion_id, current_user)
+    if not cotizacion:
+        raise HTTPException(404)
+
+    documento_pdf = cotizacion
+    if cotizacion.document_kind == "quotation" and cotizacion.linked_fiscal_document:
+        documento_pdf = cotizacion.linked_fiscal_document
+
+    reference = getattr(documento_pdf, "sunat_pdf_url", None)
+    if not reference:
+        background_tasks.add_task(
+            pdf_storage_service.process_pdf_background,
+            documento_pdf.id,
+            current_user.tenant_id,
+        )
+        raise HTTPException(202, "Generando PDF en segundo plano... Reintente en un momento.")
+    if not storage_service.is_private_storage_reference(reference):
+        background_tasks.add_task(
+            pdf_storage_service.process_pdf_background,
+            documento_pdf.id,
+            current_user.tenant_id,
+        )
+        raise HTTPException(202, "Actualizando PDF historico... Reintente en un momento.")
+
+    try:
+        content = await run_in_threadpool(storage_service.download_private_storage_reference, reference)
+    except Exception as exc:
+        raise HTTPException(502, "No se pudo recuperar el PDF almacenado.") from exc
+
+    filename = document_download_service.build_document_download_filename(documento_pdf)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/cotizaciones/{cotizacion_id}/compartir")

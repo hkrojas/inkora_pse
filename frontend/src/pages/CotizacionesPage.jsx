@@ -37,6 +37,7 @@ import {
   resolveSelectedWallet,
 } from '../lib/utils/paymentMethods';
 import { BASE_URL } from '../lib/utils/config';
+import { api } from '../lib/utils/api';
 import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/peruPhoneValidation';
 import { normalizeUppercaseFieldValue } from '../lib/utils/uppercase';
 import {
@@ -2153,15 +2154,19 @@ export default function CotizacionesPage() {
 
   const handleOpenPdf = async (item) => {
     try {
-      const data = await svc.pdf(item.id);
-      const url = data?.url || data?.url_compartir || data?.public_url || data?.sunat_pdf_url;
-      if (url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-        return;
-      }
-      toast(data?.detail || 'No se pudo abrir el PDF', 'error');
+      const { blob, disposition } = await api.getBlob(`/cotizaciones/${item.id}/pdf/download`, { timeoutMs: 45000 });
+      const filename = /filename="?([^"]+)"?/i.exec(disposition || '')?.[1]
+        || `${item.serie || 'COT'}-${String(item.correlativo || 0).padStart(6, '0')}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
     } catch (err) {
-      toast(err.message, 'error');
+      toast(err.message || 'No se pudo descargar el PDF', 'error');
     }
   };
 

@@ -280,13 +280,10 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
     try {
       const fallback = `${formatDocNumber(doc)}.${type === 'cdr' ? 'zip' : type}`;
       const target = buildFiscalDownloadRequest(doc, type);
-      if (target.method === 'get') {
-        const data = await api.get(target.path, { timeoutMs: 45000 });
-        if (data?.url) {
-          window.open(data.url, '_blank', 'noopener,noreferrer');
-          return;
-        }
-        throw new Error('No se pudo preparar la descarga del PDF.');
+      if (target.method === 'getBlob') {
+        const { blob, disposition } = await api.getBlob(target.path, { timeoutMs: 45000 });
+        downloadBlobFile(blob, filenameFromDisposition(disposition, fallback));
+        return;
       }
       const { blob, disposition } = await api.blob(target.path, target.body, { timeoutMs: 45000 });
       downloadBlobFile(blob, filenameFromDisposition(disposition, fallback));

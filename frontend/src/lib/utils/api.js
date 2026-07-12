@@ -176,6 +176,7 @@ async function requestBlob(path, options = {}) {
 
 export const api = {
   get: (path, options) => request(path, { ...options, method: 'GET' }),
+  getBlob: (path, options) => requestBlob(path, { ...options, method: 'GET' }),
   post: (path, body, options) => request(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
   blob: (path, body, options) => requestBlob(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
   postForm: (path, formData, options) => request(path, { ...options, method: 'POST', body: formData }),

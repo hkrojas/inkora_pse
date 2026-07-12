@@ -215,9 +215,7 @@ export default function CotizacionDetalle() {
             Compartir
           </button>
           <a
-            href={`${BASE_URL}/cotizaciones/${id}/pdf?redirect=1`}
-            target="_blank"
-            rel="noreferrer"
+            href={`${BASE_URL}/cotizaciones/${id}/pdf/download`}
             className="btn-secondary flex items-center gap-2"
           >
             <FileText className="h-4 w-4" />

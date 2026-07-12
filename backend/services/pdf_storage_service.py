@@ -2,7 +2,7 @@ import models
 from database import SessionLocal, apply_tenant_context, reset_tenant_context
 from fastapi.concurrency import run_in_threadpool
 from logging_utils import get_logger
-from services import pdf_generator, storage_service
+from services import document_download_service, pdf_generator, storage_service
 from sqlalchemy.orm import Session
 
 
@@ -51,7 +51,7 @@ async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion):
     )
 
     folder = f"cotizaciones/tenant_{cotizacion.tenant_id}"
-    filename = f"{cotizacion.serie}-{cotizacion.correlativo}-{cotizacion.uuid_publico[:8]}.pdf"
+    filename = document_download_service.build_document_download_filename(cotizacion)
 
     private_reference = await run_in_threadpool(
         storage_service.upload_to_storage,

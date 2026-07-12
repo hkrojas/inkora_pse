@@ -13,8 +13,8 @@ export function formatFiscalDate(value) {
 export function buildFiscalDownloadRequest(doc, type) {
   if (type === 'pdf') {
     return {
-      method: 'get',
-      path: `/cotizaciones/${doc.id}/pdf`,
+      method: 'getBlob',
+      path: `/cotizaciones/${doc.id}/pdf/download`,
     };
   }
   return {
