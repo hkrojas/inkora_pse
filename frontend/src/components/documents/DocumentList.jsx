@@ -36,6 +36,7 @@ import {
   hasFiscalDownload,
 } from '../../lib/utils/documentArtifacts';
 import EmptyState from '../ui/EmptyState';
+import Modal from '../ui/Modal';
 import { PageError } from '../ui/PageState';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 
@@ -178,6 +179,9 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
   const [error, setError] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
   const [retryingArtifactsId, setRetryingArtifactsId] = useState(null);
+  const [voidingDoc, setVoidingDoc] = useState(null);
+  const [voidReason, setVoidReason] = useState('');
+  const [voiding, setVoiding] = useState(false);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ desde: '', hasta: '', estado: 'all', moneda: 'all' });
   const [page, setPage] = useState(1);
@@ -327,6 +331,38 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
       toast(err.message || 'No se pudieron reconstruir los artefactos fiscales.', 'error');
     } finally {
       setRetryingArtifactsId(null);
+    }
+  };
+
+  const canVoidDocument = (doc) => Boolean(
+    doc
+    && doc.estado === 'facturada'
+    && !doc.sunat_error
+    && (doc.has_sunat_xml || doc.sunat_xml_url)
+  );
+
+  const openVoidDialog = (doc) => {
+    setOpenActionMenu(null);
+    setVoidReason('');
+    setVoidingDoc(doc);
+  };
+
+  const submitVoid = async () => {
+    if (!voidingDoc || !voidReason.trim()) return;
+    setVoiding(true);
+    try {
+      await api.post('/bajas/anular', {
+        comprobante_id: voidingDoc.id,
+        motivo: voidReason.trim(),
+      }, { timeoutMs: 60000 });
+      toast('Solicitud de baja enviada correctamente.', 'success');
+      setVoidingDoc(null);
+      setVoidReason('');
+      await load();
+    } catch (err) {
+      toast(err.message || 'No se pudo solicitar la baja del comprobante.', 'error');
+    } finally {
+      setVoiding(false);
     }
   };
 
@@ -669,6 +705,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                             ? 'ink-table-row--active'
                             : '';
                     const canRetryArtifacts = canRetryFiscalArtifacts(doc);
+                    const canVoid = canVoidDocument(doc);
 
                     return (
                       <tr key={doc.id} className={rowClass}>
@@ -795,6 +832,12 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                       <Send className="h-3.5 w-3.5" />
                                       WhatsApp + correo
                                     </button>
+                                    {canVoid && (
+                                      <button type="button" className="history-actions-mobile-item is-danger" onClick={() => openVoidDialog(doc)}>
+                                        <XCircle className="h-3.5 w-3.5" />
+                                        Dar de baja
+                                      </button>
+                                    )}
                                     {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
                                       <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(load)}>
                                         <RefreshCw className="h-3.5 w-3.5" />
@@ -885,6 +928,12 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                       Reintentar archivos
                                     </button>
                                   )}
+                                  {canVoid && (
+                                    <button type="button" className="history-actions-mobile-item is-danger" onClick={() => openVoidDialog(doc)}>
+                                      <XCircle className="h-3.5 w-3.5" />
+                                      Dar de baja
+                                    </button>
+                                  )}
                                   {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
                                     <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(load)}>
                                       <RefreshCw className="h-3.5 w-3.5" />
@@ -933,6 +982,48 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
           </div>
         )}
       </article>
+      <Modal
+        open={Boolean(voidingDoc)}
+        onClose={() => !voiding && setVoidingDoc(null)}
+        title="Dar de baja comprobante"
+        subtitle={voidingDoc ? formatDocNumber(voidingDoc) : undefined}
+        icon={XCircle}
+        size="md"
+        footer={(
+          <>
+            <button type="button" className="btn-secondary" disabled={voiding} onClick={() => setVoidingDoc(null)}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={voiding || !voidReason.trim()}
+              onClick={submitVoid}
+              style={{ background: 'var(--color-error)' }}
+            >
+              {voiding ? <Spinner size={15} /> : <XCircle size={15} />}
+              Enviar baja
+            </button>
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-[var(--text-secondary)]">
+            Esta acción envía la comunicación fiscal de baja. No elimina el comprobante de Inkora.
+          </p>
+          <label className="grid gap-2 text-sm font-semibold text-[var(--text-primary)]">
+            Motivo de la baja
+            <textarea
+              className="input min-h-28 resize-y"
+              value={voidReason}
+              onChange={(event) => setVoidReason(event.target.value)}
+              placeholder="Describe el motivo de la anulación"
+              maxLength={250}
+              disabled={voiding}
+            />
+          </label>
+        </div>
+      </Modal>
     </div>
   );
 }
