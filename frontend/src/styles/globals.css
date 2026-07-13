@@ -9094,9 +9094,7 @@ textarea.input:focus,
 .form-section-anchor { scroll-margin-top: 112px; outline: none; }
 .form-section-anchor:focus-visible { box-shadow: 0 0 0 3px rgba(132, 204, 63, .28); }
 .section-navigation {
-  position: sticky;
-  top: 80px;
-  z-index: 12;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
