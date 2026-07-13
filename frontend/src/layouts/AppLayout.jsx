@@ -29,6 +29,9 @@ import { cn } from '../lib/utils/cn';
 
 function SunatStatus() {
   const [rate, setRate] = useState(null);
+  const rateDetail = rate
+    ? `Tipo de cambio SUNAT: compra ${rate.buy}, venta ${rate.sell}.`
+    : 'Actualizando el tipo de cambio SUNAT.';
 
   useEffect(() => {
     let mounted = true;
@@ -54,14 +57,16 @@ function SunatStatus() {
   }, []);
 
   return (
-    <div className="app-sunat-pill hidden items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2 shadow-[var(--shadow-soft)] sm:flex">
+    <div
+      className="app-sunat-pill hidden items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2 shadow-[var(--shadow-soft)] sm:flex"
+      role="status"
+      aria-live="polite"
+      aria-label={rateDetail}
+      title={rateDetail}
+    >
       <span className="attention-pulse-dot" />
       <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[var(--color-text-muted)]">SUNAT</span>
-      {rate && (
-        <span className="font-mono text-[11px] font-semibold text-[var(--color-text)]">
-          C {rate.buy} | V {rate.sell}
-        </span>
-      )}
+      <span className="hidden text-[11px] font-semibold text-[var(--color-text-soft)] xl:inline">Tipo de cambio</span>
     </div>
   );
 }
@@ -171,6 +176,7 @@ export default function AppLayout() {
   const profileRef = useRef(null);
   const [openPanel, setOpenPanel] = useState(null);
   const [globalSearch, setGlobalSearch] = useState('');
+  const [isContentScrolled, setIsContentScrolled] = useState(false);
   const [notificationsSeen, setNotificationsSeen] = useState(() =>
     localStorage.getItem('inkora-topbar-notifications-seen') === '1',
   );
@@ -347,7 +353,12 @@ export default function AppLayout() {
       <Sidebar />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="app-topbar sticky top-0 z-30 grid min-h-[72px] flex-shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-[var(--color-border)] bg-[rgba(255,255,255,0.94)] px-4 backdrop-blur-[18px] sm:px-6">
+        <header
+          className={cn(
+            'app-topbar sticky top-0 z-30 grid min-h-[72px] flex-shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-[var(--color-border)] bg-[rgba(255,255,255,0.94)] px-4 backdrop-blur-[18px] transition-shadow duration-200 sm:px-6',
+            isContentScrolled && 'shadow-[0_8px_20px_rgba(18,30,24,0.08)]',
+          )}
+        >
           <div className="flex min-w-0 flex-col pl-10 lg:pl-0">
             <div className="flex items-center gap-2.5">
               <h1 className="m-0 truncate text-[18px] font-extrabold leading-tight tracking-[-0.04em] text-[var(--color-text)]">
@@ -457,6 +468,8 @@ export default function AppLayout() {
                 type="button"
                 className="relative inline-flex h-[42px] w-[42px] items-center justify-center rounded-[13px] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] shadow-[var(--shadow-soft)] transition-colors hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2"
                 aria-label="Ver notificaciones"
+                aria-controls="topbar-notifications"
+                aria-expanded={openPanel === 'notifications'}
                 title="Notificaciones"
                 onClick={openNotifications}
               >
@@ -467,7 +480,7 @@ export default function AppLayout() {
               </button>
 
               {openPanel === 'notifications' && (
-                <div className="fixed left-3 right-3 top-[76px] z-50 overflow-hidden rounded-[18px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-floating)] sm:absolute sm:left-auto sm:right-0 sm:top-[calc(100%+10px)] sm:w-[340px]">
+                <div id="topbar-notifications" className="fixed left-3 right-3 top-[76px] z-50 overflow-hidden rounded-[18px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-floating)] sm:absolute sm:left-auto sm:right-0 sm:top-[calc(100%+10px)] sm:w-[340px]">
                   <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
                     <div>
                       <p className="m-0 text-[11px] font-black uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
@@ -512,6 +525,8 @@ export default function AppLayout() {
               type="button"
               className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-[13px] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] shadow-[var(--shadow-soft)] transition-colors hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2"
               aria-label="Abrir menú de usuario"
+              aria-controls="topbar-user-menu"
+              aria-expanded={openPanel === 'profile'}
               title="Usuario"
               onClick={() => setOpenPanel((current) => (current === 'profile' ? null : 'profile'))}
             >
@@ -519,7 +534,7 @@ export default function AppLayout() {
             </button>
 
             {openPanel === 'profile' && (
-              <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[300px] overflow-hidden rounded-[18px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-floating)]">
+              <div id="topbar-user-menu" className="absolute right-0 top-[calc(100%+10px)] z-50 w-[300px] overflow-hidden rounded-[18px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-floating)]">
                 <div className="border-b border-[var(--color-border)] p-4">
                   <div className="flex items-center gap-3">
                     <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#e3e941] to-[#7cc63f] text-[14px] font-black text-white">
@@ -576,7 +591,7 @@ export default function AppLayout() {
             </div>
 
             <button
-              className="hidden items-center gap-2 rounded-[18px] bg-[var(--color-dark-btn)] px-6 py-3 text-[16px] font-extrabold text-white transition-opacity hover:opacity-90 sm:flex"
+              className="hidden items-center gap-2 rounded-[18px] bg-[var(--color-dark-btn)] px-4 py-3 text-[14px] font-extrabold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 sm:flex lg:px-6 lg:text-[16px]"
               type="button"
               onClick={() => navigate('/comprobantes/nuevo')}
               aria-label="Crear comprobante"
@@ -599,7 +614,10 @@ export default function AppLayout() {
 
         <SubscriptionBanner user={user} />
 
-        <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7">
+        <main
+          className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7"
+          onScroll={(event) => setIsContentScrolled(event.currentTarget.scrollTop > 4)}
+        >
           <PageTransition>
             <Outlet />
           </PageTransition>
