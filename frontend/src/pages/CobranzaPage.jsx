@@ -145,11 +145,11 @@ export default function CobranzaPage() {
       {/* ── Stats ── */}
       <section className="stats-row ink-enter-2">
         <article className="stat">
-          <div className="stat-label">Total por cobrar</div>
+          <div className="stat-label">Saldo total pendiente</div>
           <div className="stat-value">
             {loading ? '—' : `S/ ${fmt(resumen?.total_por_cobrar)}`}
           </div>
-          <div className="stat-foot warn">Saldo pendiente de regularizar</div>
+          <div className="stat-foot warn">Todos los documentos pendientes</div>
         </article>
         <article className="stat">
           <div className="stat-label">Docs. vencidos</div>
@@ -315,7 +315,7 @@ export default function CobranzaPage() {
               <div className="cobranza-total-footer">
                 <AlertCircle size={13} style={{ color: 'var(--color-danger)' }} />
                 <span>
-                  Total filtrado:{' '}
+                  Saldo de los {filtered.length} documentos visibles:{' '}
                   <strong>
                     S/{' '}
                     {fmt(filtered.reduce((sum, i) => sum + Number(i.saldo_pendiente || 0), 0))}

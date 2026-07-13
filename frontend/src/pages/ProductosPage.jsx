@@ -436,6 +436,7 @@ export default function ProductosPage() {
   }, [counts]);
 
   const filtered = list;
+  const pristineEmpty = !loading && !error && counts.all === 0 && !search.trim() && segment === 'all';
   const totalPages = Math.max(1, Math.ceil(total / 15));
 
   const handleExport = () => {
@@ -572,7 +573,7 @@ export default function ProductosPage() {
         </div>
       </div>
 
-      <section className="stats-row ink-enter-2">
+      {!pristineEmpty && <section className="stats-row ink-enter-2">
         <article className="stat">
           <div className="stat-label">Productos</div>
           <div className="stat-value">{stats.productos}</div>
@@ -597,9 +598,10 @@ export default function ProductosPage() {
           <div className="stat-value">{stats.conPrecio}</div>
           <div className="stat-foot good">Listos para cotizar</div>
         </article>
-      </section>
+      </section>}
 
       <article className="panel ink-enter-3">
+        {!pristineEmpty && <>
         <div className="toolbar">
           <label className="search-box">
             <Search size={16} />
@@ -639,6 +641,7 @@ export default function ProductosPage() {
             Ordenar por: <strong>Nombre</strong>
           </div>
         </div>
+        </>}
 
         {error ? (
           <div style={{ padding: '40px 18px' }}>
@@ -651,7 +654,8 @@ export default function ProductosPage() {
         ) : filtered.length === 0 ? (
           <div style={{ padding: '40px 18px' }}>
             <EmptyState
-              title="Sin productos"
+              variant={pristineEmpty ? 'onboarding' : 'default'}
+              title={pristineEmpty ? 'Crea tu primer producto o servicio' : 'Sin productos para esta vista'}
               description="Agrega productos o servicios para acelerar tu operación comercial."
               action={
                 <button className="btn-primary" onClick={() => setModal({ mode: 'create' })}>

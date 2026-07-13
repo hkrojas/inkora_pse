@@ -6,6 +6,7 @@ import Spinner from '../components/ui/Spinner';
 import CustomSelect from '../components/ui/CustomSelect';
 import FormField from '../components/ui/FormField';
 import PaymentQrCropper from '../components/settings/PaymentQrCropper';
+import SectionNavigation from '../components/ui/SectionNavigation';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -1025,7 +1026,15 @@ export default function ConfiguracionPage() {
 
       {activeTab === 'empresa' && (
         <div id="settings-panel-empresa" role="tabpanel" aria-labelledby="settings-tab-empresa" tabIndex={0} className={`settings-view settings-tab-panel settings-tab-panel--${tabDirection}`}>
-          <div className="settings-hero-card settings-panel">
+          <SectionNavigation
+            label="Secciones del perfil de empresa"
+            items={[
+              { id: 'settings-company-identity', label: 'Identidad', status: tenantData?.business_ruc ? 'Listo' : 'Revisar' },
+              { id: 'settings-company-payments', label: 'Cobros', status: bankCount + walletCount ? `${bankCount + walletCount} medios` : 'Pendiente' },
+              { id: 'settings-company-save', label: 'Guardar', status: saving ? 'Guardando' : 'Revisión' },
+            ]}
+          />
+          <div id="settings-company-identity" tabIndex={-1} className="settings-hero-card settings-panel form-section-anchor">
             <div className="settings-hero-grid">
               <div>
                 <div className="flex items-center gap-3 mb-4">
@@ -1239,7 +1248,7 @@ export default function ConfiguracionPage() {
                   />
                 </FormField>
 
-                <div>
+                <div id="settings-company-payments" tabIndex={-1} className="form-section-anchor">
                   <div className="settings-payment-toolbar">
                     <div>
                       <p className="settings-payment-title">Datos para la transferencia</p>
@@ -1353,7 +1362,7 @@ export default function ConfiguracionPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
+                <div id="settings-company-save" tabIndex={-1} className="flex justify-end pt-2 form-section-anchor">
                   <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
                     {saving && <Spinner size="sm" />} Guardar cambios
                   </button>

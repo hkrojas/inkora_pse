@@ -20,6 +20,7 @@ import ClientCombobox from '../components/ui/ClientCombobox';
 import ProductLineCell from '../components/ui/ProductLineCell';
 import { hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
 import { clienteSnapshotFromForm, syncCatalogProductos, upsertCliente, upsertProductos } from '../lib/utils/upsert';
+import SectionNavigation from '../components/ui/SectionNavigation';
 import Spinner from '../components/ui/Spinner';
 import { PageError } from '../components/ui/PageState';
 import Modal from '../components/ui/Modal';
@@ -963,6 +964,12 @@ export default function ComprobanteNuevoPage() {
     : canEmit
       ? 'Listo para revisión fiscal'
       : 'Completa cliente y líneas';
+  const documentSections = [
+    { id: 'document-emission', label: 'Documento', status: 'Configurado' },
+    { id: 'document-client', label: 'Cliente', status: form.cliente.razon_social ? 'Listo' : 'Pendiente' },
+    { id: 'document-lines', label: 'Líneas', status: readyLines ? `${readyLines} lista${readyLines !== 1 ? 's' : ''}` : 'Pendiente' },
+    { id: 'document-review', label: 'Revisión', status: canEmit ? 'Listo' : 'Revisar' },
+  ];
 
   if (loadingData) {
     return <div className="flex h-64 items-center justify-center"><Spinner size="lg" /></div>;
@@ -1028,9 +1035,11 @@ export default function ComprobanteNuevoPage() {
           </div>
         </section>
 
+        <SectionNavigation label="Progreso de emisión" items={documentSections} />
+
         <section className="builder ink-enter-2">
           <div>
-            <article className="panel">
+            <article id="document-emission" tabIndex={-1} className="panel form-section-anchor">
               <div className="panel-header">
                 <div>
                   <h3>Documento y emisión</h3>
@@ -1206,7 +1215,7 @@ export default function ComprobanteNuevoPage() {
               </div>
             </article>
 
-            <article className="panel">
+            <article id="document-client" tabIndex={-1} className="panel form-section-anchor">
               <div className="panel-header">
                 <div>
                   <h3>Cliente y entrega</h3>
@@ -1283,7 +1292,7 @@ export default function ComprobanteNuevoPage() {
               </div>
             </article>
 
-            <article className="panel">
+            <article id="document-lines" tabIndex={-1} className="panel form-section-anchor">
               <div className="panel-header document-lines-header">
                 <div>
                   <h3>Líneas del comprobante</h3>
@@ -1365,7 +1374,7 @@ export default function ComprobanteNuevoPage() {
           </div>
 
           <aside>
-            <article className="summary-card">
+            <article id="document-review" tabIndex={-1} className="summary-card form-section-anchor">
               <div className="summary-header">
                 <h3>Resumen del comprobante</h3>
                 <p>Cálculo siempre visible para no emitir sin revisar cliente, fechas y monto final.</p>
@@ -1421,6 +1430,15 @@ export default function ComprobanteNuevoPage() {
             </article>
           </aside>
         </section>
+        <div className="mobile-summary-bar" aria-live="polite">
+          <div>
+            <span>Total del comprobante</span>
+            <strong>{formatCurrency(totals.total, form.moneda)}</strong>
+          </div>
+          <button type="button" className="btn-primary" onClick={handleEmitClick} disabled={saving || !canEmit}>
+            {saving ? 'Emitiendo…' : 'Emitir'}
+          </button>
+        </div>
       </div>
 
       <PreviewModal

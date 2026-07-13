@@ -7,9 +7,10 @@ export default function EmptyState({
   actionLabel,
   onAction,
   action, // legacy compat
+  variant = 'default',
 }) {
   return (
-    <div className="empty-state-anim rounded-3xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-soft)] px-6 py-10 text-center">
+    <div className={`empty-state-anim empty-state-anim--${variant} rounded-3xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-soft)] px-6 py-10 text-center`}>
       <div className="empty-state-anim__icon mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
         {icon}
       </div>

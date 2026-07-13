@@ -21,6 +21,7 @@ import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
 import ClientCombobox from '../components/ui/ClientCombobox';
 import ProductLineCell from '../components/ui/ProductLineCell';
+import SectionNavigation from '../components/ui/SectionNavigation';
 import { FieldError } from '../components/ui/FieldError';
 import { useToast } from '../components/ui/Toast';
 import '../styles/cotizacionesHistory.css';
@@ -1527,10 +1528,19 @@ function NuevaCotizacionForm({
   const previewClient = getPreviewClientData(clienteId, clienteForm, formClientes);
   const hasObservationLines = observationLines.some((line) => line.text?.trim());
   const walletOptions = getWalletOptions(tenantData?.bank_accounts);
+  const readyLines = items.filter((item) => item.descripcion?.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0).length;
+  const quoteReady = Boolean(clienteId || clienteForm?.razon_social) && readyLines > 0;
+  const quoteSections = [
+    { id: 'quote-client', label: 'Cliente', status: clienteId || clienteForm?.razon_social ? 'Listo' : 'Pendiente' },
+    { id: 'quote-lines', label: 'Detalle', status: readyLines ? `${readyLines} línea${readyLines !== 1 ? 's' : ''}` : 'Pendiente' },
+    { id: 'quote-observations', label: 'PDF', status: hasObservationLines ? 'Incluido' : 'Opcional' },
+    { id: 'quote-review', label: 'Revisión', status: quoteReady ? 'Listo' : 'Pendiente' },
+  ];
 
 return (
     <>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="quote-builder-form">
+        <SectionNavigation label="Progreso de cotización" items={quoteSections} />
         <section className="builder">
           {isEditing && (
             <article
@@ -1551,7 +1561,7 @@ return (
             </article>
           )}
           <div>
-            <article className="panel">
+            <article id="quote-client" tabIndex={-1} className="panel form-section-anchor">
               <div className="panel-header"><div><h3>Cliente y condiciones</h3><p>Primero identifica al cliente. Si ya existe, se autocompletan sus datos.</p></div></div>
               <div className="panel-body">
                 <ClientCombobox
@@ -1638,7 +1648,7 @@ return (
               </div>
             </article>
 
-            <article className="panel">
+            <article id="quote-lines" tabIndex={-1} className="panel form-section-anchor">
               <div className="panel-header">
                 <div>
                   <h3>Bancos visibles en el PDF</h3>
@@ -1831,7 +1841,7 @@ return (
               </div>
             </article>
 
-            <article className="panel">
+            <article id="quote-observations" tabIndex={-1} className="panel form-section-anchor">
               <div className="panel-header">
                 <div><h3>Observaciones del PDF</h3><p>Textos comerciales visibles para el cliente.</p></div>
                 {!observacionesOpen && !hasObservationLines ? (
@@ -1882,7 +1892,7 @@ return (
           </div>
 
           <aside>
-            <article className="summary-card">
+            <article id="quote-review" tabIndex={-1} className="summary-card form-section-anchor">
               <div className="summary-header">
                 <h3>{isEditing ? 'Resumen de edicion' : 'Resumen de cotización'}</h3>
                 <p>{isEditing ? 'Revisa los nuevos totales antes de actualizar.' : 'Cálculo siempre visible para evitar guardar sin revisar.'}</p>
@@ -1897,13 +1907,22 @@ return (
               <div className="summary-actions">
                 <button type="button" className="side-btn open-preview" onClick={() => setPreviewOpen(true)}><Eye size={16} /> Vista previa</button>
                 <button type="button" className="side-btn"><Save size={16} /> Guardar borrador</button>
-                <button type="submit" className="side-btn primary" disabled={saving || (!clienteId && !clienteForm?.razon_social)}>
+                <button type="submit" className="side-btn primary" disabled={saving || !quoteReady}>
                   {saving ? 'Guardando…' : isEditing ? 'Actualizar cotizacion' : 'Guardar cotización'}
                 </button>
               </div>
             </article>
           </aside>
         </section>
+        <div className="mobile-summary-bar" aria-live="polite">
+          <div>
+            <span>Total de cotización</span>
+            <strong>{sym} {fmt(totalGeneral)}</strong>
+          </div>
+          <button type="submit" className="btn-primary" disabled={saving || !quoteReady}>
+            {saving ? 'Guardando…' : 'Guardar'}
+          </button>
+        </div>
       </form>
 
       <Modal

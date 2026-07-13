@@ -142,8 +142,17 @@ function isCompany(item = {}) {
   return item.tipo_documento === '6' || String(item.numero_documento || '').length === 11;
 }
 
+function getCommercialGaps(item = {}) {
+  const gaps = [];
+  if (!item.email) gaps.push('correo');
+  if (!(item.telefono || item.whatsapp)) gaps.push('teléfono o WhatsApp');
+  if (!item.direccion) gaps.push('dirección');
+  if (!item.condicion_pago) gaps.push('condición comercial');
+  return gaps;
+}
+
 function isIncomplete(item = {}) {
-  return !item.email || !(item.telefono || item.whatsapp) || !item.condicion_pago;
+  return getCommercialGaps(item).length > 0;
 }
 
 function getInitials(name) {
@@ -162,14 +171,16 @@ function getAvatarColor(item) {
 }
 
 function getPaymentLabel(item = {}) {
-  const value = item.condicion_pago || 'contado';
+  const value = item.condicion_pago;
+  if (!value) return 'Sin condición';
   return value
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function getPaymentTone(item = {}) {
-  const value = item.condicion_pago || 'contado';
+  const value = item.condicion_pago;
+  if (!value) return 'risk';
   if (value === 'contado') return 'cash';
   if (value.startsWith('credito')) return 'credit';
   return 'ok';
@@ -754,7 +765,8 @@ export default function ClientesPage() {
 
               {filtered.map((item) => {
                 const company = isCompany(item);
-                const incomplete = isIncomplete(item);
+                const commercialGaps = getCommercialGaps(item);
+                const incomplete = commercialGaps.length > 0;
                 const debtTone = (item.condicion_pago || 'contado') === 'contado' ? 'zero' : 'owed';
                 return (
                   <div key={item.id} className="client-row">
@@ -787,10 +799,10 @@ export default function ClientesPage() {
                     </div>
 
                     <div className="activity-block">
-                      <strong>{item.direccion ? 'Ficha comercial completa' : 'Pendiente completar dirección'}</strong>
+                      <strong>{incomplete ? 'Ficha comercial pendiente' : 'Ficha comercial completa'}</strong>
                       <span className={`debt ${debtTone}`}>
                         {incomplete
-                          ? 'Falta correo, teléfono o condición comercial.'
+                          ? `Pendiente: ${commercialGaps.join(', ')}.`
                           : 'Listo para cotizar, emitir y cobrar.'}
                       </span>
                     </div>

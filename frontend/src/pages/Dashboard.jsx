@@ -219,6 +219,7 @@ export default function Dashboard() {
       href: '/cotizaciones',
     },
   ];
+  const actionableAttentionCards = attentionCards.filter((item) => item.value > 0);
 
   const urgentItems = overdueDocs.slice(0, 3);
 
@@ -260,7 +261,7 @@ export default function Dashboard() {
           <h3>Necesita atención hoy</h3>
           <p>Prioriza pendientes que afectan caja, emisión fiscal o seguimiento comercial.</p>
         </div>
-        {attentionCards.map((item) => (
+        {actionableAttentionCards.map((item) => (
           <div
             key={item.label}
             className="attention-card"
@@ -277,39 +278,45 @@ export default function Dashboard() {
             </div>
           </div>
         ))}
+        {actionableAttentionCards.length === 0 && (
+          <div className="attention-card attention-card--calm">
+            <strong>Todo al día</strong>
+            <span className="attention-card-text">No hay alertas comerciales o fiscales que requieran una acción inmediata.</span>
+          </div>
+        )}
       </section>
 
       <section className="metrics-grid">
         <article className="metric-card ink-enter-3">
           <div className="metric-top">
-            <div className="metric-label">Pagos registrados</div>
+            <div className="metric-label">Pagos fiscales registrados</div>
             <span className="metric-badge neutral">Historico</span>
           </div>
           <div className="metric-value">
             {ingresosTotales.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="metric-sub">
-            Cobrado fiscal este mes: <strong>{totalCobradoMes.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>.
+            Acumulado histórico de pagos aplicados a documentos fiscales.
           </div>
         </article>
 
         <article className="metric-card ink-enter-3">
           <div className="metric-top">
-            <div className="metric-label">Cobrado fiscal este mes</div>
+            <div className="metric-label">Cobrado fiscal del mes</div>
             <span className="metric-badge">Mes actual</span>
           </div>
           <div className="metric-value">
             {totalCobradoMes.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="metric-sub">
-            Del total registrado: <strong>{percent(totalCobradoMes, ingresosTotales || 1)}%</strong>.
+            Equivale al <strong>{percent(totalCobradoMes, ingresosTotales || 1)}%</strong> del acumulado histórico.
           </div>
         </article>
 
         <article className="metric-card ink-enter-4">
           <div className="metric-top">
-            <div className="metric-label">Pendiente fiscal por cobrar</div>
-            <span className="metric-badge warn">Revisar</span>
+            <div className="metric-label">Saldo fiscal pendiente</div>
+            <span className="metric-badge warn">Saldo actual</span>
           </div>
           <div className="metric-value">
             {totalPorCobrar.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -319,18 +326,18 @@ export default function Dashboard() {
           </div>
         </article>
 
-        <article className="metric-card ink-enter-4">
+        <article className={`metric-card ink-enter-4${docsRechazados === 0 ? ' metric-card--quiet' : ''}`}>
           <div className="metric-top">
           <div className="metric-label">Alertas documentales visibles</div>
             <span className={`metric-badge ${docsRechazados > 0 ? 'warn' : ''}`}>
               {docsRechazados > 0 ? 'Revisar' : 'Sin alertas'}
             </span>
           </div>
-          <div className="metric-value">{docsRechazados}</div>
+          <div className="metric-value">{docsRechazados === 0 ? '—' : docsRechazados}</div>
           <div className="metric-sub">
             {docsRechazados > 0
               ? 'Documentos con alerta en los listados recientes.'
-              : 'No hay alertas visibles en los listados del dashboard.'}
+              : 'Sin alertas en los documentos visibles del dashboard.'}
           </div>
         </article>
       </section>

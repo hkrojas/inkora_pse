@@ -427,6 +427,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
 
   const hasActiveFilters =
     search || filters.desde || filters.hasta || filters.estado !== 'all' || filters.moneda !== 'all';
+  const pristineEmpty = !loading && !error && total === 0 && !hasActiveFilters && activeTab === 'all';
 
   const metrics = useMemo(() => {
     const accepted = tabCounts.emitted || 0;
@@ -482,6 +483,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
       icon: <XOctagon size={16} />,
     },
   ];
+  const visibleHeroCards = heroCards.filter((item) => item.key === 'all' || item.value > 0);
 
   return (
     <div className="page-shell page-shell--dense">
@@ -525,7 +527,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
           </div>
         </div>
 
-        {heroCards.map((item) => (
+        {!pristineEmpty && visibleHeroCards.map((item) => (
           <button
             key={item.key}
             type="button"
@@ -547,6 +549,8 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
       </section>
 
       <article className="panel document-list-panel ink-enter-3">
+        {!pristineEmpty && (
+          <>
         <div className="toolbar">
           <label className="search-box">
             <Search size={16} />
@@ -610,6 +614,8 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
             Mostrando <strong>{getVisibleRange(page, PER_PAGE, total)}</strong> de <strong>{total}</strong>
           </div>
         </div>
+          </>
+        )}
 
         {error && !loading ? (
           <div className="document-list-empty">
@@ -622,6 +628,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
         ) : docs.length === 0 ? (
           <div className="document-list-empty">
             <EmptyState
+              variant={pristineEmpty ? 'onboarding' : 'default'}
               icon={<FileText size={22} />}
               title={
                 hasActiveFilters

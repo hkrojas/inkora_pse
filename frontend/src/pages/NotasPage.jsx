@@ -161,6 +161,7 @@ export default function NotasPage() {
   };
 
   const hasActiveFilters = search || filters.desde || filters.hasta || filters.estado !== 'all' || filters.tipo !== 'all';
+  const pristineEmpty = !loading && !error && backendCounts.all === 0 && !hasActiveFilters && activeTab === 'all';
 
   const constrained = useMemo(
     () =>
@@ -364,7 +365,7 @@ export default function NotasPage() {
           </div>
         </div>
 
-        {heroCards.map((item) => (
+        {!pristineEmpty && heroCards.map((item) => (
           <button
             key={item.key}
             type="button"
@@ -386,6 +387,7 @@ export default function NotasPage() {
       </section>
 
       <article className="panel document-list-panel ink-enter-3">
+        {!pristineEmpty && <>
         <div className="toolbar">
           <label className="search-box">
             <Search size={16} />
@@ -449,6 +451,7 @@ export default function NotasPage() {
             Mostrando <strong>{getVisibleRange(page, PER_PAGE, total)}</strong> de <strong>{total}</strong>
           </div>
         </div>
+        </>}
 
         {error ? (
           <div className="document-list-empty">
@@ -461,6 +464,7 @@ export default function NotasPage() {
         ) : filtered.length === 0 ? (
           <div className="document-list-empty">
             <EmptyState
+              variant={pristineEmpty ? 'onboarding' : 'default'}
               icon={<FileText size={22} />}
               title={
                 hasActiveFilters

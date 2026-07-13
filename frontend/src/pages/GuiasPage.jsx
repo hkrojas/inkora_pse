@@ -622,6 +622,7 @@ export default function GuiasPage() {
   const hasActiveFilters = Boolean(
     search || filters.motivo !== 'all' || filters.modalidad !== 'all' || filters.desde || filters.hasta,
   );
+  const pristineEmpty = !loading && !error && counts.all === 0 && !hasActiveFilters && activeTab === 'all';
 
   const heroCards = [
     {
@@ -705,7 +706,7 @@ export default function GuiasPage() {
           </div>
         </div>
 
-        {heroCards.map((item) => (
+        {!pristineEmpty && heroCards.map((item) => (
           <button
             key={item.key}
             type="button"
@@ -727,6 +728,7 @@ export default function GuiasPage() {
       </section>
 
       <article className="panel document-list-panel ink-enter-3">
+        {!pristineEmpty && <>
         <div className="toolbar">
           <label className="search-box">
             <Search size={16} />
@@ -790,6 +792,7 @@ export default function GuiasPage() {
             Mostrando <strong>{pageItems.length}</strong> de <strong>{total}</strong> guías
           </div>
         </div>
+        </>}
 
         {error ? (
           <div className="document-list-empty">
@@ -802,6 +805,7 @@ export default function GuiasPage() {
         ) : pageItems.length === 0 ? (
           <div className="document-list-empty">
             <EmptyState
+              variant={pristineEmpty ? 'onboarding' : 'default'}
               icon={<Truck size={22} />}
               title={hasActiveFilters ? 'Sin resultados para estos filtros' : 'Aún no tienes guías en esta vista'}
               description={
