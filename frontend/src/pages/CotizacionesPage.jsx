@@ -1180,7 +1180,7 @@ function NuevaCotizacionForm({
   const [condicion, setCondicion]       = useState(DEFAULT_QUOTE_PAYMENT_CONDITION);
   const [fechaVenc, setFechaVenc]       = useState(() => calcFechaVencimiento(DEFAULT_QUOTE_PAYMENT_CONDITION));
   const [observationLines, setObservationLines] = useState(buildDefaultObservationLines());
-  const [observacionesOpen, setObservacionesOpen] = useState(true);
+  const [observacionesOpen, setObservacionesOpen] = useState(false);
   const [avanzado, setAvanzado]         = useState(false);
   const [items, setItems]               = useState([emptyItem()]);
   const [previewOpen, setPreviewOpen]   = useState(false);
@@ -1501,7 +1501,7 @@ function NuevaCotizacionForm({
     setFechaVenc(calcFechaVencimiento(DEFAULT_QUOTE_PAYMENT_CONDITION));
     setQuoteWalletId('');
     setObservationLines(buildDefaultObservationLines(tenantData));
-    setObservacionesOpen(true);
+    setObservacionesOpen(false);
     setQuoteBankSelectionMode('global');
     setSelectedQuoteBankKeys(defaultQuoteBankKeys);
     setItems([emptyItem()]);

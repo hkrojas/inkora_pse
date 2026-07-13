@@ -196,13 +196,13 @@ export default function Dashboard() {
   const attentionCards = [
     {
       value: documentosPendientes,
-      label: 'Documentos por cobrar no vencidos.',
+      label: 'Documentos fiscales por cobrar, no vencidos.',
       action: 'Revisar ahora',
       href: '/cobranza',
     },
     {
       value: docsRechazados,
-      label: 'Rechazados SUNAT.',
+      label: 'Alertas en documentos recientes.',
       action: 'Ver documentos',
       href: '/facturas',
     },
@@ -321,7 +321,7 @@ export default function Dashboard() {
 
         <article className="metric-card ink-enter-4">
           <div className="metric-top">
-            <div className="metric-label">Alertas fiscales visibles</div>
+          <div className="metric-label">Alertas documentales visibles</div>
             <span className={`metric-badge ${docsRechazados > 0 ? 'warn' : ''}`}>
               {docsRechazados > 0 ? 'Revisar' : 'Sin alertas'}
             </span>
@@ -329,7 +329,7 @@ export default function Dashboard() {
           <div className="metric-value">{docsRechazados}</div>
           <div className="metric-sub">
             {docsRechazados > 0
-              ? 'Documentos observados para revisar.'
+              ? 'Documentos con alerta en los listados recientes.'
               : 'No hay alertas visibles en los listados del dashboard.'}
           </div>
         </article>
@@ -345,6 +345,7 @@ export default function Dashboard() {
             </div>
             <button type="button" className="btn" onClick={() => navigate('/facturas')}>Ver todo</button>
           </div>
+          <p className="mb-2 text-xs font-semibold text-[var(--color-text-muted)] md:hidden">Desliza horizontalmente para ver todas las columnas.</p>
           <div className="table-wrap">
             <table className="data-table">
               <thead>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { tenant as svc } from '../services/tenant';
 import { Sun, Moon, Monitor, Building2, ShieldCheck, User, Palette, CreditCard, AlertTriangle, Eye, EyeOff, KeyRound, Phone, Landmark, Smartphone, WalletCards, LockKeyhole, FileCheck2, BadgeCheck, FileKey2, RadioTower, ImageUp, QrCode, MessageCircle, Mail } from 'lucide-react';
@@ -446,11 +446,14 @@ function AparienciaPanel({ tenantData }) {
 
 function PasswordInput({ label, value, onChange, required }) {
   const [show, setShow] = useState(false);
+  const inputId = useId();
   return (
     <FormField label={label} icon={LockKeyhole} required={required} className="settings-password-field">
       <div className="settings-password-control">
         <input
+          id={inputId}
           type={show ? 'text' : 'password'}
+          aria-label={label}
           className="input"
           value={value}
           onChange={onChange}
@@ -460,9 +463,10 @@ function PasswordInput({ label, value, onChange, required }) {
         <button
           type="button"
           onClick={() => setShow((s) => !s)}
-          tabIndex={-1}
           className="settings-password-toggle"
           aria-label={show ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+          aria-controls={inputId}
+          aria-pressed={show}
         >
           {show ? <EyeOff size={15} /> : <Eye size={15} />}
         </button>
@@ -871,6 +875,20 @@ export default function ConfiguracionPage() {
     setActiveTab(nextTab);
   };
 
+  const handleTabKeyDown = (event, tab) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = TABS.indexOf(tab);
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? TABS.length - 1
+        : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + TABS.length) % TABS.length;
+    const nextTab = TABS[nextIndex];
+    handleTabChange(nextTab);
+    window.requestAnimationFrame(() => document.getElementById(`settings-tab-${nextTab}`)?.focus());
+  };
+
   useEffect(() => {
     const validWalletIds = new Set(getWalletOptions(paymentMethods).map((option) => option.value));
     if (quoteDefaultWalletId && !validWalletIds.has(quoteDefaultWalletId)) {
@@ -977,15 +995,21 @@ export default function ConfiguracionPage() {
         </div>
       </section>
 
-      <div className="settings-tabs-bar ink-enter-3">
+      <div className="settings-tabs-bar ink-enter-3" role="tablist" aria-label="Secciones de configuración">
         {TABS.map((tab) => {
           const Icon = TAB_ICONS[tab];
           return (
             <button
               key={tab}
+              id={`settings-tab-${tab}`}
               type="button"
               onClick={() => handleTabChange(tab)}
+              onKeyDown={(event) => handleTabKeyDown(event, tab)}
               className={`settings-tab-btn${activeTab === tab ? ' active' : ''}`}
+              role="tab"
+              aria-selected={activeTab === tab}
+              aria-controls={`settings-panel-${tab}`}
+              tabIndex={activeTab === tab ? 0 : -1}
             >
               <span className="settings-tab-icon">
                 <Icon size={15} />
@@ -1000,7 +1024,7 @@ export default function ConfiguracionPage() {
       </div>
 
       {activeTab === 'empresa' && (
-        <div className={`settings-view settings-tab-panel settings-tab-panel--${tabDirection}`}>
+        <div id="settings-panel-empresa" role="tabpanel" aria-labelledby="settings-tab-empresa" tabIndex={0} className={`settings-view settings-tab-panel settings-tab-panel--${tabDirection}`}>
           <div className="settings-hero-card settings-panel">
             <div className="settings-hero-grid">
               <div>
@@ -1341,7 +1365,7 @@ export default function ConfiguracionPage() {
       )}
 
       {activeTab === 'fiscal' && (
-        <div className={`settings-view settings-tab-panel settings-tab-panel--${tabDirection}`}>
+        <div id="settings-panel-fiscal" role="tabpanel" aria-labelledby="settings-tab-fiscal" tabIndex={0} className={`settings-view settings-tab-panel settings-tab-panel--${tabDirection}`}>
           <div className="settings-rail-card settings-panel settings-fiscal-panel">
             <div className="settings-rail-card-header">
               <div className="settings-section-title">
@@ -1437,7 +1461,7 @@ export default function ConfiguracionPage() {
       )}
 
       {activeTab === 'cuenta' && (
-        <div className={`settings-view settings-tab-panel settings-tab-panel--${tabDirection}`}>
+        <div id="settings-panel-cuenta" role="tabpanel" aria-labelledby="settings-tab-cuenta" tabIndex={0} className={`settings-view settings-tab-panel settings-tab-panel--${tabDirection}`}>
           <div className="account-card settings-panel settings-account-panel">
             <div className="account-head">
               <div className="account-avatar">
@@ -1482,13 +1506,13 @@ export default function ConfiguracionPage() {
       )}
 
       {activeTab === 'seguridad' && (
-        <div className={`settings-tab-panel settings-tab-panel--${tabDirection}`}>
+        <div id="settings-panel-seguridad" role="tabpanel" aria-labelledby="settings-tab-seguridad" tabIndex={0} className={`settings-tab-panel settings-tab-panel--${tabDirection}`}>
           <SeguridadPanel />
         </div>
       )}
 
       {activeTab === 'apariencia' && (
-        <div className={`settings-tab-panel settings-tab-panel--${tabDirection}`}>
+        <div id="settings-panel-apariencia" role="tabpanel" aria-labelledby="settings-tab-apariencia" tabIndex={0} className={`settings-tab-panel settings-tab-panel--${tabDirection}`}>
           <AparienciaPanel tenantData={tenantData} />
         </div>
       )}

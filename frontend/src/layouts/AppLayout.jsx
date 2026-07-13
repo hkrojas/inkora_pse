@@ -586,6 +586,14 @@ export default function AppLayout() {
                 <Plus size={11} strokeWidth={2.5} />
               </span>
             </button>
+            <button
+              className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-[13px] bg-[var(--color-dark-btn)] text-white shadow-[var(--shadow-soft)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 sm:hidden"
+              type="button"
+              onClick={() => navigate('/comprobantes/nuevo')}
+              aria-label="Crear comprobante"
+            >
+              <Plus size={18} strokeWidth={2.5} />
+            </button>
           </div>
         </header>
 

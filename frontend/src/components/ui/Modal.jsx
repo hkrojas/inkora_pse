@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/utils/cn';
@@ -11,6 +11,9 @@ const sizeClasses = {
 };
 
 export default function Modal({ open, onClose, title, subtitle, icon: Icon, children, size = 'md', footer }) {
+  const dialogRef = useRef(null);
+  const titleId = useId();
+
   useEffect(() => {
     if (!open) return undefined;
     const handler = (event) => {
@@ -29,6 +32,53 @@ export default function Modal({ open, onClose, title, subtitle, icon: Icon, chil
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const previousFocus = document.activeElement;
+    const dialog = dialogRef.current;
+    const focusableSelector = [
+      'a[href]',
+      'button:not([disabled])',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      'textarea:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(',');
+
+    const focusFirstElement = () => {
+      const firstElement = dialog?.querySelector(focusableSelector);
+      (firstElement || dialog)?.focus();
+    };
+
+    const keepFocusInDialog = (event) => {
+      if (event.key !== 'Tab' || !dialog) return;
+      const focusableElements = [...dialog.querySelectorAll(focusableSelector)];
+      if (!focusableElements.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    focusFirstElement();
+    document.addEventListener('keydown', keepFocusInDialog);
+    return () => {
+      document.removeEventListener('keydown', keepFocusInDialog);
+      if (previousFocus instanceof HTMLElement) previousFocus.focus();
+    };
+  }, [open]);
+
   if (!open) return null;
 
   return createPortal(
@@ -37,6 +87,11 @@ export default function Modal({ open, onClose, title, subtitle, icon: Icon, chil
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className={cn(
           'modal-panel flex w-full flex-col rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-floating)]',
           sizeClasses[size]
@@ -52,7 +107,7 @@ export default function Modal({ open, onClose, title, subtitle, icon: Icon, chil
               </div>
             )}
             <div>
-              <p className="text-base font-extrabold text-[var(--color-text)]">{title}</p>
+              <h2 id={titleId} className="text-base font-extrabold text-[var(--color-text)]">{title}</h2>
               {subtitle && (
                 <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{subtitle}</p>
               )}

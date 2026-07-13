@@ -247,11 +247,10 @@ function getIdentityLabel(tipoDocumento) {
 
 function ModeSwitch({ mode, onChange }) {
   return (
-    <div className="document-mode-switch" role="tablist" aria-label="Modo de emisión">
+    <div className="document-mode-switch" role="group" aria-label="Modo de emisión">
       <button
         type="button"
-        role="tab"
-        aria-selected={mode === 'cpe'}
+        aria-pressed={mode === 'cpe'}
         className={`document-mode-button${mode === 'cpe' ? ' is-active' : ''}`}
         onClick={() => onChange('cpe')}
       >
@@ -259,8 +258,7 @@ function ModeSwitch({ mode, onChange }) {
       </button>
       <button
         type="button"
-        role="tab"
-        aria-selected={mode === 'contingencia'}
+        aria-pressed={mode === 'contingencia'}
         className={`document-mode-button${mode === 'contingencia' ? ' is-active' : ''}`}
         onClick={() => onChange('contingencia')}
       >
@@ -543,6 +541,19 @@ export default function ComprobanteNuevoPage() {
   const clientDocRuleCopy = form.tipo_comprobante === '01'
     ? 'Factura: solo cliente con RUC de 11 dígitos.'
     : 'Boleta: solo cliente con DNI de 8 dígitos en esta beta.';
+  const emissionValidationValues = {
+    razon_social: form.cliente.razon_social,
+    numero_documento: form.cliente.numero_documento,
+    cliente_tipo_documento: form.cliente.tipo_documento,
+    tipo_comprobante: form.tipo_comprobante,
+    fecha_emision: form.fecha_emision,
+    cuotas_pago: form.cuotas_pago,
+    items: form.items,
+  };
+  const emissionBlockers = Object.entries(buildValidationRules(form))
+    .map(([field, rule]) => rule(emissionValidationValues[field], emissionValidationValues))
+    .filter(Boolean);
+  const canEmit = emissionBlockers.length === 0;
 
   const setRootField = useCallback((key, value) => {
     if (key === 'cliente_id' || key === 'tipo_comprobante') {
@@ -949,7 +960,7 @@ export default function ComprobanteNuevoPage() {
       : 'Definir vencimiento';
   const readinessLabel = hasValidationErrors
     ? 'Revisar datos antes de emitir'
-    : readyLines > 0 && form.cliente.razon_social
+    : canEmit
       ? 'Listo para revisión fiscal'
       : 'Completa cliente y líneas';
 
@@ -1376,6 +1387,11 @@ export default function ComprobanteNuevoPage() {
                     <span>El cliente recibirá el comprobante por correo después de emitirse.</span>
                   </div>
                 )}
+                {!canEmit && (
+                  <p id="emission-blocker" className="mt-3 text-center text-xs font-semibold text-[var(--color-text-muted)]" aria-live="polite">
+                    Para habilitar la emisión: {emissionBlockers[0]}
+                  </p>
+                )}
               </div>
               <div className="summary-actions">
                 <button type="button" className="side-btn" onClick={() => setPreviewOpen(true)}>
@@ -1383,9 +1399,10 @@ export default function ComprobanteNuevoPage() {
                 </button>
                 <button
                   type="button"
-                  className="side-btn primary"
+                  className="side-btn primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
                   onClick={handleEmitClick}
-                  disabled={saving}
+                  disabled={saving || !canEmit}
+                  aria-describedby={!canEmit ? 'emission-blocker' : undefined}
                 >
                   {saving ? <Spinner size="sm" /> : <Receipt size={16} />}
                   Emitir {form.tipo_comprobante === '01' ? 'factura' : 'boleta'}
