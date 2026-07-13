@@ -14,6 +14,17 @@ def test_pdf_download_filename_uses_document_and_receiver_ruc():
     assert build_document_download_filename(document) == "FA01-000001_20216656149.pdf"
 
 
+def test_pdf_download_filename_uses_quotation_number_and_receiver_ruc():
+    document = SimpleNamespace(
+        serie="COT",
+        correlativo=52,
+        cliente_snapshot={"numero_documento": "20123456789"},
+        cliente=None,
+    )
+
+    assert build_document_download_filename(document) == "COT-000052_20123456789.pdf"
+
+
 def test_pdf_download_filename_uses_receiver_document_when_not_ruc():
     document = SimpleNamespace(
         serie="B001",

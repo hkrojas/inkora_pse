@@ -16,8 +16,8 @@ test('formatFiscalDate keeps fiscal day from ISO string without timezone drift',
 
 test('buildFiscalDownloadRequest uses internal PDF endpoint for fiscal documents', () => {
   assert.deepEqual(buildFiscalDownloadRequest({ id: 42 }, 'pdf'), {
-    method: 'get',
-    path: '/cotizaciones/42/pdf',
+    method: 'getBlob',
+    path: '/cotizaciones/42/pdf/download',
   });
 });
 

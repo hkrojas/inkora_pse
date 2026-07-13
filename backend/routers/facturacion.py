@@ -14,7 +14,7 @@ from fiscal_catalogs import (
     normalize_sunat_unit_code,
     normalize_tax_affectation_code,
 )
-from services import emission_queue_service, facturacion_service
+from services import document_download_service, emission_queue_service, facturacion_service
 from services import calculations
 from services import fiscal_provider_service
 from services import beta_feature_flags
@@ -1750,7 +1750,10 @@ def recuperar_archivo_api(
         if tipo_archivo == "cdr":
             media_type = "application/zip"
         ext = tipo_archivo if tipo_archivo != "cdr" else "zip"
-        filename = f"{comprobante.serie}-{comprobante.correlativo}.{ext}"
+        filename = document_download_service.build_document_download_filename(
+            comprobante,
+            extension=ext,
+        )
         return Response(
             content=contenido,
             media_type=media_type,

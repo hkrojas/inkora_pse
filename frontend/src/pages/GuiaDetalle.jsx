@@ -6,6 +6,7 @@ import Spinner from '../components/ui/Spinner';
 import Badge from '../components/ui/Badge';
 import { useToast } from '../components/ui/Toast';
 import { getGuideStatusMeta } from '../lib/utils/fiscalStatus';
+import { api } from '../lib/utils/api';
 
 const MOTIVO_LABEL = {
   '01': 'Venta',
@@ -59,6 +60,22 @@ export default function GuiaDetalle() {
 
   const fmt = (value) => (value ? new Date(value).toLocaleDateString('es-PE') : '--');
   const statusMeta = getGuideStatusMeta(guia);
+  const handleDownloadPdf = async () => {
+    try {
+      const { blob, disposition } = await api.getBlob(`/cotizaciones/${guia.id}/pdf/download`, { timeoutMs: 45000 });
+      const filename = /filename="?([^"\n]+)"?/i.exec(disposition || '')?.[1] || `${numero}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast(error.message || 'No se pudo descargar el PDF de la guía.', 'error');
+    }
+  };
 
   return (
     <div className="page-shell max-w-5xl">
@@ -266,9 +283,9 @@ export default function GuiaDetalle() {
         <div className="ink-card p-5">
           <h3 className="ink-card-title">SUNAT</h3>
           {guia.sunat_pdf_url && (
-            <a href={guia.sunat_pdf_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex text-sm text-[var(--text-brand)] underline">
+            <button type="button" onClick={handleDownloadPdf} className="mt-4 inline-flex text-sm text-[var(--text-brand)] underline">
               Descargar PDF SUNAT
-            </a>
+            </button>
           )}
           {guia.sunat_error && (
             <p className="mt-3 text-sm text-[var(--color-error)]">{guia.sunat_error}</p>
