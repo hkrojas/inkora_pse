@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/utils/cn';
@@ -18,6 +18,11 @@ export default function Drawer({
   const drawerRef = useRef(null);
   const previousFocusRef = useRef(null);
   const titleId = useId();
+  const dismissOnEscape = useCallback((event) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    event.preventDefault();
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (open) {
@@ -37,12 +42,9 @@ export default function Drawer({
 
   useEffect(() => {
     if (!open) return undefined;
-    const handler = (event) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [open, onClose]);
+    document.addEventListener('keydown', dismissOnEscape);
+    return () => document.removeEventListener('keydown', dismissOnEscape);
+  }, [open, dismissOnEscape]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -110,6 +112,7 @@ export default function Drawer({
         tabIndex={-1}
         className={cn('ink-drawer', size === 'wide' && 'ink-drawer--wide', animating && 'is-open')}
         onClick={(event) => event.stopPropagation()}
+        onKeyDownCapture={dismissOnEscape}
       >
         <div className="ink-drawer-header">
           <div className="ink-drawer-title">
@@ -119,7 +122,7 @@ export default function Drawer({
               {subtitle ? <p>{subtitle}</p> : null}
             </div>
           </div>
-          <button type="button" className="ink-drawer-close" onClick={onClose} aria-label="Cerrar">
+          <button type="button" className="ink-drawer-close" onClick={onClose} aria-label="Cerrar" autoFocus>
             <X size={18} />
           </button>
         </div>

@@ -29,7 +29,12 @@ const STATUS_FILTERS = [
 ];
 
 function numberOf(document) {
-  return document?.document_number || `${document?.serie || ''}-${String(document?.correlativo || '').padStart(6, '0')}`;
+  const number = document?.document_number || document?.number;
+  if (number) return number;
+  if (document?.serie || document?.correlativo !== undefined) {
+    return `${document?.serie || ''}-${String(document?.correlativo || '').padStart(6, '0')}`;
+  }
+  return 'Sin correlativo';
 }
 
 function clientName(document) {
@@ -177,7 +182,7 @@ export default function NotasPage() {
             </div>
             <label className="search-box mt-5 max-w-2xl">
               <Search size={16} />
-              <input value={sourceQuery} onChange={(event) => setSourceQuery(event.target.value)} placeholder="Buscar por serie, número, RUC o cliente..." />
+              <input aria-label="Buscar comprobantes aceptados" value={sourceQuery} onChange={(event) => setSourceQuery(event.target.value)} placeholder="Buscar por serie, número, RUC o cliente..." />
             </label>
           </div>
 
@@ -192,7 +197,7 @@ export default function NotasPage() {
                           <DocumentTypeBadge tipo={document.tipo_comprobante} size="sm" />
                           <div className="min-w-0">
                             <p className="m-0 truncate font-mono text-sm font-extrabold text-[var(--color-text)]">{numberOf(document)}</p>
-                            <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text)]">{clientName(document)}</p>
+                            <p className="note-source-client mt-1 text-sm font-semibold text-[var(--color-text)]" title={clientName(document)}>{clientName(document)}</p>
                             <p className="mt-1 text-xs text-[var(--color-text-muted)]">{clientDocument(document) || 'Sin documento'} · {formatDate(document.fecha_emision)}</p>
                           </div>
                           <div className="mt-2 sm:mt-0 sm:text-right">
@@ -215,7 +220,7 @@ export default function NotasPage() {
           <div className="border-b border-[var(--color-border)] p-5">
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="m-0 text-lg font-extrabold">Historial de notas</h2><p className="mt-1 text-sm text-[var(--color-text-muted)]">Borradores, notas en cola y documentos aceptados por SUNAT.</p></div><button type="button" className="btn-secondary" onClick={loadNotes}><RefreshCw size={15} />Actualizar</button></div>
             <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_190px_190px]">
-              <label className="search-box"><Search size={16} /><input value={notesQuery} onChange={(event) => setNotesQuery(event.target.value)} placeholder="Buscar nota, comprobante o cliente..." /></label>
+              <label className="search-box"><Search size={16} /><input aria-label="Buscar en el historial de notas" value={notesQuery} onChange={(event) => setNotesQuery(event.target.value)} placeholder="Buscar nota, comprobante o cliente..." /></label>
               <select className="input" aria-label="Tipo de nota" value={noteType} onChange={(event) => setNoteType(event.target.value)}>{NOTE_TYPE_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}</select>
               <select className="input" aria-label="Estado de nota" value={noteStatus} onChange={(event) => setNoteStatus(event.target.value)}>{STATUS_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}</select>
             </div>
