@@ -35,6 +35,10 @@ export default function NotaNuevaPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const draftId = searchParams.get('draft');
+  const sourceDocumentId = searchParams.get('documento');
+  const requestedType = searchParams.get('tipo');
+  const lockedSource = Boolean(sourceDocumentId && !draftId);
+  const selectedType = requestedType === 'debito' ? 'debito' : 'credito';
   const toast = useToast();
   const pollRef = useRef(null);
   const [query, setQuery] = useState('');
@@ -95,6 +99,31 @@ export default function NotaNuevaPage() {
   }, [draftId]);
 
   useEffect(() => {
+    if (draftId || !sourceDocumentId) return undefined;
+    let active = true;
+    (async () => {
+      setBusy(true);
+      setError('');
+      try {
+        const next = await notas.context(sourceDocumentId);
+        if (!active) return;
+        setContext(next);
+        setDocuments([next.document]);
+        setForm({ ...initialForm, tipo_nota: selectedType });
+        setLineValues(Object.fromEntries(next.lines.map((line) => [line.id, {
+          selected: false, quantity: '', percentage: '', amount: '', description: line.descripcion,
+        }])));
+      } catch (requestError) {
+        if (active) setError(requestError.message);
+      } finally {
+        if (active) setBusy(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [draftId, selectedType, sourceDocumentId]);
+
+  useEffect(() => {
+    if (lockedSource) return undefined;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setSearching(true);
@@ -110,7 +139,7 @@ export default function NotaNuevaPage() {
       }
     }, 280);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [query]);
+  }, [lockedSource, query]);
 
   const selectDocument = async (id) => {
     if (!id) { setContext(null); return; }
@@ -278,17 +307,25 @@ export default function NotaNuevaPage() {
           <section className="card p-5" aria-labelledby="source-title">
             <h2 id="source-title" className="text-lg font-bold">1. Comprobante afectado</h2>
             <p className="mb-4 text-sm text-[var(--color-text-muted)]">Solo aparecen facturas y boletas aceptadas por SUNAT.</p>
-            <label className="form-label" htmlFor="document-search">Buscar por serie, número, RUC o cliente</label>
-            <div className="relative mb-3">
-              <FileSearch className="pointer-events-none absolute left-3 top-3 text-[var(--color-text-muted)]" size={18} />
-              <input id="document-search" className="input w-full pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ej. F001-152 o 20123456789" />
-              {searching && <Loader2 className="absolute right-3 top-3 animate-spin" size={18} aria-label="Buscando" />}
-            </div>
-            <label className="form-label" htmlFor="source-document">Seleccionar comprobante</label>
-            <select id="source-document" className="input w-full" value={context?.document?.id || ''} onChange={(event) => selectDocument(event.target.value)}>
-              <option value="">Selecciona un comprobante aceptado</option>
-              {documents.map((doc) => <option key={doc.id} value={doc.id}>{doc.document_number || `${doc.serie}-${String(doc.correlativo).padStart(6, '0')}`} · {doc.cliente?.razon_social || doc.cliente?.nombre || 'Cliente'} · {formatCurrency(doc.total_venta, doc.moneda)}</option>)}
-            </select>
+            {lockedSource ? (
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4">
+                <p className="m-0 font-mono text-sm font-extrabold">{context?.document?.document_number || 'Cargando comprobante...'}</p>
+                {context?.document && <p className="mt-1 text-sm text-[var(--color-text-muted)]">{context.document.cliente?.razon_social || context.document.cliente?.nombre || 'Cliente'} · {formatCurrency(context.document.total_venta, context.document.moneda)}</p>}
+                <button type="button" className="btn-ghost mt-3" onClick={() => navigate('/notas')}>Cambiar comprobante</button>
+              </div>
+            ) : <>
+              <label className="form-label" htmlFor="document-search">Buscar por serie, número, RUC o cliente</label>
+              <div className="relative mb-3">
+                <FileSearch className="pointer-events-none absolute left-3 top-3 text-[var(--color-text-muted)]" size={18} />
+                <input id="document-search" className="input w-full pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ej. F001-152 o 20123456789" />
+                {searching && <Loader2 className="absolute right-3 top-3 animate-spin" size={18} aria-label="Buscando" />}
+              </div>
+              <label className="form-label" htmlFor="source-document">Seleccionar comprobante</label>
+              <select id="source-document" className="input w-full" value={context?.document?.id || ''} onChange={(event) => selectDocument(event.target.value)}>
+                <option value="">Selecciona un comprobante aceptado</option>
+                {documents.map((doc) => <option key={doc.id} value={doc.id}>{doc.document_number || `${doc.serie}-${String(doc.correlativo).padStart(6, '0')}`} · {doc.cliente?.razon_social || doc.cliente?.nombre || 'Cliente'} · {formatCurrency(doc.total_venta, doc.moneda)}</option>)}
+              </select>
+            </>}
           </section>
 
           <section className="card p-5" aria-labelledby="reason-title">

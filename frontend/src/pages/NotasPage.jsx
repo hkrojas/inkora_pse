@@ -1,543 +1,181 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowRight, CheckCircle2, Clock3, CreditCard, FileText, ReceiptText, RefreshCw, Search, XCircle, XOctagon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import {
-  ArrowRight,
-  CheckCircle2,
-  Clock3,
-  Download,
-  FileText,
-  Plus,
-  RefreshCw,
-  Search,
-  XCircle,
-  XOctagon,
-} from 'lucide-react';
 import { api } from '../lib/utils/api';
 import { useToast } from '../components/ui/Toast';
-import CustomSelect from '../components/ui/CustomSelect';
-import DatePicker from '../components/ui/DatePicker';
 import Drawer from '../components/ui/Drawer';
 import Spinner from '../components/ui/Spinner';
+import EmptyState from '../components/ui/EmptyState';
 import { PageError } from '../components/ui/PageState';
 import Badge from '../components/ui/Badge';
-import EmptyState from '../components/ui/EmptyState';
-import { FieldError } from '../components/ui/FieldError';
-import ConfirmEmitDialog from '../components/documents/ConfirmEmitDialog';
 import { DocumentTypeBadge } from '../components/documents/DocumentType';
-import { getSunatStatus, formatCurrency, MOTIVOS_NC, MOTIVOS_ND } from '../lib/utils/documents';
-import { inventory } from '../services/inventory';
-
-const TIPO_NOTA_OPTS = [
-  { value: 'credito', label: 'Nota de crédito (07)' },
-  { value: 'debito', label: 'Nota de débito (08)' },
-];
-
-const TIPO_FILTER_OPTS = [
-  { value: 'all', label: 'Todas' },
-  { value: 'nc', label: 'Notas de crédito (07)' },
-  { value: 'nd', label: 'Notas de débito (08)' },
-];
-
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'Todos' },
-  { value: 'aceptado', label: 'Aceptado' },
-  { value: 'pendiente', label: 'Pendiente' },
-  { value: 'error', label: 'Error SUNAT' },
-  { value: 'anulado', label: 'Anulado' },
-];
+import { formatCurrency, getSunatStatus } from '../lib/utils/documents';
+import { notas as notasService } from '../services/notas';
 
 const PER_PAGE = 15;
 
-const TAB_DEFS = [
-  { key: 'all', label: 'Todas' },
-  { key: 'emitted', label: 'Emitidas' },
-  { key: 'pending', label: 'Pendientes' },
-  { key: 'rejected', label: 'Rechazadas' },
-  { key: 'voided', label: 'Anuladas' },
+const NOTE_TYPE_FILTERS = [
+  { value: 'all', label: 'Todas las notas' },
+  { value: 'nc', label: 'Notas de crédito' },
+  { value: 'nd', label: 'Notas de débito' },
 ];
 
-const EMPTY_FORM = {
-  comprobante_afectado_id: '',
-  tipo_nota: 'credito',
-  cod_motivo: '',
-  descripcion_motivo: '',
-  inventory_impact: 'none',
-  inventory_return_warehouse_id: '',
-};
+const STATUS_FILTERS = [
+  { value: 'all', label: 'Todos los estados' },
+  { value: 'aceptado', label: 'Aceptadas' },
+  { value: 'pendiente', label: 'Pendientes' },
+  { value: 'error', label: 'Observadas' },
+  { value: 'anulado', label: 'Anuladas' },
+];
 
-function getTabKey(doc) {
-  const status = String(doc?.estado || '').toLowerCase();
-  const sunat = getSunatStatus(doc);
-  if (status === 'borrador') return 'pending';
-  if (status === 'anulada' || sunat?.kind === 'voided') return 'voided';
-  if (sunat?.kind === 'error') return 'rejected';
-  if (sunat?.kind === 'pending') return 'pending';
-  if (status === 'facturada' || sunat?.kind === 'ok') return 'emitted';
-  return 'all';
+function numberOf(document) {
+  return document?.document_number || `${document?.serie || ''}-${String(document?.correlativo || '').padStart(6, '0')}`;
 }
 
-function getNotaKind(doc) {
-  return doc.document_kind === 'credit_note' ? 'nc' : 'nd';
+function clientName(document) {
+  return document?.cliente?.razon_social || document?.cliente?.nombre || 'Cliente sin nombre';
 }
 
-function getVisibleRange(page, pageSize, total) {
-  if (!total) return '0';
-  const start = (page - 1) * pageSize + 1;
-  const end = Math.min(page * pageSize, total);
-  return `${start}-${end}`;
+function clientDocument(document) {
+  return document?.cliente?.numero_documento || document?.cliente?.ruc || document?.cliente?.dni || '';
 }
 
-function getAffectedDocument(doc) {
-  return doc?.nota_referencia || doc?.source_quote || null;
+function formatDate(value) {
+  return value ? new Date(value).toLocaleDateString('es-PE') : '—';
 }
 
-function formatDocumentRef(doc) {
-  if (!doc) return '';
-  if (doc.document_number) return doc.document_number;
-  return `${doc.serie || ''}-${String(doc.correlativo || '').padStart(6, '0')}`;
+function NoteStatus({ document }) {
+  const status = getSunatStatus(document);
+  if (!status) return <Badge variant="default">Sin estado</Badge>;
+  return <Badge variant={status.variant === 'danger' ? 'error' : status.variant} title={status.tooltip}>{status.label}</Badge>;
 }
 
 export default function NotasPage() {
   const navigate = useNavigate();
   const toast = useToast();
-  const [notas, setNotas] = useState([]);
-  const [facturas, setFacturas] = useState([]);
-  const [warehouses, setWarehouses] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [total, setTotal] = useState(0);
-  const [backendCounts, setBackendCounts] = useState({ all: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 });
-  const [search, setSearch] = useState('');
-  const [filters, setFilters] = useState({ desde: '', hasta: '', estado: 'all', tipo: 'all' });
-  const [page, setPage] = useState(1);
-  const [activeTab, setActiveTab] = useState('all');
+  const [section, setSection] = useState('emit');
+  const [sourceDocuments, setSourceDocuments] = useState([]);
+  const [sourceTotal, setSourceTotal] = useState(0);
+  const [sourcePage, setSourcePage] = useState(1);
+  const [sourceQuery, setSourceQuery] = useState('');
+  const [sourceLoading, setSourceLoading] = useState(true);
+  const [sourceError, setSourceError] = useState(null);
+  const [notes, setNotes] = useState([]);
+  const [notesTotal, setNotesTotal] = useState(0);
+  const [notesPage, setNotesPage] = useState(1);
+  const [notesQuery, setNotesQuery] = useState('');
+  const [noteType, setNoteType] = useState('all');
+  const [noteStatus, setNoteStatus] = useState('all');
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [notesError, setNotesError] = useState(null);
+  const [drawer, setDrawer] = useState({ open: false, document: null, type: 'credito', context: null, loading: false, error: null });
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [submitting, setSubmitting] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [formErrors, setFormErrors] = useState({});
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadSources = useCallback(async () => {
+    setSourceLoading(true);
+    setSourceError(null);
     try {
       const params = new URLSearchParams({
-        skip: String((page - 1) * PER_PAGE),
+        skip: String((sourcePage - 1) * PER_PAGE),
         limit: String(PER_PAGE),
-        tab: activeTab,
+        tab: 'emitted',
       });
-      if (filters.tipo !== 'all') params.set('tipo_nota', filters.tipo);
-      if (filters.estado !== 'all') params.set('estado', filters.estado);
-      if (filters.desde) params.set('desde', filters.desde);
-      if (filters.hasta) params.set('hasta', filters.hasta);
-      if (search.trim()) params.set('q', search.trim());
-      const [notasRes, facturasRes, warehousesRes] = await Promise.all([
-        api.get(`/notas/page?${params.toString()}`),
-        api.get('/facturas-emitidas/page?limit=15&tab=emitted'),
-        inventory.warehouses().catch(() => []),
-      ]);
-      const notaItems = Array.isArray(notasRes) ? notasRes : notasRes.items || [];
-      const facturaItems = Array.isArray(facturasRes) ? facturasRes : facturasRes.items || [];
-      setNotas(notaItems);
-      setTotal(Array.isArray(notasRes) ? notaItems.length : notasRes.total || 0);
-      setBackendCounts(notasRes.counts || { all: notaItems.length, emitted: 0, pending: 0, rejected: 0, voided: 0 });
-      setFacturas(facturaItems.filter((f) => f.estado === 'facturada' || f.sunat_accepted));
-      setWarehouses(warehousesRes || []);
-    } catch (err) {
-      setNotas([]);
-      setTotal(0);
-      setBackendCounts({ all: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 });
-      setError(err);
-      toast(err.message || 'No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error');
+      if (sourceQuery.trim()) params.set('q', sourceQuery.trim());
+      const response = await api.get(`/facturas-emitidas/page?${params}`);
+      setSourceDocuments(Array.isArray(response) ? response : response.items || []);
+      setSourceTotal(Array.isArray(response) ? response.length : Number(response.total || 0));
+    } catch (error) {
+      setSourceDocuments([]);
+      setSourceTotal(0);
+      setSourceError(error);
     } finally {
-      setLoading(false);
+      setSourceLoading(false);
     }
-  }, [activeTab, filters.desde, filters.estado, filters.hasta, filters.tipo, page, search, toast]);
+  }, [sourcePage, sourceQuery]);
 
-  useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [search, filters, activeTab]);
-
-  const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
-
-  const clearFilters = () => {
-    setFilters({ desde: '', hasta: '', estado: 'all', tipo: 'all' });
-    setSearch('');
-  };
-
-  const hasActiveFilters = search || filters.desde || filters.hasta || filters.estado !== 'all' || filters.tipo !== 'all';
-  const pristineEmpty = !loading && !error && backendCounts.all === 0 && !hasActiveFilters && activeTab === 'all';
-
-  const constrained = useMemo(
-    () =>
-      notas.filter((doc) => {
-        const q = search.trim().toLowerCase();
-        const sunat = getSunatStatus(doc);
-        const cliente = doc.cliente?.razon_social || doc.cliente?.nombre || '';
-        const num = `${doc.serie || ''}-${String(doc.correlativo || '').padStart(6, '0')}`;
-        const afectado = formatDocumentRef(getAffectedDocument(doc));
-        const matchSearch =
-          !q ||
-          cliente.toLowerCase().includes(q) ||
-          (doc.cliente?.numero_documento || '').includes(q) ||
-          num.toLowerCase().includes(q) ||
-          afectado.toLowerCase().includes(q) ||
-          (doc.nota_motivo_descripcion || '').toLowerCase().includes(q);
-        const matchDesde = !filters.desde || new Date(doc.fecha_emision) >= new Date(filters.desde);
-        const matchHasta = !filters.hasta || new Date(doc.fecha_emision) <= new Date(filters.hasta);
-        const matchEstado =
-          filters.estado === 'all' ||
-          (filters.estado === 'aceptado' && sunat?.kind === 'ok') ||
-          (filters.estado === 'pendiente' && sunat?.kind === 'pending') ||
-          (filters.estado === 'error' && sunat?.kind === 'error') ||
-          (filters.estado === 'anulado' && (sunat?.kind === 'voided' || doc.estado === 'anulada'));
-        const matchTipo =
-          filters.tipo === 'all' ||
-          (filters.tipo === 'nc' && doc.document_kind === 'credit_note') ||
-          (filters.tipo === 'nd' && doc.document_kind === 'debit_note');
-        return matchSearch && matchDesde && matchHasta && matchEstado && matchTipo;
-      }),
-    [notas, search, filters],
-  );
-
-  const tabCounts = backendCounts;
-
-  const filtered = useMemo(
-    () => constrained.filter((doc) => activeTab === 'all' || getTabKey(doc) === activeTab),
-    [constrained, activeTab],
-  );
-
-  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
-  const pageItems = filtered;
-
-  const metrics = useMemo(() => {
-    const accepted = constrained.filter((doc) => getSunatStatus(doc)?.kind === 'ok').length;
-    const pending = constrained.filter((doc) => getSunatStatus(doc)?.kind === 'pending').length;
-    const rejected = constrained.filter((doc) => getSunatStatus(doc)?.kind === 'error').length;
-    const nc = constrained.filter((doc) => doc.document_kind === 'credit_note').length;
-    const nd = constrained.filter((doc) => doc.document_kind === 'debit_note').length;
-    return { accepted, pending, rejected, nc, nd };
-  }, [constrained]);
-
-  const visibleMetrics = useMemo(() => {
-    const accepted = filtered.filter((doc) => getSunatStatus(doc)?.kind === 'ok').length;
-    const pending = filtered.filter((doc) => getSunatStatus(doc)?.kind === 'pending').length;
-    const rejected = filtered.filter((doc) => getSunatStatus(doc)?.kind === 'error').length;
-    return { accepted, pending, rejected };
-  }, [filtered]);
-
-  const acceptedRate = constrained.length
-    ? Math.round((metrics.accepted / constrained.length) * 100)
-    : 0;
-
-  const heroCards = [
-    {
-      key: 'all',
-      value: constrained.length,
-      label: 'Notas visibles',
-      text: `${metrics.nc} NC · ${metrics.nd} ND registradas`,
-      link: 'Ver todas',
-      icon: <FileText size={16} />,
-    },
-    {
-      key: 'emitted',
-      value: metrics.accepted,
-      label: 'Aceptadas SUNAT',
-      text: `${acceptedRate}% del total actual`,
-      link: 'Abrir emitidas',
-      icon: <CheckCircle2 size={16} />,
-    },
-    {
-      key: 'pending',
-      value: metrics.pending,
-      label: 'Pendientes',
-      text: metrics.pending ? 'Requieren seguimiento o recarga' : 'Sin espera pendiente',
-      link: 'Revisar pendientes',
-      icon: <Clock3 size={16} />,
-    },
-    {
-      key: 'rejected',
-      value: metrics.rejected,
-      label: 'Observadas',
-      text: metrics.rejected ? 'Necesitan correccion o reenvio' : 'Sin errores SUNAT',
-      link: 'Ver observadas',
-      icon: <XOctagon size={16} />,
-    },
-  ];
-
-  const motivosOpts = form.tipo_nota === 'credito' ? MOTIVOS_NC : MOTIVOS_ND;
-
-  const facturasOpts = facturas.map((f) => {
-    const num = `${f.serie}-${String(f.correlativo).padStart(6, '0')}`;
-    const cliente = f.cliente?.nombre || f.cliente?.razon_social || '';
-    const total = formatCurrency(f.total_venta, f.moneda);
-    const fecha = f.fecha_emision ? new Date(f.fecha_emision).toLocaleDateString('es-PE') : '';
-    return {
-      value: f.id,
-      label: num,
-      num,
-      cliente,
-      total,
-      fecha,
-      moneda: f.moneda,
-      total_venta: f.total_venta,
-      tipo_comprobante: f.tipo_comprobante,
-      searchText: `${num} ${cliente}`,
-    };
-  });
-
-  const selectedFactura = facturasOpts.find((f) => String(f.value) === String(form.comprobante_afectado_id));
-
-  const validateForm = () => {
-    const errs = {};
-    if (!form.comprobante_afectado_id) errs.comprobante = 'Seleccione el comprobante afectado';
-    if (!form.cod_motivo) errs.motivo = 'Seleccione el motivo';
-    if (!form.descripcion_motivo.trim()) errs.descripcion = 'La descripcion del motivo es obligatoria';
-    if (form.inventory_impact === 'physical_return' && !form.inventory_return_warehouse_id) {
-      errs.warehouse = 'Seleccione el almacén que recibirá la devolución';
-    }
-    setFormErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
-
-  const handleEmitClick = () => {
-    if (!validateForm()) return;
-    setConfirmOpen(true);
-  };
-
-  const handleSubmit = async () => {
-    setSubmitting(true);
+  const loadNotes = useCallback(async () => {
+    setNotesLoading(true);
+    setNotesError(null);
     try {
-      await api.post('/notas/emitir', {
-        comprobante_afectado_id: Number(form.comprobante_afectado_id),
-        tipo_nota: form.tipo_nota,
-        cod_motivo: form.cod_motivo,
-        descripcion_motivo: form.descripcion_motivo.trim(),
-        inventory_impact: form.tipo_nota === 'credito' ? form.inventory_impact : 'none',
-        inventory_return_warehouse_id: form.inventory_impact === 'physical_return'
-          ? Number(form.inventory_return_warehouse_id)
-          : null,
+      const params = new URLSearchParams({
+        skip: String((notesPage - 1) * PER_PAGE),
+        limit: String(PER_PAGE),
+        tab: 'all',
       });
-      toast('Nota emitida correctamente', 'success');
-      setConfirmOpen(false);
-      setModalOpen(false);
-      setForm(EMPTY_FORM);
-      setFormErrors({});
-      load();
-    } catch (err) {
-      toast(err?.message || 'No se pudo emitir la nota. Revisa los datos e intentalo nuevamente.', 'error');
+      if (notesQuery.trim()) params.set('q', notesQuery.trim());
+      if (noteType !== 'all') params.set('tipo_nota', noteType);
+      if (noteStatus !== 'all') params.set('estado', noteStatus);
+      const response = await api.get(`/notas/page?${params}`);
+      setNotes(Array.isArray(response) ? response : response.items || []);
+      setNotesTotal(Array.isArray(response) ? response.length : Number(response.total || 0));
+    } catch (error) {
+      setNotes([]);
+      setNotesTotal(0);
+      setNotesError(error);
     } finally {
-      setSubmitting(false);
+      setNotesLoading(false);
+    }
+  }, [noteStatus, noteType, notesPage, notesQuery]);
+
+  useEffect(() => { if (section === 'emit') loadSources(); }, [loadSources, section]);
+  useEffect(() => { if (section === 'history') loadNotes(); }, [loadNotes, section]);
+  useEffect(() => { setSourcePage(1); }, [sourceQuery]);
+  useEffect(() => { setNotesPage(1); }, [notesQuery, noteStatus, noteType]);
+
+  const openDrawer = async (document, type) => {
+    setDrawer({ open: true, document, type, context: null, loading: true, error: null });
+    try {
+      const context = await notasService.context(document.id);
+      setDrawer((current) => current.document?.id === document.id && current.type === type
+        ? { ...current, context, loading: false }
+        : current);
+    } catch (error) {
+      setDrawer((current) => current.document?.id === document.id && current.type === type
+        ? { ...current, loading: false, error }
+        : current);
     }
   };
 
-  const openModal = () => {
-    navigate('/notas/nueva');
-  };
+  const closeDrawer = () => setDrawer((current) => ({ ...current, open: false }));
+  const context = drawer.context;
+  const selectedMotives = context?.allowed_motives?.[drawer.type] || {};
+  const canContinue = Boolean(context && Object.keys(selectedMotives).length);
+  const sourcePages = Math.max(1, Math.ceil(sourceTotal / PER_PAGE));
+  const historyPages = Math.max(1, Math.ceil(notesTotal / PER_PAGE));
 
-  const tipoNotaBadge = form.tipo_nota === 'credito' ? '07' : '08';
+  const historySummary = useMemo(() => notes.reduce((summary, note) => {
+    const status = getSunatStatus(note)?.kind;
+    if (status === 'ok') summary.accepted += 1;
+    if (status === 'pending') summary.pending += 1;
+    if (status === 'error') summary.error += 1;
+    return summary;
+  }, { accepted: 0, pending: 0, error: 0 }), [notes]);
 
   return (
     <div className="page-shell page-shell--dense notas-page">
-      <div className="page-head ink-enter-1">
-        <div className="page-actions document-list-page-actions">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => toast('La exportación está en desarrollo.', 'info')}
-          >
-            <Download size={15} />
-            Exportar
-          </button>
-
-          <button className="btn-primary" onClick={openModal}>
-            <Plus size={15} />
-            Nueva nota
-          </button>
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="eyebrow">Ajustes fiscales</p>
+          <h1 className="page-title">Notas de crédito y débito</h1>
+          <p className="page-subtitle">Selecciona un comprobante aceptado y prepara el ajuste con sus límites fiscales visibles.</p>
         </div>
+      </header>
+
+      <div className="mb-5 inline-flex rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1" role="tablist" aria-label="Secciones de notas">
+        <button type="button" role="tab" aria-selected={section === 'emit'} className={`segment ${section === 'emit' ? 'active' : ''}`} onClick={() => setSection('emit')}>Emitir nota</button>
+        <button type="button" role="tab" aria-selected={section === 'history'} className={`segment ${section === 'history' ? 'active' : ''}`} onClick={() => setSection('history')}>Historial de notas</button>
       </div>
 
-      <section className="attention document-list-hero ink-enter-2">
-        <div className="attention-title document-list-hero-title">
-          <div className="document-list-hero-head">
-            <div className="attention-title-badge">
-              <FileText size={15} />
-            </div>
-          </div>
-
-          <div className="document-list-hero-pagecopy">
-            <h2>Notas de crédito / débito</h2>
-            <p>Ajustes sobre comprobantes emitidos, aceptados ante SUNAT.</p>
-          </div>
-
-          <div className="document-list-hero-kicker">
-            Tipos 07 y 08 · {tabCounts.pending ? `${tabCounts.pending} por revisar` : 'Operación estable'}
-          </div>
-        </div>
-
-        {!pristineEmpty && heroCards.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            className={`attention-card document-list-hero-card${activeTab === item.key ? ' is-active' : ''}`}
-            onClick={() => setActiveTab(item.key)}
-          >
-            <div className="document-list-hero-card-icon">{item.icon}</div>
-            <strong>{item.value}</strong>
-            <div className="attention-card-text">
-              {item.label}
-              <span>{item.text}</span>
-            </div>
-            <span className="attention-card-link">
-              {item.link}
-              <ArrowRight size={13} />
-            </span>
-          </button>
-        ))}
-      </section>
-
-      <article className="panel document-list-panel ink-enter-3">
-        {!pristineEmpty && <>
-        <div className="toolbar">
-          <label className="search-box">
-            <Search size={16} />
-            <input
-              placeholder="Buscar por serie, comprobante afectado o cliente..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </label>
-
-          <div className="toolbar-actions">
-            {metrics.pending > 0 && (
-              <button type="button" className="btn-secondary" onClick={load}>
-                <RefreshCw size={15} />
-                Actualizar estados
-              </button>
-            )}
-            {hasActiveFilters && (
-              <button type="button" className="btn-ghost" onClick={clearFilters}>
-                <XCircle size={15} />
-                Limpiar filtros
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="document-list-filters">
-          <div className="document-list-filter">
-            <span>Tipo de nota</span>
-            <CustomSelect compact value={filters.tipo} onChange={(v) => setFilter('tipo', v)} options={TIPO_FILTER_OPTS} />
-          </div>
-          <div className="document-list-filter">
-            <span>Estado SUNAT</span>
-            <CustomSelect compact value={filters.estado} onChange={(v) => setFilter('estado', v)} options={STATUS_OPTIONS} />
-          </div>
-          <div className="document-list-filter">
-            <span>Desde</span>
-            <DatePicker compact value={filters.desde} onChange={(v) => setFilter('desde', v)} />
-          </div>
-          <div className="document-list-filter">
-            <span>Hasta</span>
-            <DatePicker compact value={filters.hasta} onChange={(v) => setFilter('hasta', v)} />
-          </div>
-        </div>
-
-        <div className="segments-row">
-          <div className="segments">
-            {TAB_DEFS.map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                className={`segment ${activeTab === key ? 'active' : ''}`}
-                onClick={() => setActiveTab(key)}
-              >
-                {label}
-                <span className="document-list-segment-count">{tabCounts[key] || 0}</span>
-              </button>
-            ))}
-          </div>
-          <div className="sort-text">
-            Mostrando <strong>{getVisibleRange(page, PER_PAGE, total)}</strong> de <strong>{total}</strong>
-          </div>
-        </div>
-        </>}
-
-        {error ? (
-          <div className="document-list-empty">
-            <PageError error={error} onRetry={load} />
-          </div>
-        ) : loading ? (
-          <div className="document-list-loading">
-            <Spinner size="lg" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="document-list-empty">
-            <EmptyState
-              variant={pristineEmpty ? 'onboarding' : 'default'}
-              icon={<FileText size={22} />}
-              title={
-                hasActiveFilters
-                  ? 'Sin resultados para estos filtros'
-                  : activeTab === 'all'
-                    ? 'Aún no tienes notas emitidas'
-                    : activeTab === 'emitted'
-                      ? 'No hay notas aceptadas en esta vista.'
-                      : activeTab === 'pending'
-                        ? 'No hay notas pendientes de respuesta SUNAT.'
-                        : activeTab === 'rejected'
-                          ? 'No hay notas rechazadas u observadas.'
-                          : 'No hay notas anuladas en esta vista.'
-              }
-              description={
-                hasActiveFilters
-                  ? 'Ajusta tipo, fechas o estado para recuperar resultados de esta vista.'
-                  : activeTab === 'all'
-                    ? 'Emite tu primera nota de crédito o débito para corregir o ajustar un comprobante ya aceptado por SUNAT.'
-                    : 'Cuando existan documentos en este estado aparecerán aquí con sus acciones recomendadas.'
-              }
-              action={
-                hasActiveFilters ? (
-                  <button className="btn-secondary" onClick={clearFilters}>
-                    Limpiar filtros
-                  </button>
-                ) : (
-                  <button className="btn-primary" onClick={openModal}>
-                    <Plus size={15} />
-                    Nueva nota
-                  </button>
-                )
-              }
-            />
-          </div>
-        ) : (
-          <div className="ink-table-card document-list-table">
-            <div className="ink-table-header">
-              <div className="ink-table-title">
-                <strong>Notas de crédito / débito</strong>
-                <span>
-                  {filtered.length} visibles · {metrics.nc} NC · {metrics.nd} ND
-                </span>
+      {section === 'emit' ? (
+        <section role="tabpanel" aria-label="Comprobantes elegibles para notas" className="panel overflow-hidden">
+          <div className="border-b border-[var(--color-border)] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-lg font-extrabold text-[var(--color-text)]">Comprobantes aceptados</h2>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">Facturas y boletas con CDR disponible para emitir una nota.</p>
               </div>
-
-              <div className="document-list-table-meta">
-                <span className="document-list-table-pill">
-                  <CheckCircle2 size={13} />
-                  {visibleMetrics.accepted} aceptadas
-                </span>
-                <span className="document-list-table-pill">
-                  <Clock3 size={13} />
-                  {visibleMetrics.pending} pendientes
-                </span>
-                <span className="document-list-table-pill">
-                  <XOctagon size={13} />
-                  {visibleMetrics.rejected} observadas
-                </span>
-              </div>
+              <span className="document-list-table-pill"><CheckCircle2 size={14} />{sourceTotal} elegibles</span>
             </div>
+<<<<<<< HEAD
 
             <div className="ink-table-scroll">
               <table className="ink-table ink-note-table">
@@ -678,119 +316,88 @@ export default function NotasPage() {
           <div>
             <label className="label">
               Comprobante afectado <span style={{ color: 'var(--color-error)' }}>*</span>
+=======
+            <label className="search-box mt-5 max-w-2xl">
+              <Search size={16} />
+              <input value={sourceQuery} onChange={(event) => setSourceQuery(event.target.value)} placeholder="Buscar por serie, número, RUC o cliente..." />
+>>>>>>> 2e958dc (Prioritize fiscal notes by source document)
             </label>
-            <CustomSelect
-              value={form.comprobante_afectado_id}
-              onChange={(v) => { setForm((c) => ({ ...c, comprobante_afectado_id: v })); setFormErrors((e) => ({ ...e, comprobante: undefined })); }}
-              options={facturasOpts}
-              searchable
-              searchPlaceholder="Buscar por numero o cliente..."
-              placeholder="Seleccionar factura o boleta..."
-              filterOption={(opt, q) => opt.searchText?.toLowerCase().includes(q)}
-              renderOption={(opt) => (
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', minWidth: 0 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 700, color: 'var(--brand-600)' }}>{opt.num}</p>
-                    <p style={{ fontSize: '12px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.cliente}</p>
-                    <p style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>{opt.fecha}</p>
+          </div>
+
+          {sourceError ? <div className="p-5"><PageError error={sourceError} onRetry={loadSources} /></div>
+            : sourceLoading ? <div className="flex min-h-64 items-center justify-center"><Spinner size="lg" /></div>
+              : sourceDocuments.length === 0 ? <div className="p-5"><EmptyState variant="onboarding" icon={<ReceiptText size={22} />} title={sourceQuery ? 'No encontramos comprobantes aceptados' : 'Aún no hay comprobantes aceptados'} description={sourceQuery ? 'Prueba con otra serie, RUC o cliente.' : 'Cuando SUNAT acepte una factura o boleta, aparecerá aquí para que puedas emitir una nota.'} /></div>
+                : <>
+                  <div className="divide-y divide-[var(--color-border)]">
+                    {sourceDocuments.map((document) => (
+                      <article key={document.id} className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                        <div className="grid min-w-0 gap-1 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center sm:gap-x-4">
+                          <DocumentTypeBadge tipo={document.tipo_comprobante} size="sm" />
+                          <div className="min-w-0">
+                            <p className="m-0 truncate font-mono text-sm font-extrabold text-[var(--color-text)]">{numberOf(document)}</p>
+                            <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text)]">{clientName(document)}</p>
+                            <p className="mt-1 text-xs text-[var(--color-text-muted)]">{clientDocument(document) || 'Sin documento'} · {formatDate(document.fecha_emision)}</p>
+                          </div>
+                          <div className="mt-2 sm:mt-0 sm:text-right">
+                            <p className="m-0 font-mono text-base font-extrabold text-[var(--color-text)]">{formatCurrency(document.total_venta, document.moneda)}</p>
+                            <div className="mt-1"><NoteStatus document={document} /></div>
+                          </div>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <button type="button" className="btn-primary justify-center" onClick={() => openDrawer(document, 'credito')}><CreditCard size={16} />Nota de crédito</button>
+                          <button type="button" className="btn-secondary justify-center" onClick={() => openDrawer(document, 'debito')}><FileText size={16} />Nota de débito</button>
+                        </div>
+                      </article>
+                    ))}
                   </div>
-                  <p style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', flexShrink: 0 }}>{opt.total}</p>
-                </div>
-              )}
-              renderPreview={(opt) => (
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', fontWeight: 700 }}>
-                  {opt.num} · {opt.cliente}
-                </span>
-              )}
-            />
-            <FieldError message={formErrors.comprobante} />
-            {selectedFactura && (
-              <div style={{ marginTop: '6px', padding: '8px 12px', background: 'var(--bg-surface-2)', border: '1px solid var(--border-rule)', fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', gap: '16px' }}>
-                <span><strong style={{ color: 'var(--text-primary)' }}>{selectedFactura.num}</strong></span>
-                <span>{selectedFactura.cliente}</span>
-                <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)' }}>{selectedFactura.total}</span>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="label">Motivo <span style={{ color: 'var(--color-error)' }}>*</span></label>
-            <CustomSelect
-              value={form.cod_motivo}
-              onChange={(v) => { setForm((c) => ({ ...c, cod_motivo: v })); setFormErrors((e) => ({ ...e, motivo: undefined })); }}
-              options={motivosOpts}
-              placeholder="Seleccionar motivo..."
-            />
-            <FieldError message={formErrors.motivo} />
-          </div>
-
-          <div>
-            <label className="label">Descripcion del motivo <span style={{ color: 'var(--color-error)' }}>*</span></label>
-            <input
-              className="input"
-              value={form.descripcion_motivo}
-              onChange={(e) => { setForm((c) => ({ ...c, descripcion_motivo: e.target.value })); setFormErrors((e2) => ({ ...e2, descripcion: undefined })); }}
-              placeholder="Ej: Devolucion de mercaderia por defecto"
-            />
-            <FieldError message={formErrors.descripcion} />
-          </div>
-
-          {form.tipo_nota === 'credito' && (
-            <div>
-              <label className="label">Impacto en inventario</label>
-              <select
-                className="input"
-                value={form.inventory_impact}
-                onChange={(event) => setForm((current) => ({ ...current, inventory_impact: event.target.value }))}
-              >
-                <option value="none">Sin movimiento · corrección de precio o datos</option>
-                <option value="undelivered">Cantidad no entregada · reponer al aceptar SUNAT</option>
-                <option value="physical_return">Devolución física · ingresar al confirmar recepción</option>
-              </select>
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]">La nota fiscal y la recepción física quedan trazadas por separado.</p>
+                  <Pagination page={sourcePage} pages={sourcePages} total={sourceTotal} onChange={setSourcePage} />
+                </>}
+        </section>
+      ) : (
+        <section role="tabpanel" aria-label="Historial de notas" className="panel overflow-hidden">
+          <div className="border-b border-[var(--color-border)] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="m-0 text-lg font-extrabold">Historial de notas</h2><p className="mt-1 text-sm text-[var(--color-text-muted)]">Borradores, notas en cola y documentos aceptados por SUNAT.</p></div><button type="button" className="btn-secondary" onClick={loadNotes}><RefreshCw size={15} />Actualizar</button></div>
+            <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_190px_190px]">
+              <label className="search-box"><Search size={16} /><input value={notesQuery} onChange={(event) => setNotesQuery(event.target.value)} placeholder="Buscar nota, comprobante o cliente..." /></label>
+              <select className="input" aria-label="Tipo de nota" value={noteType} onChange={(event) => setNoteType(event.target.value)}>{NOTE_TYPE_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}</select>
+              <select className="input" aria-label="Estado de nota" value={noteStatus} onChange={(event) => setNoteStatus(event.target.value)}>{STATUS_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}</select>
             </div>
-          )}
-
-          {form.tipo_nota === 'credito' && form.inventory_impact === 'physical_return' && (
-            <div>
-              <label className="label">Almacén receptor</label>
-              <select
-                className="input"
-                value={form.inventory_return_warehouse_id}
-                onChange={(event) => setForm((current) => ({ ...current, inventory_return_warehouse_id: event.target.value }))}
-              >
-                <option value="">Seleccionar almacén...</option>
-                {warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
-              </select>
-              <FieldError message={formErrors.warehouse} />
-            </div>
-          )}
-
-          <div className="responsive-form-actions">
-            <button type="button" className="btn-ghost" onClick={() => setModalOpen(false)}>Cancelar</button>
-            <button type="button" className="btn-primary" onClick={handleEmitClick}>
-              Revisar y emitir nota
-            </button>
           </div>
+<<<<<<< HEAD
         </div>
       </Drawer>
+=======
+          {notesError ? <div className="p-5"><PageError error={notesError} onRetry={loadNotes} /></div>
+            : notesLoading ? <div className="flex min-h-64 items-center justify-center"><Spinner size="lg" /></div>
+              : notes.length === 0 ? <div className="p-5"><EmptyState icon={<FileText size={22} />} title="Aún no tienes notas emitidas" description="El historial aparecerá aquí cuando guardes o emitas una nota." action={<button type="button" className="btn-primary" onClick={() => setSection('emit')}>Ver comprobantes aceptados</button>} /></div>
+                : <>
+                  <div className="flex flex-wrap gap-2 border-b border-[var(--color-border)] px-5 py-3 text-xs text-[var(--color-text-muted)]"><span>{notesTotal} notas</span><span>·</span><span>{historySummary.accepted} aceptadas</span><span>·</span><span>{historySummary.pending} pendientes</span><span>·</span><span>{historySummary.error} observadas</span></div>
+                  <div className="ink-table-scroll"><table className="ink-table ink-note-table"><thead><tr><th>Número</th><th>Tipo</th><th>Comprobante afectado</th><th>Cliente</th><th>Motivo</th><th>Estado SUNAT</th><th>Acciones</th></tr></thead><tbody>{notes.map((note) => {
+                    const reference = note.nota_referencia || note.source_quote;
+                    return <tr key={note.id}><td data-label="Número"><div className="ink-table-cell__primary document-list-folio">{note.estado === 'borrador' ? 'Sin correlativo' : numberOf(note)}</div><div className="ink-table-cell__meta">{formatDate(note.fecha_emision)}</div></td><td data-label="Tipo"><DocumentTypeBadge tipo={note.document_kind === 'credit_note' ? '07' : '08'} size="sm" /></td><td data-label="Comprobante afectado"><div className="ink-table-cell__primary">{reference ? numberOf(reference) : '—'}</div></td><td data-label="Cliente"><div className="ink-table-cell__primary">{clientName(note)}</div><div className="ink-table-cell__meta">{clientDocument(note)}</div></td><td data-label="Motivo"><div className="ink-table-cell__primary">{note.nota_motivo_descripcion || '—'}</div></td><td data-label="Estado SUNAT"><NoteStatus document={note} /></td><td data-label="Acciones">{note.estado === 'borrador' ? <button type="button" className="ink-row-btn" title="Continuar borrador" aria-label="Continuar borrador" onClick={() => navigate(`/notas/nueva?draft=${note.id}`)}><ArrowRight size={14} /></button> : null}</td></tr>;
+                  })}</tbody></table></div>
+                  <Pagination page={notesPage} pages={historyPages} total={notesTotal} onChange={setNotesPage} />
+                </>}
+        </section>
+      )}
+>>>>>>> 2e958dc (Prioritize fiscal notes by source document)
 
-      <ConfirmEmitDialog
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        onConfirm={handleSubmit}
-        loading={submitting}
-        mode="note"
-        tipo={tipoNotaBadge}
-        serie={selectedFactura ? `Afecta: ${selectedFactura.num}` : '—'}
-        cliente={selectedFactura?.cliente || '—'}
-        total={selectedFactura?.total_venta || 0}
-        moneda={selectedFactura?.moneda || 'PEN'}
-        extraLines={[
-          `Motivo: ${motivosOpts.find((m) => m.value === form.cod_motivo)?.label || '—'}`,
-          form.descripcion_motivo || '',
-        ].filter(Boolean)}
-      />
+      <Drawer
+        open={drawer.open}
+        onClose={closeDrawer}
+        icon={drawer.type === 'credito' ? <CreditCard size={18} /> : <FileText size={18} />}
+        title={`Nota de ${drawer.type === 'credito' ? 'crédito' : 'débito'}`}
+        subtitle={drawer.document ? `${numberOf(drawer.document)} · ${clientName(drawer.document)}` : ''}
+        footer={<><button type="button" className="btn-secondary" onClick={closeDrawer}>Cancelar</button><button type="button" className="btn-primary" disabled={!canContinue || drawer.loading} onClick={() => navigate(`/notas/nueva?documento=${drawer.document.id}&tipo=${drawer.type}`)}>Continuar</button></>}
+      >
+        {drawer.loading ? <div className="flex min-h-48 items-center justify-center"><Spinner size="lg" /></div>
+          : drawer.error ? <PageError error={drawer.error} onRetry={() => openDrawer(drawer.document, drawer.type)} />
+            : context ? <div className="space-y-5"><section className="rounded-2xl border border-[var(--color-border)] p-4"><p className="eyebrow">Comprobante afectado</p><p className="mt-2 font-mono text-base font-extrabold">{numberOf(context.document)}</p><p className="mt-1 text-sm text-[var(--color-text-muted)]">{clientName(context.document)} · {formatCurrency(context.balance?.original, context.document?.moneda)}</p></section><dl className="space-y-3 text-sm"><div className="flex justify-between gap-4"><dt>Créditos aceptados</dt><dd>{formatCurrency(context.balance?.creditos_aceptados || 0)}</dd></div><div className="flex justify-between gap-4"><dt>Ajustes reservados</dt><dd>{formatCurrency(context.balance?.ajustes_reservados || 0)}</dd></div><div className="flex justify-between gap-4 border-t border-dashed border-[var(--color-border)] pt-3 font-extrabold"><dt>Saldo fiscal disponible</dt><dd>{formatCurrency(context.balance?.maximo_disponible || 0)}</dd></div></dl><section><h3 className="m-0 text-sm font-extrabold">Motivos disponibles</h3><p className="mt-1 text-xs text-[var(--color-text-muted)]">{Object.keys(selectedMotives).length ? `${Object.keys(selectedMotives).length} motivos SUNAT aplicables a este comprobante.` : 'Este tipo de nota no está disponible para el comprobante seleccionado.'}</p></section></div> : null}
+      </Drawer>
     </div>
   );
+}
+
+function Pagination({ page, pages, total, onChange }) {
+  return <div className="ink-table-footer"><span className="ink-table-count">Página <strong>{page}</strong> de <strong>{pages}</strong> · {total} registros</span><div className="pagination"><button type="button" className="page-btn" aria-label="Página anterior" disabled={page <= 1} onClick={() => onChange(page - 1)}>‹</button><span className="page-btn active" aria-current="page">{page}</span><button type="button" className="page-btn" aria-label="Página siguiente" disabled={page >= pages} onClick={() => onChange(page + 1)}>›</button></div></div>;
 }

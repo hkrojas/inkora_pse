@@ -29,7 +29,7 @@ const noteContext = {
   warehouses: [{ id: 3, name: 'Almacen principal', is_default: true }],
 };
 
-async function openMockedNotes(browser, baseURL, viewport) {
+async function openMockedNotes(browser, baseURL, viewport, path = '/notas/nueva') {
   const context = await browser.newContext({ baseURL, viewport, storageState: { cookies: [], origins: [] } });
   await context.addInitScript(() => localStorage.setItem('token', 'notes-v2-visual-token'));
   const page = await context.newPage();
@@ -42,15 +42,49 @@ async function openMockedNotes(browser, baseURL, viewport) {
     else if (path === '/tenant/subscription-status') payload = {};
     else if (path === '/sunat/exchange-rate') payload = { buy: '3.70', sell: '3.72' };
     else if (path === '/facturas-emitidas/page') payload = { items: [document], total: 1 };
+    else if (path === '/notas/page') payload = { items: [], total: 0, counts: {} };
     else if (path === '/notas/contexto/44') payload = noteContext;
     else if (path === '/notas' && route.request().method() === 'POST') payload = { id: 71, estado: 'borrador', total_venta: 20, message: 'Borrador guardado' };
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) });
   });
-  await page.goto('/notas/nueva');
+  await page.goto(path);
   return { context, page };
 }
 
 test.describe('Notas fiscales v2', () => {
+  test('prioriza comprobantes y abre el panel contextual antes del formulario', async ({ browser, baseURL }) => {
+    const { context, page } = await openMockedNotes(browser, baseURL, { width: 1440, height: 900 }, '/notas');
+    try {
+      await expect(page.getByRole('heading', { name: 'Comprobantes aceptados' })).toBeVisible();
+      const credit = page.getByRole('button', { name: 'Nota de crédito' });
+      await expect(credit).toHaveCount(1);
+      await credit.click();
+      await expect(page.getByRole('dialog', { name: /nota de crédito/i })).toBeVisible();
+      await expect(page.getByText('Saldo fiscal disponible')).toBeVisible();
+      await page.getByRole('button', { name: 'Continuar' }).click();
+      await expect(page).toHaveURL(/\/notas\/nueva\?documento=44&tipo=credito/);
+      await expect(page.getByRole('button', { name: 'Cambiar comprobante' })).toBeVisible();
+      await expect(page.getByLabel('Tipo de nota')).toHaveValue('credito');
+      await expect(page.getByLabel('Seleccionar comprobante')).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('el panel contextual devuelve el foco al cerrar con Escape', async ({ browser, baseURL }) => {
+    const { context, page } = await openMockedNotes(browser, baseURL, { width: 1280, height: 800 }, '/notas');
+    try {
+      const debit = page.getByRole('button', { name: 'Nota de débito' });
+      await debit.click();
+      await expect(page.getByRole('dialog', { name: /nota de débito/i })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog', { name: /nota de débito/i })).toHaveCount(0);
+      await expect(debit).toBeFocused();
+    } finally {
+      await context.close();
+    }
+  });
+
   test('descuento global exige importe explicito y guarda borrador', async ({ browser, baseURL }) => {
     const { context, page } = await openMockedNotes(browser, baseURL, { width: 1440, height: 900 });
     try {
@@ -73,8 +107,12 @@ test.describe('Notas fiscales v2', () => {
       const { context, page } = await openMockedNotes(browser, baseURL, { width, height: 820 });
       try {
         await expect(page.getByRole('button', { name: /^emitir$/i })).toBeDisabled();
-        const overflows = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-        expect(overflows).toBe(false);
+        const formOverflows = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+        expect(formOverflows).toBe(false);
+        await page.goto('/notas');
+        await expect(page.getByRole('heading', { name: 'Comprobantes aceptados' })).toBeVisible();
+        const listOverflows = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+        expect(listOverflows).toBe(false);
       } finally {
         await context.close();
       }
