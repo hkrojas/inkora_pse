@@ -175,152 +175,9 @@ export default function NotasPage() {
               </div>
               <span className="document-list-table-pill"><CheckCircle2 size={14} />{sourceTotal} elegibles</span>
             </div>
-<<<<<<< HEAD
-
-            <div className="ink-table-scroll">
-              <table className="ink-table ink-note-table">
-                <thead>
-                  <tr>
-                    <th>Numero</th>
-                    <th>Tipo</th>
-                    <th>Comprobante afectado</th>
-                    <th>Cliente</th>
-                    <th>Motivo</th>
-                    <th>Estado SUNAT</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageItems.map((doc) => {
-                    const sunat = getSunatStatus(doc);
-                    const num = doc.estado === 'borrador'
-                      ? 'Sin correlativo'
-                      : `${doc.serie}-${String(doc.correlativo).padStart(6, '0')}`;
-                    const clienteName = doc.cliente?.razon_social || doc.cliente?.nombre || '-';
-                    const clienteDoc = doc.cliente?.numero_documento || doc.cliente?.ruc || doc.cliente?.dni;
-                    const affectedDoc = getAffectedDocument(doc);
-                    const afectado = formatDocumentRef(affectedDoc) || '—';
-                    const rowClass =
-                      sunat?.kind === 'ok'
-                        ? 'ink-table-row--accepted'
-                        : sunat?.kind === 'pending'
-                          ? 'ink-table-row--active'
-                          : '';
-
-                    return (
-                      <tr key={doc.id} className={rowClass}>
-                        <td data-label="Numero">
-                          <div className="ink-table-cell__primary document-list-folio">{num}</div>
-                          <div className="ink-table-cell__meta">
-                            {doc.fecha_emision ? new Date(doc.fecha_emision).toLocaleDateString('es-PE') : ''}
-                          </div>
-                        </td>
-                        <td data-label="Tipo">
-                          <DocumentTypeBadge tipo={doc.document_kind === 'credit_note' ? '07' : '08'} size="sm" />
-                        </td>
-                        <td data-label="Comprobante afectado">
-                          <div className="ink-table-cell__primary">{afectado}</div>
-                          {affectedDoc?.tipo_comprobante && (
-                            <div className="ink-table-cell__meta">
-                              <DocumentTypeBadge tipo={affectedDoc.tipo_comprobante} size="sm" />
-                            </div>
-                          )}
-                        </td>
-                        <td data-label="Cliente">
-                          <div className="ink-table-cell__primary">{clienteName}</div>
-                          {clienteDoc && <div className="ink-table-cell__meta">{clienteDoc}</div>}
-                        </td>
-                        <td data-label="Motivo">
-                          <div className="ink-table-cell__primary" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {doc.nota_motivo_descripcion || '—'}
-                          </div>
-                        </td>
-                        <td data-label="Estado SUNAT">
-                          {sunat ? (
-                            <Badge variant={sunat.variant === 'danger' ? 'error' : sunat.variant} title={sunat.tooltip}>
-                              {sunat.label}
-                            </Badge>
-                          ) : (
-                            <Badge variant="default">Sin estado</Badge>
-                          )}
-                        </td>
-                        <td data-label="Acciones">
-                          <div className="ink-table-row-actions document-list-row-actions">
-                            {doc.estado === 'borrador' && (
-                              <button type="button" className="ink-row-btn" title="Continuar borrador" onClick={() => navigate(`/notas/nueva?draft=${doc.id}`)}>
-                                <ArrowRight size={14} />
-                              </button>
-                            )}
-                            {sunat?.kind === 'pending' && (
-                              <button type="button" className="ink-row-btn" title="Recargar estado SUNAT" onClick={load}>
-                                <RefreshCw size={14} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="ink-table-footer">
-              <span className="ink-table-count">
-                Pag. <strong>{page}</strong> de <strong>{totalPages}</strong>
-              </span>
-              <div className="pagination">
-                <button
-                  type="button"
-                  className="page-btn"
-                  disabled={page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  &#8249;
-                </button>
-                <button type="button" className="page-btn active">
-                  {page}
-                </button>
-                <button
-                  type="button"
-                  className="page-btn"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                >
-                  &#8250;
-                </button>
-              </div>
-              <span className="ink-table-count">{PER_PAGE} por pagina</span>
-            </div>
-          </div>
-        )}
-      </article>
-
-      <Drawer
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title="Nueva nota de crédito / débito"
-        subtitle="Ajuste fiscal sobre comprobante aceptado"
-        icon={<FileText size={18} />}
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="label">Tipo de nota</label>
-            <CustomSelect
-              value={form.tipo_nota}
-              onChange={(v) => setForm((c) => ({ ...c, tipo_nota: v, cod_motivo: '' }))}
-              options={TIPO_NOTA_OPTS}
-            />
-          </div>
-
-          <div>
-            <label className="label">
-              Comprobante afectado <span style={{ color: 'var(--color-error)' }}>*</span>
-=======
             <label className="search-box mt-5 max-w-2xl">
               <Search size={16} />
               <input value={sourceQuery} onChange={(event) => setSourceQuery(event.target.value)} placeholder="Buscar por serie, número, RUC o cliente..." />
->>>>>>> 2e958dc (Prioritize fiscal notes by source document)
             </label>
           </div>
 
@@ -363,10 +220,6 @@ export default function NotasPage() {
               <select className="input" aria-label="Estado de nota" value={noteStatus} onChange={(event) => setNoteStatus(event.target.value)}>{STATUS_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}</select>
             </div>
           </div>
-<<<<<<< HEAD
-        </div>
-      </Drawer>
-=======
           {notesError ? <div className="p-5"><PageError error={notesError} onRetry={loadNotes} /></div>
             : notesLoading ? <div className="flex min-h-64 items-center justify-center"><Spinner size="lg" /></div>
               : notes.length === 0 ? <div className="p-5"><EmptyState icon={<FileText size={22} />} title="Aún no tienes notas emitidas" description="El historial aparecerá aquí cuando guardes o emitas una nota." action={<button type="button" className="btn-primary" onClick={() => setSection('emit')}>Ver comprobantes aceptados</button>} /></div>
@@ -380,7 +233,6 @@ export default function NotasPage() {
                 </>}
         </section>
       )}
->>>>>>> 2e958dc (Prioritize fiscal notes by source document)
 
       <Drawer
         open={drawer.open}
