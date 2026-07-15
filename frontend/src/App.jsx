@@ -20,6 +20,8 @@ const ConfiguracionPage = lazy(() => import('./pages/ConfiguracionPage'));
 const PdfDesignerPage = lazy(() => import('./pages/PdfDesignerPage'));
 const SuperadminPage = lazy(() => import('./pages/SuperadminPage'));
 const NotasPage = lazy(() => import('./pages/NotasPage'));
+const NotaNuevaPage = lazy(() => import('./pages/NotaNuevaPage'));
+const InventarioPage = lazy(() => import('./pages/InventarioPage'));
 const RetencionesPage = lazy(() => import('./pages/RetencionesPage'));
 const PercepcionesPage = lazy(() => import('./pages/PercepcionesPage'));
 const ResumenDiarioPage = lazy(() => import('./pages/ResumenDiarioPage'));
@@ -138,6 +140,8 @@ export default function App() {
               <Route path="/facturas" element={<LazyRoute><FacturasPage /></LazyRoute>} />
               <Route path="/boletas" element={<LazyRoute><BoletasPage /></LazyRoute>} />
               <Route path="/notas" element={<LazyRoute><NotasPage /></LazyRoute>} />
+              <Route path="/notas/nueva" element={<LazyRoute><NotaNuevaPage /></LazyRoute>} />
+              <Route path="/inventario" element={<LazyRoute><InventarioPage /></LazyRoute>} />
               <Route path="/retenciones" element={<AdvancedFiscalRoute><LazyRoute><RetencionesPage /></LazyRoute></AdvancedFiscalRoute>} />
               <Route path="/percepciones" element={<AdvancedFiscalRoute><LazyRoute><PercepcionesPage /></LazyRoute></AdvancedFiscalRoute>} />
               <Route path="/resumen-diario" element={<AdvancedFiscalRoute><LazyRoute><ResumenDiarioPage /></LazyRoute></AdvancedFiscalRoute>} />

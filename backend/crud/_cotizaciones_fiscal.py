@@ -30,6 +30,7 @@ from services.document_flow_service import (
     is_quote_document,
 )
 from services import fiscal_qr_service
+from services import inventory_service
 from services.fiscal_balance_service import ensure_credit_note_within_available_amount
 
 
@@ -124,6 +125,8 @@ def guardar_respuesta_sunat(
             db_cot.provider_verification_status = data_sunat.get("provider_verification_status")
             if data_sunat.get("provider_verification_status") == "verified":
                 db_cot.provider_verified_at = data_sunat.get("provider_verified_at") or datetime.now()
+        if "provider_verification_error" in data_sunat:
+            db_cot.provider_verification_error = data_sunat.get("provider_verification_error")
         if "cdr_artifact_status" in data_sunat:
             db_cot.cdr_artifact_status = data_sunat.get("cdr_artifact_status")
         if "pdf_artifact_status" in data_sunat:
@@ -137,8 +140,20 @@ def guardar_respuesta_sunat(
         if data_sunat.get("qr_svg"):
             db_cot.sunat_qr_svg = data_sunat.get("qr_svg")
 
+        verification_status = data_sunat.get("provider_verification_status")
+        verification_failed = bool(verification_status and verification_status != "verified")
+        is_v2_note = bool(db_cot.nota_ajuste_metadata and db_cot.tipo_comprobante in {"07", "08"})
+        cdr_available = bool(data_sunat.get("cdr_xml") or links.get("cdr") or db_cot.sunat_cdr_content or db_cot.sunat_cdr_url)
+        if is_v2_note and data_sunat.get("success"):
+            if not cdr_available:
+                verification_failed = True
+                db_cot.provider_verification_error = "SmartPSE respondio sin CDR; la nota no fue aceptada."
+            elif verification_status != "verified":
+                verification_failed = True
+                db_cot.provider_verification_error = "El CDR de la nota aun no fue verificado contra el proveedor."
+
         if (
-            data_sunat.get("success")
+            data_sunat.get("success") and not verification_failed
             and (
                 db_cot.document_kind == DOCUMENT_KIND_CREDIT_NOTE
                 or db_cot.tipo_comprobante == "07"
@@ -156,7 +171,7 @@ def guardar_respuesta_sunat(
                 db.refresh(db_cot)
                 return db_cot
 
-        if data_sunat.get("success"):
+        if data_sunat.get("success") and not verification_failed:
             db_cot.estado = DOCUMENT_STATUS_ISSUED
             db_cot.sunat_error = None
             if data_sunat.get("cdr_xml") and not db_cot.sunat_cdr_url and not db_cot.cdr_artifact_status:
@@ -164,7 +179,9 @@ def guardar_respuesta_sunat(
             if not db_cot.sunat_pdf_url and not db_cot.pdf_artifact_status:
                 db_cot.pdf_artifact_status = "pending"
         else:
-            db_cot.sunat_error = _resolve_provider_error_message(data_sunat)
+            if verification_failed and not was_issued:
+                db_cot.estado = DOCUMENT_STATUS_PENDING
+            db_cot.sunat_error = db_cot.provider_verification_error or _resolve_provider_error_message(data_sunat)
 
         if data_sunat.get("serie"):
             db_cot.serie = data_sunat.get("serie")
@@ -174,7 +191,7 @@ def guardar_respuesta_sunat(
             except Exception:
                 pass
 
-        if data_sunat.get("success") and db_cot.source_quote_id:
+        if data_sunat.get("success") and not verification_failed and db_cot.source_quote_id:
             source_quote = _get_tenant_resource(
                 db,
                 models.Cotizacion,
@@ -185,7 +202,7 @@ def guardar_respuesta_sunat(
                 source_quote.estado = DOCUMENT_STATUS_ISSUED
 
         if (
-            data_sunat.get("success")
+            data_sunat.get("success") and not verification_failed
             and db_cot.document_kind == DOCUMENT_KIND_FISCAL_DOCUMENT
         ):
             from crud.pagos import apply_prefiscal_advances_to_fiscal_document
@@ -198,7 +215,7 @@ def guardar_respuesta_sunat(
             )
 
         if (
-            data_sunat.get("success")
+            data_sunat.get("success") and not verification_failed
             and not was_issued
             and db_cot.document_kind == DOCUMENT_KIND_FISCAL_DOCUMENT
         ):
@@ -209,6 +226,14 @@ def guardar_respuesta_sunat(
                 .where(models.Subscription.tenant_id == db_cot.tenant_id)
                 .values(documents_used=models.Subscription.documents_used + 1)
             )
+
+        if data_sunat.get("success") and not verification_failed:
+            if db_cot.document_kind == DOCUMENT_KIND_FISCAL_DOCUMENT:
+                inventory_service.finalize_document_inventory(db, db_cot)
+            elif db_cot.document_kind == DOCUMENT_KIND_CREDIT_NOTE:
+                inventory_service.apply_credit_note_inventory(db, db_cot)
+        elif data_sunat.get("success") is False and not verification_failed and 400 <= int(data_sunat.get("provider_status_code") or 0) < 500:
+            inventory_service.release_document_holds(db, db_cot)
 
         db.commit()
         db.refresh(db_cot)

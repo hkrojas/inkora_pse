@@ -17,6 +17,11 @@ class Cotizacion(Base):
             "correlativo",
             name="uq_cotizaciones_tenant_serie_correlativo",
         ),
+        UniqueConstraint(
+            "tenant_id",
+            "nota_idempotency_key",
+            name="uq_cotizaciones_tenant_note_idempotency",
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -30,6 +35,7 @@ class Cotizacion(Base):
     document_kind = Column(String, default="quotation", nullable=False, index=True)
     internal_order_number = Column(String, nullable=True, index=True)
     source_quote_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True, index=True)
+    warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=True, index=True)
 
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
     tenant = relationship("Tenant", back_populates="cotizaciones")
@@ -71,6 +77,7 @@ class Cotizacion(Base):
     provider_document_name = Column(String, nullable=True)
     provider_verified_at = Column(DateTime, nullable=True)
     provider_verification_status = Column(String, nullable=True)
+    provider_verification_error = Column(Text, nullable=True)
     cdr_artifact_status = Column(String, nullable=True)
     pdf_artifact_status = Column(String, nullable=True)
 
@@ -91,6 +98,11 @@ class Cotizacion(Base):
     )
     nota_motivo_codigo = Column(String, nullable=True)
     nota_motivo_descripcion = Column(Text, nullable=True)
+    nota_ajuste_metadata = Column(JSON, nullable=True)
+    nota_idempotency_key = Column(String, nullable=True, index=True)
+    nota_reemplazo_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True, index=True)
+    inventory_impact = Column(String, nullable=True)
+    inventory_return_warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=True)
 
     observaciones = Column(Text, nullable=True)
     condicion_pago = Column(String, nullable=True)
@@ -184,6 +196,7 @@ class CotizacionItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     cotizacion_id = Column(Integer, ForeignKey("cotizaciones.id"))
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=True)
+    inventory_source_item_id = Column(Integer, nullable=True, index=True)
     codigo_producto = Column(String, nullable=True)
 
     descripcion = Column(String)
