@@ -21260,3 +21260,204 @@ textarea.input:focus,
     transition: none;
   }
 }
+
+/* Notes header: a compact operational rail, not another decorative banner. */
+.notas-page .notes-page-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 34px;
+  row-gap: 18px;
+  align-items: end;
+  margin: 0 0 20px;
+  padding-top: 4px;
+}
+
+.notas-page .notes-page-header__intro .page-subtitle {
+  max-width: 680px;
+}
+
+.notas-page .notes-flow {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notas-page .notes-flow li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 118px;
+  color: var(--color-text-muted);
+}
+
+.notas-page .notes-flow li:not(:last-child) {
+  margin-right: 19px;
+}
+
+.notas-page .notes-flow li:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  right: -15px;
+  width: 11px;
+  height: 1px;
+  background: var(--color-border-strong);
+  content: '';
+}
+
+.notas-page .notes-flow li > span {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-surface);
+  color: var(--color-text-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.notas-page .notes-flow strong,
+.notas-page .notes-flow small {
+  display: block;
+  line-height: 1.15;
+}
+
+.notas-page .notes-flow strong {
+  color: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.notas-page .notes-flow small {
+  margin-top: 3px;
+  font-size: 10px;
+}
+
+.notas-page .notes-flow .is-current {
+  color: var(--color-text);
+}
+
+.notas-page .notes-flow .is-current > span {
+  border-color: color-mix(in srgb, var(--color-primary) 38%, var(--color-border));
+  background: var(--color-primary-soft);
+  color: var(--color-primary-hover);
+  box-shadow: 0 6px 15px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.notas-page .notes-page-tabs {
+  display: inline-flex;
+  grid-column: 1 / -1;
+  width: fit-content;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-primary-soft));
+  box-shadow: 0 10px 22px rgba(18, 30, 24, 0.05);
+}
+
+.notas-page .notes-page-tabs .segment {
+  min-height: 36px;
+}
+
+.notas-page .note-context-document__topline {
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-start;
+}
+
+.notas-page .note-context-document__verified {
+  padding: 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--color-success) 22%, var(--color-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-success-soft) 55%, var(--color-surface));
+  white-space: nowrap;
+}
+
+.notas-page .note-context-document__total {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  justify-content: normal;
+  gap: 14px;
+}
+
+.dark .notas-page .notes-page-tabs,
+[data-theme='dark'] .notas-page .notes-page-tabs {
+  border-color: rgba(141, 198, 63, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+}
+
+.dark .notas-page .notes-flow li > span,
+[data-theme='dark'] .notas-page .notes-flow li > span {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dark .notas-page .notes-flow li:not(:last-child)::after,
+[data-theme='dark'] .notas-page .notes-flow li:not(:last-child)::after {
+  background: rgba(141, 198, 63, 0.25);
+}
+
+.dark .notas-page .note-context-document__verified,
+[data-theme='dark'] .notas-page .note-context-document__verified {
+  border-color: rgba(134, 239, 172, 0.2);
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+}
+
+@media (max-width: 1020px) {
+  .notas-page .notes-page-header {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .notas-page .notes-flow {
+    order: 2;
+  }
+
+  .notas-page .notes-page-tabs {
+    order: 3;
+  }
+}
+
+@media (max-width: 620px) {
+  .notas-page .notes-flow {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .notas-page .notes-flow li,
+  .notas-page .notes-flow li:not(:last-child) {
+    min-width: 0;
+    margin: 0;
+  }
+
+  .notas-page .notes-flow li:not(:last-child)::after {
+    display: none;
+  }
+
+  .notas-page .notes-flow strong {
+    font-size: 11px;
+  }
+
+  .notas-page .notes-page-tabs {
+    width: 100%;
+  }
+
+  .notas-page .notes-page-tabs .segment {
+    flex: 1 1 0;
+  }
+
+  .notas-page .note-context-document__total {
+    gap: 10px;
+  }
+}

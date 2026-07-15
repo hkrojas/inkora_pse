@@ -326,6 +326,7 @@ export default function AppLayout() {
   const isPercepcionesRoute = location.pathname === '/percepciones';
   const isConfiguracionRoute = location.pathname.startsWith('/configuracion');
   const isSuperadminRoute = location.pathname === '/superadmin';
+  const TopbarTitle = isNotasRoute ? 'p' : 'h1';
 
   return (
     <div
@@ -361,9 +362,9 @@ export default function AppLayout() {
         >
           <div className="flex min-w-0 flex-col pl-10 lg:pl-0">
             <div className="flex items-center gap-2.5">
-              <h1 className="m-0 truncate text-[18px] font-extrabold leading-tight tracking-[-0.04em] text-[var(--color-text)]">
+              <TopbarTitle className="m-0 truncate text-[18px] font-extrabold leading-tight tracking-[-0.04em] text-[var(--color-text)]">
                 {meta.title}
-              </h1>
+              </TopbarTitle>
               {isSuperadmin && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--color-primary-text)]">
                   <ShieldCheck size={10} />

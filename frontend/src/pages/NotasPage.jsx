@@ -41,7 +41,7 @@ function clientName(document) {
 }
 
 function clientDocument(document) {
-  return document?.cliente?.numero_documento || document?.cliente?.ruc || document?.cliente?.dni || '';
+  return document?.cliente?.numero_documento || document?.cliente?.documento || document?.cliente?.ruc || document?.cliente?.dni || '';
 }
 
 function formatDate(value) {
@@ -163,21 +163,25 @@ export default function NotasPage() {
 
   return (
     <div className="page-shell page-shell--dense notas-page">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="eyebrow">Ajustes fiscales</p>
+      <header className="notes-page-header">
+        <div className="notes-page-header__intro">
+          <p className="eyebrow">Flujo de ajuste</p>
           <h1 className="page-title">Notas de crédito y débito</h1>
           <p className="page-subtitle">Selecciona un comprobante aceptado y prepara el ajuste con sus límites fiscales visibles.</p>
         </div>
+        <ol className="notes-flow" aria-label="Pasos para preparar una nota">
+          <li className="is-current"><span>01</span><div><strong>Selecciona</strong><small>el comprobante</small></div></li>
+          <li><span>02</span><div><strong>Define</strong><small>el ajuste</small></div></li>
+          <li><span>03</span><div><strong>Revisa</strong><small>y emite</small></div></li>
+        </ol>
+        <div className="notes-page-tabs" role="tablist" aria-label="Secciones de notas">
+          <button id="notes-emit-tab" type="button" role="tab" aria-controls="notes-emit-panel" aria-selected={section === 'emit'} className={`segment ${section === 'emit' ? 'active' : ''}`} onClick={() => setSection('emit')}>Emitir nota</button>
+          <button id="notes-history-tab" type="button" role="tab" aria-controls="notes-history-panel" aria-selected={section === 'history'} className={`segment ${section === 'history' ? 'active' : ''}`} onClick={() => setSection('history')}>Historial de notas</button>
+        </div>
       </header>
 
-      <div className="mb-5 inline-flex rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1" role="tablist" aria-label="Secciones de notas">
-        <button type="button" role="tab" aria-selected={section === 'emit'} className={`segment ${section === 'emit' ? 'active' : ''}`} onClick={() => setSection('emit')}>Emitir nota</button>
-        <button type="button" role="tab" aria-selected={section === 'history'} className={`segment ${section === 'history' ? 'active' : ''}`} onClick={() => setSection('history')}>Historial de notas</button>
-      </div>
-
       {section === 'emit' ? (
-        <section role="tabpanel" aria-label="Comprobantes elegibles para notas" className="panel notes-source-panel overflow-hidden">
+        <section id="notes-emit-panel" role="tabpanel" aria-labelledby="notes-emit-tab" className="panel notes-source-panel overflow-hidden">
           <div className="notes-source-panel__header">
             <div className="notes-source-panel__heading">
               <div>
@@ -233,7 +237,7 @@ export default function NotasPage() {
                 </>}
         </section>
       ) : (
-        <section role="tabpanel" aria-label="Historial de notas" className="panel overflow-hidden">
+        <section id="notes-history-panel" role="tabpanel" aria-labelledby="notes-history-tab" className="panel overflow-hidden">
           <div className="border-b border-[var(--color-border)] p-5">
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="m-0 text-lg font-extrabold">Historial de notas</h2><p className="mt-1 text-sm text-[var(--color-text-muted)]">Borradores, notas en cola y documentos aceptados por SUNAT.</p></div><button type="button" className="btn-secondary" onClick={loadNotes}><RefreshCw size={15} />Actualizar</button></div>
             <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_190px_190px]">
