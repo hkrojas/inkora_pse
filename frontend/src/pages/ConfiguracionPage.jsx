@@ -10,6 +10,7 @@ import SectionNavigation from '../components/ui/SectionNavigation';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import OperationalPageHeader from '../components/ui/OperationalPageHeader';
 import { api } from '../lib/utils/api';
 import {
   buildPaymentMethodErrorMap,
@@ -927,15 +928,13 @@ export default function ConfiguracionPage() {
 
   return (
     <div className="page-shell configuracion-page">
-      <div className="page-head ink-enter-1">
-        <div>
-          <p className="eyebrow">Panel de control</p>
-          <h2>Configuración</h2>
-          <p>
-            Identidad, emisión fiscal, cuenta y apariencia desde un solo lugar
-          </p>
-        </div>
-      </div>
+      <OperationalPageHeader
+        variant="settings"
+        eyebrow="Panel de control"
+        title="Configuración"
+        description="Identidad, emisión fiscal, cuenta y apariencia desde un solo lugar."
+        meta={<span className={`operational-page-header__readiness ${fiscalReady ? 'is-ready' : 'is-review'}`}>{setupStatus}</span>}
+      />
 
       <section className="settings-command-card ink-enter-2">
         <div className="settings-command-main">

@@ -25,6 +25,7 @@ import SectionNavigation from '../components/ui/SectionNavigation';
 import { FieldError } from '../components/ui/FieldError';
 import { useToast } from '../components/ui/Toast';
 import '../styles/cotizacionesHistory.css';
+import OperationalPageHeader from '../components/ui/OperationalPageHeader';
 import {
   getDefaultQuoteBankMethods,
   getPaymentMethodPreview,
@@ -2300,21 +2301,17 @@ export default function CotizacionesPage() {
 
   return (
     <div className="cotizaciones-page">
-      <div className="page-head ink-enter-1">
-        <div>
-          <p className="eyebrow">Motor comercial</p>
-          <h2>
-            {view === 'create' && editingQuote ? `Editar ${getDocumentDisplayNumber(editingQuote)}` : view === 'create' ? 'Nueva cotización' : view === 'history' ? 'Historial' : 'Emitidas SUNAT'}
-          </h2>
-          <p>
-            {view === 'create' && editingQuote
-              ? 'Actualiza una cotizacion pendiente antes de pasarla a comprobante.'
-              : view === 'create'
-              ? 'Construye una propuesta clara, calcula totales y déjala lista para vista previa.'
-              : `${quotations.length} cotizaciones · ${fiscalDocs.length} comprobantes emitidos.`}
-          </p>
-        </div>
-      </div>
+      <OperationalPageHeader
+        variant="workflow"
+        eyebrow="Motor comercial"
+        title={view === 'create' && editingQuote ? `Editar ${getDocumentDisplayNumber(editingQuote)}` : view === 'create' ? 'Nueva cotización' : view === 'history' ? 'Historial' : 'Emitidas SUNAT'}
+        description={view === 'create' && editingQuote
+          ? 'Actualiza una cotización pendiente antes de pasarla a comprobante.'
+          : view === 'create'
+          ? 'Construye una propuesta clara, calcula totales y déjala lista para vista previa.'
+          : `${quotations.length} cotizaciones · ${fiscalDocs.length} comprobantes emitidos.`}
+        meta={<span className="operational-page-header__scope">Cotiza, revisa y comparte</span>}
+      />
 
       <nav className="quote-tabs ink-enter-2">
         <button className={`tab ${view === 'create' ? 'active' : ''}`} onClick={() => { setEditingQuote(null); setView('create'); }}>＋ Nueva cotización</button>

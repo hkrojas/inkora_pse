@@ -11,6 +11,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { dashboard } from '../services/dashboard';
+import OperationalPageHeader from '../components/ui/OperationalPageHeader';
 
 function safeNumber(value) {
   const parsed = Number(value ?? 0);
@@ -225,23 +226,19 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard-page">
-      <div className="page-head ink-enter-1">
-        <div>
-          <p className="eyebrow">Centro operativo</p>
-          <h2 style={{ margin: 0, fontSize: '28px', lineHeight: 1, letterSpacing: '-.06em' }}>
-            Resumen operativo
-          </h2>
-          <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontSize: '14px' }}>
-            Lo importante no es ver gráficos: es saber qué cobrar, qué emitir y qué corregir hoy.
-          </p>
-        </div>
-        <div className="page-actions">
+      <OperationalPageHeader
+        variant="monitoring"
+        eyebrow="Centro operativo"
+        title="Resumen operativo"
+        description="Lo importante no es ver gráficos: es saber qué cobrar, qué emitir y qué corregir hoy."
+        meta={<span className="operational-page-header__scope">Vista consolidada del negocio</span>}
+        actions={
           <button type="button" className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '9px' }}>
             <CalendarDays size={16} />
             {formatDashboardMonth()}
           </button>
-        </div>
-      </div>
+        }
+      />
 
       {error && (
         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '12px 16px', borderRadius: '14px', background: 'var(--color-danger-soft)', color: 'var(--color-danger-text)', fontSize: '13px', marginBottom: '16px' }}>

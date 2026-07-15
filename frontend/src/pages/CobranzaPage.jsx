@@ -13,6 +13,7 @@ import Spinner from '../components/ui/Spinner';
 import { PageError } from '../components/ui/PageState';
 import EmptyState from '../components/ui/EmptyState';
 import { useToast } from '../components/ui/Toast';
+import OperationalPageHeader from '../components/ui/OperationalPageHeader';
 
 const AVATAR_COLORS = ['a-green', 'a-blue', 'a-purple', 'a-yellow', 'a-red'];
 
@@ -129,18 +130,13 @@ export default function CobranzaPage() {
 
   return (
     <div className="cobranza-page">
-      {/* ── Header ── */}
-      <div className="page-head ink-enter-1">
-        <div>
-          <p className="eyebrow">Seguimiento de pagos</p>
-          <h2 style={{ margin: 0, fontSize: '28px', lineHeight: 1, letterSpacing: '-.06em' }}>
-            Cobranza
-          </h2>
-          <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontSize: '14px' }}>
-            {loading ? '—' : vencidas.length} documentos en seguimiento activo.
-          </p>
-        </div>
-      </div>
+      <OperationalPageHeader
+        variant="monitoring"
+        eyebrow="Seguimiento de pagos"
+        title="Cobranza"
+        description={`${loading ? '—' : vencidas.length} documentos en seguimiento activo.`}
+        meta={<span className="operational-page-header__scope">Saldo fiscal neto por cobrar</span>}
+      />
 
       {/* ── Stats ── */}
       <section className="stats-row ink-enter-2">

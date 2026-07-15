@@ -39,6 +39,7 @@ import {
   getLookupUbigeo,
 } from '../lib/utils/documentLookup';
 import { normalizeUppercaseFieldValue, normalizeUppercaseShape } from '../lib/utils/uppercase';
+import OperationalPageHeader from '../components/ui/OperationalPageHeader';
 
 const DOC_TYPE_OPTIONS = [
   { value: '6', label: 'RUC' },
@@ -647,15 +648,12 @@ export default function ClientesPage() {
 
   return (
     <div className="clients-page">
-      <div className="page-head ink-enter-1">
-        <div>
-          <p className="eyebrow">Directorio comercial</p>
-          <h2 style={{ margin: 0, fontSize: '28px', lineHeight: 1, letterSpacing: '-.06em' }}>Clientes</h2>
-          <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontSize: '14px' }}>
-            {counts.all} registros disponibles para cotización, emisión y cobranza.
-          </p>
-        </div>
-        <div className="page-actions">
+      <OperationalPageHeader
+        eyebrow="Directorio comercial"
+        title="Clientes"
+        description={`${counts.all} registros disponibles para cotización, emisión y cobranza.`}
+        meta={<span className="operational-page-header__scope">Base comercial compartida</span>}
+        actions={<>
           <button type="button" className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
             <Upload size={15} />
             Importar
@@ -668,8 +666,8 @@ export default function ClientesPage() {
             <Plus size={15} />
             Nuevo cliente
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
       <section className="stats-row ink-enter-2">
         <article className="stat">

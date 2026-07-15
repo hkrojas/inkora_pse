@@ -26,6 +26,7 @@ import Pagination from '../components/ui/Pagination';
 import { PageError } from '../components/ui/PageState';
 import { useToast } from '../components/ui/Toast';
 import useDebouncedValue from '../hooks/useDebouncedValue';
+import OperationalPageHeader from '../components/ui/OperationalPageHeader';
 import {
   PRODUCT_DESCRIPTION_MAX_LENGTH,
   PRODUCT_INTERNAL_CODE_MAX_LENGTH,
@@ -541,17 +542,12 @@ export default function ProductosPage() {
 
   return (
     <div className="productos-page">
-      <div className="page-head ink-enter-1">
-        <div>
-          <p className="eyebrow">Catálogo reusable</p>
-          <h2 style={{ margin: 0, fontSize: '28px', lineHeight: 1, letterSpacing: '-.06em' }}>
-            Productos y servicios
-          </h2>
-          <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontSize: '14px' }}>
-            {counts.all} productos y servicios disponibles para cotizaciones, facturas y guías.
-          </p>
-        </div>
-        <div className="page-actions">
+      <OperationalPageHeader
+        eyebrow="Catálogo reutilizable"
+        title="Productos y servicios"
+        description={`${counts.all} productos y servicios disponibles para cotizaciones, facturas y guías.`}
+        meta={<span className="operational-page-header__scope">Catálogo para venta y despacho</span>}
+        actions={<>
           <button
             type="button"
             className="btn"
@@ -570,8 +566,8 @@ export default function ProductosPage() {
             <Plus size={15} />
             Nuevo producto
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
       {!pristineEmpty && <section className="stats-row ink-enter-2">
         <article className="stat">
