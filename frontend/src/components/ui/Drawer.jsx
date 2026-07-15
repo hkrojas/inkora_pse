@@ -12,13 +12,20 @@ export default function Drawer({
   footer,
   icon,
   size = 'default',
-  variant,
+  variant = 'editor',
+  tone = 'primary',
+  eyebrow,
+  status,
+  initialFocus,
+  bodyClassName,
+  footerClassName,
 }) {
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
   const drawerRef = useRef(null);
   const previousFocusRef = useRef(null);
   const titleId = useId();
+  const descriptionId = useId();
   const dismissOnEscape = useCallback((event) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
     event.preventDefault();
@@ -67,8 +74,14 @@ export default function Drawer({
       'textarea:not([disabled])',
       '[tabindex]:not([tabindex="-1"])',
     ].join(',');
+    const isFocusable = (element) => element
+      && !element.matches('input[type="hidden"], [hidden], [aria-hidden="true"]')
+      && element.getClientRects().length > 0;
     const focusFirst = () => {
-      const first = drawer?.querySelector(selector);
+      const preferred = initialFocus ? drawer?.querySelector(initialFocus) : null;
+      const first = isFocusable(preferred)
+        ? preferred
+        : [...(drawer?.querySelectorAll(selector) || [])].find(isFocusable);
       (first || drawer)?.focus();
     };
     const trapFocus = (event) => {
@@ -110,11 +123,13 @@ export default function Drawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={subtitle ? descriptionId : undefined}
         tabIndex={-1}
         className={cn(
           'ink-drawer',
           size === 'wide' && 'ink-drawer--wide',
-          variant && `ink-drawer--${variant}`,
+          `ink-drawer--${variant}`,
+          tone && `ink-drawer--tone-${tone}`,
           animating && 'is-open',
         )}
         onClick={(event) => event.stopPropagation()}
@@ -124,16 +139,22 @@ export default function Drawer({
           <div className="ink-drawer-title">
             {icon && <div className="ink-drawer-icon">{icon}</div>}
             <div>
+              {(eyebrow || status) && (
+                <div className="ink-drawer-title-meta">
+                  {eyebrow ? <span className="ink-drawer-eyebrow">{eyebrow}</span> : null}
+                  {status ? <span className="ink-drawer-status">{status}</span> : null}
+                </div>
+              )}
               <h3 id={titleId}>{title}</h3>
-              {subtitle ? <p>{subtitle}</p> : null}
+              {subtitle ? <p id={descriptionId}>{subtitle}</p> : null}
             </div>
           </div>
-          <button type="button" className="ink-drawer-close" onClick={onClose} aria-label="Cerrar" autoFocus>
+          <button type="button" className="ink-drawer-close" onClick={onClose} aria-label="Cerrar">
             <X size={18} />
           </button>
         </div>
-        <div className="ink-drawer-body">{children}</div>
-        {footer ? <div className="ink-drawer-footer">{footer}</div> : null}
+        <div className={cn('ink-drawer-body', bodyClassName)}>{children}</div>
+        {footer ? <div className={cn('ink-drawer-footer', footerClassName)}>{footer}</div> : null}
       </aside>
     </>,
     document.body,

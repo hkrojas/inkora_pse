@@ -764,6 +764,10 @@ export default function ProductosPage() {
       <Drawer
         open={!!modal}
         onClose={() => setModal(null)}
+        variant="editor"
+        eyebrow="Catálogo comercial"
+        status={isEditing ? 'Edición' : 'Nuevo ítem'}
+        initialFocus="input, select, textarea"
         title={isEditing ? 'Editar producto' : 'Nuevo producto'}
         subtitle={
           isEditing

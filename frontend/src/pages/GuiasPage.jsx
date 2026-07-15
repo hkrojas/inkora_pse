@@ -970,6 +970,10 @@ export default function GuiasPage() {
       <Drawer
         open={modal}
         onClose={() => setModal(false)}
+        variant="workflow"
+        eyebrow="Despacho fiscal"
+        status="Borrador GRE"
+        initialFocus="select, input, textarea"
         title="Nueva guía de remisión"
         subtitle="Emisión GRE Smart PSE"
         icon={<Truck size={18} />}

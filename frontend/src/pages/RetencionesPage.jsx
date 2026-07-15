@@ -572,6 +572,10 @@ export default function RetencionesPage() {
       <Drawer
         open={modalOpen}
         onClose={() => setModalOpen(false)}
+        variant="fiscal"
+        eyebrow="Comprobante fiscal"
+        status="Retención"
+        initialFocus="select, input, textarea"
         title="Nueva retencion"
         subtitle="Registra un comprobante tipo 20 con los campos exigidos por el proveedor fiscal y SUNAT."
         icon={<HandCoins size={22} />}

@@ -549,6 +549,11 @@ export default function ReversionesPage() {
       <Drawer
         open={modalOpen}
         onClose={() => setModalOpen(false)}
+        variant="fiscal"
+        tone="warning"
+        eyebrow="Corrección fiscal"
+        status="Revisión requerida"
+        initialFocus="select, input, textarea"
         title="Nueva reversion"
         subtitle="Corrige retenciones o percepciones y envia la solicitud a SUNAT."
         icon={<RotateCcw size={22} />}

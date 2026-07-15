@@ -845,6 +845,10 @@ export default function ClientesPage() {
       <Drawer
         open={!!modal}
         onClose={() => setModal(null)}
+        variant="editor"
+        eyebrow="Relación comercial"
+        status={isEditing ? 'Edición' : 'Nuevo registro'}
+        initialFocus="input, select, textarea"
         title={isEditing ? 'Editar cliente' : 'Nuevo cliente'}
         subtitle={isEditing ? 'Actualiza los datos comerciales sin salir del listado.' : 'Registra un cliente para cotizar, emitir y cobrar con datos ordenados.'}
         icon={<Building2 size={22} />}

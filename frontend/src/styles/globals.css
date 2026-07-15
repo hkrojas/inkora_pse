@@ -6580,6 +6580,8 @@ textarea.input:focus,
 }
 
 .ink-drawer {
+  --drawer-accent: var(--color-primary);
+  --drawer-accent-soft: var(--color-primary-soft);
   position: fixed;
   top: 14px;
   right: 14px;
@@ -6603,7 +6605,37 @@ textarea.input:focus,
   width: min(1040px, calc(100vw - 28px));
 }
 
+.ink-drawer--workflow {
+  width: min(760px, calc(100vw - 28px));
+}
+
+.ink-drawer--fiscal {
+  width: min(720px, calc(100vw - 28px));
+}
+
+.ink-drawer--admin .ink-drawer-body {
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--drawer-accent-soft) 38%, transparent), transparent 30%),
+    var(--color-surface);
+}
+
+.ink-drawer--tone-warning {
+  --drawer-accent: var(--color-warning);
+  --drawer-accent-soft: var(--color-warning-soft);
+}
+
+.ink-drawer--tone-danger {
+  --drawer-accent: var(--color-danger);
+  --drawer-accent-soft: var(--color-danger-soft);
+}
+
+.ink-drawer--tone-neutral {
+  --drawer-accent: var(--color-text-muted);
+  --drawer-accent-soft: var(--color-surface-soft);
+}
+
 .ink-drawer-header {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -6612,12 +6644,24 @@ textarea.input:focus,
   border-bottom: 1px solid var(--color-border);
   background: linear-gradient(180deg, var(--color-surface) 0%, #fbfcfd 100%);
   border-radius: 26px 26px 0 0;
+  overflow: hidden;
+}
+
+.ink-drawer-header::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--drawer-accent);
+  content: '';
 }
 
 .ink-drawer-body {
   flex: 1;
   overflow-y: auto;
   padding: 22px 26px 24px;
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--drawer-accent-soft) 45%, transparent), transparent 29%),
+    var(--color-surface);
 }
 
 .ink-drawer-footer {
@@ -6629,12 +6673,43 @@ textarea.input:focus,
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 -10px 28px rgba(15, 23, 42, 0.035);
 }
 
 .ink-drawer-title {
   display: flex;
   align-items: flex-start;
   gap: 14px;
+}
+
+.ink-drawer-title-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0 0 6px;
+}
+
+.ink-drawer-eyebrow,
+.ink-drawer-status {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.ink-drawer-status {
+  min-height: 20px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--drawer-accent) 26%, var(--color-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--drawer-accent-soft) 72%, var(--color-surface));
+  color: color-mix(in srgb, var(--drawer-accent) 76%, var(--color-text));
+  letter-spacing: .055em;
+  display: inline-flex;
+  align-items: center;
 }
 
 .ink-drawer-title h3 {
@@ -6658,8 +6733,8 @@ textarea.input:focus,
   border-radius: 16px;
   display: grid;
   place-items: center;
-  background: var(--color-primary-soft);
-  color: var(--color-dark-forest);
+  background: color-mix(in srgb, var(--drawer-accent-soft) 82%, var(--color-surface));
+  color: var(--drawer-accent);
   font-size: 22px;
   flex: 0 0 auto;
 }
@@ -6687,6 +6762,17 @@ textarea.input:focus,
   transform: scale(.95);
 }
 
+.ink-drawer .ink-form-section,
+.ink-drawer .drawer-editor-section,
+.ink-drawer .card-raw {
+  border-color: color-mix(in srgb, var(--color-border) 86%, var(--drawer-accent) 14%);
+}
+
+.ink-drawer--fiscal .drawer-editor-callout,
+.ink-drawer--workflow .drawer-editor-callout {
+  border-color: color-mix(in srgb, var(--drawer-accent) 26%, var(--color-border));
+}
+
 .note-source-client {
   display: -webkit-box;
   overflow: hidden;
@@ -6700,6 +6786,7 @@ textarea.input:focus,
     right: 0;
     bottom: 0;
     width: 100vw;
+    min-height: 100dvh;
     border-radius: 0;
   }
   .ink-drawer-header {
@@ -6707,6 +6794,14 @@ textarea.input:focus,
   }
   .ink-drawer-footer {
     flex-direction: column-reverse;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ink-drawer,
+  .ink-drawer-overlay {
+    transition: none;
   }
 }
 

@@ -264,6 +264,7 @@ export default function NotasPage() {
         open={drawer.open}
         onClose={closeDrawer}
         variant={`note-context note-context--${drawer.type}`}
+        tone={drawer.type === 'debito' ? 'warning' : 'primary'}
         icon={drawer.type === 'credito' ? <CreditCard size={18} /> : <FileText size={18} />}
         title={`Preparar nota de ${noteTypeLabel}`}
         subtitle={drawer.document ? `Ajuste sobre ${numberOf(drawer.document)}` : ''}

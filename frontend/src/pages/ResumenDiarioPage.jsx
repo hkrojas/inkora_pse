@@ -541,6 +541,10 @@ export default function ResumenDiarioPage() {
       <Drawer
         open={modalOpen}
         onClose={() => setModalOpen(false)}
+        variant="fiscal"
+        eyebrow="Resumen SUNAT"
+        status="Boletas del día"
+        initialFocus="input, select, textarea"
         title="Nuevo resumen diario"
         subtitle="Consolida las boletas del dia y envia el resumen a SUNAT sin salir del listado."
         icon={<BarChart3 size={22} />}

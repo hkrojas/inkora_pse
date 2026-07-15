@@ -614,6 +614,10 @@ export default function PercepcionesPage() {
       <Drawer
         open={modalOpen}
         onClose={() => setModalOpen(false)}
+        variant="fiscal"
+        eyebrow="Comprobante fiscal"
+        status="Percepción"
+        initialFocus="select, input, textarea"
         title="Nueva percepcion"
         subtitle="Registra un comprobante tipo 40 con los campos exigidos por el proveedor fiscal y SUNAT."
         icon={<Eye size={22} />}

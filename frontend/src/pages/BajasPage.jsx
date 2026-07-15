@@ -479,6 +479,11 @@ export default function BajasPage() {
       <Drawer
         open={modalOpen}
         onClose={() => setModalOpen(false)}
+        variant="fiscal"
+        tone="danger"
+        eyebrow="Operación fiscal sensible"
+        status="Requiere confirmación"
+        initialFocus="select, input, textarea"
         title="Comunicacion de baja"
         subtitle="Solicita la anulacion del comprobante desde un panel lateral sin romper la continuidad del listado."
         icon={<XCircle size={22} />}
