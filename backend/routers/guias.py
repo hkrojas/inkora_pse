@@ -1,10 +1,10 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 import crud
-from services import emission_queue_service, facturacion_service, fiscal_provider_service
+from services import emission_queue_service, facturacion_service, fiscal_provider_service, smartpse_response
 from services import beta_feature_flags
 import models
 import schemas
@@ -19,6 +19,26 @@ from models.tenants import USAGE_LIMIT_KIND_GUIA
 from rate_limit import limiter
 
 router = APIRouter(tags=["guias"])
+
+
+def _guide_artifact_response(guia, artifact_type: str) -> Response:
+    if artifact_type == "xml":
+        content = guia.sunat_xml_content
+        label = "XML firmado"
+    else:
+        content = smartpse_response.extract_cdr_xml(guia.provider_response)
+        label = "CDR"
+
+    if not content:
+        raise HTTPException(404, f"{label} no disponible para esta guía.")
+
+    prefix = "R-" if artifact_type == "cdr" else ""
+    filename = f"{prefix}{guia.serie}-{str(guia.correlativo).zfill(6)}.xml"
+    return Response(
+        content=content.encode("utf-8") if isinstance(content, str) else content,
+        media_type="application/xml",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 def _quota_error(exc: "crud.QuotaExceededError") -> HTTPException:
@@ -129,6 +149,30 @@ def obtener_guia_remision(
     return guia
 
 
+@router.get("/guias-remision/{guia_id}/xml")
+def descargar_xml_guia_remision(
+    guia_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    guia = crud.get_guia_remision(db, guia_id, current_user)
+    if not guia:
+        raise HTTPException(404, "Guía de Remisión no encontrada.")
+    return _guide_artifact_response(guia, "xml")
+
+
+@router.get("/guias-remision/{guia_id}/cdr")
+def descargar_cdr_guia_remision(
+    guia_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    guia = crud.get_guia_remision(db, guia_id, current_user)
+    if not guia:
+        raise HTTPException(404, "Guía de Remisión no encontrada.")
+    return _guide_artifact_response(guia, "cdr")
+
+
 @router.get(
     "/guias-remision/{guia_id}/etiqueta",
     response_model=schemas.EtiquetaGuiaResponse,
@@ -219,13 +263,13 @@ def emitir_guia_remision_endpoint(
     guia = crud.get_guia_remision(db, guia_id, current_user)
     if not guia:
         raise HTTPException(404, "Guia de Remision no encontrada.")
-    if guia.estado in ("emitida", "anulada"):
+    if guia.estado != "pendiente":
         raise HTTPException(
             400,
             (
                 f"Operacion bloqueada: La guia {guia.serie}-{str(guia.correlativo).zfill(6)} "
-                f"ya fue procesada (estado actual: '{guia.estado}'). "
-                "No se puede emitir una guia duplicada ante SUNAT."
+                f"no se puede emitir desde el estado '{guia.estado}'. "
+                "Solo las guias pendientes pueden encolarse para SUNAT."
             ),
         )
 
@@ -261,6 +305,11 @@ def emitir_guia_remision_endpoint(
 
     try:
         resolved_mode = emission_queue_service.resolve_emission_mode(mode)
+        if resolved_mode != emission_queue_service.EMISSION_MODE_ASYNC:
+            raise HTTPException(
+                400,
+                "Las guías se emiten exclusivamente por cola. Usa mode=async.",
+            )
         if resolved_mode == emission_queue_service.EMISSION_MODE_ASYNC:
             job, _ = emission_queue_service.enqueue_guide_job(db, guia, current_user)
             return JSONResponse(
@@ -273,15 +322,8 @@ def emitir_guia_remision_endpoint(
                     internal_order_number=guia.internal_order_number,
                 ),
             )
-
-        resultado = facturacion_service.emitir_guia_remision(guia, current_user)
-        crud.guardar_respuesta_sunat_gre(
-            db,
-            guia.id,
-            resultado,
-            tenant_id=current_user.tenant_id,
-        )
-        return resultado
+    except HTTPException:
+        raise
     except facturacion_service.FacturacionException as exc:
         crud.guardar_error_sunat_gre(
             db,

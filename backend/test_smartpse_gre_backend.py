@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -158,7 +159,7 @@ def test_superadmin_check_smartpse_gre_credentials_updates_status_without_exposi
     assert tenant.smartpse_gre_checked_at is not None
 
 
-def test_emitir_guia_smartpse_sends_gre_extra_payload_and_does_not_poll_ticket(db_session):
+def test_emitir_guia_rechaza_respuesta_smartpse_sin_cdr(db_session):
     tenant, user, guia = _make_gre_user_and_guia(db_session, "GRC03")
     fake_client = MagicMock()
     fake_client.process_xml.return_value = {
@@ -169,14 +170,11 @@ def test_emitir_guia_smartpse_sends_gre_extra_payload_and_does_not_poll_ticket(d
         "codigo_hash": "hash-gre",
         "rechazado": False,
     }
-    fake_client.consult_ticket.side_effect = AssertionError("GRE no debe consultar ticket Smart PSE")
-
     with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
-        result = facturacion_service.emitir_guia_remision(guia, user)
+        with pytest.raises(facturacion_service.FacturacionException) as exc_info:
+            facturacion_service.emitir_guia_remision(guia, user)
 
-    assert result["pending"] is True
-    assert result["ticket"] == "GRE-TICKET-1"
-    assert result["hash"] == "hash-gre"
+    assert "no devolvio CDR" in str(exc_info.value)
     fake_client.process_xml.assert_called_once()
     extra_payload = fake_client.process_xml.call_args.kwargs["extra_payload"]
     assert extra_payload == {
@@ -185,7 +183,29 @@ def test_emitir_guia_smartpse_sends_gre_extra_payload_and_does_not_poll_ticket(d
         "sol_user": "20123403SOLUSER",
         "sol_password": "sol-password-demo",
     }
-    fake_client.consult_ticket.assert_not_called()
+
+
+def test_emitir_guia_smartpse_acepta_cdr_y_persiste_evidencia(db_session):
+    tenant, user, guia = _make_gre_user_and_guia(db_session, "GRC03CDR")
+    cdr_xml = "<ApplicationResponse>aceptada</ApplicationResponse>"
+    fake_client = MagicMock()
+    fake_client.process_xml.return_value = {
+        "estado": 200,
+        "mensaje": "Aceptado por SUNAT",
+        "xml_firmado": "<DespatchAdvice/>",
+        "codigo_hash": "hash-gre",
+        "cdr": base64.b64encode(cdr_xml.encode("utf-8")).decode("ascii"),
+        "rechazado": False,
+    }
+
+    with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
+        result = facturacion_service.emitir_guia_remision(guia, user)
+
+    assert result["success"] is True
+    assert result["cdr_xml"] == cdr_xml
+    updated = crud.guardar_respuesta_sunat_gre(db_session, guia.id, result, tenant_id=tenant.id)
+    assert updated.estado == "emitida"
+    assert updated.cdr_disponible is True
 
 
 def test_guardar_respuesta_sunat_gre_persists_pending_signed_artifacts(db_session):

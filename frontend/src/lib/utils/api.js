@@ -179,6 +179,7 @@ export const api = {
   getBlob: (path, options) => requestBlob(path, { ...options, method: 'GET' }),
   post: (path, body, options) => request(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
   blob: (path, body, options) => requestBlob(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
+  download: (path, options) => requestBlob(path, { ...options, method: 'GET' }),
   postForm: (path, formData, options) => request(path, { ...options, method: 'POST', body: formData }),
   put: (path, body, options) => request(path, { ...options, method: 'PUT', body: JSON.stringify(body) }),
   patch: (path, body, options) => request(path, { ...options, method: 'PATCH', body: JSON.stringify(body) }),

@@ -125,6 +125,22 @@ from schemas.guias import (
     SmartPSEGuideReconcileRequest,
 )
 
+from schemas.inventory import (
+    WarehouseCreate,
+    WarehouseResponse,
+    InventoryActivation,
+    StockResponse,
+    InventoryAdjustmentCreate,
+    MovementResponse,
+    TransferLine,
+    TransferCreate,
+    ProductInventoryConfig,
+    AvailabilityRequest,
+    AvailabilityLine,
+    ReturnReceiptLine,
+    ReturnReceiptCreate,
+)
+
 from schemas.resumenes import (
     ResumenDiarioDocReferencia,
     ResumenDiarioPercepcion,
@@ -190,6 +206,11 @@ from schemas.onboarding import (
     OnboardingEstadoResponse,
 )
 from schemas.emission_jobs import EmissionJobResponse
+from schemas.notes import (
+    NoteAdjustmentLine,
+    FiscalNoteDraftCreate,
+    FiscalNoteDraftUpdate,
+)
 
 from schemas.usage_limits import (
     UsageLimitBase,
@@ -265,6 +286,7 @@ __all__ = [
     "OnboardingChecklistItem", "OnboardingEstadoResponse",
     # emission jobs
     "EmissionJobResponse",
+    "NoteAdjustmentLine", "FiscalNoteDraftCreate", "FiscalNoteDraftUpdate",
     # usage limits
     "UsageLimitBase", "UsageLimitCreate", "UsageLimitResponse",
     "UsageLimitsBulkUpsert", "UsageLimitUsageItem", "UsageLimitsWithUsage",

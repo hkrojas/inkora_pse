@@ -246,6 +246,7 @@ def _create_cotizacion_inner(
         tipo_comprobante=cotizacion.tipo_comprobante,
         document_kind=DOCUMENT_KIND_QUOTATION,
         internal_order_number=internal_order_number,
+        warehouse_id=getattr(cotizacion, "warehouse_id", None),
         correlativo=nuevo_correlativo,
         serie=QUOTE_SERIE,
         observaciones=getattr(cotizacion, "observaciones", None),
@@ -408,6 +409,7 @@ def duplicate_cotizacion(
         tipo_comprobante=original.tipo_comprobante or "00",
         observaciones=original.observaciones,
         condicion_pago=original.condicion_pago,
+        warehouse_id=original.warehouse_id,
         cuotas_pago=original.cuotas_pago or [],
         items=[
             schemas.CotizacionItemCreate(

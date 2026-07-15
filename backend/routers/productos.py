@@ -339,7 +339,10 @@ def update_producto(
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
-    result = crud.update_producto(db, producto_id, producto, current_user.tenant_id)
+    try:
+        result = crud.update_producto(db, producto_id, producto, current_user.tenant_id)
+    except crud.ProductoEnUsoError as exc:
+        raise HTTPException(409, str(exc))
     if not result:
         raise HTTPException(404, "Producto no encontrado")
     return result

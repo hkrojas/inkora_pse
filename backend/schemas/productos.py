@@ -28,6 +28,16 @@ class ProductoBase(BaseModel):
     moneda: str = "PEN"
     unidad_medida: str = "NIU"
     tipo_afectacion_igv: str = "10"
+    item_type: str = "unclassified"
+    inventory_enabled: bool = False
+
+    @field_validator("item_type")
+    @classmethod
+    def validate_item_type(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower()
+        if normalized not in {"unclassified", "inventory", "service"}:
+            raise ValueError("El tipo debe ser unclassified, inventory o service")
+        return normalized
 
     @field_validator("nombre")
     @classmethod

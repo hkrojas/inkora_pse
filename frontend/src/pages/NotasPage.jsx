@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   CheckCircle2,
@@ -24,6 +25,7 @@ import { FieldError } from '../components/ui/FieldError';
 import ConfirmEmitDialog from '../components/documents/ConfirmEmitDialog';
 import { DocumentTypeBadge } from '../components/documents/DocumentType';
 import { getSunatStatus, formatCurrency, MOTIVOS_NC, MOTIVOS_ND } from '../lib/utils/documents';
+import { inventory } from '../services/inventory';
 
 const TIPO_NOTA_OPTS = [
   { value: 'credito', label: 'Nota de crédito (07)' },
@@ -59,6 +61,8 @@ const EMPTY_FORM = {
   tipo_nota: 'credito',
   cod_motivo: '',
   descripcion_motivo: '',
+  inventory_impact: 'none',
+  inventory_return_warehouse_id: '',
 };
 
 function getTabKey(doc) {
@@ -94,9 +98,11 @@ function formatDocumentRef(doc) {
 }
 
 export default function NotasPage() {
+  const navigate = useNavigate();
   const toast = useToast();
   const [notas, setNotas] = useState([]);
   const [facturas, setFacturas] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [total, setTotal] = useState(0);
@@ -126,9 +132,10 @@ export default function NotasPage() {
       if (filters.desde) params.set('desde', filters.desde);
       if (filters.hasta) params.set('hasta', filters.hasta);
       if (search.trim()) params.set('q', search.trim());
-      const [notasRes, facturasRes] = await Promise.all([
+      const [notasRes, facturasRes, warehousesRes] = await Promise.all([
         api.get(`/notas/page?${params.toString()}`),
         api.get('/facturas-emitidas/page?limit=15&tab=emitted'),
+        inventory.warehouses().catch(() => []),
       ]);
       const notaItems = Array.isArray(notasRes) ? notasRes : notasRes.items || [];
       const facturaItems = Array.isArray(facturasRes) ? facturasRes : facturasRes.items || [];
@@ -136,6 +143,7 @@ export default function NotasPage() {
       setTotal(Array.isArray(notasRes) ? notaItems.length : notasRes.total || 0);
       setBackendCounts(notasRes.counts || { all: notaItems.length, emitted: 0, pending: 0, rejected: 0, voided: 0 });
       setFacturas(facturaItems.filter((f) => f.estado === 'facturada' || f.sunat_accepted));
+      setWarehouses(warehousesRes || []);
     } catch (err) {
       setNotas([]);
       setTotal(0);
@@ -288,6 +296,9 @@ export default function NotasPage() {
     if (!form.comprobante_afectado_id) errs.comprobante = 'Seleccione el comprobante afectado';
     if (!form.cod_motivo) errs.motivo = 'Seleccione el motivo';
     if (!form.descripcion_motivo.trim()) errs.descripcion = 'La descripcion del motivo es obligatoria';
+    if (form.inventory_impact === 'physical_return' && !form.inventory_return_warehouse_id) {
+      errs.warehouse = 'Seleccione el almacén que recibirá la devolución';
+    }
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -305,6 +316,10 @@ export default function NotasPage() {
         tipo_nota: form.tipo_nota,
         cod_motivo: form.cod_motivo,
         descripcion_motivo: form.descripcion_motivo.trim(),
+        inventory_impact: form.tipo_nota === 'credito' ? form.inventory_impact : 'none',
+        inventory_return_warehouse_id: form.inventory_impact === 'physical_return'
+          ? Number(form.inventory_return_warehouse_id)
+          : null,
       });
       toast('Nota emitida correctamente', 'success');
       setConfirmOpen(false);
@@ -320,9 +335,7 @@ export default function NotasPage() {
   };
 
   const openModal = () => {
-    setForm(EMPTY_FORM);
-    setFormErrors({});
-    setModalOpen(true);
+    navigate('/notas/nueva');
   };
 
   const tipoNotaBadge = form.tipo_nota === 'credito' ? '07' : '08';
@@ -542,7 +555,9 @@ export default function NotasPage() {
                 <tbody>
                   {pageItems.map((doc) => {
                     const sunat = getSunatStatus(doc);
-                    const num = `${doc.serie}-${String(doc.correlativo).padStart(6, '0')}`;
+                    const num = doc.estado === 'borrador'
+                      ? 'Sin correlativo'
+                      : `${doc.serie}-${String(doc.correlativo).padStart(6, '0')}`;
                     const clienteName = doc.cliente?.razon_social || doc.cliente?.nombre || '-';
                     const clienteDoc = doc.cliente?.numero_documento || doc.cliente?.ruc || doc.cliente?.dni;
                     const affectedDoc = getAffectedDocument(doc);
@@ -593,6 +608,11 @@ export default function NotasPage() {
                         </td>
                         <td data-label="Acciones">
                           <div className="ink-table-row-actions document-list-row-actions">
+                            {doc.estado === 'borrador' && (
+                              <button type="button" className="ink-row-btn" title="Continuar borrador" onClick={() => navigate(`/notas/nueva?draft=${doc.id}`)}>
+                                <ArrowRight size={14} />
+                              </button>
+                            )}
                             {sunat?.kind === 'pending' && (
                               <button type="button" className="ink-row-btn" title="Recargar estado SUNAT" onClick={load}>
                                 <RefreshCw size={14} />
@@ -714,6 +734,37 @@ export default function NotasPage() {
             />
             <FieldError message={formErrors.descripcion} />
           </div>
+
+          {form.tipo_nota === 'credito' && (
+            <div>
+              <label className="label">Impacto en inventario</label>
+              <select
+                className="input"
+                value={form.inventory_impact}
+                onChange={(event) => setForm((current) => ({ ...current, inventory_impact: event.target.value }))}
+              >
+                <option value="none">Sin movimiento · corrección de precio o datos</option>
+                <option value="undelivered">Cantidad no entregada · reponer al aceptar SUNAT</option>
+                <option value="physical_return">Devolución física · ingresar al confirmar recepción</option>
+              </select>
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">La nota fiscal y la recepción física quedan trazadas por separado.</p>
+            </div>
+          )}
+
+          {form.tipo_nota === 'credito' && form.inventory_impact === 'physical_return' && (
+            <div>
+              <label className="label">Almacén receptor</label>
+              <select
+                className="input"
+                value={form.inventory_return_warehouse_id}
+                onChange={(event) => setForm((current) => ({ ...current, inventory_return_warehouse_id: event.target.value }))}
+              >
+                <option value="">Seleccionar almacén...</option>
+                {warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
+              </select>
+              <FieldError message={formErrors.warehouse} />
+            </div>
+          )}
 
           <div className="responsive-form-actions">
             <button type="button" className="btn-ghost" onClick={() => setModalOpen(false)}>Cancelar</button>

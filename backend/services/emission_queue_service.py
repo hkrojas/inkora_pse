@@ -740,9 +740,13 @@ def _process_emit_guide_job(
     if not guia:
         raise RuntimeError("No se encontró la guía a emitir.")
 
-    result = facturacion_service.emitir_guia_remision(guia, user)
-    crud.guardar_respuesta_sunat_gre(db, guia.id, result, tenant_id=job.tenant_id)
-    return result
+    try:
+        result = facturacion_service.emitir_guia_remision(guia, user)
+        crud.guardar_respuesta_sunat_gre(db, guia.id, result, tenant_id=job.tenant_id)
+        return result
+    except Exception as exc:
+        crud.guardar_error_sunat_gre(db, guia.id, str(exc), tenant_id=job.tenant_id)
+        raise
 
 
 def _persist_final_job_error_to_resource(

@@ -44,6 +44,16 @@ from models.tenants import (
 from models.clientes import Cliente
 
 from models.productos import Producto
+from models.inventory import (
+    Warehouse,
+    InventoryBalance,
+    InventoryMovement,
+    InventoryHold,
+    InventoryTransfer,
+    InventoryTransferItem,
+    InventoryReturn,
+    InventoryReturnItem,
+)
 
 from models.cotizaciones import Cotizacion, CotizacionItem
 
@@ -136,6 +146,14 @@ __all__ = [
     "Cliente",
     # productos
     "Producto",
+    "Warehouse",
+    "InventoryBalance",
+    "InventoryMovement",
+    "InventoryHold",
+    "InventoryTransfer",
+    "InventoryTransferItem",
+    "InventoryReturn",
+    "InventoryReturnItem",
     # cotizaciones
     "Cotizacion",
     "CotizacionItem",

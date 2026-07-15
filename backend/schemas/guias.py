@@ -13,6 +13,7 @@ from fiscal_catalogs import (
 
 
 class GuiaRemisionItemCreate(BaseModel):
+    producto_id: Optional[int] = None
     descripcion: str = Field(..., min_length=1, max_length=500)
     cantidad: Decimal = Field(..., gt=0)
     unidad_medida: str = "NIU"
@@ -151,8 +152,10 @@ class GuiaRemisionResponse(BaseModel):
     cliente_nombre: Optional[str] = None
     cliente_documento: Optional[str] = None
     sunat_xml_url: Optional[str] = None
+    xml_disponible: bool = False
     sunat_pdf_url: Optional[str] = None
     sunat_cdr_url: Optional[str] = None
+    cdr_disponible: bool = False
     sunat_hash: Optional[str] = None
     sunat_ticket: Optional[str] = None
     provider_endpoint: Optional[str] = None

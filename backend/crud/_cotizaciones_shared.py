@@ -277,6 +277,7 @@ def _build_fiscal_document(
         estado=DOCUMENT_STATUS_PENDING,
         document_kind=DOCUMENT_KIND_FISCAL_DOCUMENT,
         source_quote_id=quote.id,
+        warehouse_id=quote.warehouse_id,
         internal_order_number=quote.internal_order_number,
         observaciones=quote.observaciones,
         condicion_pago=quote.condicion_pago,
@@ -343,6 +344,8 @@ def _build_note_document(
     nuevo_correlativo: int,
     items: list[models.CotizacionItem] | None = None,
     totales: dict | None = None,
+    inventory_impact: str = "none",
+    inventory_return_warehouse_id: int | None = None,
 ):
     tipo_comprobante = "07" if tipo_nota == "credito" else "08"
     note_items = items if items is not None else _clone_cotizacion_items(doc_afectado.items)
@@ -375,5 +378,8 @@ def _build_note_document(
         nota_referencia_id=doc_afectado.id,
         nota_motivo_codigo=cod_motivo,
         nota_motivo_descripcion=descripcion_motivo,
+        warehouse_id=doc_afectado.warehouse_id,
+        inventory_impact=inventory_impact,
+        inventory_return_warehouse_id=inventory_return_warehouse_id,
         items=note_items,
     )

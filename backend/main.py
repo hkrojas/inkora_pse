@@ -19,7 +19,9 @@ from routers import (
     dashboard,
     facturacion,
     guias,
+    inventory,
     legacy_frozen,
+    notas,
     ops,
     pagos,
     productos,
@@ -99,7 +101,9 @@ def create_app() -> FastAPI:
     app.include_router(pagos.router)
     app.include_router(reportes.router)
     app.include_router(facturacion.router)
+    app.include_router(notas.router)
     app.include_router(guias.router)
+    app.include_router(inventory.router)
     app.include_router(superadmin.router)
     app.include_router(dashboard.router)
     app.include_router(sunat.router)

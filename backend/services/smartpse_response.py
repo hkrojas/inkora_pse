@@ -4,8 +4,15 @@ import base64
 import zipfile
 from io import BytesIO
 from typing import Any
+from xml.etree import ElementTree as ET
 
 from services.smartpse_client import SmartPSEException
+
+
+NS = {
+    "cbc": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+    "cac": "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
+}
 
 
 def _as_list(value: Any) -> list:
@@ -53,6 +60,20 @@ def _decode_base64_text(value: str | None) -> str | None:
             return None
 
 
+def extract_cdr_xml(provider_response: dict | None) -> str | None:
+    """Obtiene el CDR XML persistido en la respuesta de Smart PSE."""
+    if not isinstance(provider_response, dict):
+        return None
+    cdr = provider_response.get("cdr")
+    if cdr:
+        return _decode_base64_text(cdr)
+    for key in ("process", "verification", "data", "sunat_response"):
+        resolved = extract_cdr_xml(provider_response.get(key))
+        if resolved:
+            return resolved
+    return None
+
+
 def extract_xml_from_signed_zip(value: str | None) -> str | None:
     if not value:
         return None
@@ -77,6 +98,48 @@ def extract_xml_from_signed_zip(value: str | None) -> str | None:
             return raw.decode("utf-8")
         except UnicodeDecodeError:
             return None
+
+
+def extract_sale_document_identity(xml_text: str | None) -> dict:
+    if not xml_text:
+        return {}
+    try:
+        root = ET.fromstring(xml_text.encode("utf-8") if isinstance(xml_text, str) else xml_text)
+    except Exception:
+        return {}
+
+    root_name = root.tag.rsplit("}", 1)[-1]
+    if root_name == "CreditNote":
+        tipo_doc = "07"
+    elif root_name == "DebitNote":
+        tipo_doc = "08"
+    else:
+        tipo_doc = root.findtext("cbc:InvoiceTypeCode", namespaces=NS)
+
+    supplier_ruc = root.findtext(
+        "cac:AccountingSupplierParty/cac:Party/cac:PartyIdentification/cbc:ID",
+        namespaces=NS,
+    )
+    if supplier_ruc is None:
+        supplier_ruc = root.findtext(
+            "cac:AccountingSupplierParty/cbc:CustomerAssignedAccountID",
+            namespaces=NS,
+        )
+
+    document_id = root.findtext("cbc:ID", namespaces=NS)
+    serie = None
+    correlativo = None
+    if document_id and "-" in document_id:
+        serie, correlativo = document_id.split("-", 1)
+
+    return {
+        "document_id": document_id,
+        "serie": serie,
+        "correlativo": correlativo,
+        "tipo_doc": str(tipo_doc or "").strip().zfill(2) if tipo_doc else None,
+        "issue_date": root.findtext("cbc:IssueDate", namespaces=NS),
+        "ruc": str(supplier_ruc or "").strip() or None,
+    }
 
 
 def _is_pending(data: dict) -> bool:

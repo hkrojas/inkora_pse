@@ -26,6 +26,8 @@ def crear_nota_credito_debito(
     cod_motivo: str,
     descripcion_motivo: str,
     items=None,
+    inventory_impact="none",
+    inventory_return_warehouse_id=None,
 ):
     return _retry_on_correlativo_conflict(
         _crear_nota_credito_debito_inner,
@@ -36,6 +38,8 @@ def crear_nota_credito_debito(
         cod_motivo,
         descripcion_motivo,
         items,
+        inventory_impact,
+        inventory_return_warehouse_id,
     )
 
 
@@ -47,6 +51,8 @@ def _crear_nota_credito_debito_inner(
     cod_motivo: str,
     descripcion_motivo: str,
     items=None,
+    inventory_impact="none",
+    inventory_return_warehouse_id=None,
 ):
     doc_afectado = (
         db.query(models.Cotizacion)
@@ -110,6 +116,8 @@ def _crear_nota_credito_debito_inner(
         nuevo_correlativo,
         items=note_items,
         totales=note_totals,
+        inventory_impact=inventory_impact,
+        inventory_return_warehouse_id=inventory_return_warehouse_id,
     )
 
     try:

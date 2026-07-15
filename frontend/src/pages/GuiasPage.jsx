@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Eye, Plus, PlusCircle, Trash2, Truck, MapPin, ChevronDown, AlertCircle, Search, Download, Package, CheckCircle2, FileX, ArrowRight, Clock3 } from 'lucide-react';
 import { guias as svc } from '../services/guias';
 import { cotizaciones as cotSvc } from '../services/cotizaciones';
@@ -416,7 +416,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
             </button>
           )}
           <button type="submit" disabled={saving} className="btn-primary guide-form-submit">
-            {saving ? <Spinner size="sm" /> : <Truck size={14} />} Emitir Guía
+            {saving ? <Spinner size="sm" /> : <Truck size={14} />} Guardar borrador
           </button>
         </div>
       </div>
@@ -426,6 +426,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 
 export default function GuiasPage() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
@@ -499,15 +500,9 @@ export default function GuiasPage() {
     setSaving(true);
     try {
       const created = await svc.create(data);
-      const statusMeta = getGuideStatusMeta(created);
-      toast(
-        statusMeta.provider === 'smartpse'
-          ? 'Guía firmada por Smart PSE. CDR pendiente.'
-          : 'Guía emitida correctamente',
-        statusMeta.provider === 'smartpse' ? 'info' : 'success',
-      );
+      toast('Borrador guardado. Revisa la guía antes de enviarla a SUNAT.', 'success');
       setModal(false);
-      load();
+      navigate(`/guias/${created.id}`);
     } catch (err) {
       toast(err.message, 'error');
     } finally {

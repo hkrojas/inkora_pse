@@ -87,6 +87,28 @@ class GuiaRemision(Base):
     items = relationship("GuiaRemisionItem", back_populates="guia", cascade="all, delete-orphan")
 
     @property
+    def cdr_disponible(self) -> bool:
+        """Indica si existe evidencia CDR sin exponer la respuesta del proveedor."""
+        if self.sunat_cdr_url:
+            return True
+
+        def has_cdr(value):
+            if not isinstance(value, dict):
+                return False
+            if value.get("cdr"):
+                return True
+            return any(
+                has_cdr(value.get(key))
+                for key in ("process", "verification", "data", "sunat_response")
+            )
+
+        return has_cdr(self.provider_response or {})
+
+    @property
+    def xml_disponible(self) -> bool:
+        return bool(self.sunat_xml_url or self.sunat_xml_content)
+
+    @property
     def cliente_nombre(self):
         if self.cliente:
             return self.cliente.razon_social or self.cliente.nombre or None
@@ -109,6 +131,7 @@ class GuiaRemisionItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     guia_id = Column(Integer, ForeignKey("guias_remision.id"))
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=True, index=True)
 
     descripcion = Column(String)
     cantidad = Column(Numeric(12, 2))

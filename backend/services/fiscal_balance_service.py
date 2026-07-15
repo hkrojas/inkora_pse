@@ -247,10 +247,25 @@ def ensure_credit_note_within_available_amount(
         fiscal_document_id=fiscal_document.id,
         document_kind=DOCUMENT_KIND_DEBIT_NOTE,
     )
+    reserved_credit_notes_total = _sum_money(
+        db,
+        models.Cotizacion.tenant_id == tenant_id,
+        models.Cotizacion.nota_referencia_id == fiscal_document.id,
+        models.Cotizacion.document_kind == DOCUMENT_KIND_CREDIT_NOTE,
+        models.Cotizacion.estado == "pendiente",
+        models.Cotizacion.nota_ajuste_metadata.isnot(None),
+        models.Cotizacion.correlativo.isnot(None),
+        models.Cotizacion.sunat_error.is_(None),
+        models.Cotizacion.id != note.id,
+    )
     available = max(
         _money(fiscal_document.total_venta)
         - accepted_credit_notes_total
         + accepted_debit_notes_total,
+        _ZERO,
+    )
+    available = max(
+        available - reserved_credit_notes_total,
         _ZERO,
     )
     note_total = _money(note.total_venta)
