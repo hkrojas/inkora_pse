@@ -11,7 +11,56 @@ branch_labels = None
 depends_on = None
 
 
+def _preprovisioned_inventory_schema_is_complete():
+    """Detect the production schema that was installed before this revision.
+
+    The initial production rollout used reviewed SQL before the Alembic revision
+    was merged.  Returning early lets Alembic record the revision without
+    recreating those objects.  New databases still execute the normal DDL below.
+    """
+    inspector = sa.inspect(op.get_bind())
+    required_columns = {
+        "tenants": {"inventory_enabled", "inventory_started_at"},
+        "productos": {"item_type", "inventory_enabled"},
+        "cotizaciones": {
+            "warehouse_id",
+            "inventory_impact",
+            "inventory_return_warehouse_id",
+        },
+        "cotizacion_items": {"inventory_source_item_id"},
+        "guia_remision_items": {"producto_id"},
+    }
+    required_tables = {
+        "warehouses",
+        "inventory_balances",
+        "inventory_movements",
+        "inventory_holds",
+        "inventory_transfers",
+        "inventory_transfer_items",
+        "inventory_returns",
+        "inventory_return_items",
+    }
+
+    existing_tables = set(inspector.get_table_names())
+    if not required_tables.issubset(existing_tables):
+        return False
+
+    for table_name, column_names in required_columns.items():
+        if table_name not in existing_tables:
+            return False
+        existing_columns = {
+            column["name"] for column in inspector.get_columns(table_name)
+        }
+        if not column_names.issubset(existing_columns):
+            return False
+
+    return True
+
+
 def upgrade():
+    if _preprovisioned_inventory_schema_is_complete():
+        return
+
     op.add_column("tenants", sa.Column("inventory_enabled", sa.Boolean(), nullable=False, server_default=sa.false()))
     op.add_column("tenants", sa.Column("inventory_started_at", sa.DateTime(), nullable=True))
     op.add_column("productos", sa.Column("item_type", sa.String(), nullable=False, server_default="unclassified"))
