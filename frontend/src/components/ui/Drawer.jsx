@@ -12,6 +12,7 @@ export default function Drawer({
   footer,
   icon,
   size = 'default',
+  variant,
 }) {
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
@@ -110,7 +111,12 @@ export default function Drawer({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={cn('ink-drawer', size === 'wide' && 'ink-drawer--wide', animating && 'is-open')}
+        className={cn(
+          'ink-drawer',
+          size === 'wide' && 'ink-drawer--wide',
+          variant && `ink-drawer--${variant}`,
+          animating && 'is-open',
+        )}
         onClick={(event) => event.stopPropagation()}
         onKeyDownCapture={dismissOnEscape}
       >

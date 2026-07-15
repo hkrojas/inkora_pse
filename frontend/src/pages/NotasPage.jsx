@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, CheckCircle2, Clock3, CreditCard, FileText, ReceiptText, RefreshCw, Search, XCircle, XOctagon } from 'lucide-react';
+import { ArrowRight, CheckCircle2, CreditCard, FileText, ReceiptText, RefreshCw, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/utils/api';
-import { useToast } from '../components/ui/Toast';
 import Drawer from '../components/ui/Drawer';
 import Spinner from '../components/ui/Spinner';
 import EmptyState from '../components/ui/EmptyState';
@@ -57,7 +56,6 @@ function NoteStatus({ document }) {
 
 export default function NotasPage() {
   const navigate = useNavigate();
-  const toast = useToast();
   const [section, setSection] = useState('emit');
   const [sourceDocuments, setSourceDocuments] = useState([]);
   const [sourceTotal, setSourceTotal] = useState(0);
@@ -143,7 +141,15 @@ export default function NotasPage() {
   const closeDrawer = () => setDrawer((current) => ({ ...current, open: false }));
   const context = drawer.context;
   const selectedMotives = context?.allowed_motives?.[drawer.type] || {};
+  const selectedMotivesEntries = Object.entries(selectedMotives);
   const canContinue = Boolean(context && Object.keys(selectedMotives).length);
+  const isCreditNote = drawer.type === 'credito';
+  const noteTypeLabel = isCreditNote ? 'crédito' : 'débito';
+  const originalAmount = Number(context?.balance?.original || 0);
+  const availableAmount = Number(context?.balance?.maximo_disponible || 0);
+  const availablePercent = originalAmount > 0
+    ? Math.min(100, Math.max(0, (availableAmount / originalAmount) * 100))
+    : 0;
   const sourcePages = Math.max(1, Math.ceil(sourceTotal / PER_PAGE));
   const historyPages = Math.max(1, Math.ceil(notesTotal / PER_PAGE));
 
@@ -171,43 +177,54 @@ export default function NotasPage() {
       </div>
 
       {section === 'emit' ? (
-        <section role="tabpanel" aria-label="Comprobantes elegibles para notas" className="panel overflow-hidden">
-          <div className="border-b border-[var(--color-border)] p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+        <section role="tabpanel" aria-label="Comprobantes elegibles para notas" className="panel notes-source-panel overflow-hidden">
+          <div className="notes-source-panel__header">
+            <div className="notes-source-panel__heading">
               <div>
                 <h2 className="m-0 text-lg font-extrabold text-[var(--color-text)]">Comprobantes aceptados</h2>
-                <p className="mt-1 text-sm text-[var(--color-text-muted)]">Facturas y boletas con CDR disponible para emitir una nota.</p>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">Elige el comprobante que necesitas ajustar. La nota se prepara en el siguiente paso.</p>
               </div>
-              <span className="document-list-table-pill"><CheckCircle2 size={14} />{sourceTotal} elegibles</span>
+              <div className="notes-source-panel__actions">
+                <span className="notes-source-ready"><CheckCircle2 size={15} aria-hidden="true" />{sourceTotal} listos para ajustar</span>
+                <button type="button" className="btn-ghost notes-source-refresh" onClick={loadSources}><RefreshCw size={15} />Actualizar</button>
+              </div>
             </div>
-            <label className="search-box mt-5 max-w-2xl">
-              <Search size={16} />
-              <input aria-label="Buscar comprobantes aceptados" value={sourceQuery} onChange={(event) => setSourceQuery(event.target.value)} placeholder="Buscar por serie, número, RUC o cliente..." />
-            </label>
+            <div className="notes-source-search-row">
+              <label className="search-box notes-source-search">
+                <Search size={16} />
+                <input aria-label="Buscar comprobantes aceptados" value={sourceQuery} onChange={(event) => setSourceQuery(event.target.value)} placeholder="Buscar por serie, número, RUC o cliente..." />
+              </label>
+              <p>Solo se muestran documentos validados por SUNAT.</p>
+            </div>
           </div>
 
           {sourceError ? <div className="p-5"><PageError error={sourceError} onRetry={loadSources} /></div>
             : sourceLoading ? <div className="flex min-h-64 items-center justify-center"><Spinner size="lg" /></div>
               : sourceDocuments.length === 0 ? <div className="p-5"><EmptyState variant="onboarding" icon={<ReceiptText size={22} />} title={sourceQuery ? 'No encontramos comprobantes aceptados' : 'Aún no hay comprobantes aceptados'} description={sourceQuery ? 'Prueba con otra serie, RUC o cliente.' : 'Cuando SUNAT acepte una factura o boleta, aparecerá aquí para que puedas emitir una nota.'} /></div>
                 : <>
-                  <div className="divide-y divide-[var(--color-border)]">
+                  <div className="notes-source-list">
                     {sourceDocuments.map((document) => (
-                      <article key={document.id} className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                        <div className="grid min-w-0 gap-1 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center sm:gap-x-4">
-                          <DocumentTypeBadge tipo={document.tipo_comprobante} size="sm" />
-                          <div className="min-w-0">
-                            <p className="m-0 truncate font-mono text-sm font-extrabold text-[var(--color-text)]">{numberOf(document)}</p>
-                            <p className="note-source-client mt-1 text-sm font-semibold text-[var(--color-text)]" title={clientName(document)}>{clientName(document)}</p>
-                            <p className="mt-1 text-xs text-[var(--color-text-muted)]">{clientDocument(document) || 'Sin documento'} · {formatDate(document.fecha_emision)}</p>
+                      <article key={document.id} className="note-source-row">
+                        <div className="note-source-document">
+                          <div className="note-source-document__identity">
+                            <DocumentTypeBadge tipo={document.tipo_comprobante} size="sm" />
+                            <div className="min-w-0">
+                              <div className="note-source-folio-row">
+                                <p className="note-source-folio">{numberOf(document)}</p>
+                                <span className="note-source-verified" title="Validado por SUNAT" aria-label="Validado por SUNAT"><CheckCircle2 size={14} aria-hidden="true" /></span>
+                              </div>
+                              <p className="note-source-client" title={clientName(document)}>{clientName(document)}</p>
+                              <p className="note-source-meta">{clientDocument(document) || 'Sin documento'} <span aria-hidden="true">·</span> {formatDate(document.fecha_emision)}</p>
+                            </div>
                           </div>
-                          <div className="mt-2 sm:mt-0 sm:text-right">
-                            <p className="m-0 font-mono text-base font-extrabold text-[var(--color-text)]">{formatCurrency(document.total_venta, document.moneda)}</p>
-                            <div className="mt-1"><NoteStatus document={document} /></div>
+                          <div className="note-source-amount">
+                            <span>Total emitido</span>
+                            <p>{formatCurrency(document.total_venta, document.moneda)}</p>
                           </div>
                         </div>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <button type="button" className="btn-primary justify-center" onClick={() => openDrawer(document, 'credito')}><CreditCard size={16} />Nota de crédito</button>
-                          <button type="button" className="btn-secondary justify-center" onClick={() => openDrawer(document, 'debito')}><FileText size={16} />Nota de débito</button>
+                        <div className="note-source-actions" role="group" aria-label={`Acciones para ${numberOf(document)}`}>
+                          <button type="button" className="btn-primary note-source-action" onClick={() => openDrawer(document, 'credito')}><CreditCard size={16} />Crear nota de crédito</button>
+                          <button type="button" className="btn-secondary note-source-action" onClick={() => openDrawer(document, 'debito')}><FileText size={16} />Crear nota de débito</button>
                         </div>
                       </article>
                     ))}
@@ -229,7 +246,7 @@ export default function NotasPage() {
             : notesLoading ? <div className="flex min-h-64 items-center justify-center"><Spinner size="lg" /></div>
               : notes.length === 0 ? <div className="p-5"><EmptyState icon={<FileText size={22} />} title="Aún no tienes notas emitidas" description="El historial aparecerá aquí cuando guardes o emitas una nota." action={<button type="button" className="btn-primary" onClick={() => setSection('emit')}>Ver comprobantes aceptados</button>} /></div>
                 : <>
-                  <div className="flex flex-wrap gap-2 border-b border-[var(--color-border)] px-5 py-3 text-xs text-[var(--color-text-muted)]"><span>{notesTotal} notas</span><span>·</span><span>{historySummary.accepted} aceptadas</span><span>·</span><span>{historySummary.pending} pendientes</span><span>·</span><span>{historySummary.error} observadas</span></div>
+                  <div className="note-history-summary" aria-label="Resumen del historial"><span><strong>{notesTotal}</strong> notas</span><span><strong>{historySummary.accepted}</strong> aceptadas</span><span><strong>{historySummary.pending}</strong> en proceso</span><span className={historySummary.error ? 'is-attention' : ''}><strong>{historySummary.error}</strong> observadas</span></div>
                   <div className="ink-table-scroll"><table className="ink-table ink-note-table"><thead><tr><th>Número</th><th>Tipo</th><th>Comprobante afectado</th><th>Cliente</th><th>Motivo</th><th>Estado SUNAT</th><th>Acciones</th></tr></thead><tbody>{notes.map((note) => {
                     const reference = note.nota_referencia || note.source_quote;
                     return <tr key={note.id}><td data-label="Número"><div className="ink-table-cell__primary document-list-folio">{note.estado === 'borrador' ? 'Sin correlativo' : numberOf(note)}</div><div className="ink-table-cell__meta">{formatDate(note.fecha_emision)}</div></td><td data-label="Tipo"><DocumentTypeBadge tipo={note.document_kind === 'credit_note' ? '07' : '08'} size="sm" /></td><td data-label="Comprobante afectado"><div className="ink-table-cell__primary">{reference ? numberOf(reference) : '—'}</div></td><td data-label="Cliente"><div className="ink-table-cell__primary">{clientName(note)}</div><div className="ink-table-cell__meta">{clientDocument(note)}</div></td><td data-label="Motivo"><div className="ink-table-cell__primary">{note.nota_motivo_descripcion || '—'}</div></td><td data-label="Estado SUNAT"><NoteStatus document={note} /></td><td data-label="Acciones">{note.estado === 'borrador' ? <button type="button" className="ink-row-btn" title="Continuar borrador" aria-label="Continuar borrador" onClick={() => navigate(`/notas/nueva?draft=${note.id}`)}><ArrowRight size={14} /></button> : null}</td></tr>;
@@ -242,14 +259,35 @@ export default function NotasPage() {
       <Drawer
         open={drawer.open}
         onClose={closeDrawer}
+        variant={`note-context note-context--${drawer.type}`}
         icon={drawer.type === 'credito' ? <CreditCard size={18} /> : <FileText size={18} />}
-        title={`Nota de ${drawer.type === 'credito' ? 'crédito' : 'débito'}`}
-        subtitle={drawer.document ? `${numberOf(drawer.document)} · ${clientName(drawer.document)}` : ''}
-        footer={<><button type="button" className="btn-secondary" onClick={closeDrawer}>Cancelar</button><button type="button" className="btn-primary" disabled={!canContinue || drawer.loading} onClick={() => navigate(`/notas/nueva?documento=${drawer.document.id}&tipo=${drawer.type}`)}>Continuar</button></>}
+        title={`Preparar nota de ${noteTypeLabel}`}
+        subtitle={drawer.document ? `Ajuste sobre ${numberOf(drawer.document)}` : ''}
+        footer={<><button type="button" className="btn-ghost" onClick={closeDrawer}>Cancelar</button><button type="button" className="btn-primary" disabled={!canContinue || drawer.loading} onClick={() => navigate(`/notas/nueva?documento=${drawer.document.id}&tipo=${drawer.type}`)}>Preparar nota de {noteTypeLabel}</button></>}
       >
         {drawer.loading ? <div className="flex min-h-48 items-center justify-center"><Spinner size="lg" /></div>
           : drawer.error ? <PageError error={drawer.error} onRetry={() => openDrawer(drawer.document, drawer.type)} />
-            : context ? <div className="space-y-5"><section className="rounded-2xl border border-[var(--color-border)] p-4"><p className="eyebrow">Comprobante afectado</p><p className="mt-2 font-mono text-base font-extrabold">{numberOf(context.document)}</p><p className="mt-1 text-sm text-[var(--color-text-muted)]">{clientName(context.document)} · {formatCurrency(context.balance?.original, context.document?.moneda)}</p></section><dl className="space-y-3 text-sm"><div className="flex justify-between gap-4"><dt>Créditos aceptados</dt><dd>{formatCurrency(context.balance?.creditos_aceptados || 0)}</dd></div><div className="flex justify-between gap-4"><dt>Ajustes reservados</dt><dd>{formatCurrency(context.balance?.ajustes_reservados || 0)}</dd></div><div className="flex justify-between gap-4 border-t border-dashed border-[var(--color-border)] pt-3 font-extrabold"><dt>Saldo fiscal disponible</dt><dd>{formatCurrency(context.balance?.maximo_disponible || 0)}</dd></div></dl><section><h3 className="m-0 text-sm font-extrabold">Motivos disponibles</h3><p className="mt-1 text-xs text-[var(--color-text-muted)]">{Object.keys(selectedMotives).length ? `${Object.keys(selectedMotives).length} motivos SUNAT aplicables a este comprobante.` : 'Este tipo de nota no está disponible para el comprobante seleccionado.'}</p></section></div> : null}
+            : context ? <div className="note-context">
+              <section className="note-context-document">
+                <div className="note-context-document__topline"><span>Comprobante afectado</span><span className="note-context-document__verified"><CheckCircle2 size={14} aria-hidden="true" />Validado por SUNAT</span></div>
+                <div className="note-context-document__main"><DocumentTypeBadge tipo={context.document?.tipo_comprobante} size="sm" /><p>{numberOf(context.document)}</p></div>
+                <p className="note-context-document__client">{clientName(context.document)}</p>
+                <p className="note-context-document__meta">{clientDocument(context.document) || 'Sin documento'} <span aria-hidden="true">·</span> Emitido el {formatDate(context.document?.fecha_emision)}</p>
+                <div className="note-context-document__total"><span>Total original</span><strong>{formatCurrency(context.balance?.original || 0, context.document?.moneda)}</strong></div>
+              </section>
+
+              <section className="note-context-balance" aria-labelledby="note-context-balance-title">
+                <div className="note-context-balance__heading"><div><p className="eyebrow">Disponibilidad fiscal</p><h3 id="note-context-balance-title">Saldo que puedes ajustar</h3></div><strong>{formatCurrency(context.balance?.maximo_disponible || 0, context.document?.moneda)}</strong></div>
+                <div className="note-context-balance__bar" role="progressbar" aria-label="Saldo fiscal disponible" aria-valuemin="0" aria-valuemax={originalAmount} aria-valuenow={availableAmount}><span style={{ width: `${availablePercent}%` }} /></div>
+                <dl className="note-context-balance__breakdown"><div><dt>Créditos aceptados</dt><dd>{formatCurrency(context.balance?.creditos_aceptados || 0, context.document?.moneda)}</dd></div><div><dt>Ajustes en cola</dt><dd>{formatCurrency(context.balance?.ajustes_reservados || 0, context.document?.moneda)}</dd></div></dl>
+              </section>
+
+              <section className="note-context-motives" aria-labelledby="note-context-motives-title">
+                <div><p className="eyebrow">Siguiente paso</p><h3 id="note-context-motives-title">Motivos disponibles</h3></div>
+                {selectedMotivesEntries.length ? <><p>Podrás elegir el motivo SUNAT y definir el ajuste en la siguiente pantalla.</p><div className="note-context-motive-list">{selectedMotivesEntries.slice(0, 4).map(([code, label]) => <span key={code}><b>{code}</b>{label}</span>)}</div>{selectedMotivesEntries.length > 4 ? <p className="note-context-motives__more">Y {selectedMotivesEntries.length - 4} motivos más disponibles.</p> : null}</> : <p className="note-context-motives__unavailable">Este tipo de nota no está disponible para el comprobante seleccionado.</p>}
+              </section>
+              <p className="note-context-disclaimer">Aún no se creará ni emitirá una nota. Primero revisarás y guardarás el borrador.</p>
+            </div> : null}
       </Drawer>
     </div>
   );
