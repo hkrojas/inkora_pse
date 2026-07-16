@@ -47,6 +47,7 @@ DOCUMENT_STATUS_FACTURADA = "facturada"
 DOCUMENT_STATUS_ANULADA = "anulada"
 DOCUMENT_STATUS_PENDIENTE = "pendiente"
 DOCUMENT_KIND_QUOTATION = "quotation"
+DOCUMENT_KIND_FISCAL_DOCUMENT = "fiscal_document"
 FISCAL_PAGE_STATUSES = ("sent", "pending", "rejected")
 
 
@@ -690,6 +691,7 @@ def emitir_comprobante(
                 fiscal_document,
                 current_user,
                 tipo_comprobante=payload.tipo_comprobante,
+                tipo_operacion=payload.tipo_operacion,
             )
             return _build_async_job_response(
                 job,
@@ -1197,6 +1199,78 @@ def list_facturas_emitidas_page(
     total = page_query.with_entities(func.count(models.Cotizacion.id)).scalar() or 0
     items = page_query.order_by(desc(models.Cotizacion.id)).offset(skip).limit(limit).all()
     return {"items": items, "total": total, "skip": skip, "limit": limit, "counts": counts}
+
+
+@router.post("/facturas-emitidas/{comprobante_id}/reintentar")
+@limiter.limit("5/minute")
+def retry_rejected_fiscal_document(
+    request: Request,
+    comprobante_id: int,
+    confirmar_operacion_estandar: bool = Query(default=False),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+    _emission_check: models.User = Depends(require_emission_allowed),
+):
+    comprobante = (
+        db.query(models.Cotizacion)
+        .filter(
+            models.Cotizacion.id == comprobante_id,
+            models.Cotizacion.tenant_id == current_user.tenant_id,
+        )
+        .with_for_update()
+        .first()
+    )
+    if not comprobante:
+        _raise_not_found("Comprobante no encontrado")
+    if comprobante.document_kind != DOCUMENT_KIND_FISCAL_DOCUMENT:
+        raise HTTPException(409, "Solo se pueden reintentar facturas o boletas fiscales.")
+    if comprobante.tipo_comprobante not in {"01", "03"}:
+        raise HTTPException(409, "El tipo de comprobante no admite este reintento.")
+    if comprobante.estado == DOCUMENT_STATUS_ANULADA:
+        raise HTTPException(409, "Un comprobante anulado no puede reenviarse.")
+    if comprobante.sunat_accepted or (
+        comprobante.estado == DOCUMENT_STATUS_FACTURADA and not comprobante.sunat_error
+    ):
+        raise HTTPException(409, "El comprobante ya fue aceptado por SUNAT y no puede reenviarse.")
+    if not str(comprobante.sunat_error or "").strip():
+        raise HTTPException(409, "Solo se pueden reintentar comprobantes rechazados por SUNAT.")
+    if not comprobante.serie or comprobante.correlativo is None:
+        raise HTTPException(409, "El comprobante rechazado no tiene serie y correlativo válidos.")
+    legacy_auto_detraction = comprobante.sujeta_detraccion and "3127" in str(
+        comprobante.sunat_error or ""
+    )
+    if comprobante.sujeta_detraccion and not legacy_auto_detraction:
+        raise HTTPException(409, "La detracción requiere revisión fiscal antes de reenviarse.")
+    if legacy_auto_detraction and not confirmar_operacion_estandar:
+        raise HTTPException(
+            409,
+            "Confirma que el comprobante debe reenviarse como operación estándar sin detracción.",
+        )
+
+    _validar_pre_emision(comprobante, comprobante.tipo_comprobante)
+    _ensure_emission_credentials(db, current_user.tenant_id)
+
+    job, _ = emission_queue_service.enqueue_fiscal_document_job(
+        db,
+        comprobante,
+        current_user,
+        tipo_comprobante=comprobante.tipo_comprobante,
+        tipo_operacion="0101",
+        clear_legacy_detraccion=legacy_auto_detraction,
+    )
+    if job.status == models.EMISSION_JOB_STATUS_SUCCEEDED:
+        raise HTTPException(
+            409,
+            "El historial de emisión indica que este comprobante ya fue procesado. Contacta a soporte antes de reenviarlo.",
+        )
+    return _build_async_job_response(
+        job,
+        message=(
+            "Reintento encolado. Inkora regenerará el XML y conservará la serie y el correlativo."
+        ),
+        resource_id=comprobante.id,
+        internal_order_number=comprobante.internal_order_number,
+    )
 
 
 @router.get("/retenciones/", response_model=List[schemas.RetencionResponse])

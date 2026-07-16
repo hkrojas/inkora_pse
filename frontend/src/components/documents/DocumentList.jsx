@@ -179,6 +179,9 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
   const [error, setError] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
   const [retryingArtifactsId, setRetryingArtifactsId] = useState(null);
+  const [retryingFiscalId, setRetryingFiscalId] = useState(null);
+  const [retryingDoc, setRetryingDoc] = useState(null);
+  const [retryFiscalStatus, setRetryFiscalStatus] = useState(null);
   const [voidingDoc, setVoidingDoc] = useState(null);
   const [voidReason, setVoidReason] = useState('');
   const [voiding, setVoiding] = useState(false);
@@ -331,6 +334,47 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
       toast(err.message || 'No se pudieron reconstruir los artefactos fiscales.', 'error');
     } finally {
       setRetryingArtifactsId(null);
+    }
+  };
+
+  const pollFiscalRetry = async (jobId) => {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const job = await api.get(`/emission-jobs/${jobId}`);
+      setRetryFiscalStatus(job.status);
+      if (job.status === 'succeeded') return job;
+      if (job.status === 'failed') {
+        throw new Error(job.last_error || 'SUNAT rechazó nuevamente el comprobante.');
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+    }
+    return null;
+  };
+
+  const submitFiscalRetry = async () => {
+    if (!retryingDoc) return;
+    setRetryingFiscalId(retryingDoc.id);
+    setRetryFiscalStatus('queued');
+    try {
+      const response = await api.post(
+        `/facturas-emitidas/${retryingDoc.id}/reintentar?confirmar_operacion_estandar=${retryingDoc.sujeta_detraccion ? 'true' : 'false'}`,
+        {},
+        { timeoutMs: 60000 },
+      );
+      const completedJob = await pollFiscalRetry(response.job_id);
+      if (completedJob) {
+        toast('Comprobante aceptado por SUNAT.', 'success');
+        setRetryingDoc(null);
+        setRetryFiscalStatus(null);
+      } else {
+        toast('El reintento continúa procesándose en segundo plano.', 'success');
+      }
+      await load();
+    } catch (err) {
+      setRetryFiscalStatus('failed');
+      toast(err.message || 'No se pudo reenviar el comprobante.', 'error');
+      await load();
+    } finally {
+      setRetryingFiscalId(null);
     }
   };
 
@@ -712,6 +756,9 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                             ? 'ink-table-row--active'
                             : '';
                     const canRetryArtifacts = canRetryFiscalArtifacts(doc);
+                    const canRetryFiscal = sunat?.kind === 'error'
+                      && ['01', '03'].includes(doc.tipo_comprobante)
+                      && doc.estado !== 'anulada';
                     const canVoid = canVoidDocument(doc);
 
                     return (
@@ -821,6 +868,20 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                       >
                                         {retryingArtifactsId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
                                         Reintentar archivos
+                                      </button>
+                                    )}
+                                    {canRetryFiscal && (
+                                      <button
+                                        type="button"
+                                        className="history-actions-mobile-item"
+                                        disabled={retryingFiscalId === doc.id}
+                                        onClick={() => runActionMenuItem(() => {
+                                          setRetryFiscalStatus(null);
+                                          setRetryingDoc(doc);
+                                        })}
+                                      >
+                                        {retryingFiscalId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
+                                        Reintentar envío SUNAT
                                       </button>
                                     )}
                                     <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleCopyShareLink(doc))}>
@@ -935,6 +996,20 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                                       Reintentar archivos
                                     </button>
                                   )}
+                                  {canRetryFiscal && (
+                                    <button
+                                      type="button"
+                                      className="history-actions-mobile-item"
+                                      disabled={retryingFiscalId === doc.id}
+                                      onClick={() => runActionMenuItem(() => {
+                                        setRetryFiscalStatus(null);
+                                        setRetryingDoc(doc);
+                                      })}
+                                    >
+                                      {retryingFiscalId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
+                                      Reintentar envío SUNAT
+                                    </button>
+                                  )}
                                   {canVoid && (
                                     <button type="button" className="history-actions-mobile-item is-danger" onClick={() => openVoidDialog(doc)}>
                                       <XCircle className="h-3.5 w-3.5" />
@@ -989,6 +1064,61 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
           </div>
         )}
       </article>
+      <Modal
+        open={Boolean(retryingDoc)}
+        onClose={() => !retryingFiscalId && setRetryingDoc(null)}
+        title="Reintentar envío a SUNAT"
+        subtitle={retryingDoc ? formatDocNumber(retryingDoc) : undefined}
+        icon={RefreshCw}
+        size="md"
+        footer={(
+          <>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={Boolean(retryingFiscalId)}
+              onClick={() => setRetryingDoc(null)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={Boolean(retryingFiscalId)}
+              onClick={submitFiscalRetry}
+            >
+              {retryingFiscalId ? <Spinner size={15} /> : <RefreshCw size={15} />}
+              {retryingFiscalId ? 'Procesando…' : retryingDoc?.sujeta_detraccion ? 'Confirmar y reenviar' : 'Regenerar y reenviar'}
+            </button>
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-[var(--text-secondary)]">
+            Inkora regenerará el XML con los datos guardados y conservará la misma serie y correlativo.
+            Esta acción solo está disponible para comprobantes rechazados.
+          </p>
+          {retryingDoc?.sujeta_detraccion && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+              <strong>Corrección de la detracción automática anterior</strong>
+              <p className="mt-1">
+                Se regenerará como operación estándar 0101, sin detracción. Confirma solo si la venta realmente no estaba sujeta a detracción.
+              </p>
+            </div>
+          )}
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3 text-sm">
+            <strong>No se creará otro comprobante.</strong>
+            <p className="mt-1 text-[var(--text-secondary)]">
+              No cierres esta ventana mientras se confirma la recepción inicial. El proceso continuará en la cola si SUNAT demora.
+            </p>
+          </div>
+          {retryFiscalStatus && (
+            <p className="text-sm font-semibold text-[var(--text-primary)]" role="status">
+              Estado: {retryFiscalStatus === 'queued' ? 'En cola' : retryFiscalStatus === 'processing' ? 'Procesando' : retryFiscalStatus === 'retry' ? 'Reintentando' : retryFiscalStatus === 'failed' ? 'Rechazado' : 'Completado'}
+            </p>
+          )}
+        </div>
+      </Modal>
       <Modal
         open={Boolean(voidingDoc)}
         onClose={() => !voiding && setVoidingDoc(null)}

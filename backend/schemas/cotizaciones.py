@@ -291,6 +291,7 @@ class FiscalDocumentListResponse(BaseModel):
     total_igv: Decimal
     total_venta: Decimal
     tipo_comprobante: str
+    sujeta_detraccion: bool = False
     sunat_xml_url: Optional[str] = None
     sunat_pdf_url: Optional[str] = None
     sunat_cdr_url: Optional[str] = None

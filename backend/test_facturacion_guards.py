@@ -227,6 +227,100 @@ class TestEmissionSubscriptionGuard:
 # A. PRE-VALIDACIÓN
 # ============================================================================
 
+class TestRejectedFiscalRetry:
+
+    @staticmethod
+    def _client(db_session, user):
+        app = FastAPI()
+        app.include_router(facturacion_router.router)
+
+        def override_db():
+            yield db_session
+
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_db] = override_db
+        app.dependency_overrides[get_db_tenant] = override_db
+        return TestClient(app)
+
+    def _rejected_document(self, db_session, suffix="RETRY01"):
+        tenant = make_tenant(db_session, suffix)
+        _enable_smartpse_for_test(tenant)
+        _set_subscription(db_session, tenant, models.SUBSCRIPTION_STATUS_ACTIVE)
+        user = make_user(db_session, tenant, email=f"{suffix.lower()}@test.com")
+        cliente = make_cliente(
+            db_session,
+            tenant,
+            suffix,
+            tipo_documento="6",
+            numero_documento="20191308868",
+        )
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+        fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+        fiscal.sunat_error = "3127 - Falta código de detracción"
+        fiscal.provider_verification_status = "failed"
+        db_session.commit()
+        return tenant, user, fiscal
+
+    def test_endpoint_encola_reintento_sin_crear_otro_comprobante(self, db_session):
+        _, user, fiscal = self._rejected_document(db_session)
+        response = self._client(db_session, user).post(
+            f"/facturas-emitidas/{fiscal.id}/reintentar"
+        )
+
+        assert response.status_code == 202
+        data = response.json()
+        assert data["resource_id"] == fiscal.id
+        assert data["job_status"] == models.EMISSION_JOB_STATUS_QUEUED
+        job = crud.get_emission_job(db_session, data["job_id"], user.tenant_id)
+        assert job.payload_snapshot["tipo_operacion"] == "0101"
+        assert db_session.query(models.Cotizacion).filter(
+            models.Cotizacion.tenant_id == user.tenant_id,
+            models.Cotizacion.document_kind == "fiscal_document",
+        ).count() == 1
+
+    def test_endpoint_bloquea_documento_aceptado(self, db_session):
+        _, user, fiscal = self._rejected_document(db_session, "RETRY02")
+        fiscal.estado = "facturada"
+        fiscal.sunat_error = None
+        fiscal.sunat_cdr_content = "<ApplicationResponse/>"
+        db_session.commit()
+
+        response = self._client(db_session, user).post(
+            f"/facturas-emitidas/{fiscal.id}/reintentar"
+        )
+
+        assert response.status_code == 409
+        assert "aceptado por SUNAT" in response.json()["detail"]
+
+    def test_endpoint_exige_confirmacion_para_corregir_detraccion_legacy(self, db_session):
+        _, user, fiscal = self._rejected_document(db_session, "RETRY02D")
+        fiscal.sujeta_detraccion = True
+        db_session.commit()
+        client = self._client(db_session, user)
+
+        blocked = client.post(f"/facturas-emitidas/{fiscal.id}/reintentar")
+        accepted = client.post(
+            f"/facturas-emitidas/{fiscal.id}/reintentar?confirmar_operacion_estandar=true"
+        )
+
+        assert blocked.status_code == 409
+        assert accepted.status_code == 202
+        job = crud.get_emission_job(db_session, accepted.json()["job_id"], user.tenant_id)
+        assert job.payload_snapshot["clear_legacy_detraccion"] is True
+
+    def test_endpoint_no_expone_documento_de_otro_tenant(self, db_session):
+        _, _, fiscal = self._rejected_document(db_session, "RETRY03A")
+        tenant_b = make_tenant(db_session, "RETRY03B")
+        _set_subscription(db_session, tenant_b, models.SUBSCRIPTION_STATUS_ACTIVE)
+        user_b = make_user(db_session, tenant_b, email="retry03b@test.com")
+
+        response = self._client(db_session, user_b).post(
+            f"/facturas-emitidas/{fiscal.id}/reintentar"
+        )
+
+        assert response.status_code == 404
+
+
 class TestPreValidacion:
     """Tests de _validar_pre_emision — todos deben lanzar HTTPException 400."""
 

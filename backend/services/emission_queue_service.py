@@ -122,6 +122,8 @@ def enqueue_fiscal_document_job(
     user: models.User,
     *,
     tipo_comprobante: str,
+    tipo_operacion: str | None = None,
+    clear_legacy_detraccion: bool = False,
 ):
     idempotency_key = f"emit:fiscal:{fiscal_document.id}"
     existing = crud.get_emission_job_by_key(db, fiscal_document.tenant_id, idempotency_key)
@@ -137,7 +139,11 @@ def enqueue_fiscal_document_job(
         existing = crud.requeue_emission_job(
             db,
             existing.id,
-            payload_snapshot={"tipo_comprobante": tipo_comprobante},
+            payload_snapshot={
+                "tipo_comprobante": tipo_comprobante,
+                "tipo_operacion": tipo_operacion,
+                "clear_legacy_detraccion": clear_legacy_detraccion,
+            },
             provider=provider,
             reset_attempts=True,
         )
@@ -152,7 +158,11 @@ def enqueue_fiscal_document_job(
         action=models.EMISSION_JOB_ACTION_EMIT_FISCAL,
         provider=provider,
         idempotency_key=idempotency_key,
-        payload_snapshot={"tipo_comprobante": tipo_comprobante},
+        payload_snapshot={
+            "tipo_comprobante": tipo_comprobante,
+            "tipo_operacion": tipo_operacion,
+            "clear_legacy_detraccion": clear_legacy_detraccion,
+        },
         max_attempts=settings.EMISSION_MAX_ATTEMPTS,
     )
     return job, True
@@ -589,7 +599,13 @@ def _process_emit_fiscal_job(
         db,
         user,
         tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
+        tipo_operacion_override=payload_snapshot.get("tipo_operacion"),
     )
+    if payload_snapshot.get("clear_legacy_detraccion"):
+        fiscal_document.sujeta_detraccion = False
+        fiscal_document.porcentaje_detraccion = None
+        fiscal_document.monto_detraccion = None
+        fiscal_document.cuenta_banco_nacion = None
     persisted_document = crud.guardar_respuesta_sunat(
         db,
         fiscal_document.id,

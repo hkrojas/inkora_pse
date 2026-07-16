@@ -95,6 +95,25 @@ def test_enqueue_fiscal_job_is_idempotent_for_active_job(db_session):
     assert job_1.status == models.EMISSION_JOB_STATUS_QUEUED
 
 
+def test_retry_fiscal_job_preserves_explicit_operation_type(db_session):
+    _, user, fiscal = _make_fiscal_document(db_session, "EQ01R")
+
+    job, created = emission_queue_service.enqueue_fiscal_document_job(
+        db_session,
+        fiscal,
+        user,
+        tipo_comprobante="01",
+        tipo_operacion="0101",
+    )
+
+    assert created is True
+    assert job.payload_snapshot == {
+        "tipo_comprobante": "01",
+        "tipo_operacion": "0101",
+        "clear_legacy_detraccion": False,
+    }
+
+
 def test_enqueue_fiscal_job_usa_smartpse_en_beta_aun_con_direct_sunat_configurado(db_session):
     tenant, user, fiscal = _make_fiscal_document(db_session, "EQ01B")
     tenant.sunat_usuario_sol = "MODDATOS"
@@ -148,6 +167,82 @@ def test_process_emission_job_marks_success_and_updates_document(db_session):
     assert updated_job.status == models.EMISSION_JOB_STATUS_SUCCEEDED
     assert updated_doc.estado == "facturada"
     assert updated_job.result_snapshot["success"] is True
+
+
+def test_process_retry_regenerates_invoice_with_snapshot_operation_type(db_session):
+    _, user, fiscal = _make_fiscal_document(db_session, "EQ02R")
+    fiscal.sunat_error = "3127 - Falta código de detracción"
+    db_session.commit()
+    job, _ = emission_queue_service.enqueue_fiscal_document_job(
+        db_session,
+        fiscal,
+        user,
+        tipo_comprobante="01",
+        tipo_operacion="0101",
+    )
+    crud.claim_next_emission_job(db_session)
+
+    with patch(
+        "services.emission_queue_service.facturacion_service.emitir_factura",
+        return_value={
+            "success": True,
+            "serie": fiscal.serie,
+            "correlativo": str(fiscal.correlativo).zfill(6),
+            "provider_endpoint": "/invoice/send",
+            "provider_status_code": 200,
+            "sunat_response": {"success": True},
+        },
+    ) as emit_call, patch(
+        "services.emission_queue_service.pdf_storage_service.process_pdf_background",
+        side_effect=_noop_async,
+    ):
+        processed = emission_queue_service.process_emission_job(job.id, db_session=db_session)
+
+    assert processed is True
+    emit_call.assert_called_once()
+    assert emit_call.call_args.kwargs["tipo_doc_override"] == "01"
+    assert emit_call.call_args.kwargs["tipo_operacion_override"] == "0101"
+
+
+def test_successful_legacy_retry_clears_incorrect_detraction_metadata(db_session):
+    _, user, fiscal = _make_fiscal_document(db_session, "EQ02D")
+    fiscal.sunat_error = "3127 - Falta código de detracción"
+    fiscal.sujeta_detraccion = True
+    fiscal.porcentaje_detraccion = 12
+    fiscal.monto_detraccion = 84
+    fiscal.cuenta_banco_nacion = "001234"
+    db_session.commit()
+    job, _ = emission_queue_service.enqueue_fiscal_document_job(
+        db_session,
+        fiscal,
+        user,
+        tipo_comprobante="01",
+        tipo_operacion="0101",
+        clear_legacy_detraccion=True,
+    )
+    crud.claim_next_emission_job(db_session)
+
+    with patch(
+        "services.emission_queue_service.facturacion_service.emitir_factura",
+        return_value={
+            "success": True,
+            "serie": fiscal.serie,
+            "correlativo": str(fiscal.correlativo).zfill(6),
+            "provider_endpoint": "/invoice/send",
+            "provider_status_code": 200,
+            "sunat_response": {"success": True},
+        },
+    ), patch(
+        "services.emission_queue_service.pdf_storage_service.process_pdf_background",
+        side_effect=_noop_async,
+    ):
+        assert emission_queue_service.process_emission_job(job.id, db_session=db_session) is True
+
+    db_session.refresh(fiscal)
+    assert fiscal.sujeta_detraccion is False
+    assert fiscal.porcentaje_detraccion is None
+    assert fiscal.monto_detraccion is None
+    assert fiscal.cuenta_banco_nacion is None
 
 
 def test_process_emission_job_schedules_retry_for_timeout(db_session):
