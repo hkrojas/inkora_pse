@@ -8844,6 +8844,9 @@ textarea.input:focus,
   gap: 16px;
   align-items: start;
 }
+.builder > div {
+  min-width: 0;
+}
 .builder > aside {
   position: sticky;
   top: 20px;
