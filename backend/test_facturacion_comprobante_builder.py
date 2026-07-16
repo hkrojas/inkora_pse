@@ -440,7 +440,7 @@ def test_emitir_reversion_puede_guardar_ticket_sin_polling():
     assert b"RR-20260502-00001" in xml_content
 
 
-def test_aplicar_detraccion_usa_tipo_operacion_1001():
+def test_factura_mayor_a_700_no_activa_detraccion_automaticamente():
     payload = {
         "tipoDoc": "01",
         "tipoOperacion": "0101",
@@ -456,6 +456,29 @@ def test_aplicar_detraccion_usa_tipo_operacion_1001():
 
     result = facturacion_service._aplicar_detraccion(payload, cotizacion, _mock_user(), db=None)
 
+    assert result["tipoOperacion"] == "0101"
+    assert "detraccion" not in result
+
+
+def test_aplicar_detraccion_explicita_usa_tipo_operacion_1001():
+    payload = {
+        "tipoDoc": "01",
+        "tipoOperacion": "1001",
+        "mtoImpVenta": Decimal("1180.00"),
+        "legends": [],
+    }
+    cotizacion = _mock_cotizacion(
+        condicion_pago="contado",
+        total_venta=Decimal("1180.00"),
+        sujeta_detraccion=True,
+        codigo_detraccion="025",
+        porcentaje_detraccion=Decimal("12.00"),
+        cuenta_banco_nacion="00-123-456789",
+    )
+
+    result = facturacion_service._aplicar_detraccion(payload, cotizacion, _mock_user(), db=None)
+
     assert result["tipoOperacion"] == "1001"
+    assert result["detraccion"]["codBienDetraccion"] == "025"
     assert result["detraccion"]["percent"] == Decimal("12.00")
     assert result["detraccion"]["mount"] == Decimal("141.60")

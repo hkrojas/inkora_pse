@@ -218,10 +218,14 @@ function getEmailLink(cliente, doc) {
 
 function getLinkedSunatStatus(item) {
   if (!item?.linked_fiscal_document_number) return null;
-  if (item.linked_fiscal_document_status === 'anulada') {
+  const status = String(item.linked_fiscal_document_status || '').toLowerCase();
+  if (status === 'anulada') {
     return { label: 'Anulado', variant: 'danger', icon: XCircle };
   }
-  if (item.linked_fiscal_document_status === 'facturada') {
+  if (['rechazada', 'rechazado', 'error'].includes(status)) {
+    return { label: 'Rechazado', variant: 'danger', icon: XCircle };
+  }
+  if (status === 'facturada') {
     return { label: 'Aceptado', variant: 'success', icon: CheckCircle2 };
   }
   return { label: 'Pendiente', variant: 'warning', icon: Clock };

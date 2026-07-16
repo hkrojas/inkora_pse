@@ -569,24 +569,34 @@ def _base_payload(cotizacion, user, tipo_doc_comprobante, *, tipo_operacion_over
     return payload, totales
 
 
-UMBRAL_DETRACCION = calculations.Decimal("700.00")
-PORCENTAJE_DETRACCION_IMPRENTA = calculations.Decimal("12.00")
-CODIGO_DETRACCION_IMPRENTA = "012"
-
-
 def _aplicar_detraccion(payload, cotizacion, user, db: Session):
     monto_total = calculations.to_decimal(
         payload.get("mtoImpVenta", payload.get("mtoImporteTotal", 0))
     )
     moneda = (cotizacion.moneda or "PEN").upper()
     tipo_doc = payload.get("tipoDoc", "00")
+    tipo_operacion = str(payload.get("tipoOperacion") or "0101").strip()
 
-    if moneda != "PEN" or tipo_doc != "01" or monto_total <= UMBRAL_DETRACCION:
+    # El importe no determina por sí solo si una operación está sujeta al SPOT.
+    # Solo se construye detracción cuando fue solicitada explícitamente.
+    if tipo_operacion != "1001":
         return payload
 
-    porcentaje = calculations.to_decimal(
-        cotizacion.porcentaje_detraccion or PORCENTAJE_DETRACCION_IMPRENTA
-    )
+    if moneda != "PEN" or tipo_doc != "01":
+        raise ValueError("La operación 1001 solo es válida para facturas emitidas en PEN")
+    if not bool(getattr(cotizacion, "sujeta_detraccion", False)):
+        raise ValueError("La operación 1001 requiere configurar explícitamente la detracción")
+
+    codigo_detraccion = getattr(cotizacion, "codigo_detraccion", None)
+    if not isinstance(codigo_detraccion, (str, int)):
+        codigo_detraccion = None
+    codigo_detraccion = str(codigo_detraccion or "").strip().zfill(3)
+    if len(codigo_detraccion) != 3 or not codigo_detraccion.isdigit():
+        raise ValueError("La detracción requiere un código válido del catálogo 54 de SUNAT")
+
+    porcentaje = calculations.to_decimal(cotizacion.porcentaje_detraccion or 0)
+    if porcentaje <= 0 or porcentaje > 100:
+        raise ValueError("La detracción requiere un porcentaje válido")
     monto_detraccion = calculations.redondear(
         monto_total * porcentaje / calculations.Decimal("100")
     )
@@ -597,11 +607,13 @@ def _aplicar_detraccion(payload, cotizacion, user, db: Session):
             if isinstance(cuenta, dict) and "nacion" in (cuenta.get("banco", "")).lower():
                 cuenta_bn = cuenta.get("cuenta", "")
                 break
-    cuenta_bn = cuenta_bn or ""
+    cuenta_bn = str(cuenta_bn or "").strip()
+    if not cuenta_bn:
+        raise ValueError("La detracción requiere la cuenta del Banco de la Nación")
 
     payload["tipoOperacion"] = "1001"
     payload["detraccion"] = {
-        "codBienDetraccion": CODIGO_DETRACCION_IMPRENTA,
+        "codBienDetraccion": codigo_detraccion,
         "codMedioPago": "001",
         "ctaBanco": cuenta_bn,
         "percent": porcentaje,
