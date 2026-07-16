@@ -1990,6 +1990,11 @@ export default function CotizacionesPage() {
 
   // Documentos
   const [list, setList]         = useState([]);
+  const [fiscalDocs, setFiscalDocs] = useState([]);
+  const [fiscalDocumentTotal, setFiscalDocumentTotal] = useState(0);
+  const [fiscalCounts, setFiscalCounts] = useState({
+    all: 0, draft: 0, emitted: 0, pending: 0, rejected: 0, voided: 0,
+  });
   const [loading, setLoading]   = useState(false);
   const [saving, setSaving]     = useState(false);
   const [editingQuote, setEditingQuote] = useState(null);
@@ -2031,8 +2036,24 @@ export default function CotizacionesPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    svc.list()
-      .then(setList)
+    Promise.all([svc.list(), svc.fiscalPage()])
+      .then(([quotesResponse, fiscalResponse]) => {
+        const quoteItems = Array.isArray(quotesResponse) ? quotesResponse : quotesResponse?.items || [];
+        const fiscalItems = Array.isArray(fiscalResponse) ? fiscalResponse : fiscalResponse?.items || [];
+        const fallbackCounts = {
+          all: fiscalItems.length,
+          draft: 0,
+          emitted: fiscalItems.filter((item) => getSunatStatus(item)?.variant === 'success').length,
+          pending: fiscalItems.filter((item) => getSunatStatus(item)?.variant === 'warning').length,
+          rejected: fiscalItems.filter((item) => getSunatStatus(item)?.variant === 'danger').length,
+          voided: 0,
+        };
+
+        setList(quoteItems);
+        setFiscalDocs(fiscalItems);
+        setFiscalDocumentTotal(Number(fiscalResponse?.total ?? fiscalItems.length));
+        setFiscalCounts(fiscalResponse?.counts || fallbackCounts);
+      })
       .catch(() => toast('No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   }, []);
@@ -2049,7 +2070,6 @@ export default function CotizacionesPage() {
 
   // Separación por tipo
   const quotations = list.filter((d) => d.document_kind === 'quotation');
-  const fiscalDocs = list.filter((d) => d.document_kind !== 'quotation');
   const quoteCountByClient = quotations.reduce((acc, item) => {
     const clientId = item.cliente?.id;
     if (!clientId) return acc;
@@ -2126,6 +2146,11 @@ export default function CotizacionesPage() {
   const fiscalAcceptedCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'success').length;
   const fiscalPendingCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'warning').length;
   const fiscalRejectedCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'danger').length;
+  const fiscalVisibleCount = hasFiscalFilters ? filteredFiscal.length : fiscalDocumentTotal;
+  const fiscalVisibleAcceptedCount = hasFiscalFilters ? fiscalAcceptedCount : Number(fiscalCounts.emitted || 0);
+  const fiscalVisiblePendingCount = hasFiscalFilters ? fiscalPendingCount : Number(fiscalCounts.pending || 0);
+  const fiscalVisibleRejectedCount = hasFiscalFilters ? fiscalRejectedCount : Number(fiscalCounts.rejected || 0);
+  const fiscalLoadedIsPartial = fiscalDocumentTotal > fiscalDocs.length;
 
   const handleOpenNuevoCliente = (prefill = '') => {
     setNuevoClientePrefill(prefill);
@@ -2327,13 +2352,13 @@ export default function CotizacionesPage() {
           ? 'Actualiza una cotización pendiente antes de pasarla a comprobante.'
           : view === 'create'
           ? 'Construye una propuesta clara, calcula totales y déjala lista para vista previa.'
-          : `${quotations.length} cotizaciones · ${fiscalDocs.length} comprobantes emitidos.`}
+          : `${quotations.length} cotizaciones · ${fiscalDocumentTotal} comprobantes emitidos.`}
       />
 
       <nav className="quote-tabs ink-enter-2">
         <button className={`tab ${view === 'create' ? 'active' : ''}`} onClick={() => { setEditingQuote(null); setView('create'); }}>＋ Nueva cotización</button>
         <button className={`tab ${view === 'history' ? 'active' : ''}`} onClick={() => { setEditingQuote(null); setView('history'); }}>↺ Historial <span className="count-badge">{quotations.length}</span></button>
-        <button className={`tab ${view === 'fiscal' ? 'active' : ''}`} onClick={() => setView('fiscal')}>▣ Emitidas SUNAT <span className="count-badge">{fiscalDocs.length}</span></button>
+        <button className={`tab ${view === 'fiscal' ? 'active' : ''}`} onClick={() => setView('fiscal')}>▣ Emitidas SUNAT <span className="count-badge">{fiscalDocumentTotal}</span></button>
       </nav>
 
       {/* ── Vista: Crear ── */}
@@ -2803,16 +2828,16 @@ export default function CotizacionesPage() {
                 <div className="summary-icon"><Receipt size={16} /></div>
                 <div>
                   <span>Total registros</span>
-                  <strong>{filteredFiscal.length}</strong>
-                  <span>{hasFiscalFilters ? 'Vista filtrada' : 'Vista completa'}</span>
+                  <strong>{fiscalVisibleCount}</strong>
+                  <span>{hasFiscalFilters ? 'Vista filtrada' : fiscalLoadedIsPartial ? `Mostrando los ${fiscalDocs.length} más recientes` : 'Vista completa'}</span>
                 </div>
               </div>
               <div className="summary-item">
                 <div className="summary-icon"><CheckCircle2 size={16} /></div>
                 <div>
                   <span>Aceptados por SUNAT</span>
-                  <strong>{fiscalAcceptedCount}</strong>
-                  <span>{fiscalPendingCount} pendientes y {fiscalRejectedCount} observados</span>
+                  <strong>{fiscalVisibleAcceptedCount}</strong>
+                  <span>{fiscalVisiblePendingCount} pendientes y {fiscalVisibleRejectedCount} observados</span>
                 </div>
               </div>
               <div className="summary-item">
