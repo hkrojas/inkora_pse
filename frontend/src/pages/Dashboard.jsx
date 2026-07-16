@@ -86,17 +86,6 @@ function percent(value, total) {
   return Math.max(0, Math.min(100, Math.round((value / total) * 100)));
 }
 
-function getDocTypeLabel(doc) {
-  const kind = doc?.document_kind || doc?.tipo_comprobante;
-  if (kind === 'quotation' || kind === '00') return 'COT.';
-  if (kind === 'invoice' || kind === '01') return 'FACTURA';
-  if (kind === 'receipt' || kind === '03') return 'BOLETA';
-  if (kind === 'debit_note' || kind === '08') return 'ND';
-  if (kind === 'credit_note' || kind === '07') return 'NC';
-  if (kind === 'guide' || kind === '09') return 'GUÍA';
-  return 'DOC';
-}
-
 export default function Dashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
@@ -332,13 +321,17 @@ export default function Dashboard() {
 
       <section className="dashboard-grid ink-enter-5">
         <div className="dashboard-main-stack">
-          <article className="panel">
-          <div className="panel-header">
+          <article className="panel dashboard-quote-panel">
+          <div className="panel-header dashboard-quote-panel__header">
             <div>
+              <span className="dashboard-section-kicker">Seguimiento comercial</span>
               <h3>Cotizaciones recientes</h3>
               <p>Las últimas cotizaciones creadas o actualizadas.</p>
             </div>
-            <button type="button" className="btn" onClick={() => navigate('/cotizaciones')}>Ver cotizaciones</button>
+            <div className="dashboard-quote-panel__actions">
+              <span className="dashboard-quote-count">{Math.min(recentDocs.length, 4)} visibles</span>
+              <button type="button" className="btn" onClick={() => navigate('/cotizaciones')}>Ver cotizaciones</button>
+            </div>
           </div>
           <p className="mb-2 text-xs font-semibold text-[var(--color-text-muted)] md:hidden">Desliza horizontalmente para ver todas las columnas.</p>
           <div className="table-wrap">
@@ -365,16 +358,13 @@ export default function Dashboard() {
                   }
                   const status = getStatusMeta(doc.estado);
                   return (
-                    <tr key={doc.id ?? `${formatDocNumber(doc)}-${index}`}>
-                      <td>
+                    <tr key={doc.id ?? `${formatDocNumber(doc)}-${index}`} className="dashboard-quote-row">
+                      <td className="dashboard-quote-document">
                         <strong>{formatDocNumber(doc)}</strong>
-                        <span className="status neutral" style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px' }}>
-                          {getDocTypeLabel(doc)}
-                        </span>
                       </td>
-                      <td>{getDocClient(doc)}</td>
+                      <td className="dashboard-quote-client">{getDocClient(doc)}</td>
                       <td>{formatShortDate(doc.fecha_emision || doc.created_at)}</td>
-                      <td>
+                      <td className="dashboard-quote-total">
                         <strong>
                           {getDocAmount(doc).toLocaleString('es-PE', { style: 'currency', currency: doc.moneda || 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </strong>
