@@ -8736,7 +8736,7 @@ textarea.input:focus,
   }
 
   .section-navigation {
-    top: 72px;
+    top: auto;
     align-items: stretch;
     flex-direction: column;
     gap: 7px;
