@@ -303,6 +303,7 @@ export default function ProductLineCell({
         <input
           ref={codigoRef}
           readOnly={isExisting}
+          aria-label="Código de producto"
           placeholder="Codigo"
           value={value.codigo}
           onChange={handleCodigoChange}
@@ -327,6 +328,7 @@ export default function ProductLineCell({
 
         <input
           ref={nombreRef}
+          aria-label="Producto o descripción"
           placeholder={isExisting ? '' : 'Producto o descripcion...'}
           value={value.descripcion}
           onChange={isExisting ? (e) => onChange({ ...value, descripcion: forceUppercaseText(e.target.value) }) : handleNombreChange}
@@ -365,7 +367,7 @@ export default function ProductLineCell({
               type="button"
               onClick={handleGenerateCode}
               disabled={generating}
-              title="Generar codigo para producto nuevo"
+              title="Generar código para producto nuevo"
               style={{
                 flexShrink: 0,
                 display: 'inline-flex',
@@ -387,7 +389,7 @@ export default function ProductLineCell({
               }}
             >
               <RotateCw size={10} style={generating ? { animation: 'spin 1s linear infinite' } : {}} />
-              {generating ? '...' : 'Generar codigo'}
+              {generating ? '...' : 'Generar código'}
             </button>
           )}
 
@@ -413,7 +415,7 @@ export default function ProductLineCell({
           )}
           {showNoSearchResults && (
             <div className="ink-combobox-feedback ink-combobox-feedback--empty">
-              No hay productos registrados con ese codigo o nombre.
+              No hay productos registrados con ese código o nombre.
             </div>
           )}
           {dropdownItems.map((p) => (

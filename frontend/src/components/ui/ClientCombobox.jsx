@@ -426,6 +426,7 @@ export default function ClientCombobox({
           {locked ? (
             <input
               readOnly
+              aria-label="Tipo de documento"
               className="input client-combobox-input client-combobox-input--locked"
               value={getFiscalDocLabel(form.tipo_documento)}
             />
@@ -441,13 +442,14 @@ export default function ClientCombobox({
 
         <div className="field span-4">
           <label className={locked ? 'label client-combobox-label-muted' : 'label'}>
-            Numero doc. {!locked && <span className="req">*</span>}
+            Número doc. {!locked && <span className="req">*</span>}
           </label>
           <div className="control-with-button">
             <div className="control" style={{ flex: 1, position: 'relative' }}>
               <input
                 ref={numeroRef}
                 readOnly={locked}
+                aria-label="Número de documento"
                 className={`input client-combobox-input ${locked ? 'client-combobox-input--locked pr-8 font-mono' : ''}`}
                 value={form.numero_documento}
                 onChange={handleNumeroChange}
@@ -481,12 +483,13 @@ export default function ClientCombobox({
 
         <div className="field span-5">
           <label className={locked ? 'label client-combobox-label-muted' : 'label'}>
-            Razon social / Nombre {!locked && <span className="req">*</span>}
+            Razón social / Nombre {!locked && <span className="req">*</span>}
           </label>
           <div className="control">
             <input
               ref={nombreRef}
               readOnly={locked}
+              aria-label="Razón social o nombre"
               className={`input client-combobox-input ${locked ? 'client-combobox-input--locked' : ''}`}
               value={form.razon_social}
               onChange={handleNombreChange}
@@ -500,13 +503,14 @@ export default function ClientCombobox({
 
         <div className="field span-6">
           <label className="label">
-            Correo electronico
+            Correo electrónico
             <span className="client-combobox-label-note">(opcional)</span>
             {locked && isDirty && <span className="client-combobox-label-edit">EDITADO</span>}
           </label>
           <div className="control">
             <input
               type="email"
+              aria-label="Correo electrónico"
               className="input client-combobox-input"
               value={form.email}
               onChange={(event) => setField('email', event.target.value)}
@@ -520,13 +524,14 @@ export default function ClientCombobox({
 
         <div className="field span-6">
           <label className="label">
-            Telefono / WhatsApp
+            Teléfono / WhatsApp
             <span className="client-combobox-label-note">(opcional)</span>
             {locked && isDirty && <span className="client-combobox-label-edit">EDITADO</span>}
           </label>
           <div className="control">
             <input
               type="tel"
+              aria-label="Teléfono o WhatsApp"
               className="input client-combobox-input"
               value={form.telefono}
               onChange={(event) => setField('telefono', event.target.value)}
@@ -540,7 +545,7 @@ export default function ClientCombobox({
 
         <div className="field span-8">
           <label className="label">
-            Direccion fiscal
+            Dirección fiscal
             <span className="client-combobox-label-note">
               {form.tipo_documento === '6' ? '(obligatoria para factura)' : '(opcional)'}
             </span>
@@ -548,6 +553,7 @@ export default function ClientCombobox({
           </label>
           <div className="control">
             <input
+              aria-label="Dirección fiscal"
               className="input client-combobox-input"
               value={form.direccion}
               onChange={(event) => setField('direccion', event.target.value)}
@@ -568,6 +574,7 @@ export default function ClientCombobox({
           </label>
           <div className="control">
             <input
+              aria-label="Ubigeo"
               className="input client-combobox-input"
               value={form.ubigeo}
               onChange={(event) => setField('ubigeo', event.target.value)}
@@ -583,12 +590,12 @@ export default function ClientCombobox({
 
       {locked && isDirty && (
         <p className="client-combobox-status client-combobox-status--dirty" style={{ marginTop: '10px' }}>
-          Los cambios en correo, telefono, direccion o ubigeo <strong>actualizaran al cliente</strong> en el catalogo al guardar.
+          Los cambios en correo, teléfono, dirección o ubigeo <strong>actualizarán al cliente</strong> en el catálogo al guardar.
         </p>
       )}
       {hasNewData && !locked && (
         <p className="client-combobox-status client-combobox-status--new" style={{ marginTop: '10px' }}>
-          Nuevo cliente - <span className="font-semibold text-[var(--color-primary)]">se registrara al guardar la cotizacion</span>.
+          Nuevo cliente — <span className="font-semibold text-[var(--color-primary)]">se registrará al guardar la cotización</span>.
         </p>
       )}
 

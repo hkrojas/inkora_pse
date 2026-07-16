@@ -1531,6 +1531,10 @@ function NuevaCotizacionForm({
   const walletOptions = getWalletOptions(tenantData?.bank_accounts);
   const readyLines = items.filter((item) => item.descripcion?.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0).length;
   const quoteReady = Boolean(clienteId || clienteForm?.razon_social) && readyLines > 0;
+  const missingQuoteRequirements = [
+    !(clienteId || clienteForm?.razon_social) && 'seleccionar un cliente',
+    !readyLines && 'agregar una línea con cantidad y precio',
+  ].filter(Boolean);
   const quoteSections = [
     { id: 'quote-client', label: 'Cliente', status: clienteId || clienteForm?.razon_social ? 'Listo' : 'Pendiente' },
     { id: 'quote-lines', label: 'Detalle', status: readyLines ? `${readyLines} línea${readyLines !== 1 ? 's' : ''}` : 'Pendiente' },
@@ -1649,25 +1653,33 @@ return (
               </div>
             </article>
 
-            <article id="quote-lines" tabIndex={-1} className="panel form-section-anchor">
+            <article id="quote-payment" tabIndex={-1} className="panel form-section-anchor quote-payment-panel">
               <div className="panel-header">
                 <div>
-                  <h3>Bancos visibles en el PDF</h3>
-                  <p>El QR se gestiona por separado. Aqui eliges que cuentas apareceran en "Datos para la transferencia".</p>
+                  <h3>Medios de cobro para el PDF</h3>
+                  <p>Usa la selección predeterminada o personaliza lo que verá tu cliente.</p>
                 </div>
               </div>
-              <div className="panel-body">
+              <details className="quote-payment-details">
+                <summary>
+                  <span>
+                    <strong>{effectiveQuoteBankMethods.length} cuenta{effectiveQuoteBankMethods.length !== 1 ? 's' : ''} visible{effectiveQuoteBankMethods.length !== 1 ? 's' : ''}</strong>
+                    <small>{quoteBankSelectionMode === 'global' ? 'Usando la configuración predeterminada' : 'Selección personalizada para esta cotización'}</small>
+                  </span>
+                  <span className="quote-payment-details__action">Configurar</span>
+                </summary>
+                <div className="panel-body">
                 <div className="quote-bank-selector-summary">
                   <div>
                     <strong>
                       {quoteBankSelectionMode === 'global'
-                        ? `Usando seleccion global (${effectiveQuoteBankMethods.length})`
-                        : `Seleccion personalizada (${effectiveQuoteBankMethods.length})`}
+                        ? `Usando selección global (${effectiveQuoteBankMethods.length})`
+                        : `Selección personalizada (${effectiveQuoteBankMethods.length})`}
                     </strong>
                     <span>
                       {quoteBankSelectionMode === 'global'
-                        ? 'Las nuevas cotizaciones usan las cuentas marcadas en Configuracion.'
-                        : 'Esta cotizacion puede mostrar un subconjunto distinto sin alterar la configuracion general.'}
+                        ? 'Las nuevas cotizaciones usan las cuentas marcadas en Configuración.'
+                        : 'Esta cotización puede mostrar un subconjunto distinto sin alterar la configuración general.'}
                     </span>
                   </div>
                   <div className="quote-bank-selector-actions">
@@ -1690,7 +1702,7 @@ return (
 
                 {availableQuoteBankMethods.length === 0 ? (
                   <div className="quote-bank-selector-empty">
-                    No hay cuentas bancarias completas para mostrar en cotizaciones. Configuralas en Configuracion.
+                    No hay cuentas bancarias completas para mostrar en cotizaciones. Configúralas en Configuración.
                   </div>
                 ) : (
                   <>
@@ -1743,7 +1755,7 @@ return (
                               <span className="quote-bank-option-meta quote-bank-option-meta--secondary">
                                 {isDefault
                                   ? 'Disponible por defecto para nuevas cotizaciones.'
-                                  : 'No esta marcada como predeterminada en la configuracion global.'}
+                                  : 'No está marcada como predeterminada en la configuración global.'}
                               </span>
                             </div>
                           </button>
@@ -1753,9 +1765,10 @@ return (
                   </>
                 )}
               </div>
+              </details>
             </article>
 
-            <article className="panel">
+            <article id="quote-lines" tabIndex={-1} className="panel form-section-anchor quote-lines-panel">
               <div className="panel-header line-items-panel-header">
                 <div><h3>Líneas de detalle</h3><p>Agrega productos, servicios o descripciones libres.</p></div>
                 <div className="line-items-panel-controls">
@@ -1767,7 +1780,7 @@ return (
                       onClick={toggleCatalogSyncForEligible}
                     >
                       <span className={`switch ${syncCatalogOnSave ? 'on' : ''}`} />
-                      {syncCatalogOnSave ? 'Actualizar catalogo al guardar' : 'Aplicar cambios al catalogo'}
+                      {syncCatalogOnSave ? 'Actualizar catálogo al guardar' : 'Aplicar cambios al catálogo'}
                     </button>
                   )}
                   <label className="toggle-chip">
@@ -1781,7 +1794,7 @@ return (
                 {catalogSyncEligibleCount > 0 && (
                   <div className={`line-sync-banner${syncCatalogOnSave ? ' is-active' : ''}`}>
                     <strong>
-                      {catalogSyncEligibleCount} producto{catalogSyncEligibleCount !== 1 ? 's' : ''} con cambios de catalogo
+                      {catalogSyncEligibleCount} producto{catalogSyncEligibleCount !== 1 ? 's' : ''} con cambios de catálogo
                     </strong>
                     <span>
                       {syncCatalogOnSave
@@ -1797,7 +1810,6 @@ return (
                     {avanzado && <div>Afectación</div>}
                     <div>Cant.</div>
                     <div>P. unit.</div>
-                    <div>Desc.</div>
                     <div>Total</div>
                     <div></div>
                   </div>
@@ -1825,11 +1837,13 @@ return (
                             <CustomSelect compact value={item.tipo_afectacion_igv} onChange={(v) => setItem(idx, 'tipo_afectacion_igv', v)} options={AFECTACION_IGV} />
                           </div>
                         )}
-                        <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad"><input className="line-edit-input" required type="number" min="0.01" step="any" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
+                        <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad"><input className="line-edit-input" aria-label={`Cantidad de ${item.descripcion || `línea ${idx + 1}`}`} required type="number" min="0.01" step="any" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
                         <div className="line-row-cell line-row-cell--price" data-mobile-label="Precio unitario">
-                          <input className="line-edit-input" required type="text" inputMode="decimal" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} />
+                          <div className="line-price-control">
+                            <span aria-hidden="true">{sym}</span>
+                            <input className="line-edit-input" aria-label={`Precio unitario de ${item.descripcion || `línea ${idx + 1}`}`} required type="text" inputMode="decimal" value={item.precio_unitario} onChange={(e) => setItem(idx, 'precio_unitario', e.target.value)} />
+                          </div>
                         </div>
-                        <div className="line-row-cell line-row-cell--discount" data-mobile-label="Descuento"><input className="line-static-input" readOnly value="0%" /></div>
                         <div className="line-row-cell line-row-cell--total" data-mobile-label="Total"><input className="line-static-input" readOnly value={`${sym} ${fmt(lineTotal)}`} /></div>
                         <div className="line-row-cell line-row-cell--actions">{items.length > 1 && <button type="button" className="trash-btn" onClick={() => removeItem(idx)}>×</button>}</div>
                       </div>
@@ -1900,7 +1914,6 @@ return (
               </div>
               <div className="summary-body">
                 <div className="total-line"><span>Subtotal</span><strong>{sym} {fmt(subtotalGravado + totales.exonerado + totales.inafecto + totales.exportacion)}</strong></div>
-                <div className="total-line"><span>Descuento</span><strong>{sym} 0.00</strong></div>
                 <div className="total-line"><span>IGV (18%)</span><strong>{sym} {fmt(igv)}</strong></div>
                 <div className="total-line"><span>Líneas</span><strong>{items.length}</strong></div>
                 <div className="grand-total"><span>Total</span><strong>{sym} {fmt(totalGeneral)}</strong></div>
@@ -1908,7 +1921,12 @@ return (
               <div className="summary-actions">
                 <button type="button" className="side-btn open-preview" onClick={() => setPreviewOpen(true)}><Eye size={16} /> Vista previa</button>
                 <button type="button" className="side-btn"><Save size={16} /> Guardar borrador</button>
-                <button type="submit" className="side-btn primary" disabled={saving || !quoteReady}>
+                {!quoteReady && (
+                  <p id="quote-save-requirements" className="quote-save-requirements" role="status">
+                    Falta {missingQuoteRequirements.join(' y ')}.
+                  </p>
+                )}
+                <button type="submit" className="side-btn primary" disabled={saving || !quoteReady} aria-describedby={!quoteReady ? 'quote-save-requirements' : undefined}>
                   {saving ? 'Guardando…' : isEditing ? 'Actualizar cotizacion' : 'Guardar cotización'}
                 </button>
               </div>
@@ -1920,7 +1938,7 @@ return (
             <span>Total de cotización</span>
             <strong>{sym} {fmt(totalGeneral)}</strong>
           </div>
-          <button type="submit" className="btn-primary" disabled={saving || !quoteReady}>
+          <button type="submit" className="btn-primary" disabled={saving || !quoteReady} aria-describedby={!quoteReady ? 'quote-save-requirements' : undefined}>
             {saving ? 'Guardando…' : 'Guardar'}
           </button>
         </div>
@@ -2310,7 +2328,6 @@ export default function CotizacionesPage() {
           : view === 'create'
           ? 'Construye una propuesta clara, calcula totales y déjala lista para vista previa.'
           : `${quotations.length} cotizaciones · ${fiscalDocs.length} comprobantes emitidos.`}
-        meta={<span className="operational-page-header__scope">Cotiza, revisa y comparte</span>}
       />
 
       <nav className="quote-tabs ink-enter-2">
