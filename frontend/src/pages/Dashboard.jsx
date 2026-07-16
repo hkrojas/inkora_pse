@@ -176,11 +176,12 @@ export default function Dashboard() {
     );
   }
 
-  const ingresosTotales = safeNumber(stats?.ingresos_totales);
+  const cobrosRegistradosHistoricos = safeNumber(stats?.ingresos_totales);
   const totalCobradoMes = safeNumber(cobranza?.total_pagado_mes);
   const totalPorCobrar = safeNumber(cobranza?.total_por_cobrar ?? stats?.saldos_por_cobrar);
   const saldoVencido = safeNumber(cobranza?.total_vencido ?? stats?.saldo_vencido);
   const documentosPendientes = safeNumber(cobranza?.documentos_pendientes);
+  const documentosVencidos = safeNumber(cobranza?.documentos_vencidos);
   const clientesConDeuda = safeNumber(cobranza?.clientes_con_deuda ?? overdueDocs.length);
   const docsRechazados = [...recentDocs, ...overdueDocs].filter(
     (doc) => getStatusMeta(doc?.estado).tone === 'bad',
@@ -190,32 +191,33 @@ export default function Dashboard() {
   ).length;
 
   const porVencer = Math.max(totalPorCobrar - saldoVencido, 0);
-  const vencidoCorto = Math.min(saldoVencido, totalPorCobrar * 0.72);
-  const vencidoLargo = Math.max(0, saldoVencido - vencidoCorto);
   const totalAging = Math.max(totalPorCobrar, 1);
+  const documentosConDeuda = documentosPendientes + documentosVencidos;
+  const headerSummary = documentosConDeuda > 0
+    ? `${documentosConDeuda} documentos con saldo pendiente${cotizacionesPendientes > 0 ? ` y ${cotizacionesPendientes} cotizaciones por seguir.` : '.'}`
+    : cotizacionesPendientes > 0
+      ? `${cotizacionesPendientes} cotizaciones recientes esperan seguimiento.`
+      : 'Revisa caja, emisión fiscal y seguimiento comercial en un solo lugar.';
 
   const attentionCards = [
     {
-      value: documentosPendientes,
-      label: 'Documentos fiscales por cobrar, no vencidos.',
-      action: 'Revisar ahora',
+      value: documentosConDeuda,
+      label: 'Documentos fiscales con saldo pendiente.',
+      detail: `${clientesConDeuda} clientes${documentosVencidos > 0 ? ` · ${documentosVencidos} vencidos` : ' · sin vencidos'}`,
+      action: 'Abrir cobranza',
       href: '/cobranza',
     },
     {
       value: docsRechazados,
-      label: 'Alertas en documentos recientes.',
+      label: 'Alertas en documentos visibles.',
+      detail: 'Revisa los estados que requieren corrección.',
       action: 'Ver documentos',
       href: '/facturas',
     },
     {
-      value: clientesConDeuda,
-      label: 'Clientes con deuda fiscal.',
-      action: 'Ver cobranzas',
-      href: '/cobranza',
-    },
-    {
       value: cotizacionesPendientes,
       label: 'Cotizaciones recientes pendientes.',
+      detail: 'Da seguimiento antes de que pierdan vigencia.',
       action: 'Dar seguimiento',
       href: '/cotizaciones',
     },
@@ -230,13 +232,13 @@ export default function Dashboard() {
         variant="monitoring"
         eyebrow="Centro operativo"
         title="Resumen operativo"
-        description="Lo importante no es ver gráficos: es saber qué cobrar, qué emitir y qué corregir hoy."
+        description={headerSummary}
         meta={<span className="operational-page-header__scope">Vista consolidada del negocio</span>}
         actions={
-          <button type="button" className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '9px' }}>
+          <span className="dashboard-period" aria-label={`Periodo actual: ${formatDashboardMonth()}`}>
             <CalendarDays size={16} />
             {formatDashboardMonth()}
-          </button>
+          </span>
         }
       />
 
@@ -250,30 +252,33 @@ export default function Dashboard() {
         </div>
       )}
 
-      <section className="attention ink-enter-2">
+      <section
+        className="attention ink-enter-2"
+        style={{ '--attention-cards': Math.max(actionableAttentionCards.length, 1) }}
+        aria-labelledby="dashboard-attention-title"
+      >
         <div className="attention-title">
           <span className="attention-title-badge">
             <CircleAlert size={16} />
           </span>
-          <h3>Necesita atención hoy</h3>
-          <p>Prioriza pendientes que afectan caja, emisión fiscal o seguimiento comercial.</p>
+          <h3 id="dashboard-attention-title">Prioridades de hoy</h3>
+          <p>Solo acciones que impactan caja, emisión fiscal o seguimiento comercial.</p>
         </div>
         {actionableAttentionCards.map((item) => (
-          <div
+          <button
+            type="button"
             key={item.label}
             className="attention-card"
             onClick={() => navigate(item.href)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && navigate(item.href)}
           >
             <strong>{item.value}</strong>
             <span className="attention-card-text">{item.label}</span>
-            <div className="attention-card-link">
+            <span className="attention-card-detail">{item.detail}</span>
+            <span className="attention-card-link">
               {item.action}
               <ArrowRight size={13} />
-            </div>
-          </div>
+            </span>
+          </button>
         ))}
         {actionableAttentionCards.length === 0 && (
           <div className="attention-card attention-card--calm">
@@ -283,17 +288,17 @@ export default function Dashboard() {
         )}
       </section>
 
-      <section className="metrics-grid">
+      <section className="metrics-grid metrics-grid--core" aria-label="Indicadores de caja y cobranza">
         <article className="metric-card ink-enter-3">
           <div className="metric-top">
-            <div className="metric-label">Pagos fiscales registrados</div>
+            <div className="metric-label">Cobros registrados</div>
             <span className="metric-badge neutral">Historico</span>
           </div>
           <div className="metric-value">
-            {ingresosTotales.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {cobrosRegistradosHistoricos.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="metric-sub">
-            Acumulado histórico de pagos aplicados a documentos fiscales.
+            Acumulado de cobros registrados desde el inicio de operaciones.
           </div>
         </article>
 
@@ -306,7 +311,7 @@ export default function Dashboard() {
             {totalCobradoMes.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="metric-sub">
-            Equivale al <strong>{percent(totalCobradoMes, ingresosTotales || 1)}%</strong> del acumulado histórico.
+            Pagos aplicados a documentos fiscales durante el mes actual.
           </div>
         </article>
 
@@ -319,24 +324,10 @@ export default function Dashboard() {
             {totalPorCobrar.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="metric-sub">
-            <span className="red">{clientesConDeuda} clientes</span> · {overdueDocs.length || documentosPendientes} documentos.
+            <span className="red">{clientesConDeuda} clientes</span> · {documentosConDeuda} documentos con saldo.
           </div>
         </article>
 
-        <article className={`metric-card ink-enter-4${docsRechazados === 0 ? ' metric-card--quiet' : ''}`}>
-          <div className="metric-top">
-          <div className="metric-label">Alertas documentales visibles</div>
-            <span className={`metric-badge ${docsRechazados > 0 ? 'warn' : ''}`}>
-              {docsRechazados > 0 ? 'Revisar' : 'Sin alertas'}
-            </span>
-          </div>
-          <div className="metric-value">{docsRechazados === 0 ? '—' : docsRechazados}</div>
-          <div className="metric-sub">
-            {docsRechazados > 0
-              ? 'Documentos con alerta en los listados recientes.'
-              : 'Sin alertas en los documentos visibles del dashboard.'}
-          </div>
-        </article>
       </section>
 
       <section className="dashboard-grid ink-enter-5">
@@ -344,10 +335,10 @@ export default function Dashboard() {
           <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>Actividad reciente</h3>
-              <p>Ultimos comprobantes, pagos y acciones importantes.</p>
+              <h3>Cotizaciones recientes</h3>
+              <p>Las últimas cotizaciones creadas o actualizadas.</p>
             </div>
-            <button type="button" className="btn" onClick={() => navigate('/facturas')}>Ver todo</button>
+            <button type="button" className="btn" onClick={() => navigate('/cotizaciones')}>Ver cotizaciones</button>
           </div>
           <p className="mb-2 text-xs font-semibold text-[var(--color-text-muted)] md:hidden">Desliza horizontalmente para ver todas las columnas.</p>
           <div className="table-wrap">
@@ -367,7 +358,7 @@ export default function Dashboard() {
                     return (
                       <tr key={`empty-${index}`}>
                         <td colSpan={5} style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px 16px' }}>
-                          Aun no hay actividad reciente para mostrar.
+                          Aún no hay cotizaciones recientes para mostrar.
                         </td>
                       </tr>
                     );
@@ -404,7 +395,7 @@ export default function Dashboard() {
               <strong>Registrar cobro</strong>
               <span>Conciliar pago recibido</span>
             </button>
-            <button type="button" className="quick-btn" onClick={() => navigate('/cotizaciones')}>
+            <button type="button" className="quick-btn" onClick={() => navigate('/cobranza')}>
               <strong>Enviar recordatorio</strong>
               <span>Gestionar deuda vencida</span>
             </button>
@@ -415,7 +406,7 @@ export default function Dashboard() {
             <div className="panel-header">
               <div>
                 <h3>Seguimiento de cobranza</h3>
-                <p>Clientes con documentos por vencer o vencidos.</p>
+                <p>Documentos vencidos que requieren seguimiento.</p>
               </div>
             </div>
             <div className="table-wrap">
@@ -466,6 +457,7 @@ export default function Dashboard() {
         </div>
 
         <aside className="side-stack">
+          {urgentItems.length > 0 && (
           <article className="panel">
             <div className="panel-header">
               <div>
@@ -474,7 +466,7 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="todo-list">
-              {urgentItems.length > 0 ? urgentItems.map((doc, index) => {
+              {urgentItems.map((doc, index) => {
                 const lateDays = getDaysLate(doc);
                 return (
                   <div key={doc.id ?? `${formatDocNumber(doc)}-${index}`} className="todo-item">
@@ -490,17 +482,10 @@ export default function Dashboard() {
                     <button type="button" className="mini-link" onClick={() => navigate('/cobranza')}>Abrir</button>
                   </div>
                 );
-              }) : (
-                <div className="todo-item">
-                  <div className="todo-icon"><CircleAlert size={18} /></div>
-                  <div>
-                    <strong>No hay pendientes urgentes para mostrar.</strong>
-                    <span>Cuando existan documentos vencidos, rechazos fiscales o acciones criticas, apareceran aqui.</span>
-                  </div>
-                </div>
-              )}
+              })}
             </div>
           </article>
+          )}
 
           <article className="panel">
             <div className="panel-header">
@@ -519,17 +504,10 @@ export default function Dashboard() {
               </div>
               <div className="aging-row">
                 <div className="aging-top">
-                  <span>Vencido - tramo visual</span>
-                  <strong>{vencidoCorto.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                  <span>Vencido</span>
+                  <strong>{saldoVencido.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                 </div>
-                <div className="bar orange"><i style={{ width: `${percent(vencidoCorto, totalAging)}%` }} /></div>
-              </div>
-              <div className="aging-row">
-                <div className="aging-top">
-                  <span>Vencido - resto visual</span>
-                  <strong>{vencidoLargo.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                </div>
-                <div className="bar red"><i style={{ width: `${percent(vencidoLargo, totalAging)}%` }} /></div>
+                <div className="bar red"><i style={{ width: `${percent(saldoVencido, totalAging)}%` }} /></div>
               </div>
             </div>
           </article>
