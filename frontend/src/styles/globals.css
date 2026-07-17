@@ -2154,7 +2154,7 @@
 }
 
 @media (max-width: 768px) {
-  .superadmin-table-scroll {
+  .superadmin-shell .superadmin-table-scroll {
     position: relative;
     width: auto;
     margin: 14px;
@@ -2162,12 +2162,12 @@
     overflow: visible;
   }
 
-  .superadmin-table-scroll:focus-visible {
+  .superadmin-shell .superadmin-table-scroll:focus-visible {
     outline: 3px solid color-mix(in srgb, var(--color-primary) 58%, transparent);
     outline-offset: -3px;
   }
 
-  .superadmin-table-scroll > .superadmin-tenants-table {
+  .superadmin-shell .superadmin-table-scroll > .superadmin-tenants-table {
     display: block;
     width: 100%;
     min-width: 0;
