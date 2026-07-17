@@ -2767,7 +2767,12 @@ export default function SuperadminPage() {
             </div>
           </div>
 
-          <div className="ink-table-scroll">
+          <div
+            className="ink-table-scroll superadmin-table-scroll"
+            role="region"
+            aria-label="Tabla de tenants registrados. Desliza horizontalmente para ver todos los datos."
+            tabIndex={0}
+          >
             <table className="ink-table superadmin-tenants-table">
             <thead>
               <tr>
