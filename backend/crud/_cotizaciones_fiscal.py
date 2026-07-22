@@ -40,6 +40,7 @@ def create_fiscal_document_from_quote(
     usuario_id: int,
     tipo_comprobante: str,
     serie_override: str | None = None,
+    fiscal_issue_date: datetime | None = None,
 ):
     return _retry_on_correlativo_conflict(
         _create_fiscal_document_from_quote_inner,
@@ -48,6 +49,7 @@ def create_fiscal_document_from_quote(
         usuario_id,
         tipo_comprobante,
         serie_override,
+        fiscal_issue_date,
     )
 
 
@@ -57,6 +59,7 @@ def _create_fiscal_document_from_quote_inner(
     usuario_id: int,
     tipo_comprobante: str,
     serie_override: str | None = None,
+    fiscal_issue_date: datetime | None = None,
 ):
     if not is_quote_document(quote):
         raise ValueError("Solo se puede facturar una cotizacion comercial.")
@@ -77,6 +80,7 @@ def _create_fiscal_document_from_quote_inner(
         tipo_comprobante,
         serie,
         nuevo_correlativo,
+        fiscal_issue_date,
     )
 
     try:

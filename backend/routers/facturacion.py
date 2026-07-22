@@ -30,7 +30,7 @@ from api_utils import raise_internal_server_error
 from rate_limit import limiter
 from services import fiscal_artifact_service, pdf_storage_service
 from services.client_snapshot_service import resolve_document_cliente_snapshot
-from services.fiscal_clock import fiscal_datetime_in_peru, fiscal_today
+from services.fiscal_clock import fiscal_datetime_in_peru, fiscal_today, now_in_peru_naive
 from services.facturacion_background_service import process_direct_sunat_emission_bg
 from models.tenants import (
     USAGE_LIMIT_KIND_BOLETA,
@@ -651,6 +651,7 @@ def emitir_comprobante(
     _emission_check: models.User = Depends(require_emission_allowed),
     mode: str | None = Query(default=None, pattern="^(sync|async)$"),
 ):
+    fiscal_issue_date = now_in_peru_naive()
     quote = _get_quote_or_404(db, cotizacion_id, current_user)
     _ensure_commercial_quote(quote)
 
@@ -682,6 +683,7 @@ def emitir_comprobante(
             current_user.id,
             payload.tipo_comprobante,
             payload.serie_override,
+            fiscal_issue_date,
         )
 
         resolved_mode = emission_queue_service.resolve_emission_mode(mode)

@@ -647,6 +647,104 @@ def test_documento_fiscal_conserva_fecha_emision_de_la_cotizacion(db_session):
     assert fiscal.fecha_emision.date() == fecha_emision.date()
 
 
+def test_documento_fiscal_usa_fecha_confirmada_sin_cambiar_cotizacion(db_session):
+    tenant = make_tenant(db_session, "COT02CLICK")
+    user = make_user(db_session, tenant, email="cot02click@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02CLICK")
+    fecha_cotizacion = datetime(2026, 5, 1, 9, 0)
+    fecha_confirmacion = datetime(2026, 7, 22, 14, 30)
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            fecha_emision=fecha_cotizacion,
+            moneda="PEN",
+            tipo_comprobante="00",
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Servicio facturado despues de cotizar",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                    unidad_medida="NIU",
+                    tipo_afectacion_igv="10",
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    fiscal = crud.create_fiscal_document_from_quote(
+        db_session,
+        quote,
+        user.id,
+        "01",
+        fiscal_issue_date=fecha_confirmacion,
+    )
+
+    assert quote.fecha_emision == fecha_cotizacion
+    assert fiscal.fecha_emision == fecha_confirmacion
+
+
+def test_fecha_confirmada_desplaza_vencimiento_y_cuotas_credito(db_session):
+    tenant = make_tenant(db_session, "COT02SHIFT")
+    user = make_user(db_session, tenant, email="cot02shift@test.com")
+    cliente = make_cliente(db_session, tenant, "COT02SHIFT")
+    fecha_cotizacion = datetime(2026, 5, 1, 0, 0)
+    fecha_confirmacion = datetime(2026, 7, 22, 10, 15)
+
+    quote = crud.create_cotizacion(
+        db_session,
+        schemas.CotizacionCreate(
+            cliente_id=cliente.id,
+            fecha_emision=fecha_cotizacion,
+            fecha_vencimiento=fecha_cotizacion + timedelta(days=30),
+            moneda="PEN",
+            tipo_comprobante="00",
+            condicion_pago="credito_30",
+            cuotas_pago=[
+                schemas.CuotaPagoCreate(
+                    fecha_pago=fecha_cotizacion + timedelta(days=15),
+                    monto=Decimal("59.00"),
+                ),
+                schemas.CuotaPagoCreate(
+                    fecha_pago=fecha_cotizacion + timedelta(days=30),
+                    monto=Decimal("59.00"),
+                ),
+            ],
+            items=[
+                schemas.CotizacionItemCreate(
+                    descripcion="Venta al credito",
+                    cantidad=Decimal("1"),
+                    precio_unitario=Decimal("118.00"),
+                    unidad_medida="NIU",
+                    tipo_afectacion_igv="10",
+                ),
+            ],
+        ),
+        user.id,
+        tenant.id,
+    )
+
+    fiscal = crud.create_fiscal_document_from_quote(
+        db_session,
+        quote,
+        user.id,
+        "01",
+        fiscal_issue_date=fecha_confirmacion,
+    )
+
+    shifted_installments = [
+        datetime.fromisoformat(cuota["fecha_pago"])
+        for cuota in fiscal.cuotas_pago
+    ]
+    assert (fiscal.fecha_vencimiento.date() - fiscal.fecha_emision.date()).days == 30
+    assert (shifted_installments[0].date() - fiscal.fecha_emision.date()).days == 15
+    assert (shifted_installments[1].date() - fiscal.fecha_emision.date()).days == 30
+    assert quote.fecha_vencimiento.date() == (fecha_cotizacion + timedelta(days=30)).date()
+
+
 def test_documento_fiscal_conserva_cuotas_pago_de_la_cotizacion(db_session):
     tenant = make_tenant(db_session, "COT02E")
     user = make_user(db_session, tenant, email="cot02e@test.com")

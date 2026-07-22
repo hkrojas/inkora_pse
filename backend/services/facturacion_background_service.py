@@ -1,5 +1,3 @@
-from datetime import datetime
-
 import crud
 from services import facturacion_service
 import models
@@ -7,6 +5,7 @@ from config import settings
 from database import SessionLocal, apply_tenant_context, reset_tenant_context
 from logging_utils import get_logger
 from services import fiscal_provider_service, sunat_service
+from services.fiscal_clock import fiscal_datetime_in_peru
 
 logger = get_logger(__name__)
 
@@ -102,7 +101,7 @@ def process_direct_sunat_emission_bg(
             "serie": cotizacion.serie
             or ("F001" if cotizacion.tipo_comprobante == "01" else "B001"),
             "correlativo": str(cotizacion.correlativo or cotizacion.id).zfill(6),
-            "fecha_emision": datetime.now().strftime("%Y-%m-%d"),
+            "fecha_emision": fiscal_datetime_in_peru(cotizacion.fecha_emision).date().isoformat(),
             "tipo_comprobante": cotizacion.tipo_comprobante or "01",
             "monto_letras": facturacion_service.numero_a_letras(cotizacion.total_venta),
             "emisor": emisor_data,

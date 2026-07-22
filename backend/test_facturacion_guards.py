@@ -227,6 +227,51 @@ class TestEmissionSubscriptionGuard:
 # A. PRE-VALIDACIÓN
 # ============================================================================
 
+class TestFiscalIssueDateAtConfirmation:
+
+    def test_endpoint_fija_fecha_del_click_antes_de_encolar(self, db_session):
+        tenant = make_tenant(db_session, "ISSUEDATE")
+        _enable_smartpse_for_test(tenant)
+        _set_subscription(db_session, tenant, models.SUBSCRIPTION_STATUS_ACTIVE)
+        user = make_user(db_session, tenant, email="issuedate@test.com")
+        cliente = make_cliente(
+            db_session,
+            tenant,
+            "ISSUEDATE",
+            tipo_documento="6",
+            numero_documento="20191308868",
+        )
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+        quote.fecha_emision = datetime(2026, 5, 1, 9, 0)
+        db_session.commit()
+        fecha_click = datetime(2026, 7, 22, 14, 30)
+
+        app = FastAPI()
+        app.include_router(facturacion_router.router)
+
+        def override_db():
+            yield db_session
+
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_db] = override_db
+        app.dependency_overrides[get_db_tenant] = override_db
+
+        with patch("routers.facturacion.now_in_peru_naive", return_value=fecha_click):
+            response = TestClient(app).post(
+                f"/cotizaciones/{quote.id}/facturar?mode=async",
+                json={"tipo_comprobante": "01"},
+            )
+
+        assert response.status_code == 202, response.text
+        fiscal = db_session.query(models.Cotizacion).filter(
+            models.Cotizacion.source_quote_id == quote.id,
+            models.Cotizacion.document_kind == "fiscal_document",
+        ).one()
+        db_session.refresh(quote)
+        assert quote.fecha_emision == datetime(2026, 5, 1, 9, 0)
+        assert fiscal.fecha_emision == fecha_click
+
+
 class TestRejectedFiscalRetry:
 
     @staticmethod
