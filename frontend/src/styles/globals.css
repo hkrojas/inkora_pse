@@ -17723,7 +17723,7 @@ textarea.input:focus,
 
 /* Cotizaciones micro-interactions */
 
-.fiscal-records-table {
+.fiscal-records-scroll > .fiscal-records-table {
   min-width: 1040px;
 }
 
