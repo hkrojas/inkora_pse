@@ -3,6 +3,7 @@ import { ArrowRight, CheckCircle2, CreditCard, FileText, ReceiptText, RefreshCw,
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/utils/api';
 import Drawer from '../components/ui/Drawer';
+import CustomSelect from '../components/ui/CustomSelect';
 import Spinner from '../components/ui/Spinner';
 import EmptyState from '../components/ui/EmptyState';
 import { PageError } from '../components/ui/PageState';
@@ -246,8 +247,8 @@ export default function NotasPage() {
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="m-0 text-lg font-extrabold">Historial de notas</h2><p className="mt-1 text-sm text-[var(--color-text-muted)]">Borradores, notas en cola y documentos aceptados por SUNAT.</p></div><button type="button" className="btn-secondary" onClick={loadNotes}><RefreshCw size={15} />Actualizar</button></div>
             <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_190px_190px]">
               <label className="search-box"><Search size={16} /><input aria-label="Buscar en el historial de notas" value={notesQuery} onChange={(event) => setNotesQuery(event.target.value)} placeholder="Buscar nota, comprobante o cliente..." /></label>
-              <select className="input" aria-label="Tipo de nota" value={noteType} onChange={(event) => setNoteType(event.target.value)}>{NOTE_TYPE_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}</select>
-              <select className="input" aria-label="Estado de nota" value={noteStatus} onChange={(event) => setNoteStatus(event.target.value)}>{STATUS_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}</select>
+              <CustomSelect compact ariaLabel="Tipo de nota" value={noteType} onChange={setNoteType} options={NOTE_TYPE_FILTERS} />
+              <CustomSelect compact ariaLabel="Estado de nota" value={noteStatus} onChange={setNoteStatus} options={STATUS_FILTERS} />
             </div>
           </div>
           {notesError ? <div className="p-5"><PageError error={notesError} onRetry={loadNotes} /></div>

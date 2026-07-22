@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 
 export default function CustomSelect({
@@ -18,13 +18,21 @@ export default function CustomSelect({
   matchOption,
   noResultsLabel = 'Sin resultados',
   footerAction,
+  id,
+  ariaLabel,
+  required = false,
+  className = '',
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
   const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0, maxHeight: 260 });
   const triggerRef = useRef(null);
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
+  const generatedId = useId();
+  const triggerId = id || `ink-select-${generatedId}`;
+  const listboxId = `${triggerId}-listbox`;
 
   const selected = options.find((opt) => String(opt.value) === String(value));
   const normalizedQuery = query.trim().toLowerCase();
@@ -85,7 +93,42 @@ export default function CustomSelect({
 
   const openDropdown = () => {
     if (disabled) return;
+    const selectedIndex = filteredOptions.findIndex((opt) => String(opt.value) === String(value));
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
     setOpen(true);
+  };
+
+  const handleSelect = (optValue) => {
+    onChange(optValue);
+    setOpen(false);
+    setQuery('');
+  };
+
+  const handleKeyDown = (event) => {
+    if (disabled) return;
+    if (!open && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
+      event.preventDefault();
+      openDropdown();
+      return;
+    }
+    if (!open) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (!filteredOptions.length) return;
+      setActiveIndex((current) => Math.min(current + 1, filteredOptions.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!filteredOptions.length) return;
+      setActiveIndex((current) => Math.max(current - 1, 0));
+    } else if (event.key === 'Enter' && filteredOptions[activeIndex]) {
+      event.preventDefault();
+      handleSelect(filteredOptions[activeIndex].value);
+      triggerRef.current?.focus();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    }
   };
 
   useEffect(() => {
@@ -120,11 +163,11 @@ export default function CustomSelect({
     }
   }, [open, searchable]);
 
-  const handleSelect = (optValue) => {
-    onChange(optValue);
-    setOpen(false);
-    setQuery('');
-  };
+  useEffect(() => {
+    if (activeIndex >= filteredOptions.length) {
+      setActiveIndex(Math.max(0, filteredOptions.length - 1));
+    }
+  }, [activeIndex, filteredOptions.length]);
 
   const handleCreate = () => {
     const text = query.trim();
@@ -154,12 +197,20 @@ export default function CustomSelect({
     <>
       <button
         ref={triggerRef}
+        id={triggerId}
         type="button"
         disabled={disabled}
         onClick={open ? () => setOpen(false) : openDropdown}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`ink-select-trigger ${compact ? 'ink-select-trigger--compact' : ''} ${open ? 'is-open' : ''}`}
+        aria-controls={open ? listboxId : undefined}
+        aria-activedescendant={open && filteredOptions[activeIndex]
+          ? `${listboxId}-option-${activeIndex}`
+          : undefined}
+        aria-label={ariaLabel}
+        aria-required={required || undefined}
+        onKeyDown={handleKeyDown}
+        className={`ink-select-trigger ${compact ? 'ink-select-trigger--compact' : ''} ${open ? 'is-open' : ''} ${className}`}
       >
         <div className={`ink-select-value ${selected ? '' : 'text-[var(--text-tertiary)]'}`}>
           {selected ? (
@@ -176,8 +227,11 @@ export default function CustomSelect({
       {open && createPortal(
         <div
           ref={dropdownRef}
+          id={listboxId}
           className="ink-select-dropdown dropdown-enter"
           role="listbox"
+          aria-label={ariaLabel}
+          onKeyDown={handleKeyDown}
           style={{
             top: dropPos.top,
             left: dropPos.left,
@@ -198,13 +252,16 @@ export default function CustomSelect({
             </div>
           )}
 
-          {filteredOptions.map((opt) => {
+          {filteredOptions.map((opt, index) => {
             const isActive = String(opt.value) === String(value);
+            const isHighlighted = index === activeIndex;
             return (
               <div
                 key={opt.value}
+                id={`${listboxId}-option-${index}`}
                 onMouseDown={(e) => { e.preventDefault(); handleSelect(opt.value); }}
-                className={`ink-select-option ${isActive ? 'is-active' : ''}`}
+                onMouseEnter={() => setActiveIndex(index)}
+                className={`ink-select-option ${isActive ? 'is-active' : ''} ${isHighlighted ? 'is-highlighted' : ''}`}
                 role="option"
                 aria-selected={isActive}
               >

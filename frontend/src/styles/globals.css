@@ -906,8 +906,19 @@
               color var(--duration-fast) var(--ease-out);
 }
 
-.ink-select-option:hover {
+.ink-select-option:hover,
+.ink-select-option.is-highlighted {
   background: var(--color-surface-soft);
+}
+
+.ink-select-option {
+  overflow-wrap: anywhere;
+}
+
+.ink-select-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .ink-select-option.is-active,
