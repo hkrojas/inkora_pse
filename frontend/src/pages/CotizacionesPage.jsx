@@ -2933,8 +2933,8 @@ export default function CotizacionesPage() {
               description="Emite tu primera factura o boleta desde la pestaña Historial."
             />
           ) : (
-            <div className="records-card">
-              <div className="panel-header">
+            <div className="records-card fiscal-records-card">
+              <div className="panel-header fiscal-records-header">
                 <div>
                   <h3>Comprobantes emitidos</h3>
                   <p>Emision fiscal, estado SUNAT y acciones posteriores desde una sola bandeja.</p>
@@ -2943,8 +2943,8 @@ export default function CotizacionesPage() {
                   <span>{selectedFiscal ? `Seleccionado: ${selectedFiscal.serie || ''}-${String(selectedFiscal.correlativo || '').padStart(6, '0')}` : 'Selecciona un registro'}</span>
                 </div>
               </div>
-              <div className="ink-table-scroll">
-              <table className="ink-table">
+              <div className="ink-table-scroll fiscal-records-scroll">
+              <table className="ink-table fiscal-records-table">
                 <thead>
                   <tr>
                     <th className="ink-th">F. Emisión</th>
@@ -2975,36 +2975,46 @@ export default function CotizacionesPage() {
                         key={item.id}
                         className={`ink-tr ${isSelected ? 'ink-table-row--active' : ''}`.trim()}
                         onClick={() => setSelectedFiscal(isSelected ? null : item)}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return;
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setSelectedFiscal(isSelected ? null : item);
+                          }
+                        }}
+                        tabIndex={0}
+                        aria-selected={isSelected}
+                        aria-label={`${docLabel(item.tipo_comprobante)} ${docNum}, ${item.cliente?.razon_social || 'cliente sin nombre'}, ${sym} ${fmt(item.total_venta)}`}
                         style={{ cursor: 'pointer' }}
                       >
-                        <td className="ink-td">
+                        <td className="ink-td" data-label="Emisión">
                           <span className="font-mono-label text-[10px] uppercase">
                             {item.fecha_emision ? new Date(item.fecha_emision).toLocaleDateString('es-PE') : '--'}
                           </span>
                         </td>
-                        <td className="ink-td">
+                        <td className="ink-td" data-label="Tipo">
                           <Badge variant={docVariant(item.tipo_comprobante)}>
                             {docLabel(item.tipo_comprobante)}
                           </Badge>
                         </td>
-                        <td className="ink-td font-mono-label text-xs">{docNum}</td>
-                        <td className="ink-td">
+                        <td className="ink-td font-mono-label text-xs" data-label="Comprobante">{docNum}</td>
+                        <td className="ink-td" data-label="Cliente">
                           <div className="flex flex-col">
                             <span className="font-bold text-xs uppercase">{item.cliente?.razon_social || '--'}</span>
                             <span className="text-[10px] text-[var(--text-tertiary)]">{item.cliente?.numero_documento || ''}</span>
                           </div>
                         </td>
-                        <td className="ink-td text-center font-mono-label text-[10px]">{sym}</td>
-                        <td className="ink-td text-right font-mono-label text-xs">
+                        <td className="ink-td text-center font-mono-label text-[10px]" data-label="Moneda">{sym}</td>
+                        <td className="ink-td text-right font-mono-label text-xs" data-label="Base gravada">
                           {sym} {fmt(item.total_gravada)}
                         </td>
-                        <td className="ink-td text-right font-mono-label text-xs">
+                        <td className="ink-td text-right font-mono-label text-xs" data-label="IGV">
                           {sym} {fmt(item.total_igv)}
                         </td>
-                        <td className="ink-td text-right font-bold font-mono-label text-xs">
+                        <td className="ink-td text-right font-bold font-mono-label text-xs" data-label="Total">
                           {sym} {fmt(item.total_venta)}
                         </td>
-                        <td className="ink-td">
+                        <td className="ink-td" data-label="Estado SUNAT">
                           {sunatSt ? (
                             <div
                               title={sunatSt.tooltip || ''}
@@ -3031,8 +3041,11 @@ export default function CotizacionesPage() {
                             <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>—</span>
                           )}
                         </td>
-                        <td className="ink-td">
-                          <div className="flex justify-end items-center gap-1">
+                        <td className="ink-td" data-label="Acciones">
+                          <div
+                            className="fiscal-record-actions flex justify-end items-center gap-1"
+                            onClick={(event) => event.stopPropagation()}
+                          >
                             {item.sunat_pdf_url && (
                               <button type="button" onClick={() => handleOpenPdf(item)}
                                 title="Descargar PDF"
