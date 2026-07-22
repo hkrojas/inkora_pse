@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowDown, ArrowLeftRight, ArrowUp, Boxes, ClipboardList,
-  PackageCheck, PackageMinus, Plus, RefreshCw, RotateCcw, Search, Warehouse,
+  MapPin, PackageCheck, PackageMinus, Plus, RefreshCw, RotateCcw, Search, Warehouse,
 } from 'lucide-react';
 import Button from '../components/ui/Button';
 import CustomSelect from '../components/ui/CustomSelect';
@@ -64,6 +64,28 @@ function PanelHeading({ eyebrow, title, description, meta }) {
         <p>{description}</p>
       </div>
       {meta && <span className="inventory-panel__result-count">{meta}</span>}
+    </div>
+  );
+}
+
+function MovementDirection({ quantity }) {
+  const amount = Number(quantity || 0);
+  const isEntry = amount >= 0;
+  return (
+    <span className={`inventory-movement-badge inventory-movement-badge--${isEntry ? 'entry' : 'exit'}`}>
+      {isEntry ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
+      <span>{isEntry ? 'Entrada' : 'Salida'}</span>
+      <strong>{isEntry ? '+' : '−'}{qty(Math.abs(amount))}</strong>
+    </span>
+  );
+}
+
+function MovementDate({ value }) {
+  const date = new Date(value);
+  return (
+    <div className="inventory-movement-date">
+      <strong>{date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })}</strong>
+      <span>{date.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</span>
     </div>
   );
 }
@@ -334,12 +356,12 @@ export default function InventarioPage() {
                 <table className="inventory-table">
                   <thead><tr><th>Producto</th><th>Almacén</th><th className="is-number">Actual</th><th className="is-number">Comprometido</th><th className="is-number">Disponible</th><th>Estado</th>{isAdmin && <th className="is-action">Acción</th>}</tr></thead>
                   <tbody>{paginatedStock.map((row) => (
-                    <tr key={`${row.warehouse_id}-${row.product_id}`}>
+                    <tr key={`${row.warehouse_id}-${row.product_id}`} className={`inventory-stock-row inventory-stock-row--${row.status}`}>
                       <td><div className="inventory-product-cell"><span className="inventory-product-cell__icon" aria-hidden="true"><Boxes size={15} /></span><div><p>{row.product_name}</p><span>{row.product_code || 'Sin SKU'} · {row.unit}</span></div></div></td>
                       <td><span className="inventory-warehouse-name"><Warehouse size={14} />{row.warehouse_name}</span></td>
                       <td className="is-number"><strong>{qty(row.on_hand)}</strong></td>
                       <td className="is-number">{qty(row.committed)}</td>
-                      <td className="is-number is-available"><strong>{qty(row.available)}</strong></td>
+                      <td className="is-number is-available"><span className="inventory-balance-chip"><strong>{qty(row.available)}</strong><small>{row.unit}</small></span></td>
                       <td><div className="inventory-status-cell"><StockStatus status={row.status} /><small>Mín. {qty(row.minimum_stock)}</small></div></td>
                       {isAdmin && <td className="is-action"><button type="button" onClick={() => openStock(row)} className="inventory-stock-action"><Plus size={13} />Registrar stock</button></td>}
                     </tr>
@@ -366,16 +388,39 @@ export default function InventarioPage() {
       {tab === 'kardex' && (
         <section className="inventory-panel">
           <PanelHeading eyebrow="Trazabilidad" title="Kardex de movimientos" description="Cada entrada y salida conserva su documento o motivo de origen y el saldo resultante." meta={`${movementTotal} movimientos`} />
-          {movements.length === 0 ? <div className="p-8"><EmptyState icon={<ClipboardList size={22} />} title="El kardex está vacío" description="Aperturas, ventas aceptadas, ajustes y transferencias aparecerán aquí." /></div> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[var(--color-surface-soft)] text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]"><tr><th className="px-5 py-3">Fecha</th><th className="px-5 py-3">Producto</th><th className="px-5 py-3">Origen</th><th className="px-5 py-3 text-right">Movimiento</th><th className="px-5 py-3 text-right">Saldo</th></tr></thead><tbody className="divide-y divide-[var(--color-border)]">{movements.map((row) => <tr key={row.id}><td className="px-5 py-4 text-[var(--color-text-muted)]">{new Date(row.created_at).toLocaleString('es-PE')}</td><td className="px-5 py-4"><b>{row.product_name}</b><p className="text-xs text-[var(--color-text-muted)]">{row.warehouse_name}</p></td><td className="px-5 py-4"><b>{row.source_document_number || row.reason || row.source_type}</b>{row.source_document_number && <p className="text-xs text-[var(--color-text-muted)]">{row.reason}</p>}</td><td className={`px-5 py-4 text-right font-mono font-black ${Number(row.quantity) >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{Number(row.quantity) >= 0 ? <ArrowUp className="mr-1 inline" size={13} /> : <ArrowDown className="mr-1 inline" size={13} />}{qty(Math.abs(row.quantity))}</td><td className="px-5 py-4 text-right font-mono font-bold">{qty(row.balance_after)}</td></tr>)}</tbody></table></div>}
-          {movementTotal > PAGE_SIZE && <div className="border-t border-[var(--color-border)] p-4"><Pagination page={movementPage} totalPages={movementPages} onPageChange={setMovementPage} ariaLabel="Paginación del kardex" /></div>}
+          {movements.length === 0 ? <div className="p-8"><EmptyState icon={<ClipboardList size={22} />} title="El kardex está vacío" description="Aperturas, ventas aceptadas, ajustes y transferencias aparecerán aquí." /></div> : <>
+            <div className="inventory-kardex-table-wrap">
+              <table className="inventory-table inventory-kardex-table">
+                <thead><tr><th>Fecha</th><th>Producto y almacén</th><th>Documento o motivo</th><th>Movimiento</th><th className="is-number">Saldo resultante</th></tr></thead>
+                <tbody>{movements.map((row) => (
+                  <tr key={row.id} className={Number(row.quantity) >= 0 ? 'is-entry' : 'is-exit'}>
+                    <td><MovementDate value={row.created_at} /></td>
+                    <td><div className="inventory-product-cell"><span className="inventory-product-cell__icon" aria-hidden="true"><Boxes size={15} /></span><div><p>{row.product_name}</p><span><Warehouse size={11} />{row.warehouse_name}</span></div></div></td>
+                    <td><div className="inventory-origin-cell"><span>{row.source_type || 'Movimiento manual'}</span><strong>{row.source_document_number || row.reason || 'Sin referencia'}</strong>{row.source_document_number && row.reason && <small>{row.reason}</small>}</div></td>
+                    <td><MovementDirection quantity={row.quantity} /></td>
+                    <td className="is-number"><span className="inventory-ledger-balance"><small>Nuevo saldo</small><strong>{qty(row.balance_after)}</strong></span></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+            <div className="inventory-kardex-mobile">{movements.map((row) => (
+              <article key={row.id} className={`inventory-movement-card ${Number(row.quantity) >= 0 ? 'is-entry' : 'is-exit'}`}>
+                <div className="inventory-movement-card__top"><MovementDate value={row.created_at} /><MovementDirection quantity={row.quantity} /></div>
+                <div className="inventory-movement-card__product"><span aria-hidden="true"><Boxes size={15} /></span><div><strong>{row.product_name}</strong><small><Warehouse size={11} />{row.warehouse_name}</small></div></div>
+                <div className="inventory-movement-card__origin"><span>{row.source_type || 'Movimiento manual'}</span><strong>{row.source_document_number || row.reason || 'Sin referencia'}</strong>{row.source_document_number && row.reason && <small>{row.reason}</small>}</div>
+                <div className="inventory-movement-card__balance"><span>Saldo después del movimiento</span><strong>{qty(row.balance_after)}</strong></div>
+              </article>
+            ))}</div>
+          </>}
+          {movementTotal > PAGE_SIZE && <div className="inventory-list-footer inventory-list-footer--kardex"><span>Página <strong>{movementPage}</strong> de <strong>{movementPages}</strong></span><Pagination page={movementPage} totalPages={movementPages} onPageChange={setMovementPage} ariaLabel="Paginación del kardex" /></div>}
         </section>
       )}
 
-      {tab === 'warehouses' && <section className="inventory-panel"><PanelHeading eyebrow="Ubicaciones" title="Almacenes activos" description="Organiza el stock por sede y prepara transferencias entre ubicaciones." meta={`${warehouses.length} almacenes`} /><div className="grid gap-3 p-4 md:grid-cols-2">{warehouses.length === 0 ? <EmptyState icon={<Warehouse size={22} />} title="Configura el almacén principal" description="El inventario seguirá desactivado hasta completar este paso." actionLabel={isAdmin ? 'Activar inventario' : undefined} onAction={activate} /> : <>{warehouses.map((row) => <article key={row.id} className="inventory-warehouse-card"><div className="flex justify-between"><span className="inventory-warehouse-card__icon"><Warehouse size={18} /></span>{row.is_default && <span className="inventory-warehouse-card__badge">Principal</span>}</div><h3>{row.name}</h3><p className="font-mono text-xs text-[var(--color-text-muted)]">{row.code}</p><p className="mt-3 text-sm text-[var(--color-text-muted)]">{row.location || 'Sin ubicación registrada'}</p></article>)}{isAdmin && <button type="button" onClick={() => setModal('warehouse')} className="inventory-add-warehouse"><span><Plus size={17} />Añadir almacén</span></button>}</>}</div></section>}
+      {tab === 'warehouses' && <section className="inventory-panel"><PanelHeading eyebrow="Ubicaciones" title="Almacenes activos" description="Organiza el stock por sede y prepara transferencias entre ubicaciones." meta={`${warehouses.length} almacenes`} /><div className="inventory-warehouse-grid">{warehouses.length === 0 ? <EmptyState icon={<Warehouse size={22} />} title="Configura el almacén principal" description="El inventario seguirá desactivado hasta completar este paso." actionLabel={isAdmin ? 'Activar inventario' : undefined} onAction={activate} /> : <>{warehouses.map((row) => <article key={row.id} className={`inventory-warehouse-card ${row.is_default ? 'is-primary' : ''}`}><div className="inventory-warehouse-card__top"><span className="inventory-warehouse-card__icon"><Warehouse size={18} /></span>{row.is_default ? <span className="inventory-warehouse-card__badge">Almacén principal</span> : <span className="inventory-warehouse-card__badge inventory-warehouse-card__badge--secondary">Sede adicional</span>}</div><div className="inventory-warehouse-card__identity"><span>{row.code}</span><h3>{row.name}</h3></div><div className="inventory-warehouse-card__location"><MapPin size={14} /><span>{row.location || 'Ubicación pendiente de registrar'}</span></div><div className="inventory-warehouse-card__foot"><span><span aria-hidden="true" />Disponible para movimientos</span><small>ID {row.id}</small></div></article>)}{isAdmin && <button type="button" onClick={() => setModal('warehouse')} className="inventory-add-warehouse"><span className="inventory-add-warehouse__icon"><Plus size={18} /></span><strong>Añadir almacén</strong><small>Crea otra ubicación para distribuir existencias.</small></button>}</>}</div></section>}
 
-      {tab === 'transfers' && <section className="inventory-panel"><PanelHeading eyebrow="Movimiento interno" title="Transferencias entre almacenes" description="Mueve existencias sin perder la trazabilidad del almacén de origen y destino." /><div className="p-6"><EmptyState icon={<ArrowLeftRight size={22} />} title="Mueve stock entre almacenes" description="Cada transferencia genera una salida y una entrada enlazadas en el kardex." actionLabel={canOperate && warehouses.length > 1 && stock.length ? 'Nueva transferencia' : undefined} onAction={() => setModal('transfer')} />{warehouses.length < 2 && <p className="mt-3 text-center text-sm text-[var(--color-text-muted)]">Necesitas al menos dos almacenes activos.</p>}</div></section>}
+      {tab === 'transfers' && <section className="inventory-panel"><PanelHeading eyebrow="Movimiento interno" title="Transferencias entre almacenes" description="Mueve existencias sin perder la trazabilidad del almacén de origen y destino." /><div className="inventory-transfer-empty"><div className="inventory-transfer-route" aria-hidden="true"><span><Warehouse size={18} /></span><i /><span><ArrowLeftRight size={18} /></span><i /><span><Warehouse size={18} /></span></div><EmptyState icon={<ArrowLeftRight size={22} />} title="Mueve stock entre almacenes" description="Cada transferencia genera una salida y una entrada enlazadas en el kardex." actionLabel={canOperate && warehouses.length > 1 && stock.length ? 'Nueva transferencia' : undefined} onAction={() => setModal('transfer')} />{warehouses.length < 2 && <p>Necesitas al menos dos almacenes activos.</p>}</div></section>}
 
-      {tab === 'returns' && <section className="inventory-panel"><PanelHeading eyebrow="Ingreso por devolución" title="Recepciones pendientes" description="Confirma únicamente las unidades que regresaron físicamente al almacén." meta={`${returns.length} pendientes`} /><div className="space-y-3 p-4">{returns.length === 0 ? <div className="p-4"><EmptyState icon={<RotateCcw size={22} />} title="No hay devoluciones pendientes" description="Las notas de crédito con devolución física aparecerán aquí después de ser aceptadas." /></div> : returns.map((row) => <article key={row.id} className="inventory-return-card"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="inventory-panel__eyebrow">Nota de crédito</p><h3 className="mt-1 text-lg font-black">{row.credit_note_number || `Documento #${row.credit_note_id}`}</h3><p className="text-sm text-[var(--color-text-muted)]">{row.items.length} producto(s) · Estado: {row.status}</p></div>{canOperate && row.status !== 'received' && <Button onClick={() => openReceipt(row)}>Confirmar recepción</Button>}</div><div className="mt-4 grid gap-2 sm:grid-cols-2">{row.items.map((item) => <div key={item.id} className="rounded-xl bg-[var(--color-surface-soft)] p-3 text-sm"><b>{item.product_name || `Producto #${item.product_id}`}</b><p className="mt-1 text-[var(--color-text-muted)]">Recibido {qty(item.received_quantity)} de {qty(item.authorized_quantity)}</p></div>)}</div></article>)}</div></section>}
+      {tab === 'returns' && <section className="inventory-panel"><PanelHeading eyebrow="Ingreso por devolución" title="Recepciones pendientes" description="Confirma únicamente las unidades que regresaron físicamente al almacén." meta={`${returns.length} pendientes`} /><div className="inventory-return-list">{returns.length === 0 ? <div className="p-4"><EmptyState icon={<RotateCcw size={22} />} title="No hay devoluciones pendientes" description="Las notas de crédito con devolución física aparecerán aquí después de ser aceptadas." /></div> : returns.map((row) => <article key={row.id} className="inventory-return-card"><div className="inventory-return-card__head"><div><p className="inventory-panel__eyebrow">Nota de crédito</p><h3>{row.credit_note_number || `Documento #${row.credit_note_id}`}</h3><span>{row.items.length} {row.items.length === 1 ? 'producto autorizado' : 'productos autorizados'}</span></div><div className="inventory-return-card__actions"><span className="inventory-return-status"><span aria-hidden="true" />{row.status === 'received' ? 'Recibida' : 'Pendiente de recepción'}</span>{canOperate && row.status !== 'received' && <Button onClick={() => openReceipt(row)}>Confirmar recepción</Button>}</div></div><div className="inventory-return-items">{row.items.map((item) => { const authorized = Number(item.authorized_quantity || 0); const received = Number(item.received_quantity || 0); const progress = authorized > 0 ? Math.min(100, (received / authorized) * 100) : 0; return <div key={item.id} className="inventory-return-item"><div><span className="inventory-return-item__icon" aria-hidden="true"><Boxes size={14} /></span><div><strong>{item.product_name || `Producto #${item.product_id}`}</strong><small>Recibido {qty(received)} de {qty(authorized)}</small></div></div><div className="inventory-return-progress" aria-label={`${Math.round(progress)}% recibido`}><span style={{ width: `${progress}%` }} /></div><b>{qty(Math.max(authorized - received, 0))} pendiente</b></div>; })}</div></article>)}</div></section>}
 
       <Drawer
         open={modal === 'stock'}
