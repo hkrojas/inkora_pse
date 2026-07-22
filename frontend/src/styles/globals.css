@@ -18111,6 +18111,10 @@ textarea.input:focus,
   color: var(--color-text-muted);
 }
 
+.row-action-icon--download {
+  color: var(--color-text-muted);
+}
+
 .row-action-icon--danger {
   color: var(--color-danger);
 }

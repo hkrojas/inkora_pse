@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  Eye, Search, Trash2, Send, FileText,
+  Eye, Search, Trash2, Send, FileText, FileDiff, FileDown,
   Download, CheckCircle2, Clock, AlertCircle, XCircle,
   Receipt, SlidersHorizontal, Save,
   History, Copy, Share2, MessageCircle, Mail, MoreHorizontal, PencilLine,
@@ -2932,19 +2932,21 @@ export default function CotizacionesPage() {
               {/* Iconos de descarga rápida para el registro seleccionado */}
               <button
                 type="button"
-                title="PDF"
+                title="Descargar PDF"
+                aria-label="Descargar PDF del comprobante seleccionado"
                 disabled={!selectedFiscal}
                 onClick={() => selectedFiscal && handleOpenPdf(selectedFiscal)}
-                style={{ opacity: selectedFiscal ? 1 : 0.3, color: 'var(--color-error)', pointerEvents: selectedFiscal ? 'auto' : 'none' }}
-                className="row-action-icon row-action-icon--danger"
+                style={{ opacity: selectedFiscal ? 1 : 0.3, pointerEvents: selectedFiscal ? 'auto' : 'none' }}
+                className="row-action-icon row-action-icon--download"
               >
-                <FileText className="h-3 w-3" />
+                <FileDown className="h-3 w-3" />
               </button>
               <a
                 href={selectedFiscal?.sunat_xml_url || '#'}
                 target={selectedFiscal?.sunat_xml_url ? '_blank' : undefined}
                 rel="noreferrer"
-                title="XML"
+                title="Descargar XML"
+                aria-label="Descargar XML del comprobante seleccionado"
                 style={{ opacity: selectedFiscal?.sunat_xml_url ? 1 : 0.3, color: 'var(--color-info)', pointerEvents: selectedFiscal?.sunat_xml_url ? 'auto' : 'none' }}
                 className="row-action-icon row-action-icon--info"
               >
@@ -3012,6 +3014,7 @@ export default function CotizacionesPage() {
                     const waLink = getWhatsAppLink(item.cliente, item);
                     const canAnular = item.estado !== 'anulada';
                     const canNota = ['01', '03'].includes(item.tipo_comprobante) && item.estado !== 'anulada';
+                    const hasUtilityActions = Boolean(item.sunat_pdf_url || item.sunat_xml_url || waLink);
                     const isSelected = selectedFiscal?.id === item.id;
                     return (
                       <tr
@@ -3092,13 +3095,15 @@ export default function CotizacionesPage() {
                             {item.sunat_pdf_url && (
                               <button type="button" onClick={() => handleOpenPdf(item)}
                                 title="Descargar PDF"
-                                className="row-action-icon row-action-icon--danger">
-                                <FileText className="h-3 w-3" />
+                                aria-label={`Descargar PDF de ${docNum}`}
+                                className="row-action-icon row-action-icon--download">
+                                <FileDown className="h-3 w-3" />
                               </button>
                             )}
                             {item.sunat_xml_url && (
                               <a href={item.sunat_xml_url} target="_blank" rel="noreferrer"
                                 title="Descargar XML"
+                                aria-label={`Descargar XML de ${docNum}`}
                                 className="row-action-icon row-action-icon--info">
                                 <Download className="h-3 w-3" />
                               </a>
@@ -3106,22 +3111,30 @@ export default function CotizacionesPage() {
                             {waLink && (
                               <button type="button" onClick={() => handleOpenShareChannel(item, 'whatsapp')}
                                 title="Enviar por WhatsApp"
+                                aria-label={`Enviar ${docNum} por WhatsApp`}
                                 className="row-action-icon row-action-icon--success">
                                 <Send className="h-3 w-3" />
                               </button>
                             )}
+                            {hasUtilityActions && (canNota || canAnular) && (
+                              <div className="history-actions-divider mx-1 h-4" aria-hidden="true" />
+                            )}
                             {canNota && (
                               <button
-                                title="Emitir nota de crédito/débito"
+                                type="button"
+                                title="Crear nota de crédito o débito"
+                                aria-label={`Crear nota de crédito o débito para ${docNum}`}
                                 className="row-action-icon row-action-icon--warning"
                                 onClick={() => setNotaDoc(item)}
                               >
-                                <FileText className="h-3 w-3" />
+                                <FileDiff className="h-3 w-3" />
                               </button>
                             )}
                             {canAnular && (
                               <button
+                                type="button"
                                 title="Anular documento"
+                                aria-label={`Anular ${docNum}`}
                                 className="row-action-icon row-action-icon--danger"
                                 onClick={() => setAnularDoc(item)}
                               >
@@ -3133,6 +3146,7 @@ export default function CotizacionesPage() {
                               to={`/cotizaciones/${item.id}`}
                               className="row-action-icon row-action-icon--brand"
                               title="Ver detalle"
+                              aria-label={`Ver detalle de ${docNum}`}
                             >
                               <Eye className="h-3 w-3" />
                             </Link>
