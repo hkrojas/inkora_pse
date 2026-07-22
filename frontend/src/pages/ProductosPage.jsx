@@ -754,7 +754,7 @@ export default function ProductosPage() {
                 page={page}
                 totalPages={totalPages}
                 onPageChange={setPage}
-                ariaLabel="Paginacion de productos"
+                ariaLabel="Paginación de productos"
               />
             </div>
           </>

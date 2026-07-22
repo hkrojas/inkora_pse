@@ -11,6 +11,7 @@ import Badge from '../components/ui/Badge';
 import Drawer from '../components/ui/Drawer';
 import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
+import Pagination from '../components/ui/Pagination';
 import { FieldError } from '../components/ui/FieldError';
 import { useToast } from '../components/ui/Toast';
 import { getGuideStatusMeta } from '../lib/utils/fiscalStatus';
@@ -938,29 +939,7 @@ export default function GuiasPage() {
 
             <div className="ink-table-footer">
               <span className="ink-table-count">{pageItems.length} guías visibles</span>
-              {guidePageCount > 1 && (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setPage((current) => Math.max(1, current - 1))}
-                    disabled={page <= 1}
-                  >
-                    Anterior
-                  </button>
-                  <span className="ink-table-count">
-                    Página {page} de {guidePageCount}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setPage((current) => Math.min(guidePageCount, current + 1))}
-                    disabled={page >= guidePageCount}
-                  >
-                    Siguiente
-                  </button>
-                </div>
-              )}
+              <Pagination page={page} totalPages={guidePageCount} onPageChange={setPage} ariaLabel="Paginación de guías" />
               <span className="ink-table-count">{counts.pending} por salir · {counts.transit} en ruta</span>
             </div>
           </div>

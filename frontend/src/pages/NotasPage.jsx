@@ -7,6 +7,7 @@ import Spinner from '../components/ui/Spinner';
 import EmptyState from '../components/ui/EmptyState';
 import { PageError } from '../components/ui/PageState';
 import Badge from '../components/ui/Badge';
+import Pagination from '../components/ui/Pagination';
 import { DocumentTypeBadge } from '../components/documents/DocumentType';
 import { formatCurrency, getSunatStatus } from '../lib/utils/documents';
 import { notas as notasService } from '../services/notas';
@@ -233,7 +234,10 @@ export default function NotasPage() {
                       </article>
                     ))}
                   </div>
-                  <Pagination page={sourcePage} pages={sourcePages} total={sourceTotal} onChange={setSourcePage} />
+                  <div className="ink-table-footer">
+                    <span className="ink-table-count">Página <strong>{sourcePage}</strong> de <strong>{sourcePages}</strong> · {sourceTotal} registros</span>
+                    <Pagination page={sourcePage} totalPages={sourcePages} onPageChange={setSourcePage} ariaLabel="Paginación de comprobantes para notas" />
+                  </div>
                 </>}
         </section>
       ) : (
@@ -255,7 +259,10 @@ export default function NotasPage() {
                     const reference = note.nota_referencia || note.source_quote;
                     return <tr key={note.id}><td data-label="Número"><div className="ink-table-cell__primary document-list-folio">{note.estado === 'borrador' ? 'Sin correlativo' : numberOf(note)}</div><div className="ink-table-cell__meta">{formatDate(note.fecha_emision)}</div></td><td data-label="Tipo"><DocumentTypeBadge tipo={note.document_kind === 'credit_note' ? '07' : '08'} size="sm" /></td><td data-label="Comprobante afectado"><div className="ink-table-cell__primary">{reference ? numberOf(reference) : '—'}</div></td><td data-label="Cliente"><div className="ink-table-cell__primary">{clientName(note)}</div><div className="ink-table-cell__meta">{clientDocument(note)}</div></td><td data-label="Motivo"><div className="ink-table-cell__primary">{note.nota_motivo_descripcion || '—'}</div></td><td data-label="Estado SUNAT"><NoteStatus document={note} /></td><td data-label="Acciones">{note.estado === 'borrador' ? <button type="button" className="ink-row-btn" title="Continuar borrador" aria-label="Continuar borrador" onClick={() => navigate(`/notas/nueva?draft=${note.id}`)}><ArrowRight size={14} /></button> : null}</td></tr>;
                   })}</tbody></table></div>
-                  <Pagination page={notesPage} pages={historyPages} total={notesTotal} onChange={setNotesPage} />
+                  <div className="ink-table-footer">
+                    <span className="ink-table-count">Página <strong>{notesPage}</strong> de <strong>{historyPages}</strong> · {notesTotal} registros</span>
+                    <Pagination page={notesPage} totalPages={historyPages} onPageChange={setNotesPage} ariaLabel="Paginación del historial de notas" />
+                  </div>
                 </>}
         </section>
       )}
@@ -296,8 +303,4 @@ export default function NotasPage() {
       </Drawer>
     </div>
   );
-}
-
-function Pagination({ page, pages, total, onChange }) {
-  return <div className="ink-table-footer"><span className="ink-table-count">Página <strong>{page}</strong> de <strong>{pages}</strong> · {total} registros</span><div className="pagination"><button type="button" className="page-btn" aria-label="Página anterior" disabled={page <= 1} onClick={() => onChange(page - 1)}>‹</button><span className="page-btn active" aria-current="page">{page}</span><button type="button" className="page-btn" aria-label="Página siguiente" disabled={page >= pages} onClick={() => onChange(page + 1)}>›</button></div></div>;
 }

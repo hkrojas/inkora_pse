@@ -2769,7 +2769,7 @@ export default function CotizacionesPage() {
                   page={safeHistoryPage}
                   totalPages={historyPageCount}
                   onPageChange={setHistoryPage}
-                  ariaLabel="Paginacion de cotizaciones"
+                  ariaLabel="Paginación de cotizaciones"
                 />
               </div>
             </div>

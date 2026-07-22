@@ -6577,6 +6577,8 @@ textarea.input:focus,
   background: var(--color-surface);
   color: var(--color-text-muted);
   font-size: 13px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .ink-table-count strong {
@@ -8930,6 +8932,15 @@ textarea.input:focus,
   .page-btn { width: 44px; height: 44px; }
   .page-ellipsis { display: none; }
   .page-numbers--condensed .page-btn--number[data-page-edge='true']:not(.active) { display: none; }
+}
+
+@media (max-width: 640px) {
+  .ink-table-footer {
+    align-items: center;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+  }
 }
 
 @media (max-width: 1280px) {

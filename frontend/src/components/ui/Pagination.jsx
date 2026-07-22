@@ -26,7 +26,7 @@ export default function Pagination({
   page,
   totalPages,
   onPageChange,
-  ariaLabel = 'Paginacion',
+  ariaLabel = 'Paginación',
 }) {
   const safeTotal = Math.max(1, Number(totalPages) || 1);
   const safePage = Math.min(Math.max(1, Number(page) || 1), safeTotal);
@@ -44,14 +44,14 @@ export default function Pagination({
         className="page-btn page-btn--nav"
         disabled={safePage <= 1}
         onClick={() => goToPage(safePage - 1)}
-        aria-label="Pagina anterior"
+        aria-label="Página anterior"
       >
         <ChevronLeft aria-hidden="true" size={17} strokeWidth={2.4} />
       </button>
 
       <div
         className={`page-numbers ${safeTotal > 5 ? 'page-numbers--condensed' : ''}`.trim()}
-        aria-label={`Pagina ${safePage} de ${safeTotal}`}
+        aria-label={`Página ${safePage} de ${safeTotal}`}
       >
         {pages.map((item) => (
           typeof item === 'number' ? (
@@ -60,7 +60,7 @@ export default function Pagination({
               type="button"
               className={`page-btn page-btn--number ${item === safePage ? 'active' : ''}`.trim()}
               onClick={() => goToPage(item)}
-              aria-label={`Ir a pagina ${item}`}
+              aria-label={`Ir a página ${item}`}
               aria-current={item === safePage ? 'page' : undefined}
               data-page-edge={item === 1 || item === safeTotal ? 'true' : undefined}
             >
@@ -77,7 +77,7 @@ export default function Pagination({
         className="page-btn page-btn--nav"
         disabled={safePage >= safeTotal}
         onClick={() => goToPage(safePage + 1)}
-        aria-label="Pagina siguiente"
+        aria-label="Página siguiente"
       >
         <ChevronRight aria-hidden="true" size={17} strokeWidth={2.4} />
       </button>

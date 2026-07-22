@@ -25,6 +25,7 @@ import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
 import { useToast } from '../components/ui/Toast';
 import CustomSelect from '../components/ui/CustomSelect';
+import Pagination from '../components/ui/Pagination';
 import { useAuth } from '../context/AuthContext';
 import { getSmartPseGreStatusMeta } from '../lib/utils/fiscalStatus';
 import { getPageCount } from '../lib/utils/queryParams';
@@ -2959,25 +2960,15 @@ export default function SuperadminPage() {
 
           {tenantPageCount > 1 && (
             <div className="ink-table-footer">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => setTenantPage((page) => Math.max(1, page - 1))}
-                disabled={boundedTenantPage <= 1}
-              >
-                Anterior
-              </button>
               <span className="ink-table-count">
-                Pagina {boundedTenantPage} de {tenantPageCount}
+                Página <strong>{boundedTenantPage}</strong> de <strong>{tenantPageCount}</strong>
               </span>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => setTenantPage((page) => Math.min(tenantPageCount, page + 1))}
-                disabled={boundedTenantPage >= tenantPageCount}
-              >
-                Siguiente
-              </button>
+              <Pagination
+                page={boundedTenantPage}
+                totalPages={tenantPageCount}
+                onPageChange={setTenantPage}
+                ariaLabel="Paginación de empresas"
+              />
             </div>
           )}
         </div>

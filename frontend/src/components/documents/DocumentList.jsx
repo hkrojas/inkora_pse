@@ -26,6 +26,7 @@ import Spinner from '../ui/Spinner';
 import Badge from '../ui/Badge';
 import CustomSelect from '../ui/CustomSelect';
 import DatePicker from '../ui/DatePicker';
+import Pagination from '../ui/Pagination';
 import { DocumentTypeBadge } from './DocumentType';
 import { formatCurrency } from '../../lib/utils/documents';
 import {
@@ -1036,29 +1037,9 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
 
             <div className="ink-table-footer">
               <span className="ink-table-count">
-                Pag. <strong>{page}</strong> de <strong>{totalPages}</strong>
+                Página <strong>{page}</strong> de <strong>{totalPages}</strong>
               </span>
-              <div className="pagination">
-                <button
-                  type="button"
-                  className="page-btn"
-                  disabled={page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  &#8249;
-                </button>
-                <button type="button" className="page-btn active">
-                  {page}
-                </button>
-                <button
-                  type="button"
-                  className="page-btn"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                >
-                  &#8250;
-                </button>
-              </div>
+              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} ariaLabel="Paginación de comprobantes" />
               <span className="ink-table-count">{PER_PAGE} por página</span>
             </div>
           </div>

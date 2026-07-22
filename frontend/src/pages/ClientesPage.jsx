@@ -835,7 +835,7 @@ export default function ClientesPage() {
                 page={page}
                 totalPages={totalPages}
                 onPageChange={setPage}
-                ariaLabel="Paginacion de clientes"
+                ariaLabel="Paginación de clientes"
               />
             </div>
           </>
