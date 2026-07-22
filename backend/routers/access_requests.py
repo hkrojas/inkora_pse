@@ -1,14 +1,40 @@
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 import models
 import schemas
 from api_dependencies import get_db, get_superadmin
+from config import settings
 from rate_limit import limiter
+from routers.clientes import _consultar_documento_con_token
 from services import access_request_service
 
 
 router = APIRouter(tags=["access-requests"])
+
+
+@router.get(
+    "/access-requests/lookup-ruc/{ruc}",
+    response_model=schemas.AccessRequestRucLookup,
+)
+@limiter.limit("10/minute")
+async def lookup_access_request_ruc(request: Request, ruc: str):
+    normalized = ruc.strip()
+    if not normalized.isdigit() or len(normalized) != 11 or not normalized.startswith("20"):
+        raise HTTPException(400, "Ingresa un RUC válido de 11 dígitos que empiece por 20.")
+
+    token = settings.DNIRUC_TOKEN or settings.API_TOKEN
+    result = await _consultar_documento_con_token(normalized, token)
+    business_name = str(result.get("razon_social") or "").strip()
+    if not business_name:
+        raise HTTPException(404, "No encontramos la razón social asociada al RUC.")
+
+    address = str(result.get("direccion") or "").strip()
+    return {
+        "ruc": normalized,
+        "business_name": business_name,
+        "business_address": None if address in {"", "-"} else address,
+    }
 
 
 @router.post(

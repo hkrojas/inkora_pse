@@ -57,6 +57,12 @@ class AccessRequestCreated(BaseModel):
     message: str
 
 
+class AccessRequestRucLookup(BaseModel):
+    ruc: str
+    business_name: str
+    business_address: Optional[str] = None
+
+
 class AccessRequestStatusLookup(StrictInputModel):
     request_token: str = Field(..., min_length=32, max_length=255)
 

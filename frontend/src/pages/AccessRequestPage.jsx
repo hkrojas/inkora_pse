@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
   ArrowLeft, Building2, CheckCircle2, Clock3, IdCard, LockKeyhole,
-  Mail, MapPin, Phone, Send, UserRound, XCircle,
+  Mail, MapPin, Phone, Search, Send, UserRound, XCircle,
 } from 'lucide-react';
 import AuthBrandPanel, { AuthInlineBrand } from '../components/auth/AuthBrandPanel';
 import Spinner from '../components/ui/Spinner';
@@ -65,6 +65,8 @@ export default function AccessRequestPage() {
   const [checking, setChecking] = useState(true);
   const [requestStatus, setRequestStatus] = useState(null);
   const [error, setError] = useState('');
+  const [lookingUpRuc, setLookingUpRuc] = useState(false);
+  const [rucFeedback, setRucFeedback] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem(REQUEST_TOKEN_KEY);
@@ -82,8 +84,33 @@ export default function AccessRequestPage() {
 
   const setField = (key) => (event) => {
     let value = event.target.value;
-    if (key === 'business_ruc') value = value.replace(/\D/g, '').slice(0, 11);
+    if (key === 'business_ruc') {
+      value = value.replace(/\D/g, '').slice(0, 11);
+      setRucFeedback(null);
+    }
     setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const lookupRuc = async () => {
+    if (!/^20\d{9}$/.test(form.business_ruc)) {
+      setRucFeedback({ tone: 'error', message: 'Ingresa un RUC válido de 11 dígitos que empiece por 20.' });
+      return;
+    }
+    setLookingUpRuc(true);
+    setRucFeedback(null);
+    try {
+      const result = await accessRequests.lookupRuc(form.business_ruc);
+      setForm((current) => ({
+        ...current,
+        business_name: result.business_name || current.business_name,
+        business_address: result.business_address || current.business_address,
+      }));
+      setRucFeedback({ tone: 'success', message: 'Datos fiscales encontrados y completados.' });
+    } catch (lookupError) {
+      setRucFeedback({ tone: 'error', message: lookupError.message || 'No pudimos consultar este RUC.' });
+    } finally {
+      setLookingUpRuc(false);
+    }
   };
 
   const submit = async (event) => {
@@ -127,14 +154,14 @@ export default function AccessRequestPage() {
           {checking ? <div className="grid min-h-64 place-items-center"><Spinner label="Consultando solicitud" /></div> : requestStatus ? (
             <StatusView status={requestStatus} onRestart={restart} />
           ) : (
-            <form onSubmit={submit} className="space-y-5">
+            <form onSubmit={submit} className="auth-request-form">
               <div className="login-card-header">
                 <div className="login-card-icon"><Building2 size={20} /></div>
                 <div><h2>Solicitar alta en Inkora</h2><p>Registra la empresa y el usuario que será su administrador.</p></div>
               </div>
 
               <div className="auth-request-grid">
-                <label className="login-field"><span>RUC</span><div className="login-input-wrap"><IdCard size={17} /><input required inputMode="numeric" maxLength={11} value={form.business_ruc} onChange={setField('business_ruc')} placeholder="20XXXXXXXXX" /></div></label>
+                <div className="login-field"><label htmlFor="access-business-ruc">RUC</label><div className="login-input-wrap login-input-wrap--action"><IdCard size={17} /><input id="access-business-ruc" required inputMode="numeric" maxLength={11} value={form.business_ruc} onChange={setField('business_ruc')} placeholder="20XXXXXXXXX" aria-describedby={rucFeedback ? 'access-ruc-feedback' : undefined} /><button type="button" className="auth-ruc-lookup" onClick={lookupRuc} disabled={lookingUpRuc || form.business_ruc.length !== 11} aria-label="Consultar datos del RUC"><Search size={15} />{lookingUpRuc ? 'Consultando…' : 'Consultar'}</button></div>{rucFeedback && <span id="access-ruc-feedback" className={`auth-ruc-feedback auth-ruc-feedback--${rucFeedback.tone}`} role="status" aria-live="polite">{rucFeedback.message}</span>}</div>
                 <label className="login-field"><span>Empresa</span><div className="login-input-wrap"><Building2 size={17} /><input required value={form.business_name} onChange={setField('business_name')} placeholder="Razón social" /></div></label>
                 <label className="login-field auth-request-grid__full"><span>Dirección fiscal <small>(opcional)</small></span><div className="login-input-wrap"><MapPin size={17} /><input value={form.business_address} onChange={setField('business_address')} placeholder="Dirección de la empresa" /></div></label>
                 <label className="login-field"><span>Administrador</span><div className="login-input-wrap"><UserRound size={17} /><input required value={form.contact_name} onChange={setField('contact_name')} placeholder="Nombre y apellido" /></div></label>
@@ -146,7 +173,7 @@ export default function AccessRequestPage() {
 
               <div className="auth-static-notice"><Clock3 size={15} /><div><strong>Alta sujeta a aprobación</strong><p>No se creará una empresa ni un usuario activo hasta que el superadministrador apruebe la solicitud.</p></div></div>
               {error && <p role="alert" className="rounded-xl bg-[var(--color-danger-soft)] p-3 text-sm font-semibold text-[var(--color-danger)]">{error}</p>}
-              <button type="submit" className="login-submit inline-flex w-full items-center justify-center gap-2" disabled={submitting}>{submitting ? <Spinner size="sm" /> : <Send size={17} />}{submitting ? 'Enviando solicitud...' : 'Enviar solicitud'}</button>
+              <div className="auth-request-submit-bar"><button type="submit" className="login-submit inline-flex w-full items-center justify-center gap-2" disabled={submitting}>{submitting ? <Spinner size="sm" /> : <Send size={17} />}{submitting ? 'Enviando solicitud...' : 'Enviar solicitud'}</button></div>
             </form>
           )}
         </div>

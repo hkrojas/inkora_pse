@@ -1,8 +1,11 @@
+import asyncio
+
 import models
 import schemas
 import security
 from conftest import make_tenant, make_user
 from fastapi import HTTPException
+from routers import access_requests as access_requests_router
 from services import access_request_service
 
 
@@ -107,3 +110,36 @@ def test_rejection_scrubs_password_and_allows_a_new_request(db_session):
 
     retry = access_request_service.create_access_request(db_session, _payload())
     assert retry["status"] == models.ACCESS_REQUEST_PENDING
+
+
+def test_public_ruc_lookup_returns_only_registration_fields(monkeypatch):
+    async def fake_lookup(ruc, token):
+        assert ruc == "20606751509"
+        assert token == "public-lookup-token"
+        return {
+            "razon_social": "INKORA DEMO SAC",
+            "direccion": "JR. DEMO 123",
+            "estado": "ACTIVO",
+            "condicion": "HABIDO",
+        }
+
+    monkeypatch.setattr(access_requests_router.settings, "DNIRUC_TOKEN", "public-lookup-token")
+    monkeypatch.setattr(access_requests_router, "_consultar_documento_con_token", fake_lookup)
+
+    result = asyncio.run(
+        access_requests_router.lookup_access_request_ruc.__wrapped__(None, "20606751509")
+    )
+
+    assert result == {
+        "ruc": "20606751509",
+        "business_name": "INKORA DEMO SAC",
+        "business_address": "JR. DEMO 123",
+    }
+
+
+def test_public_ruc_lookup_rejects_invalid_ruc():
+    try:
+        asyncio.run(access_requests_router.lookup_access_request_ruc.__wrapped__(None, "123"))
+        assert False, "Se esperaba validación de RUC"
+    except HTTPException as exc:
+        assert exc.status_code == 400

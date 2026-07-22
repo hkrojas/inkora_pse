@@ -214,6 +214,7 @@ from schemas.access_requests import (
     AccessRequestReview,
     AccessRequestAdminResponse,
     AccessRequestPageResponse,
+    AccessRequestRucLookup,
 )
 from schemas.notes import (
     NoteAdjustmentLine,
@@ -296,7 +297,7 @@ __all__ = [
     # emission jobs
     "EmissionJobResponse",
     "AccessRequestCreate", "AccessRequestCreated", "AccessRequestStatusLookup", "AccessRequestPublicStatus",
-    "AccessRequestReview", "AccessRequestAdminResponse", "AccessRequestPageResponse",
+    "AccessRequestReview", "AccessRequestAdminResponse", "AccessRequestPageResponse", "AccessRequestRucLookup",
     "NoteAdjustmentLine", "FiscalNoteDraftCreate", "FiscalNoteDraftUpdate",
     # usage limits
     "UsageLimitBase", "UsageLimitCreate", "UsageLimitResponse",

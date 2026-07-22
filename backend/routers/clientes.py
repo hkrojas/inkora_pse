@@ -117,7 +117,7 @@ def _build_dni_result(data: dict, numero: str) -> dict:
     }
 
 
-async def _consultar_documento(numero: str, current_user: models.User):
+async def _consultar_documento_con_token(numero: str, token: str):
     numero = numero.strip()
     if len(numero) == 8:
         tipo = "dni"
@@ -129,11 +129,10 @@ async def _consultar_documento(numero: str, current_user: models.User):
             "Numero invalido. Ingrese 8 digitos (DNI) u 11 digitos (RUC).",
         )
 
-    token = get_document_lookup_token(current_user)
     if not token:
         raise HTTPException(
-            500,
-            "No hay token de consulta configurado. Configure DNIRUC_TOKEN o el token del tenant.",
+            503,
+            "El servicio de consulta documental no está configurado.",
         )
 
     cache_key = (numero, token[-8:])
@@ -177,6 +176,16 @@ async def _consultar_documento(numero: str, current_user: models.User):
             "Error interno al consultar el documento.",
             exc,
         )
+
+
+async def _consultar_documento(numero: str, current_user: models.User):
+    token = get_document_lookup_token(current_user)
+    if not token:
+        raise HTTPException(
+            500,
+            "No hay token de consulta configurado. Configure DNIRUC_TOKEN o el token del tenant.",
+        )
+    return await _consultar_documento_con_token(numero, token)
 
 
 @router.get("/consultar-documento/{numero}")
