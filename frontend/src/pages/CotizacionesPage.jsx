@@ -10,6 +10,7 @@ import { cotizaciones as svc } from '../services/cotizaciones';
 import { clientes as cliSvc } from '../services/clientes';
 import { productos as prodSvc } from '../services/productos';
 import { tenant as tenantSvc } from '../services/tenant';
+import { inventory } from '../services/inventory';
 import Spinner from '../components/ui/Spinner';
 import { SkeletonForm } from '../components/ui/Skeleton';
 import ColorPickerField from '../components/ui/ColorPickerField';
@@ -930,6 +931,18 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [tipo, setTipo] = useState(() => getRecommendedFiscalReceiptType(cotizacion?.cliente));
+  const [availability, setAvailability] = useState(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setAvailabilityLoading(true);
+    inventory.documentAvailability(cotizacion.id)
+      .then((response) => { if (active) setAvailability(response); })
+      .catch(() => { if (active) setAvailability(null); })
+      .finally(() => { if (active) setAvailabilityLoading(false); });
+    return () => { active = false; };
+  }, [cotizacion.id]);
 
   const cliente = cotizacion?.cliente;
   const tipoDocCliente = cliente?.tipo_documento;
@@ -940,6 +953,7 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
   const facturaInvalida = tipo === '01' && !esRUC;
   const boletaInvalida = tipo === '03' && !esDNI;
   const comprobanteInvalido = facturaInvalida || boletaInvalida;
+  const stockInsuficiente = availability?.inventory_enabled && !availability?.sufficient;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -998,11 +1012,20 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
         </div>
       )}
 
+      {availabilityLoading && <p className="text-sm text-[var(--color-text-muted)]">Verificando disponibilidad de inventario…</p>}
+      {availability?.inventory_enabled && (
+        <div className={`rounded-xl border p-3 text-sm ${stockInsuficiente ? 'border-[var(--color-warning)] bg-[var(--color-warning-soft)]' : 'border-[var(--color-success)] bg-[var(--color-success-soft)]'}`}>
+          <b>{stockInsuficiente ? 'Stock insuficiente para emitir' : 'Inventario disponible'}</b>
+          <p className="mt-1 text-xs">Almacén: {availability.warehouse_name}</p>
+          {stockInsuficiente && <ul className="mt-2 space-y-1">{availability.items.filter((item) => !item.sufficient).map((item) => <li key={item.product_id}>{item.product_name}: disponible {item.available} de {item.requested} {item.unit}</li>)}</ul>}
+        </div>
+      )}
+
       <div className="flex justify-end gap-3">
         <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
         <button
           type="submit"
-          disabled={saving || comprobanteInvalido}
+          disabled={saving || comprobanteInvalido || availabilityLoading || stockInsuficiente}
           className="btn-primary flex items-center gap-2"
         >
           {saving && <Spinner size="sm" />}
@@ -1197,6 +1220,8 @@ function NuevaCotizacionForm({
   const [observacionesOpen, setObservacionesOpen] = useState(false);
   const [avanzado, setAvanzado]         = useState(false);
   const [items, setItems]               = useState([emptyItem()]);
+  const [warehouses, setWarehouses]     = useState([]);
+  const [warehouseId, setWarehouseId]   = useState('');
   const [previewOpen, setPreviewOpen]   = useState(false);
   const [tenantData, setTenantData]     = useState(null);
   const [observationsInitialized, setObservationsInitialized] = useState(false);
@@ -1269,6 +1294,15 @@ function NuevaCotizacionForm({
       })
       .catch(() => {});
 
+    inventory.warehouses()
+      .then((rows) => {
+        if (!active) return;
+        setWarehouses(rows || []);
+        const preferred = rows?.find((row) => row.is_default);
+        if (!isEditing && preferred) setWarehouseId(String(preferred.id));
+      })
+      .catch(() => { if (active) setWarehouses([]); });
+
     return () => {
       active = false;
     };
@@ -1319,6 +1353,7 @@ function NuevaCotizacionForm({
     setClienteIsNew(false);
     setUpdateExistingClient(true);
     setMoneda(initialQuote?.moneda || 'PEN');
+    setWarehouseId(initialQuote?.warehouse_id ? String(initialQuote.warehouse_id) : '');
     setCondicion(initialQuote?.condicion_pago || 'contado');
     setFechaVenc(toDateInputValue(initialQuote?.fecha_vencimiento));
     setQuoteWalletId(String(initialQuote?.quote_selected_wallet_id || ''));
@@ -1477,6 +1512,7 @@ function NuevaCotizacionForm({
       onSave({
         cliente_id:        Number(resolvedClienteId),
         cliente_snapshot:  clienteForm ? clienteSnapshotFromForm(clienteForm) : undefined,
+        warehouse_id:      warehouseId ? Number(warehouseId) : undefined,
         moneda,
         tipo_comprobante:  '00',
         condicion_pago:    condicion,
@@ -1511,6 +1547,7 @@ function NuevaCotizacionForm({
     setClienteIsNew(false);
     setUpdateExistingClient(true);
     setMoneda('PEN');
+    setWarehouseId(warehouses.find((row) => row.is_default)?.id?.toString() || '');
     setCondicion(DEFAULT_QUOTE_PAYMENT_CONDITION);
     setFechaVenc(calcFechaVencimiento(DEFAULT_QUOTE_PAYMENT_CONDITION));
     setQuoteWalletId('');
@@ -1629,6 +1666,7 @@ return (
                       />
                     </div>
                   </div>
+                  {warehouses.length > 0 && <div className="field span-5"><label>Almacén de salida</label><div className="control"><CustomSelect value={warehouseId} onChange={(value) => setWarehouseId(String(value || ''))} options={warehouses.map((row) => ({ value: String(row.id), label: `${row.name}${row.is_default ? ' · Principal' : ''}` }))} /></div></div>}
                   <div className="field span-5">
                     <label>Condición de pago</label>
                     <div className="control">
@@ -2201,13 +2239,23 @@ export default function CotizacionesPage() {
   const handleSave = async (data) => {
     setSaving(true);
     try {
+      let savedQuote;
       if (editingQuote?.id) {
-        await svc.update(editingQuote.id, data);
+        savedQuote = await svc.update(editingQuote.id, data);
         setEditingQuote(null);
       } else {
-        await svc.create(data);
+        savedQuote = await svc.create(data);
       }
       toast(editingQuote?.id ? 'Cotizacion actualizada' : 'Cotizacion guardada');
+      if (savedQuote?.id) {
+        inventory.documentAvailability(savedQuote.id)
+          .then((availability) => {
+            if (availability?.inventory_enabled && !availability.sufficient) {
+              toast('Cotización guardada con advertencia: uno o más productos no tienen stock suficiente.', 'warning');
+            }
+          })
+          .catch(() => {});
+      }
       setView('history');
       load();
     } catch (err) {

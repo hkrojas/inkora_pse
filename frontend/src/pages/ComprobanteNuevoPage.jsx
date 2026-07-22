@@ -15,6 +15,7 @@ import { clientes as clientesSvc } from '../services/clientes';
 import { productos as productosSvc } from '../services/productos';
 import { cotizaciones as cotizacionesSvc } from '../services/cotizaciones';
 import { tenant as tenantSvc } from '../services/tenant';
+import { inventory } from '../services/inventory';
 import FiscalDocPreview from '../components/documents/FiscalDocPreview';
 import ClientCombobox from '../components/ui/ClientCombobox';
 import ProductLineCell from '../components/ui/ProductLineCell';
@@ -96,6 +97,7 @@ function createInitialForm(initialType) {
     tipo_operacion: '0101',
     condicion_pago: 'contado',
     medio_pago: 'Efectivo',
+    warehouse_id: '',
     fecha_emision: inputDateToday(),
     fecha_vencimiento: '',
     cuotas_pago: [],
@@ -482,6 +484,7 @@ export default function ComprobanteNuevoPage() {
   const [clientes, setClientes] = useState([]);
   const [productos, setProductos] = useState([]);
   const [tenantData, setTenantData] = useState(null);
+  const [warehouses, setWarehouses] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -512,11 +515,14 @@ export default function ComprobanteNuevoPage() {
   const loadBaseData = useCallback(() => {
     setLoadingData(true);
     setLoadError(null);
-    Promise.all([clientesSvc.page('?limit=15'), productosSvc.page('?limit=15'), tenantSvc.get()])
-      .then(([c, p, t]) => {
+    Promise.all([clientesSvc.page('?limit=15'), productosSvc.page('?limit=15'), tenantSvc.get(), inventory.warehouses()])
+      .then(([c, p, t, w]) => {
         setClientes(Array.isArray(c) ? c : c?.items || []);
         setProductos(Array.isArray(p) ? p : p?.items || []);
         setTenantData(t || null);
+        setWarehouses(w || []);
+        const preferred = w?.find((warehouse) => warehouse.is_default);
+        if (preferred) setForm((current) => ({ ...current, warehouse_id: current.warehouse_id || String(preferred.id) }));
       })
       .catch((err) => {
         setLoadError(err);
@@ -843,6 +849,7 @@ export default function ComprobanteNuevoPage() {
     const srcItems = resolvedItems || form.items;
     return {
       cliente_id: Number(clienteId),
+      warehouse_id: form.warehouse_id ? Number(form.warehouse_id) : null,
       cliente_snapshot: clienteSnapshotFromForm(form.cliente),
       fecha_emision: toApiDate(form.fecha_emision),
       fecha_vencimiento: form.condicion_pago === 'contado'
@@ -909,6 +916,14 @@ export default function ComprobanteNuevoPage() {
       }));
 
       const quote = await cotizacionesSvc.create(buildQuotePayload(clienteId, resolvedItems));
+      const availability = await inventory.documentAvailability(quote.id);
+      if (availability?.inventory_enabled && !availability.sufficient) {
+        const missing = availability.items
+          .filter((item) => !item.sufficient)
+          .map((item) => `${item.product_name}: ${item.available} de ${item.requested} ${item.unit}`)
+          .join('; ');
+        throw new Error(`Stock insuficiente en ${availability.warehouse_name}. ${missing}`);
+      }
       await cotizacionesSvc.facturar(quote.id, {
         tipo_comprobante: form.tipo_comprobante,
         tipo_operacion: form.tipo_operacion,
@@ -1102,6 +1117,8 @@ export default function ComprobanteNuevoPage() {
                       options={MEDIO_PAGO_OPTIONS}
                     />
                   </div>
+
+                  {warehouses.length > 0 && <div className="field span-4"><label>Almacén de salida</label><CustomSelect value={form.warehouse_id} onChange={(value) => setRootField('warehouse_id', String(value || ''))} options={warehouses.map((warehouse) => ({ value: String(warehouse.id), label: `${warehouse.name}${warehouse.is_default ? ' · Principal' : ''}` }))} /></div>}
 
                   <div className="field span-4">
                     <label>Fecha de emisión</label>

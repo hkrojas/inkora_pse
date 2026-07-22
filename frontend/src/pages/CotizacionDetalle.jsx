@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, FileText, Plus, Receipt, Share2 } from 'lucide-react';
 import { cotizaciones as svc } from '../services/cotizaciones';
+import { inventory } from '../services/inventory';
 import { BASE_URL } from '../lib/utils/config';
 import Spinner from '../components/ui/Spinner';
 import Badge, { statusBadge } from '../components/ui/Badge';
@@ -129,6 +130,8 @@ export default function CotizacionDetalle() {
   const [saving, setSaving] = useState(false);
   const [emitirModal, setEmitirModal] = useState(null); // '01' | '03' | null
   const [emitiendo, setEmitiendo] = useState(false);
+  const [availability, setAvailability] = useState(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -142,6 +145,19 @@ export default function CotizacionDetalle() {
   };
 
   useEffect(load, [id]);
+  useEffect(() => {
+    if (!emitirModal) {
+      setAvailability(null);
+      return;
+    }
+    let active = true;
+    setAvailabilityLoading(true);
+    inventory.documentAvailability(id)
+      .then((response) => { if (active) setAvailability(response); })
+      .catch(() => { if (active) setAvailability(null); })
+      .finally(() => { if (active) setAvailabilityLoading(false); });
+    return () => { active = false; };
+  }, [emitirModal, id]);
 
   const handleShare = async () => {
     try {
@@ -387,11 +403,13 @@ export default function CotizacionDetalle() {
               <strong>Factura:</strong> Requiere que el cliente tenga RUC válido configurado.
             </div>
           )}
+          {availabilityLoading && <p className="text-sm text-[var(--color-text-muted)]">Verificando inventario…</p>}
+          {availability?.inventory_enabled && <div className={`rounded-xl border p-3 text-sm ${availability.sufficient ? 'border-[var(--color-success)] bg-[var(--color-success-soft)]' : 'border-[var(--color-warning)] bg-[var(--color-warning-soft)]'}`}><b>{availability.sufficient ? 'Stock disponible' : 'Stock insuficiente'}</b><p className="mt-1 text-xs">{availability.warehouse_name}</p>{!availability.sufficient && <ul className="mt-2 space-y-1">{availability.items.filter((item) => !item.sufficient).map((item) => <li key={item.product_id}>{item.product_name}: {item.available} de {item.requested} {item.unit}</li>)}</ul>}</div>}
           <div className="responsive-form-actions">
             <button className="btn-ghost" onClick={() => setEmitirModal(null)} disabled={emitiendo}>
               Cancelar
             </button>
-            <button className="btn-primary" onClick={handleEmitir} disabled={emitiendo}>
+            <button className="btn-primary" onClick={handleEmitir} disabled={emitiendo || availabilityLoading || (availability?.inventory_enabled && !availability.sufficient)}>
               {emitiendo && <Spinner size={14} />}
               Confirmar emisión
             </button>
