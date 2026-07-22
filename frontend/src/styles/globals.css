@@ -6371,6 +6371,37 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
   to { opacity: 1; transform: scaleX(1); transform-origin: left; }
 }
 
+.ink-select-option-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+
+.ink-select-loading-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-soft);
+  animation: ink-select-search-pulse 900ms ease-in-out infinite alternate;
+}
+
+@keyframes ink-select-search-pulse {
+  to { transform: scale(.72); opacity: .55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ink-select-loading-dot { animation: none; }
+}
+
+.inventory-product-search-help {
+  margin: -4px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* Inventory: operational control room with calm, legible stock states. */
 .inventory-page {
   --inventory-radius: 24px;

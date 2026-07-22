@@ -89,6 +89,7 @@ export default function InventarioPage() {
   const [selectedReturn, setSelectedReturn] = useState(null);
   const [productQuery, setProductQuery] = useState('');
   const [productOptions, setProductOptions] = useState([]);
+  const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [form, setForm] = useState({ warehouse_id: '', product_id: '', quantity: '', reason: '', movement_type: 'adjustment' });
   const [warehouseForm, setWarehouseForm] = useState({ code: '', name: '', location: '', is_default: false });
   const [config, setConfig] = useState({ product_id: '', warehouse_id: '', opening_stock: '0', minimum_stock: '0', item_type: 'inventory' });
@@ -120,16 +121,29 @@ export default function InventarioPage() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    if (productQuery.trim().length < 2) {
+    const searchTerm = productQuery.trim();
+    if (searchTerm.length < 2) {
       setProductOptions([]);
+      setProductSearchLoading(false);
       return undefined;
     }
+
+    let active = true;
+    const controller = new AbortController();
+    setProductSearchLoading(true);
     const timer = window.setTimeout(() => {
-      productos.search(productQuery.trim(), 20)
-        .then(setProductOptions)
-        .catch(() => setProductOptions([]));
+      productos.search(searchTerm, 20, { signal: controller.signal })
+        .then((rows) => { if (active) setProductOptions(rows); })
+        .catch((requestError) => {
+          if (active && !requestError?.isCanceled) setProductOptions([]);
+        })
+        .finally(() => { if (active) setProductSearchLoading(false); });
     }, 250);
-    return () => window.clearTimeout(timer);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [productQuery]);
 
   const filtered = useMemo(() => {
@@ -417,8 +431,8 @@ export default function InventarioPage() {
         <form id="warehouse-form" onSubmit={submitWarehouse} className="inventory-action-form"><section className="inventory-form-section"><div className="inventory-form-section__heading"><span>01</span><div><h3>Identificación</h3><p>Usa un código corto que permita reconocer esta ubicación.</p></div></div><label>Código<input required maxLength={30} className="input mt-1 uppercase" value={warehouseForm.code} onChange={(event) => setWarehouseForm({ ...warehouseForm, code: event.target.value.toUpperCase() })} placeholder="TIENDA-01" /></label><label>Nombre<input required minLength={2} className="input mt-1" value={warehouseForm.name} onChange={(event) => setWarehouseForm({ ...warehouseForm, name: event.target.value })} placeholder="Tienda principal" /></label><label>Ubicación <small>(opcional)</small><input className="input mt-1" value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} placeholder="Dirección o referencia" /></label></section><label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_default} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_default: event.target.checked })} /><span><strong>Usar como almacén principal</strong><small>Será la ubicación sugerida en nuevas operaciones.</small></span></label></form>
       </Drawer>
 
-      <Drawer open={modal === 'config'} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Catálogo comercial" status="Control de stock" initialFocus="input" title="Configurar producto" subtitle="Define cómo se comporta un producto dentro del inventario." icon={<PackageCheck size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="config-form" className="btn-primary" disabled={saving}>{saving ? 'Guardando…' : 'Guardar configuración'}</button></>}>
-        <form id="config-form" onSubmit={submitConfig} className="inventory-action-form"><section className="inventory-form-section"><div className="inventory-form-section__heading"><span>01</span><div><h3>Producto del catálogo</h3><p>Busca por nombre o SKU y selecciona el resultado correcto.</p></div></div><label>Buscar producto<input className="input mt-1" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Escribe nombre o SKU" /></label><label>Producto<CustomSelect required searchable searchPlaceholder="Filtrar resultados" ariaLabel="Producto del catálogo" value={config.product_id} onChange={(value) => setConfig({ ...config, product_id: value })} placeholder="Selecciona un resultado" options={productOptions.map((product) => ({ value: product.id, label: `${product.nombre}${product.codigo_interno ? ` · ${product.codigo_interno}` : ''}`, searchText: `${product.nombre} ${product.codigo_interno || ''}` }))} /></label></section><section className="inventory-form-section"><div className="inventory-form-section__heading"><span>02</span><div><h3>Reglas de inventario</h3><p>Los servicios no generan ni consumen existencias.</p></div></div><label>Tipo<CustomSelect ariaLabel="Tipo de producto" value={config.item_type} onChange={(value) => setConfig({ ...config, item_type: value })} options={[{ value: 'inventory', label: 'Producto inventariable' }, { value: 'service', label: 'Servicio sin stock' }]} /></label>{config.item_type === 'inventory' && <><label>Almacén<CustomSelect required ariaLabel="Almacén del producto" value={config.warehouse_id} onChange={(value) => setConfig({ ...config, warehouse_id: value })} placeholder="Selecciona un almacén" options={warehouses.map((row) => ({ value: row.id, label: row.name }))} /></label><div className="inventory-form-grid"><label>Saldo inicial<input type="number" step="0.0001" className="input mt-1" value={config.opening_stock} onChange={(event) => setConfig({ ...config, opening_stock: event.target.value })} /></label><label>Stock mínimo<input type="number" min="0" step="0.0001" className="input mt-1" value={config.minimum_stock} onChange={(event) => setConfig({ ...config, minimum_stock: event.target.value })} /></label></div></>}</section></form>
+      <Drawer open={modal === 'config'} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Catálogo comercial" status="Control de stock" initialFocus=".ink-select-trigger" title="Configurar producto" subtitle="Define cómo se comporta un producto dentro del inventario." icon={<PackageCheck size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="config-form" className="btn-primary" disabled={saving}>{saving ? 'Guardando…' : 'Guardar configuración'}</button></>}>
+        <form id="config-form" onSubmit={submitConfig} className="inventory-action-form"><section className="inventory-form-section"><div className="inventory-form-section__heading"><span>01</span><div><h3>Producto del catálogo</h3><p>Escribe en el selector y el catálogo se actualizará mientras buscas.</p></div></div><label>Producto<CustomSelect required searchable loading={productSearchLoading} onSearchChange={setProductQuery} searchPlaceholder="Buscar por nombre o SKU" ariaLabel="Buscar producto del catálogo" value={config.product_id} onChange={(value) => setConfig({ ...config, product_id: value })} placeholder="Busca y selecciona un producto" noResultsLabel={productQuery.trim().length < 2 ? 'Escribe al menos 2 caracteres para buscar.' : 'No encontramos productos con esa búsqueda.'} options={productOptions.map((product) => ({ value: product.id, label: `${product.nombre}${product.codigo_interno ? ` · ${product.codigo_interno}` : ''}`, searchText: `${product.nombre} ${product.codigo_interno || ''}` }))} /></label><p className="inventory-product-search-help">La búsqueda consulta el catálogo en tiempo real y muestra hasta 20 coincidencias.</p></section><section className="inventory-form-section"><div className="inventory-form-section__heading"><span>02</span><div><h3>Reglas de inventario</h3><p>Los servicios no generan ni consumen existencias.</p></div></div><label>Tipo<CustomSelect ariaLabel="Tipo de producto" value={config.item_type} onChange={(value) => setConfig({ ...config, item_type: value })} options={[{ value: 'inventory', label: 'Producto inventariable' }, { value: 'service', label: 'Servicio sin stock' }]} /></label>{config.item_type === 'inventory' && <><label>Almacén<CustomSelect required ariaLabel="Almacén del producto" value={config.warehouse_id} onChange={(value) => setConfig({ ...config, warehouse_id: value })} placeholder="Selecciona un almacén" options={warehouses.map((row) => ({ value: row.id, label: row.name }))} /></label><div className="inventory-form-grid"><label>Saldo inicial<input type="number" step="0.0001" className="input mt-1" value={config.opening_stock} onChange={(event) => setConfig({ ...config, opening_stock: event.target.value })} /></label><label>Stock mínimo<input type="number" min="0" step="0.0001" className="input mt-1" value={config.minimum_stock} onChange={(event) => setConfig({ ...config, minimum_stock: event.target.value })} /></label></div></>}</section></form>
       </Drawer>
 
       <Drawer open={modal === 'transfer'} onClose={() => setModal(null)} variant="inventory-action" tone="warning" eyebrow="Movimiento interno" status="Entre almacenes" initialFocus=".ink-select-trigger" title="Nueva transferencia" subtitle="La salida y la entrada quedarán enlazadas en el kardex." icon={<ArrowLeftRight size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="transfer-form" className="btn-primary" disabled={saving}>{saving ? 'Registrando…' : 'Registrar transferencia'}</button></>}>

@@ -10,6 +10,8 @@ export default function CustomSelect({
   compact = false,
   searchable = false,
   searchPlaceholder = 'Buscar...',
+  onSearchChange,
+  loading = false,
   filterOption,
   renderOption,
   renderPreview,
@@ -30,11 +32,16 @@ export default function CustomSelect({
   const triggerRef = useRef(null);
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
+  const selectedOptionRef = useRef(null);
   const generatedId = useId();
   const triggerId = id || `ink-select-${generatedId}`;
   const listboxId = `${triggerId}-listbox`;
 
-  const selected = options.find((opt) => String(opt.value) === String(value));
+  const selectedFromOptions = options.find((opt) => String(opt.value) === String(value));
+  if (selectedFromOptions) selectedOptionRef.current = selectedFromOptions;
+  const selected = selectedFromOptions || (
+    String(selectedOptionRef.current?.value) === String(value) ? selectedOptionRef.current : undefined
+  );
   const normalizedQuery = query.trim().toLowerCase();
   const filteredOptions = searchable
     ? options.filter((opt) => {
@@ -177,6 +184,13 @@ export default function CustomSelect({
     setQuery('');
   };
 
+  const handleSearchChange = (event) => {
+    const nextQuery = event.target.value;
+    setQuery(nextQuery);
+    setActiveIndex(0);
+    onSearchChange?.(nextQuery);
+  };
+
   const chevron = (
     <svg
       className={`ink-chevron ${open ? 'is-open' : ''}`}
@@ -231,6 +245,7 @@ export default function CustomSelect({
           className="ink-select-dropdown dropdown-enter"
           role="listbox"
           aria-label={ariaLabel}
+          aria-busy={loading || undefined}
           onKeyDown={handleKeyDown}
           style={{
             top: dropPos.top,
@@ -244,8 +259,9 @@ export default function CustomSelect({
               <input
                 ref={searchInputRef}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={handleSearchChange}
                 placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
                 className="input-flat w-full text-xs"
                 onMouseDown={(e) => e.stopPropagation()}
               />
@@ -293,7 +309,14 @@ export default function CustomSelect({
             );
           })}
 
-          {!filteredOptions.length && !showCreateOption && (
+          {loading && (
+            <div className="ink-select-option-empty ink-select-option-loading" role="status" aria-live="polite">
+              <span className="ink-select-loading-dot" aria-hidden="true" />
+              Buscando resultados…
+            </div>
+          )}
+
+          {!loading && !filteredOptions.length && !showCreateOption && (
             <div className="ink-select-option-empty">
               {noResultsLabel}
             </div>
