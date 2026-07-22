@@ -2,6 +2,10 @@ import { api } from '../lib/utils/api';
 import { buildQueryString } from '../lib/utils/queryParams';
 
 export const superadmin = {
+  accessRequests:       (params = {})   => api.get(`/superadmin/access-requests${buildQueryString(params)}`),
+  approveAccessRequest: (id, data = {}) => api.post(`/superadmin/access-requests/${id}/approve`, data),
+  rejectAccessRequest:  (id, data = {}) => api.post(`/superadmin/access-requests/${id}/reject`, data),
+
   // Tenants
   tenants:              ()              => api.get('/superadmin/tenants'),
   tenantsPage:          (params)        => api.get(`/superadmin/tenants-page${buildQueryString(params)}`),

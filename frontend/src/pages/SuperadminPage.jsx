@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   Building2,
+  CheckCircle2,
   Gauge,
   KeyRound,
   PencilLine,
@@ -15,6 +16,7 @@ import {
   Truck,
   UserPlus,
   Users,
+  XCircle,
 } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { superadmin as svc } from '../services/superadmin';
@@ -2192,6 +2194,120 @@ function TenantErrorsModal({ tenant, onClose }) {
   );
 }
 
+function AccessRequestQueue() {
+  const pageSize = 15;
+  const toast = useToast();
+  const [requests, setRequests] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
+  const [rejectingId, setRejectingId] = useState(null);
+  const [rejectNotes, setRejectNotes] = useState('');
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const loadRequests = useCallback(() => {
+    setLoading(true);
+    return svc.accessRequests({ status: 'pending', skip: (page - 1) * pageSize, limit: pageSize })
+      .then((data) => {
+        setRequests(Array.isArray(data.items) ? data.items : []);
+        setTotal(Number(data.total) || 0);
+      })
+      .catch((error) => toast(error.message || 'No se pudieron cargar las solicitudes.', 'error'))
+      .finally(() => setLoading(false));
+  }, [page, toast]);
+
+  useEffect(() => { loadRequests(); }, [loadRequests]);
+  useEffect(() => {
+    if (!loading && page > totalPages) setPage(totalPages);
+  }, [loading, page, totalPages]);
+
+  const approve = async (request) => {
+    setBusyId(request.id);
+    try {
+      await svc.approveAccessRequest(request.id, {});
+      setRequests((current) => current.filter((item) => item.id !== request.id));
+      setTotal((current) => Math.max(0, current - 1));
+      toast(`Alta aprobada para ${request.business_name}.`, 'success');
+      await loadRequests();
+    } catch (error) {
+      toast(error.message || 'No se pudo aprobar la solicitud.', 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const reject = async (request) => {
+    setBusyId(request.id);
+    try {
+      await svc.rejectAccessRequest(request.id, { review_notes: rejectNotes.trim() || null });
+      setRequests((current) => current.filter((item) => item.id !== request.id));
+      setTotal((current) => Math.max(0, current - 1));
+      setRejectingId(null);
+      setRejectNotes('');
+      toast(`Solicitud de ${request.business_name} denegada.`);
+      await loadRequests();
+    } catch (error) {
+      toast(error.message || 'No se pudo denegar la solicitud.', 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <section className="panel superadmin-table-card">
+      <div className="panel-header superadmin-table-header">
+        <div>
+          <p className="page-kicker">Altas solicitadas</p>
+          <h3 className="ink-card-title">Solicitudes de acceso</h3>
+          <p className="ink-card-subtitle">Aprobar crea el tenant y su primer usuario administrador. Denegar no crea accesos.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant={total ? 'warning' : 'success'}>{total} pendientes</Badge>
+          <button type="button" className="btn-secondary" onClick={loadRequests} disabled={loading}><RefreshCw size={15} />Actualizar</button>
+        </div>
+      </div>
+      {loading ? <div className="grid min-h-32 place-items-center"><Spinner size="sm" label="Cargando solicitudes" /></div> : requests.length === 0 ? (
+        <div className="p-6"><EmptyState icon={<CheckCircle2 size={20} />} title="No hay solicitudes pendientes" description="Las nuevas solicitudes de registro aparecerán aquí." /></div>
+      ) : (
+        <div className="grid gap-3 p-4 lg:grid-cols-2">
+          {requests.map((request) => (
+            <article key={request.id} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0"><h4 className="truncate font-heading text-base font-bold">{request.business_name}</h4><p className="mt-1 font-mono text-xs text-[var(--text-secondary)]">RUC {request.business_ruc}</p></div>
+                <Badge variant="warning">Pendiente</Badge>
+              </div>
+              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                <div><dt className="text-xs text-[var(--text-tertiary)]">Administrador</dt><dd className="mt-1 font-semibold">{request.contact_name}</dd></div>
+                <div><dt className="text-xs text-[var(--text-tertiary)]">Correo</dt><dd className="mt-1 break-all font-semibold">{request.email}</dd></div>
+                {request.business_phone && <div><dt className="text-xs text-[var(--text-tertiary)]">Teléfono</dt><dd className="mt-1 font-semibold">{request.business_phone}</dd></div>}
+                <div><dt className="text-xs text-[var(--text-tertiary)]">Solicitado</dt><dd className="mt-1 font-semibold">{new Date(request.created_at).toLocaleString('es-PE')}</dd></div>
+              </dl>
+              {rejectingId === request.id ? (
+                <div className="mt-4 rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger-soft)] p-3">
+                  <label className="text-xs font-bold" htmlFor={`reject-notes-${request.id}`}>Motivo para el solicitante</label>
+                  <textarea id={`reject-notes-${request.id}`} className="input mt-2 min-h-20" maxLength={500} value={rejectNotes} onChange={(event) => setRejectNotes(event.target.value)} placeholder="Explica qué debe corregir antes de volver a solicitar acceso." />
+                  <div className="mt-3 flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => { setRejectingId(null); setRejectNotes(''); }}>Cancelar</button><button type="button" className="btn-danger" disabled={busyId === request.id} onClick={() => reject(request)}>{busyId === request.id ? 'Denegando...' : 'Confirmar denegación'}</button></div>
+                </div>
+              ) : (
+                <div className="mt-4 flex flex-col gap-2 border-t border-[var(--border-subtle)] pt-4 sm:flex-row sm:justify-end">
+                  <button type="button" className="btn-secondary text-[var(--color-danger)]" disabled={Boolean(busyId)} onClick={() => setRejectingId(request.id)}><XCircle size={15} />Denegar</button>
+                  <button type="button" className="btn flex items-center justify-center gap-2" disabled={Boolean(busyId)} onClick={() => approve(request)}>{busyId === request.id ? <Spinner size="sm" /> : <CheckCircle2 size={15} />}Aprobar alta</button>
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+      {!loading && total > pageSize && (
+        <div className="flex justify-center border-t border-[var(--border-subtle)] px-4 py-4">
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} ariaLabel="Paginación de solicitudes de acceso" />
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function SuperadminPage() {
   const { user } = useAuth();
   const toast = useToast();
@@ -2562,6 +2678,8 @@ export default function SuperadminPage() {
           <div className="attention-card-link">Sin exposición</div>
         </div>
       </section>
+
+      <AccessRequestQueue />
 
       <section className="metrics-grid">
         {metrics.map((metric) => {

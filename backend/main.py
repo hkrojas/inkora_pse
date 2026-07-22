@@ -13,6 +13,7 @@ from config import settings
 from database import SessionLocal, engine
 from logging_utils import configure_logging, get_logger
 from routers import (
+    access_requests,
     auth,
     clientes,
     cotizaciones,
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(auth.router)
+    app.include_router(access_requests.router)
     app.include_router(tenants.router)
     app.include_router(clientes.router)
     app.include_router(productos.router)

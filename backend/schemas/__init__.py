@@ -206,6 +206,15 @@ from schemas.onboarding import (
     OnboardingEstadoResponse,
 )
 from schemas.emission_jobs import EmissionJobResponse
+from schemas.access_requests import (
+    AccessRequestCreate,
+    AccessRequestCreated,
+    AccessRequestStatusLookup,
+    AccessRequestPublicStatus,
+    AccessRequestReview,
+    AccessRequestAdminResponse,
+    AccessRequestPageResponse,
+)
 from schemas.notes import (
     NoteAdjustmentLine,
     FiscalNoteDraftCreate,
@@ -286,6 +295,8 @@ __all__ = [
     "OnboardingChecklistItem", "OnboardingEstadoResponse",
     # emission jobs
     "EmissionJobResponse",
+    "AccessRequestCreate", "AccessRequestCreated", "AccessRequestStatusLookup", "AccessRequestPublicStatus",
+    "AccessRequestReview", "AccessRequestAdminResponse", "AccessRequestPageResponse",
     "NoteAdjustmentLine", "FiscalNoteDraftCreate", "FiscalNoteDraftUpdate",
     # usage limits
     "UsageLimitBase", "UsageLimitCreate", "UsageLimitResponse",

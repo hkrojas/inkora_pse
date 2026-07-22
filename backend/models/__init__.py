@@ -54,6 +54,12 @@ from models.inventory import (
     InventoryReturn,
     InventoryReturnItem,
 )
+from models.access_requests import (
+    AccessRequest,
+    ACCESS_REQUEST_PENDING,
+    ACCESS_REQUEST_APPROVED,
+    ACCESS_REQUEST_REJECTED,
+)
 
 from models.cotizaciones import Cotizacion, CotizacionItem
 
@@ -154,6 +160,10 @@ __all__ = [
     "InventoryTransferItem",
     "InventoryReturn",
     "InventoryReturnItem",
+    "AccessRequest",
+    "ACCESS_REQUEST_PENDING",
+    "ACCESS_REQUEST_APPROVED",
+    "ACCESS_REQUEST_REJECTED",
     # cotizaciones
     "Cotizacion",
     "CotizacionItem",
