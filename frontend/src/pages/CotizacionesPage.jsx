@@ -79,6 +79,7 @@ import { useAuth } from '../context/AuthContext';
 
 const UNIDADES_MEDIDA = SUNAT_UNIT_OPTIONS;
 const HISTORY_PAGE_SIZE = 15;
+const FISCAL_PAGE_SIZE = 15;
 
 const AFECTACION_IGV = SUNAT_TAX_AFFECTATION_OPTIONS;
 
@@ -2033,6 +2034,7 @@ export default function CotizacionesPage() {
   const [anularDoc, setAnularDoc]   = useState(null);
   const [notaDoc, setNotaDoc]       = useState(null);
   const [historyPage, setHistoryPage] = useState(1);
+  const [fiscalPage, setFiscalPage] = useState(1);
 
   // Carga de datos maestros (clientes y productos) con una página inicial acotada.
   useEffect(() => {
@@ -2133,6 +2135,29 @@ export default function CotizacionesPage() {
     return matchDoc && matchRazon && matchSerie && matchNumero && matchTipo && matchMoneda && matchPago && matchDesde && matchHasta && matchSearch;
   });
 
+  useEffect(() => {
+    setFiscalPage(1);
+    setSelectedFiscal(null);
+  }, [
+    search,
+    filters.docReceptor,
+    filters.razonSocial,
+    filters.serie,
+    filters.numero,
+    filters.tipo,
+    filters.moneda,
+    filters.formaPago,
+    filters.desde,
+    filters.hasta,
+    fiscalDocs.length,
+  ]);
+
+  const fiscalPageCount = Math.max(1, Math.ceil(filteredFiscal.length / FISCAL_PAGE_SIZE));
+  const safeFiscalPage = Math.min(fiscalPage, fiscalPageCount);
+  const fiscalPageStart = filteredFiscal.length ? (safeFiscalPage - 1) * FISCAL_PAGE_SIZE : 0;
+  const fiscalPageEnd = Math.min(fiscalPageStart + FISCAL_PAGE_SIZE, filteredFiscal.length);
+  const fiscalPageItems = filteredFiscal.slice(fiscalPageStart, fiscalPageEnd);
+
   const hasHistoryFilters = Boolean(search || filters.desde || filters.hasta);
   const hasFiscalFilters = Boolean(
     search
@@ -2153,7 +2178,7 @@ export default function CotizacionesPage() {
     (item) => item.linked_fiscal_document_number && item.linked_fiscal_document_status !== 'anulada',
   ).length;
 
-  const fiscalTotal = filteredFiscal.reduce((sum, item) => sum + Number(item.total_venta || 0), 0);
+  const fiscalPageTotal = fiscalPageItems.reduce((sum, item) => sum + Number(item.total_venta || 0), 0);
   const fiscalAcceptedCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'success').length;
   const fiscalPendingCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'warning').length;
   const fiscalRejectedCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'danger').length;
@@ -2162,6 +2187,11 @@ export default function CotizacionesPage() {
   const fiscalVisiblePendingCount = hasFiscalFilters ? fiscalPendingCount : Number(fiscalCounts.pending || 0);
   const fiscalVisibleRejectedCount = hasFiscalFilters ? fiscalRejectedCount : Number(fiscalCounts.rejected || 0);
   const fiscalLoadedIsPartial = fiscalDocumentTotal > fiscalDocs.length;
+
+  const handleFiscalPageChange = (nextPage) => {
+    setSelectedFiscal(null);
+    setFiscalPage(nextPage);
+  };
 
   const handleOpenNuevoCliente = (prefill = '') => {
     setNuevoClientePrefill(prefill);
@@ -2840,7 +2870,13 @@ export default function CotizacionesPage() {
                 <div>
                   <span>Total registros</span>
                   <strong>{fiscalVisibleCount}</strong>
-                  <span>{hasFiscalFilters ? 'Vista filtrada' : fiscalLoadedIsPartial ? `Mostrando los ${fiscalDocs.length} más recientes` : 'Vista completa'}</span>
+                  <span>
+                    {hasFiscalFilters
+                      ? `${filteredFiscal.length} resultados filtrados`
+                      : fiscalLoadedIsPartial
+                        ? `Mostrando los ${fiscalDocs.length} más recientes`
+                        : `${FISCAL_PAGE_SIZE} por página`}
+                  </span>
                 </div>
               </div>
               <div className="summary-item">
@@ -2855,7 +2891,7 @@ export default function CotizacionesPage() {
                 <div className="summary-icon"><FileText size={16} /></div>
                 <div>
                   <span>Total visible</span>
-                  <strong>S/ {fmt(fiscalTotal)}</strong>
+                  <strong>S/ {fmt(fiscalPageTotal)}</strong>
                   <span>Importe de los comprobantes visibles</span>
                 </div>
               </div>
@@ -2967,7 +3003,7 @@ export default function CotizacionesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredFiscal.map((item) => {
+                  {fiscalPageItems.map((item) => {
                     const sunatSt = getSunatStatus(item);
                     const sym = item.moneda === 'USD' ? '$' : 'S/';
                     const docNum = item.serie
@@ -3107,6 +3143,20 @@ export default function CotizacionesPage() {
                   })}
                 </tbody>
               </table>
+              </div>
+              <div className="history-table-footer">
+                <span>
+                  {filteredFiscal.length
+                    ? `Mostrando ${fiscalPageStart + 1}-${fiscalPageEnd} de ${filteredFiscal.length}`
+                    : 'Sin comprobantes'}
+                  {' '}· {FISCAL_PAGE_SIZE} por página
+                </span>
+                <Pagination
+                  page={safeFiscalPage}
+                  totalPages={fiscalPageCount}
+                  onPageChange={handleFiscalPageChange}
+                  ariaLabel="Paginación de comprobantes emitidos"
+                />
               </div>
             </div>
           )}
