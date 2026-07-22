@@ -76,6 +76,41 @@ def _resolve_product_prices(
     return precio_final, valor_unitario
 
 
+def _ensure_inventory_balance(db: Session, product: models.Producto) -> None:
+    """Create the zero balance that makes a catalog item immediately visible."""
+    if not product.inventory_enabled or product.item_type != "inventory":
+        return
+    warehouse = db.query(models.Warehouse).filter(
+        models.Warehouse.tenant_id == product.tenant_id,
+        models.Warehouse.is_default.is_(True),
+        models.Warehouse.is_active.is_(True),
+    ).first()
+    if not warehouse:
+        warehouse = models.Warehouse(
+            tenant_id=product.tenant_id,
+            code="PRINCIPAL",
+            name="Almacén principal",
+            is_default=True,
+            is_active=True,
+        )
+        db.add(warehouse)
+        db.flush()
+    exists = db.query(models.InventoryBalance.id).filter(
+        models.InventoryBalance.tenant_id == product.tenant_id,
+        models.InventoryBalance.warehouse_id == warehouse.id,
+        models.InventoryBalance.product_id == product.id,
+    ).first()
+    if not exists:
+        db.add(models.InventoryBalance(
+            tenant_id=product.tenant_id,
+            warehouse_id=warehouse.id,
+            product_id=product.id,
+            on_hand=0,
+            committed=0,
+            minimum_stock=0,
+        ))
+
+
 def create_producto(db: Session, producto: schemas.ProductoCreate, tenant_id: int):
     payload = producto.model_dump(exclude={"precio_incluye_igv"})
     precio_final, valor_unitario = _resolve_product_prices(
@@ -92,6 +127,8 @@ def create_producto(db: Session, producto: schemas.ProductoCreate, tenant_id: in
     )
     try:
         db.add(db_producto)
+        db.flush()
+        _ensure_inventory_balance(db, db_producto)
         db.commit()
         db.refresh(db_producto)
         return db_producto
@@ -128,6 +165,9 @@ def create_productos_bulk(
         return []
     try:
         db.add_all(db_productos)
+        db.flush()
+        for db_producto in db_productos:
+            _ensure_inventory_balance(db, db_producto)
         db.commit()
         return db_productos
     except Exception as e:
@@ -138,7 +178,10 @@ def create_productos_bulk(
 def update_producto(db: Session, producto_id: int, producto_data: schemas.ProductoCreate, tenant_id: int):
     db_producto = get_producto_for_tenant(db, producto_id, tenant_id)
     if db_producto:
-        update_data = producto_data.model_dump(exclude={"precio_incluye_igv"})
+        update_data = producto_data.model_dump(
+            exclude={"precio_incluye_igv"},
+            exclude_unset=True,
+        )
         if 'precio_unitario' in update_data:
             precio_final, valor_unitario = _resolve_product_prices(
                 precio_referencia=producto_data.precio_unitario,
@@ -149,6 +192,7 @@ def update_producto(db: Session, producto_id: int, producto_data: schemas.Produc
             update_data['valor_unitario'] = valor_unitario
         for key, value in update_data.items():
             setattr(db_producto, key, value)
+        _ensure_inventory_balance(db, db_producto)
         db.commit()
         db.refresh(db_producto)
     return db_producto

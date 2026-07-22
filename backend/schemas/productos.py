@@ -28,8 +28,8 @@ class ProductoBase(BaseModel):
     moneda: str = "PEN"
     unidad_medida: str = "NIU"
     tipo_afectacion_igv: str = "10"
-    item_type: str = "unclassified"
-    inventory_enabled: bool = False
+    item_type: str = "inventory"
+    inventory_enabled: bool = True
 
     @field_validator("item_type")
     @classmethod

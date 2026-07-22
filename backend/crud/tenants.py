@@ -1,4 +1,6 @@
 """crud/tenants.py — Tenants, suscripciones SaaS, superadmin, beta."""
+from datetime import datetime
+
 from sqlalchemy import and_, delete, func, not_, or_
 from sqlalchemy.orm import Session, joinedload
 
@@ -64,10 +66,21 @@ def create_tenant(db: Session, tenant: schemas.TenantCreate):
     if get_tenant_by_ruc(db, tenant.business_ruc):
         raise ValueError("Ya existe una empresa registrada con ese RUC.")
 
-    db_tenant = models.Tenant(**tenant.model_dump())
+    db_tenant = models.Tenant(
+        **tenant.model_dump(),
+        inventory_enabled=True,
+        inventory_started_at=datetime.now(),
+    )
     try:
         db.add(db_tenant)
         db.flush()
+        db.add(models.Warehouse(
+            tenant_id=db_tenant.id,
+            code="PRINCIPAL",
+            name="Almacén principal",
+            is_default=True,
+            is_active=True,
+        ))
         sub = models.Subscription(tenant_id=db_tenant.id)
         db.add(sub)
         db.commit()

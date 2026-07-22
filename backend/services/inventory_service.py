@@ -8,7 +8,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 import models
@@ -237,14 +237,24 @@ def transfer_stock(db, tenant_id, data, user_id, *, can_override_negative=False)
 
 
 def list_stock(db, tenant_id, *, warehouse_id=None, q=None):
-    query = db.query(models.InventoryBalance, models.Producto, models.Warehouse).join(
-        models.Producto, models.Producto.id == models.InventoryBalance.product_id
-    ).join(models.Warehouse, models.Warehouse.id == models.InventoryBalance.warehouse_id).filter(
-        models.InventoryBalance.tenant_id == tenant_id,
+    query = db.query(models.InventoryBalance, models.Producto, models.Warehouse).select_from(
+        models.Producto
+    ).join(
+        models.Warehouse,
+        models.Warehouse.tenant_id == models.Producto.tenant_id,
+    ).outerjoin(
+        models.InventoryBalance,
+        and_(
+            models.InventoryBalance.tenant_id == tenant_id,
+            models.InventoryBalance.product_id == models.Producto.id,
+            models.InventoryBalance.warehouse_id == models.Warehouse.id,
+        ),
+    ).filter(
         models.Producto.tenant_id == tenant_id,
         models.Producto.inventory_enabled.is_(True),
         models.Producto.item_type == "inventory",
         models.Warehouse.tenant_id == tenant_id,
+        models.Warehouse.is_active.is_(True),
     )
     if warehouse_id:
         query = query.filter(models.InventoryBalance.warehouse_id == warehouse_id)
@@ -252,15 +262,18 @@ def list_stock(db, tenant_id, *, warehouse_id=None, q=None):
         term = f"%{q.strip()}%"
         query = query.filter(or_(models.Producto.nombre.ilike(term), models.Producto.codigo_interno.ilike(term)))
     result = []
-    for balance, product, warehouse in query.order_by(models.Producto.nombre).all():
-        available = _decimal(balance.on_hand) - _decimal(balance.committed)
-        status = "negative" if available < ZERO else "out" if available == ZERO else "low" if available <= _decimal(balance.minimum_stock) else "ok"
+    for balance, product, warehouse in query.order_by(models.Producto.nombre, models.Warehouse.name).all():
+        on_hand = _decimal(getattr(balance, "on_hand", ZERO))
+        committed = _decimal(getattr(balance, "committed", ZERO))
+        minimum_stock = _decimal(getattr(balance, "minimum_stock", ZERO))
+        available = on_hand - committed
+        status = "negative" if available < ZERO else "out" if available == ZERO else "low" if available <= minimum_stock else "ok"
         result.append({
             "product_id": product.id, "product_name": product.nombre,
             "product_code": product.codigo_interno, "warehouse_id": warehouse.id,
             "warehouse_name": warehouse.name, "unit": product.unidad_medida,
-            "on_hand": balance.on_hand, "committed": balance.committed,
-            "available": available, "minimum_stock": balance.minimum_stock, "status": status,
+            "on_hand": on_hand, "committed": committed,
+            "available": available, "minimum_stock": minimum_stock, "status": status,
         })
     return result
 

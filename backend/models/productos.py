@@ -1,5 +1,5 @@
 """models/productos.py — Producto."""
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, Numeric, String, Text, false
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, Numeric, String, Text, true
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -17,8 +17,8 @@ class Producto(Base):
     moneda = Column(String, default="PEN")
     unidad_medida = Column(String, default="NIU")
     tipo_afectacion_igv = Column(String, default="10")
-    item_type = Column(String, nullable=False, default="unclassified", server_default="unclassified")
-    inventory_enabled = Column(Boolean, nullable=False, default=False, server_default=false())
+    item_type = Column(String, nullable=False, default="unclassified", server_default="inventory")
+    inventory_enabled = Column(Boolean, nullable=False, default=False, server_default=true())
 
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
     tenant = relationship("Tenant", back_populates="productos")

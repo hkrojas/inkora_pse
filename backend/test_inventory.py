@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import crud
 import models
 import pytest
+import schemas
 from fastapi import HTTPException
 from conftest import make_cliente, make_producto, make_tenant, make_user
 from crud._cotizaciones_quotes import _validated_warehouse_id
@@ -66,6 +67,64 @@ def _inventory_quote(db, tenant, user, client, product, *, quantity="3"):
     db.commit()
     db.refresh(quote)
     return quote
+
+
+def test_tenant_and_catalog_start_with_inventory_and_zero_stock(db_session):
+    tenant = crud.create_tenant(
+        db_session,
+        schemas.TenantCreate(
+            business_name="Imprenta inventario por defecto",
+            business_ruc="20999999701",
+        ),
+    )
+    warehouse = inventory_service.get_default_warehouse(db_session, tenant.id)
+    assert tenant.inventory_enabled is True
+    assert tenant.inventory_started_at is not None
+    assert warehouse is not None
+    assert warehouse.code == "PRINCIPAL"
+
+    product = crud.create_producto(
+        db_session,
+        schemas.ProductoCreate(
+            nombre="Papel couché",
+            precio_unitario=Decimal("10"),
+        ),
+        tenant.id,
+    )
+    assert product.item_type == "inventory"
+    assert product.inventory_enabled is True
+
+    stock = inventory_service.list_stock(db_session, tenant.id)
+    assert len(stock) == 1
+    assert stock[0]["product_id"] == product.id
+    assert stock[0]["warehouse_id"] == warehouse.id
+    assert stock[0]["on_hand"] == Decimal("0.0000")
+    assert stock[0]["available"] == Decimal("0.0000")
+
+
+def test_zero_stock_is_visible_in_each_warehouse_without_movements(db_session):
+    tenant = crud.create_tenant(
+        db_session,
+        schemas.TenantCreate(
+            business_name="Imprenta multi almacén",
+            business_ruc="20999999702",
+        ),
+    )
+    product = crud.create_producto(
+        db_session,
+        schemas.ProductoCreate(nombre="Tinta negra", precio_unitario=Decimal("25")),
+        tenant.id,
+    )
+    inventory_service.create_warehouse(
+        db_session,
+        tenant.id,
+        SimpleNamespace(code="TIENDA", name="Tienda", location=None, is_default=False),
+    )
+
+    stock = inventory_service.list_stock(db_session, tenant.id)
+    assert len(stock) == 2
+    assert {row["product_id"] for row in stock} == {product.id}
+    assert all(row["on_hand"] == Decimal("0.0000") for row in stock)
 
 
 def test_inventory_is_tenant_scoped(db_session):

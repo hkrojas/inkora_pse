@@ -1,7 +1,7 @@
 """models/tenants.py — Tenant, User, AuditLog, Subscription, SubscriptionPayment."""
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text, false
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text, true
 from sqlalchemy.orm import relationship
 
 APISPERU_TOKEN_STATUS_OK = "ok"
@@ -35,7 +35,7 @@ class Tenant(Base):
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=True)
-    inventory_enabled = Column(Boolean, nullable=False, default=False, server_default=false())
+    inventory_enabled = Column(Boolean, nullable=False, default=False, server_default=true())
     inventory_started_at = Column(DateTime, nullable=True)
 
     business_name = Column(String, nullable=False)
