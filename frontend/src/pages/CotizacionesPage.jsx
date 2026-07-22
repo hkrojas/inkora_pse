@@ -72,6 +72,7 @@ import {
 } from '../lib/utils/sunatCatalogs';
 import { hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
 import { clienteSnapshotFromForm, syncCatalogProductos, upsertCliente, upsertProductos } from '../lib/utils/upsert';
+import { getFiscalDocumentStatus } from '../lib/utils/documentArtifacts';
 import { useAuth } from '../context/AuthContext';
 
 // ─── Constantes de dominio ────────────────────────────────────────────────────
@@ -131,11 +132,17 @@ function mergeQuoteBankMethods(...groups) {
 }
 
 function getSunatStatus(item) {
-  if (item.estado === 'anulada')    return { label: 'ANULADO',  variant: 'danger',  icon: XCircle };
-  if (item.sunat_error)            return { label: 'RECHAZADO', variant: 'danger',  icon: AlertCircle, tooltip: item.sunat_error };
-  if (item.sunat_xml_url)          return { label: 'ACEPTADO',  variant: 'success', icon: CheckCircle2 };
-  if (item.document_kind !== 'quotation') return { label: 'PENDIENTE', variant: 'warning', icon: Clock };
-  return null;
+  const status = getFiscalDocumentStatus(item);
+  if (!status) return null;
+
+  const icons = {
+    voided: XCircle,
+    error: AlertCircle,
+    ok: CheckCircle2,
+    pending: Clock,
+  };
+
+  return { ...status, icon: icons[status.kind] || Clock };
 }
 
 function getDocumentDisplayNumber(doc) {

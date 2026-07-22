@@ -53,6 +53,21 @@ test('getFiscalDocumentStatus accepts fiscal document with verified provider and
   assert.equal(status.label, 'ACEPTADO');
 });
 
+test('getFiscalDocumentStatus accepts legacy CDR evidence without a public XML URL', () => {
+  const status = getFiscalDocumentStatus({
+    document_kind: 'fiscal_document',
+    estado: 'facturada',
+    provider_verification_status: null,
+    sunat_accepted: true,
+    has_sunat_cdr: true,
+    sunat_xml_url: null,
+    sunat_cdr_url: null,
+  });
+
+  assert.equal(status.kind, 'ok');
+  assert.equal(status.label, 'ACEPTADO');
+});
+
 test('getFiscalDocumentStatus does not accept fiscal document when provider verification failed', () => {
   const status = getFiscalDocumentStatus({
     document_kind: 'fiscal_document',
