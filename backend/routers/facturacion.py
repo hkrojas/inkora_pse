@@ -14,7 +14,7 @@ from fiscal_catalogs import (
     normalize_sunat_unit_code,
     normalize_tax_affectation_code,
 )
-from services import document_download_service, emission_queue_service, facturacion_service
+from services import document_download_service, emission_queue_service, facturacion_service, inventory_service
 from services import calculations
 from services import fiscal_provider_service
 from services import beta_feature_flags
@@ -922,6 +922,10 @@ def anular_documento(
         not_found_message="Comprobante no encontrado",
     )
     _ensure_document_can_be_voided(comprobante)
+    try:
+        inventory_service.ensure_document_void_inventory_safe(db, comprobante)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
     try:
         resolved_mode = emission_queue_service.resolve_emission_mode(mode)

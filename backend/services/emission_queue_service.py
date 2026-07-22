@@ -21,6 +21,7 @@ from services import (
     facturacion_service,
     fiscal_artifact_service,
     fiscal_provider_service,
+    inventory_service,
     pdf_storage_service,
 )
 from services.facturacion_background_service import process_direct_sunat_emission_bg
@@ -593,6 +594,9 @@ def _process_emit_fiscal_job(
     if not fiscal_document:
         raise RuntimeError("No se encontró el documento fiscal a emitir.")
 
+    inventory_service.create_document_holds(db, fiscal_document, user.id)
+    db.commit()
+
     payload_snapshot = job.payload_snapshot or {}
     result = facturacion_service.emitir_factura(
         fiscal_document,
@@ -737,6 +741,11 @@ def _process_void_fiscal_job(
     if not comprobante:
         raise RuntimeError("No se encontró el comprobante a anular.")
 
+    try:
+        inventory_service.ensure_document_void_inventory_safe(db, comprobante)
+    except ValueError as exc:
+        _raise_non_retryable_validation(str(exc))
+
     payload_snapshot = job.payload_snapshot or {}
     result = facturacion_service.anular_comprobante(
         comprobante,
@@ -772,6 +781,15 @@ def _persist_final_job_error_to_resource(
 ) -> None:
     if job.resource_type == models.EMISSION_JOB_RESOURCE_COTIZACION:
         crud.guardar_error_sunat(db, job.resource_id, message, tenant_id=job.tenant_id)
+        if job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL:
+            fiscal_document = _get_tenant_cotizacion(db, job.tenant_id, job.resource_id)
+            if fiscal_document:
+                inventory_service.release_document_holds(
+                    db,
+                    fiscal_document,
+                    reason=f"Emision fallida: {message}",
+                )
+                db.commit()
     elif job.resource_type == models.EMISSION_JOB_RESOURCE_GUIA:
         crud.guardar_error_sunat_gre(db, job.resource_id, message, tenant_id=job.tenant_id)
 

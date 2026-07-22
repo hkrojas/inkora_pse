@@ -9,7 +9,7 @@ from access_control import ELEVATED_TENANT_ROLES, ROLE_ADMIN, ROLE_SUPERADMIN, a
 from api_dependencies import get_current_user, get_db_tenant, require_admin
 from schemas.inventory import (
     AvailabilityLine, AvailabilityRequest, InventoryActivation,
-    InventoryAdjustmentCreate, MovementResponse, ProductInventoryConfig,
+    InventoryAdjustmentCreate, MovementPageResponse, MovementResponse, ProductInventoryConfig,
     StockResponse, TransferCreate, WarehouseCreate, WarehouseResponse,
     ReturnReceiptCreate,
 )
@@ -81,9 +81,32 @@ def kardex(product_id: Optional[int] = None, warehouse_id: Optional[int] = None,
     )
 
 
+@router.get("/kardex/page", response_model=MovementPageResponse)
+def kardex_page(product_id: Optional[int] = None, warehouse_id: Optional[int] = None,
+                skip: int = Query(0, ge=0), limit: int = Query(15, ge=1, le=100),
+                db: Session = Depends(get_db_tenant), user: models.User = Depends(get_current_user)):
+    return {
+        "items": inventory_service.list_movements(
+            db, user.tenant_id, product_id=product_id,
+            warehouse_id=warehouse_id, skip=skip, limit=limit,
+        ),
+        "total": inventory_service.count_movements(
+            db, user.tenant_id, product_id=product_id, warehouse_id=warehouse_id,
+        ),
+        "skip": skip,
+        "limit": limit,
+    }
+
+
 @router.post("/disponibilidad", response_model=List[AvailabilityLine])
 def availability(data: AvailabilityRequest, db: Session = Depends(get_db_tenant), user: models.User = Depends(get_current_user)):
     return inventory_service.check_availability(db, user.tenant_id, data)
+
+
+@router.get("/documentos/{document_id}/disponibilidad")
+def document_availability(document_id: int, db: Session = Depends(get_db_tenant),
+                          user: models.User = Depends(get_current_user)):
+    return inventory_service.check_document_availability(db, user.tenant_id, document_id)
 
 
 @router.post("/ajustes", response_model=MovementResponse)
@@ -105,16 +128,35 @@ def transfer(data: TransferCreate, db: Session = Depends(get_db_tenant), user: m
 
 
 @router.get("/devoluciones")
-def returns(db: Session = Depends(get_db_tenant), user: models.User = Depends(get_current_user)):
+def returns(skip: int = Query(0, ge=0), limit: int = Query(15, ge=1, le=100),
+            db: Session = Depends(get_db_tenant), user: models.User = Depends(get_current_user)):
     rows = db.query(models.InventoryReturn).filter(
         models.InventoryReturn.tenant_id == user.tenant_id,
-    ).order_by(models.InventoryReturn.created_at.desc()).all()
+    ).order_by(models.InventoryReturn.created_at.desc()).offset(skip).limit(limit).all()
+    product_ids = {item.product_id for row in rows for item in row.items}
+    products = {
+        product.id: product
+        for product in db.query(models.Producto).filter(
+            models.Producto.tenant_id == user.tenant_id,
+            models.Producto.id.in_(product_ids),
+        ).all()
+    } if product_ids else {}
+    note_ids = {row.credit_note_id for row in rows}
+    notes = {
+        note.id: note
+        for note in db.query(models.Cotizacion).filter(
+            models.Cotizacion.tenant_id == user.tenant_id,
+            models.Cotizacion.id.in_(note_ids),
+        ).all()
+    } if note_ids else {}
     return [{
         "id": row.id, "credit_note_id": row.credit_note_id,
+        "credit_note_number": getattr(notes.get(row.credit_note_id), "document_number", None),
         "warehouse_id": row.warehouse_id, "status": row.status,
         "created_at": row.created_at,
         "items": [{
             "id": item.id, "product_id": item.product_id,
+            "product_name": getattr(products.get(item.product_id), "nombre", None),
             "authorized_quantity": item.authorized_quantity,
             "received_quantity": item.received_quantity,
         } for item in row.items],

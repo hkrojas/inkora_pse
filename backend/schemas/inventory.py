@@ -65,8 +65,17 @@ class MovementResponse(BaseModel):
     source_type: str
     source_id: Optional[int] = None
     source_line_id: Optional[int] = None
+    source_document_number: Optional[str] = None
+    source_document_type: Optional[str] = None
     reason: Optional[str] = None
     created_at: datetime
+
+
+class MovementPageResponse(BaseModel):
+    items: List[MovementResponse]
+    total: int
+    skip: int
+    limit: int
 
 
 class TransferLine(BaseModel):

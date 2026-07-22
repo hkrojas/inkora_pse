@@ -94,6 +94,7 @@ class ClienteSnapshot(BaseModel):
 
 class CotizacionCreate(BaseModel):
     cliente_id: int
+    warehouse_id: Optional[int] = None
     cliente_snapshot: Optional[ClienteSnapshot] = None
     quote_payment_methods: Optional[List[dict]] = None
     fecha_emision: Optional[datetime] = None
@@ -155,6 +156,7 @@ class CotizacionResponse(BaseModel):
     document_kind: str = "quotation"
     source_quote_id: Optional[int] = None
     internal_order_number: Optional[str] = None
+    warehouse_id: Optional[int] = None
     document_number: Optional[str] = None
     linked_fiscal_document_id: Optional[int] = None
     linked_fiscal_document_number: Optional[str] = None

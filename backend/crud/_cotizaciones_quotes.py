@@ -193,6 +193,19 @@ def create_cotizacion(
     )
 
 
+def _validated_warehouse_id(db: Session, tenant_id: int, warehouse_id: int | None):
+    if warehouse_id is None:
+        return None
+    warehouse = db.query(models.Warehouse).filter(
+        models.Warehouse.id == warehouse_id,
+        models.Warehouse.tenant_id == tenant_id,
+        models.Warehouse.is_active.is_(True),
+    ).first()
+    if not warehouse:
+        raise ValueError("El almacén seleccionado no pertenece a la empresa autenticada.")
+    return warehouse.id
+
+
 def _create_cotizacion_inner(
     db: Session,
     cotizacion: schemas.CotizacionCreate,
@@ -246,7 +259,9 @@ def _create_cotizacion_inner(
         tipo_comprobante=cotizacion.tipo_comprobante,
         document_kind=DOCUMENT_KIND_QUOTATION,
         internal_order_number=internal_order_number,
-        warehouse_id=getattr(cotizacion, "warehouse_id", None),
+        warehouse_id=_validated_warehouse_id(
+            db, tenant_id, getattr(cotizacion, "warehouse_id", None),
+        ),
         correlativo=nuevo_correlativo,
         serie=QUOTE_SERIE,
         observaciones=getattr(cotizacion, "observaciones", None),
@@ -358,6 +373,11 @@ def update_cotizacion(
     db_cotizacion.fecha_vencimiento = cotizacion.fecha_vencimiento
     db_cotizacion.moneda = cotizacion.moneda
     db_cotizacion.tipo_comprobante = cotizacion.tipo_comprobante
+    db_cotizacion.warehouse_id = _validated_warehouse_id(
+        db,
+        db_cotizacion.tenant_id,
+        getattr(cotizacion, "warehouse_id", None),
+    )
     db_cotizacion.observaciones = getattr(cotizacion, "observaciones", None)
     db_cotizacion.condicion_pago = condicion_pago
     db_cotizacion.cuotas_pago = cuotas_pago or None

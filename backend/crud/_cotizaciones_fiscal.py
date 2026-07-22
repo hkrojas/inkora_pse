@@ -86,6 +86,11 @@ def _create_fiscal_document_from_quote_inner(
     try:
         db.add(fiscal_document)
         db.flush()
+        inventory_service.create_document_holds(
+            db,
+            fiscal_document,
+            usuario_id,
+        )
         db.commit()
         db.refresh(fiscal_document)
         return get_cotizacion(db, fiscal_document.id)
@@ -280,6 +285,12 @@ def anular_cotizacion(
         return db_cot
 
     try:
+        inventory_service.reverse_document_inventory(
+            db,
+            db_cot,
+            user_id=db_cot.usuario_id,
+            reason=f"Reversion por anulacion de {db_cot.document_number}",
+        )
         db_cot.estado = DOCUMENT_STATUS_VOIDED
         if db_cot.source_quote_id:
             source_quote = (
