@@ -4,6 +4,7 @@ import {
   PackageCheck, PackageMinus, Plus, RefreshCw, RotateCcw, Search, Warehouse,
 } from 'lucide-react';
 import Button from '../components/ui/Button';
+import Drawer from '../components/ui/Drawer';
 import EmptyState from '../components/ui/EmptyState';
 import Modal from '../components/ui/Modal';
 import OperationalPageHeader from '../components/ui/OperationalPageHeader';
@@ -141,6 +142,9 @@ export default function InventarioPage() {
   const criticalAlerts = stock.filter((row) => ['low', 'negative'].includes(row.status)).length;
   const committedTotal = stock.reduce((sum, row) => sum + Number(row.committed || 0), 0);
   const availableTotal = stock.reduce((sum, row) => sum + Number(row.available || 0), 0);
+  const selectedStockRow = stock.find((row) => String(row.warehouse_id) === String(form.warehouse_id)
+    && String(row.product_id) === String(form.product_id));
+  const projectedStock = Number(selectedStockRow?.on_hand || 0) + Number(form.quantity || 0);
   const movementPages = Math.max(1, Math.ceil(movementTotal / PAGE_SIZE));
   const tabCounts = {
     stock: stock.length,
@@ -332,7 +336,50 @@ export default function InventarioPage() {
 
       {tab === 'returns' && <section className="inventory-panel"><PanelHeading eyebrow="Ingreso por devolución" title="Recepciones pendientes" description="Confirma únicamente las unidades que regresaron físicamente al almacén." meta={`${returns.length} pendientes`} /><div className="space-y-3 p-4">{returns.length === 0 ? <div className="p-4"><EmptyState icon={<RotateCcw size={22} />} title="No hay devoluciones pendientes" description="Las notas de crédito con devolución física aparecerán aquí después de ser aceptadas." /></div> : returns.map((row) => <article key={row.id} className="inventory-return-card"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="inventory-panel__eyebrow">Nota de crédito</p><h3 className="mt-1 text-lg font-black">{row.credit_note_number || `Documento #${row.credit_note_id}`}</h3><p className="text-sm text-[var(--color-text-muted)]">{row.items.length} producto(s) · Estado: {row.status}</p></div>{canOperate && row.status !== 'received' && <Button onClick={() => openReceipt(row)}>Confirmar recepción</Button>}</div><div className="mt-4 grid gap-2 sm:grid-cols-2">{row.items.map((item) => <div key={item.id} className="rounded-xl bg-[var(--color-surface-soft)] p-3 text-sm"><b>{item.product_name || `Producto #${item.product_id}`}</b><p className="mt-1 text-[var(--color-text-muted)]">Recibido {qty(item.received_quantity)} de {qty(item.authorized_quantity)}</p></div>)}</div></article>)}</div></section>}
 
-      <Modal open={modal === 'adjust' || modal === 'stock'} onClose={() => setModal(null)} title={modal === 'stock' ? 'Registrar stock disponible' : 'Registrar movimiento'} subtitle={modal === 'stock' ? 'La cantidad ingresada se sumará al stock actual del producto.' : 'Las cantidades negativas representan salidas manuales.'} icon={Plus} footer={<><Button type="button" variant="secondary" onClick={() => setModal(null)}>Cancelar</Button><Button type="submit" form="adjust-form" loading={saving}>{modal === 'stock' ? 'Guardar stock' : 'Guardar movimiento'}</Button></>}><form id="adjust-form" onSubmit={submitAdjustment} className="space-y-4"><label className="block text-sm font-bold">Almacén<select required disabled={modal === 'stock'} className="input mt-1" value={form.warehouse_id} onChange={(event) => setForm({ ...form, warehouse_id: event.target.value })}><option value="">Selecciona</option>{warehouses.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label><label className="block text-sm font-bold">Producto<select required disabled={modal === 'stock'} className="input mt-1" value={form.product_id} onChange={(event) => setForm({ ...form, product_id: event.target.value })}><option value="">Selecciona</option>{uniqueProducts.map((row) => <option key={row.product_id} value={row.product_id}>{row.product_name}</option>)}</select></label><label className="block text-sm font-bold">Cantidad a ingresar<input required type="number" min={modal === 'stock' ? '0.0001' : undefined} step="0.0001" className="input mt-1" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} /></label><label className="block text-sm font-bold">Motivo<textarea required minLength={3} className="input mt-1 min-h-20" value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} /></label></form></Modal>
+      <Drawer
+        open={modal === 'stock'}
+        onClose={() => setModal(null)}
+        variant="inventory-stock"
+        tone="primary"
+        eyebrow="Entrada de inventario"
+        status="Suma al stock"
+        initialFocus="#inventory-stock-quantity"
+        title="Agregar existencias"
+        subtitle={selectedStockRow ? `${selectedStockRow.product_name} · ${selectedStockRow.warehouse_name}` : 'Registra una entrada para el producto seleccionado.'}
+        icon={<PackageCheck size={20} />}
+        footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="inventory-stock-form" className="btn-primary" disabled={saving || Number(form.quantity) <= 0}>{saving ? 'Guardando…' : 'Agregar al stock'}</button></>}
+      >
+        {selectedStockRow && (
+          <form id="inventory-stock-form" className="inventory-stock-drawer" onSubmit={submitAdjustment}>
+            <section className="inventory-stock-drawer__product" aria-labelledby="inventory-stock-product-title">
+              <div className="inventory-stock-drawer__product-topline"><span>Producto seleccionado</span><StockStatus status={selectedStockRow.status} /></div>
+              <div className="inventory-stock-drawer__product-main">
+                <span className="inventory-stock-drawer__product-icon" aria-hidden="true"><Boxes size={19} /></span>
+                <div><h3 id="inventory-stock-product-title">{selectedStockRow.product_name}</h3><p>{selectedStockRow.product_code || 'Sin SKU'} · {selectedStockRow.unit}</p></div>
+              </div>
+              <div className="inventory-stock-drawer__warehouse"><Warehouse size={15} aria-hidden="true" /><div><span>Almacén de destino</span><strong>{selectedStockRow.warehouse_name}</strong></div></div>
+            </section>
+
+            <section className="inventory-stock-drawer__balance" aria-labelledby="inventory-stock-balance-title">
+              <div className="inventory-stock-drawer__section-heading"><div><p className="inventory-panel__eyebrow">Actualización de saldo</p><h3 id="inventory-stock-balance-title">Cantidad que ingresa</h3></div><span>Solo suma</span></div>
+              <label htmlFor="inventory-stock-quantity">Unidades a agregar</label>
+              <div className="inventory-stock-drawer__quantity"><Plus size={18} aria-hidden="true" /><input id="inventory-stock-quantity" required type="number" min="0.0001" step="0.0001" inputMode="decimal" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} placeholder="0" /><span>{selectedStockRow.unit}</span></div>
+              <dl className="inventory-stock-drawer__projection"><div><dt>Stock actual</dt><dd>{qty(selectedStockRow.on_hand)}</dd></div><div><dt>Después del ingreso</dt><dd>{qty(projectedStock)}</dd></div></dl>
+            </section>
+
+            <section className="inventory-stock-drawer__reason" aria-labelledby="inventory-stock-reason-title">
+              <div className="inventory-stock-drawer__section-heading"><div><p className="inventory-panel__eyebrow">Trazabilidad</p><h3 id="inventory-stock-reason-title">Motivo del ingreso</h3></div></div>
+              <label htmlFor="inventory-stock-reason" className="sr-only">Motivo del ingreso</label>
+              <textarea id="inventory-stock-reason" required minLength={3} value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} placeholder="Describe el origen de estas existencias" />
+              <p>Este texto aparecerá en el kardex para identificar el movimiento.</p>
+            </section>
+
+            <p className="inventory-stock-drawer__notice"><ClipboardList size={15} aria-hidden="true" />La entrada quedará registrada en el kardex y no reemplazará el saldo existente.</p>
+          </form>
+        )}
+      </Drawer>
+
+      <Modal open={modal === 'adjust'} onClose={() => setModal(null)} title="Registrar movimiento" subtitle="Las cantidades negativas representan salidas manuales." icon={Plus} footer={<><Button type="button" variant="secondary" onClick={() => setModal(null)}>Cancelar</Button><Button type="submit" form="adjust-form" loading={saving}>Guardar movimiento</Button></>}><form id="adjust-form" onSubmit={submitAdjustment} className="space-y-4"><label className="block text-sm font-bold">Almacén<select required className="input mt-1" value={form.warehouse_id} onChange={(event) => setForm({ ...form, warehouse_id: event.target.value })}><option value="">Selecciona</option>{warehouses.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label><label className="block text-sm font-bold">Producto<select required className="input mt-1" value={form.product_id} onChange={(event) => setForm({ ...form, product_id: event.target.value })}><option value="">Selecciona</option>{uniqueProducts.map((row) => <option key={row.product_id} value={row.product_id}>{row.product_name}</option>)}</select></label><label className="block text-sm font-bold">Cantidad a ingresar<input required type="number" step="0.0001" className="input mt-1" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} /></label><label className="block text-sm font-bold">Motivo<textarea required minLength={3} className="input mt-1 min-h-20" value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} /></label></form></Modal>
 
       <Modal open={modal === 'warehouse'} onClose={() => setModal(null)} title="Nuevo almacén" subtitle="Crea una ubicación adicional para transferencias." icon={Warehouse} footer={<><Button type="button" variant="secondary" onClick={() => setModal(null)}>Cancelar</Button><Button type="submit" form="warehouse-form" loading={saving}>Crear almacén</Button></>}><form id="warehouse-form" onSubmit={submitWarehouse} className="space-y-4"><label className="block text-sm font-bold">Código<input required maxLength={30} className="input mt-1 uppercase" value={warehouseForm.code} onChange={(event) => setWarehouseForm({ ...warehouseForm, code: event.target.value.toUpperCase() })} placeholder="TIENDA-01" /></label><label className="block text-sm font-bold">Nombre<input required minLength={2} className="input mt-1" value={warehouseForm.name} onChange={(event) => setWarehouseForm({ ...warehouseForm, name: event.target.value })} /></label><label className="block text-sm font-bold">Ubicación<input className="input mt-1" value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} /></label><label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={warehouseForm.is_default} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_default: event.target.checked })} />Usar como almacén principal</label></form></Modal>
 
