@@ -127,7 +127,7 @@ function DashboardPreview({ compact = false }) {
   return (
     <div className={`landing-app${compact ? ' landing-app--compact' : ''}`} aria-label="Vista demostrativa del dashboard de Inkora">
       <aside className="landing-app__rail" aria-hidden="true">
-        <span className="landing-app__logo"><img src="/favicon.svg" alt="" /></span>
+        <span className="landing-app__logo" aria-hidden="true"><Asterisk size={22} strokeWidth={3.4} /></span>
         <span className="is-active"><LayoutDashboard size={15} /></span>
         <span><FileText size={15} /></span>
         <span><Users size={15} /></span>
@@ -319,7 +319,7 @@ function FinalProductComposition() {
   return (
     <div className="landing-final-product" aria-hidden="true">
       <div className="landing-final-product__dashboard">
-        <header><img src="/favicon.svg" alt="" /><span>Resumen operativo</span></header>
+        <header><Asterisk size={21} strokeWidth={3.4} aria-hidden="true" /><span>Resumen operativo</span></header>
         <div><small>Ventas del mes</small><strong>S/ 4,800.40</strong></div>
         <p><i style={{ height: '42%' }} /><i style={{ height: '68%' }} /><i style={{ height: '55%' }} /><i style={{ height: '86%' }} /><i style={{ height: '73%' }} /></p>
       </div>
