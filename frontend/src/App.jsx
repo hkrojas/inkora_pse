@@ -5,7 +5,6 @@ import { ToastProvider } from './components/ui/Toast';
 import AppLayout from './layouts/AppLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import LandingPage from './pages/LandingPage';
 import { ENABLE_ADVANCED_FISCAL } from './lib/utils/config';
 
 const AccessRequestPage = lazy(() => import('./pages/AccessRequestPage'));
@@ -121,7 +120,7 @@ export default function App() {
       <ToastProvider>
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
-            <Route path="/" element={<LandingPage />} />
+            <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
             <Route path="/recuperar-password" element={<LazyRoute><PasswordRecoveryPage /></LazyRoute>} />
             <Route path="/solicitar-acceso" element={<LazyRoute><AccessRequestPage /></LazyRoute>} />
