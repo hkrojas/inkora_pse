@@ -15,31 +15,31 @@ export default function AuthBrandPanel() {
       </div>
 
       <div className="login-brand-copy">
-        <p className="login-kicker">Facturacion electronica</p>
-        <h1>
-          Operacion fiscal simple para imprentas que necesitan avanzar.
-        </h1>
+        <p className="login-kicker">Gestion comercial para pymes</p>
+        <h1>Toda tu operacion comercial, clara y conectada.</h1>
         <p>
-          Cotiza, emite comprobantes y revisa cobranza diaria desde un panel
-          compacto conectado a tu operacion.
+          Cotiza, emite comprobantes, controla inventario y organiza tus cobros
+          desde un solo lugar.
         </p>
       </div>
 
-      <div className="login-status-card">
-        <div>
-          <span className="login-status-dot" />
-          <span className="login-status-label">Acceso seguro</span>
+      <div className="login-brand-stage">
+        <div className="login-status-card">
+          <div>
+            <span className="login-status-dot" />
+            <span className="login-status-label">Acceso seguro</span>
+          </div>
+          <strong>Acceso fiscal protegido</strong>
+          <p>Sesion por usuario, datos por tenant y trazabilidad lista para operar.</p>
+          <ul className="login-assurance-list" aria-label="Controles de acceso">
+            {assuranceItems.map((item) => (
+              <li key={item}>
+                <CheckCircle2 size={13} />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
         </div>
-        <strong>Acceso fiscal protegido</strong>
-        <p>Sesion por usuario, datos por tenant y trazabilidad lista para operar.</p>
-        <ul className="login-assurance-list" aria-label="Controles de acceso">
-          {assuranceItems.map((item) => (
-            <li key={item}>
-              <CheckCircle2 size={13} />
-              <span>{item}</span>
-            </li>
-          ))}
-        </ul>
       </div>
     </section>
   );

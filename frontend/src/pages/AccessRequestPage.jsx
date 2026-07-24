@@ -160,15 +160,30 @@ export default function AccessRequestPage() {
                 <div><h2>Solicitar alta en Inkora</h2><p>Registra la empresa y el usuario que será su administrador.</p></div>
               </div>
 
-              <div className="auth-request-grid">
-                <div className="login-field"><label htmlFor="access-business-ruc">RUC</label><div className="login-input-wrap login-input-wrap--action"><IdCard size={17} /><input id="access-business-ruc" required inputMode="numeric" maxLength={11} value={form.business_ruc} onChange={setField('business_ruc')} placeholder="20XXXXXXXXX" aria-describedby={rucFeedback ? 'access-ruc-feedback' : undefined} /><button type="button" className="auth-ruc-lookup" onClick={lookupRuc} disabled={lookingUpRuc || form.business_ruc.length !== 11} aria-label="Consultar datos del RUC"><Search size={15} />{lookingUpRuc ? 'Consultando…' : 'Consultar'}</button></div>{rucFeedback && <span id="access-ruc-feedback" className={`auth-ruc-feedback auth-ruc-feedback--${rucFeedback.tone}`} role="status" aria-live="polite">{rucFeedback.message}</span>}</div>
-                <label className="login-field"><span>Empresa</span><div className="login-input-wrap"><Building2 size={17} /><input required value={form.business_name} onChange={setField('business_name')} placeholder="Razón social" /></div></label>
-                <label className="login-field auth-request-grid__full"><span>Dirección fiscal <small>(opcional)</small></span><div className="login-input-wrap"><MapPin size={17} /><input value={form.business_address} onChange={setField('business_address')} placeholder="Dirección de la empresa" /></div></label>
-                <label className="login-field"><span>Administrador</span><div className="login-input-wrap"><UserRound size={17} /><input required value={form.contact_name} onChange={setField('contact_name')} placeholder="Nombre y apellido" /></div></label>
-                <label className="login-field"><span>Correo</span><div className="login-input-wrap"><Mail size={17} /><input required type="email" autoComplete="email" value={form.email} onChange={setField('email')} placeholder="contacto@empresa.pe" /></div></label>
-                <label className="login-field auth-request-grid__full"><span>Teléfono operativo <small>(opcional)</small></span><div className="login-input-wrap"><Phone size={17} /><input inputMode="tel" value={form.business_phone} onChange={setField('business_phone')} placeholder="987654321" /></div></label>
-                <label className="login-field"><span>Contraseña</span><div className="login-input-wrap"><LockKeyhole size={17} /><input required type="password" minLength={10} maxLength={64} autoComplete="new-password" value={form.password} onChange={setField('password')} /></div></label>
-                <label className="login-field"><span>Confirmar contraseña</span><div className="login-input-wrap"><LockKeyhole size={17} /><input required type="password" minLength={10} maxLength={64} autoComplete="new-password" value={form.confirm_password} onChange={setField('confirm_password')} /></div></label>
+              <div className="auth-request-groups">
+                <fieldset className="auth-request-group">
+                  <legend className="auth-request-group__title"><Building2 size={16} /><span>Datos del negocio</span></legend>
+                  <div className="login-field">
+                    <label htmlFor="access-business-ruc">RUC</label>
+                    <div className="login-input-wrap login-input-wrap--action">
+                      <IdCard size={17} />
+                      <input id="access-business-ruc" required inputMode="numeric" maxLength={11} value={form.business_ruc} onChange={setField('business_ruc')} placeholder="20XXXXXXXXX" aria-describedby={rucFeedback ? 'access-ruc-feedback' : undefined} />
+                      <button type="button" className="auth-ruc-lookup" onClick={lookupRuc} disabled={lookingUpRuc || form.business_ruc.length !== 11} aria-label="Consultar datos del RUC"><Search size={15} /><span>{lookingUpRuc ? 'Consultando…' : 'Consultar'}</span></button>
+                    </div>
+                    {rucFeedback && <span id="access-ruc-feedback" className={`auth-ruc-feedback auth-ruc-feedback--${rucFeedback.tone}`} role="status" aria-live="polite">{rucFeedback.message}</span>}
+                  </div>
+                  <label className="login-field"><span>Empresa</span><div className="login-input-wrap"><Building2 size={17} /><input required value={form.business_name} onChange={setField('business_name')} placeholder="Razón social" /></div></label>
+                  <label className="login-field"><span>Dirección fiscal <small>(opcional)</small></span><div className="login-input-wrap"><MapPin size={17} /><input value={form.business_address} onChange={setField('business_address')} placeholder="Dirección de la empresa" /></div></label>
+                  <label className="login-field"><span>Teléfono operativo <small>(opcional)</small></span><div className="login-input-wrap"><Phone size={17} /><input inputMode="tel" value={form.business_phone} onChange={setField('business_phone')} placeholder="987654321" /></div></label>
+                </fieldset>
+
+                <fieldset className="auth-request-group">
+                  <legend className="auth-request-group__title"><UserRound size={16} /><span>Datos del administrador</span></legend>
+                  <label className="login-field"><span>Administrador</span><div className="login-input-wrap"><UserRound size={17} /><input required value={form.contact_name} onChange={setField('contact_name')} placeholder="Nombre y apellido" /></div></label>
+                  <label className="login-field"><span>Correo</span><div className="login-input-wrap"><Mail size={17} /><input required type="email" autoComplete="email" value={form.email} onChange={setField('email')} placeholder="contacto@empresa.pe" /></div></label>
+                  <label className="login-field"><span>Contraseña</span><div className="login-input-wrap"><LockKeyhole size={17} /><input required type="password" minLength={10} maxLength={64} autoComplete="new-password" value={form.password} onChange={setField('password')} /></div></label>
+                  <label className="login-field"><span>Confirmar contraseña</span><div className="login-input-wrap"><LockKeyhole size={17} /><input required type="password" minLength={10} maxLength={64} autoComplete="new-password" value={form.confirm_password} onChange={setField('confirm_password')} /></div></label>
+                </fieldset>
               </div>
 
               <div className="auth-static-notice"><Clock3 size={15} /><div><strong>Alta sujeta a aprobación</strong><p>No se creará una empresa ni un usuario activo hasta que el superadministrador apruebe la solicitud.</p></div></div>

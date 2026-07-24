@@ -3465,7 +3465,7 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
   height: 100vh;
   height: 100dvh;
   min-height: 0;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(440px, 1.1fr);
+  grid-template-columns: minmax(420px, 0.72fr) minmax(540px, 1.28fr);
   overflow: hidden;
   background:
     linear-gradient(115deg, rgba(141, 198, 63, 0.07), transparent 34%),
@@ -3475,17 +3475,16 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
 
 .login-brand-panel {
   position: relative;
-  display: flex;
+  display: grid;
   min-height: 0;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 32px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: clamp(24px, 4vh, 42px);
   overflow: hidden;
   background:
     linear-gradient(145deg, rgba(141, 198, 63, 0.11), transparent 38%),
     linear-gradient(180deg, rgba(255,255,255,.035), transparent 42%),
     #1c2d1c;
-  padding: clamp(28px, 4vw, 48px);
+  padding: clamp(28px, 3vw, 42px);
   color: white;
 }
 
@@ -3517,6 +3516,7 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
 }
 
 .login-brand-copy {
+  align-self: center;
   max-width: 440px;
   animation: fade-in-up var(--duration-slow) var(--ease-out) both;
 }
@@ -3534,7 +3534,7 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
   margin: 0;
   max-width: 13ch;
   color: #fff;
-  font-size: clamp(46px, 4.2vw, 58px);
+  font-size: clamp(38px, 3.1vw, 50px);
   font-weight: 800;
   letter-spacing: -0.05em;
   line-height: 0.98;
@@ -3548,8 +3548,16 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
   line-height: 1.68;
 }
 
+.login-brand-stage {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 0;
+}
+
 .login-status-card {
-  max-width: 420px;
+  width: 100%;
+  max-width: 390px;
   border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.06);
@@ -3626,7 +3634,7 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
 }
 
 .login-card {
-  width: min(100%, 460px);
+  width: min(100%, 430px);
   min-width: 0;
   border: 1px solid rgba(17, 24, 39, 0.05);
   border-radius: 24px;
@@ -3941,7 +3949,7 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
 }
 
 .auth-support-card {
-  width: min(100%, 600px);
+  width: min(100%, 700px);
 }
 
 .auth-support-shell .login-form-panel {
@@ -3967,14 +3975,44 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
   gap: 12px;
 }
 
-.auth-request-grid {
+.auth-request-groups {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 12px;
+  gap: 0;
 }
 
-.auth-request-grid__full {
-  grid-column: 1 / -1;
+.auth-request-group {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0 20px 0 0;
+}
+
+.auth-request-group + .auth-request-group {
+  border-left: 1px solid #e5e7eb;
+  padding: 0 0 0 20px;
+}
+
+.auth-request-group__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 14px;
+  color: #1f4d27;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.auth-request-group__title svg {
+  color: #8dc63f;
+}
+
+.auth-request-group .login-field,
+.auth-request-group .login-input-wrap {
+  width: 100%;
+  min-width: 0;
 }
 
 .auth-static-notice {
@@ -4164,12 +4202,15 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
     flex-direction: column;
   }
 
-  .auth-request-grid {
+  .auth-request-groups {
     grid-template-columns: 1fr;
+    gap: 18px;
   }
 
-  .auth-request-grid__full {
-    grid-column: auto;
+  .auth-request-group,
+  .auth-request-group + .auth-request-group {
+    border-left: 0;
+    padding: 0;
   }
 
   .login-input-wrap--action {
@@ -6413,7 +6454,7 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
   to { opacity: 1; transform: scaleX(1); transform-origin: left; }
 }
 
-.auth-request-grid .login-field {
+.auth-request-groups .login-field {
   margin-bottom: 10px;
 }
 
@@ -6430,7 +6471,7 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
 
 .auth-ruc-lookup {
   display: inline-flex;
-  min-height: 36px;
+  min-height: 44px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
