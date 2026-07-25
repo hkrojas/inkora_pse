@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-25T17:05:00-05:00",
+  "title": "Design System: Inkora Ruta Operativa",
+  "extensions": {
+    "colorMeta": {
+      "route-lime": { "role": "primary", "displayName": "Verde Ruta", "canonical": "#A3E635", "tonalRamp": ["#1D2B08", "#365314", "#527A1C", "#74A824", "#A3E635", "#C2F274", "#DDF8AD", "#F2FCE0"] },
+      "deep-green": { "role": "secondary", "displayName": "Verde Profundo", "canonical": "#365314", "tonalRamp": ["#101A05", "#243B0B", "#365314", "#507224", "#6F9338", "#97B56B", "#C4D6A9", "#EEF5E5"] },
+      "deep-green-dark": { "role": "secondary", "displayName": "Verde Profundo Oscuro", "canonical": "#243B0B", "tonalRamp": ["#0B1203", "#172706", "#243B0B", "#3D571D", "#5D7835", "#849B62", "#B4C3A1", "#ECF2E6"] },
+      "cold-paper": { "role": "neutral", "displayName": "Papel Frío", "canonical": "#F7F9F4", "tonalRamp": ["#1B201A", "#343C32", "#566052", "#7C8777", "#A5AEA0", "#C9D0C4", "#E3E8DF", "#F7F9F4"] },
+      "paper-white": { "role": "neutral", "displayName": "Papel Blanco", "canonical": "#FFFFFF", "tonalRamp": ["#1C1C1C", "#393939", "#5D5D5D", "#858585", "#ADADAD", "#D0D0D0", "#E9E9E9", "#FFFFFF"] },
+      "green-ink": { "role": "neutral", "displayName": "Tinta Verde", "canonical": "#172019", "tonalRamp": ["#0B100C", "#172019", "#304035", "#526157", "#78847B", "#A2AAA4", "#CFD4D0", "#F1F3F1"] },
+      "muted-ink": { "role": "neutral", "displayName": "Tinta Atenuada", "canonical": "#536057", "tonalRamp": ["#121613", "#29302B", "#414B44", "#536057", "#758078", "#9EA6A0", "#C9CECA", "#F0F2F0"] },
+      "document-line": { "role": "neutral", "displayName": "Línea Documental", "canonical": "#DCE4D8", "tonalRamp": ["#182016", "#303B2D", "#4F5E4B", "#748470", "#9CAA98", "#BCC9B8", "#DCE4D8", "#F4F7F2"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Promesa principal y cierres editoriales." },
+      "headline": { "displayName": "Headline", "purpose": "Títulos de sección con tensión compacta." },
+      "title": { "displayName": "Title", "purpose": "Encabezados operativos y preguntas." },
+      "body": { "displayName": "Body", "purpose": "Explicación y navegación legible." },
+      "data": { "displayName": "Data", "purpose": "Folios, importes y estados documentales solamente." }
+    },
+    "shadows": [
+      { "name": "operational-sheet", "value": "0 18px 45px rgba(23, 32, 25, .11)", "purpose": "Separar una hoja demostrativa del papel de fondo." },
+      { "name": "status-offset", "value": "4px 6px 0 #E7ECE4", "purpose": "Marcar el espesor de registros compactos." },
+      { "name": "tactile-action", "value": "0 7px 0 #789F22", "purpose": "Dar respuesta física al CTA principal." }
+    ],
+    "motion": [
+      { "name": "route-reveal", "value": "1100ms cubic-bezier(.16, 1, .3, 1)", "purpose": "Desplegar una vez el hilo de la operación." },
+      { "name": "state-change", "value": "160ms ease-out", "purpose": "Hover, foco y navegación compacta." }
+    ],
+    "breakpoints": [
+      { "name": "stack", "value": "1120px" },
+      { "name": "navigation", "value": "900px" },
+      { "name": "mobile-route", "value": "700px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "CTA principal sobre papel claro.",
+      "html": "<button class=\"ds-btn-primary\">Solicitar acceso <span aria-hidden=\"true\">→</span></button>",
+      "css": ".ds-btn-primary{min-height:46px;border:1px solid #A3E635;border-radius:7px;padding:11px 18px;background:#A3E635;color:#243B0B;box-shadow:0 7px 0 #789F22;font:780 14px 'Mona Sans',Arial,sans-serif;transition:transform 160ms ease-out,background 160ms ease-out}.ds-btn-primary:hover{background:#B4EF55;transform:translateY(-2px)}.ds-btn-primary:focus-visible{outline:3px solid #365314;outline-offset:4px}"
+    },
+    {
+      "name": "Dark Button",
+      "kind": "button",
+      "refersTo": "button-dark",
+      "description": "CTA de cierre sobre superficies verdes.",
+      "html": "<button class=\"ds-btn-dark\">Solicitar acceso <span aria-hidden=\"true\">→</span></button>",
+      "css": ".ds-btn-dark{min-height:46px;border:1px solid #172019;border-radius:7px;padding:11px 18px;background:#172019;color:#fff;box-shadow:0 7px 0 rgba(23,32,25,.35);font:780 14px 'Mona Sans',Arial,sans-serif;transition:transform 160ms ease-out,background 160ms ease-out}.ds-btn-dark:hover{background:#243B0B;transform:translateY(-2px)}.ds-btn-dark:focus-visible{outline:3px solid #365314;outline-offset:4px}"
+    },
+    {
+      "name": "Status Stamp",
+      "kind": "chip",
+      "refersTo": "status-stamp",
+      "description": "Estado documental compacto y verificable.",
+      "html": "<span class=\"ds-status\">✓ ACEPTADA</span>",
+      "css": ".ds-status{display:inline-flex;align-items:center;border:1px solid #83AD28;border-radius:4px;padding:7px 9px;background:#E9F9C9;color:#365314;font:400 10px 'Recursive Mono',monospace}"
+    },
+    {
+      "name": "Operational Sheet",
+      "kind": "card",
+      "description": "Comprobante sintético con folio, datos y pliegue.",
+      "html": "<article class=\"ds-sheet\"><small>COTIZACIÓN</small><strong>COT-00072</strong><span>Cliente · Comercial Andina SAC</span></article>",
+      "css": ".ds-sheet{position:relative;display:grid;gap:14px;max-width:340px;border-radius:8px;padding:34px;background:#fff;color:#172019;box-shadow:0 18px 45px rgba(23,32,25,.11);font-family:'Mona Sans',Arial,sans-serif;overflow:hidden}.ds-sheet:after{position:absolute;top:0;right:0;width:54px;height:54px;background:linear-gradient(225deg,#243B0B 49%,#B4CAAB 50%,#F7F9F4 53%);content:''}.ds-sheet small,.ds-sheet strong{font-family:'Recursive Mono',monospace}.ds-sheet strong{font-size:28px}.ds-sheet span{border-top:1px solid #DCE4D8;padding-top:14px;color:#536057}"
+    },
+    {
+      "name": "Public Navigation",
+      "kind": "nav",
+      "description": "Anclas compactas con subrayado de estado activo.",
+      "html": "<nav class=\"ds-nav\"><a href=\"#\">Qué resuelve</a><a class=\"active\" href=\"#\">Cómo funciona</a><a href=\"#\">Confianza</a></nav>",
+      "css": ".ds-nav{display:flex;gap:28px;background:#F7F9F4;font:650 14px 'Mona Sans',Arial,sans-serif}.ds-nav a{position:relative;padding:10px 0;color:#39453C;text-decoration:none}.ds-nav a:after{position:absolute;right:0;bottom:0;left:0;height:2px;background:#365314;content:'';transform:scaleX(0);transform-origin:left;transition:transform 160ms ease-out}.ds-nav a:hover:after,.ds-nav a.active:after{transform:scaleX(1)}.ds-nav a:focus-visible{outline:3px solid #365314;outline-offset:4px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "La hoja operativa desplegable",
+    "overview": "Inkora se presenta como un documento vivo que conserva el hilo de una venta. Pliegues, folios, líneas de expediente y sellos convierten estados abstractos en evidencia legible. La ruta verde es la firma reutilizable: conecta elementos, marca progreso y convierte el color de marca en infraestructura.",
+    "keyCharacteristics": ["Superficies claras con estructura documental.", "Verde visible como ruta, estado y superficie.", "Tipografía editorial acompañada por datos monoespaciados.", "Demostraciones concretas en lugar de afirmaciones decorativas."],
+    "rules": [
+      { "name": "The Infrastructure Green Rule", "body": "El verde debe construir recorridos, superficies o estados; nunca aparece como decoración aislada.", "section": "colors" },
+      { "name": "The Fiscal Signal Rule", "body": "Rojo y ámbar quedan reservados para estados fiscales reales.", "section": "colors" },
+      { "name": "The Data-Only Mono Rule", "body": "Recursive Mono no se usa para párrafos, titulares ni navegación.", "section": "typography" },
+      { "name": "The Density Alternation Rule", "body": "Dos secciones consecutivas no repiten la misma retícula ni la misma densidad.", "section": "layout" },
+      { "name": "The Paper-First Rule", "body": "La elevación solo aparece cuando una superficie representa una hoja o una acción física.", "section": "elevation" }
+    ],
+    "dos": ["Do usar el verde como infraestructura visible de la operación.", "Do identificar los datos sintéticos como demostración.", "Do conservar la secuencia y toda la información con movimiento reducido.", "Do variar escala y densidad entre secciones editoriales."],
+    "donts": ["Don't usar fondos cuadriculados, orbes, vidrio o gradientes decorativos.", "Don't estructurar la página como un mosaico bento de tarjetas anidadas.", "Don't usar fotografías de stock para sustituir evidencia de producto.", "Don't inventar clientes, testimonios, precios, métricas o compromisos comerciales."]
+  }
+}

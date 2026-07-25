@@ -1,15 +1,37 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import './app.css';
-import './styles/tokens.css';
-import './styles/globals.css';
-import App from './App.jsx';
-import { ThemeProvider } from './context/ThemeContext';
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <ThemeProvider>
-      <App />
-    </ThemeProvider>
-  </StrictMode>
-);
+const isPublicLanding = ['/', '/presentacion'].includes(window.location.pathname);
+const root = createRoot(document.getElementById('root'));
+
+async function bootstrap() {
+  if (isPublicLanding) {
+    const { default: PublicLandingApp } = await import('./PublicLandingApp.jsx');
+    root.render(
+      <StrictMode>
+        <PublicLandingApp />
+      </StrictMode>,
+    );
+    return;
+  }
+
+  await Promise.all([
+    import('./app.css'),
+    import('./styles/tokens.css'),
+    import('./styles/globals.css'),
+  ]);
+  const [{ default: App }, { ThemeProvider }] = await Promise.all([
+    import('./App.jsx'),
+    import('./context/ThemeContext'),
+  ]);
+
+  root.render(
+    <StrictMode>
+      <ThemeProvider>
+        <App />
+      </ThemeProvider>
+    </StrictMode>,
+  );
+}
+
+bootstrap();
