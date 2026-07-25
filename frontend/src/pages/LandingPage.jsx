@@ -10,6 +10,7 @@ import {
   ArrowDown,
   ArrowRight,
   Asterisk,
+  Building2,
   Boxes,
   Check,
   CheckCircle2,
@@ -18,9 +19,13 @@ import {
   FileCheck2,
   FileText,
   Menu,
+  Moon,
   PackageCheck,
+  Printer,
   ReceiptText,
   ShieldCheck,
+  Store,
+  Sun,
   X,
 } from 'lucide-react';
 import '../styles/landing.css';
@@ -29,6 +34,7 @@ const navigation = [
   { id: 'que-resuelve', label: 'Qué resuelve' },
   { id: 'recorrido', label: 'Cómo funciona' },
   { id: 'confianza', label: 'Confianza' },
+  { id: 'precios', label: 'Precio' },
 ];
 
 const routeItems = [
@@ -83,6 +89,7 @@ const faqs = [
   ['¿Puedo trabajar con productos y servicios?', 'Sí. Puedes organizar productos inventariables y servicios que no afectan el stock dentro del mismo flujo comercial.'],
   ['¿Cómo solicito el alta?', 'Completa la solicitud de acceso con los datos básicos de tu empresa. La habilitación está sujeta a revisión y aprobación.'],
   ['¿Qué ocurre después de solicitar acceso?', 'Revisamos la información enviada. Si la solicitud es aprobada, habilitamos el espacio de trabajo y podrás iniciar sesión.'],
+  ['¿Cuánto cuesta Inkora?', 'Inkora tendrá un único plan. Como todavía no hay una tarifa pública confirmada, la condición comercial vigente se informa durante la revisión, antes de habilitar el espacio de trabajo.'],
   ['¿Mis clientes podrán consultar sus comprobantes?', 'La consulta pública de comprobantes está contemplada para una etapa posterior; todavía no está disponible.'],
 ];
 
@@ -95,7 +102,17 @@ function Brand() {
   );
 }
 
-function Header() {
+function ThemeToggle({ theme, onToggle, compact = false }) {
+  const isDark = theme === 'dark';
+  return (
+    <button className={`landing-theme-toggle${compact ? ' is-compact' : ''}`} type="button" onClick={onToggle} aria-label={`Cambiar a modo ${isDark ? 'claro' : 'oscuro'}`} aria-pressed={isDark}>
+      {isDark ? <Sun size={16} /> : <Moon size={16} />}
+      <span>{isDark ? 'Claro' : 'Oscuro'}</span>
+    </button>
+  );
+}
+
+function Header({ theme, onToggleTheme }) {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [active, setActive] = useState('');
@@ -160,11 +177,13 @@ function Header() {
             <a key={id} href={`#${id}`} className={active === id ? 'is-active' : ''} onClick={close}>{label}</a>
           ))}
           <div className="landing-nav__mobile-actions">
+            <ThemeToggle theme={theme} onToggle={onToggleTheme} compact />
             <a href="/login" onClick={close}>Iniciar sesión</a>
             <a href="/solicitar-acceso" onClick={close}>Solicitar acceso <ArrowRight size={15} /></a>
           </div>
         </nav>
         <div className="landing-header__actions">
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
           <a href="/login" className="landing-login-link">Iniciar sesión</a>
           <a href="/solicitar-acceso" className="landing-button landing-button--primary">Solicitar acceso <ArrowRight size={15} /></a>
         </div>
@@ -353,6 +372,26 @@ function Trust() {
   );
 }
 
+function ForWhom() {
+  const profiles = [
+    [Printer, 'Imprentas', 'Cotizaciones, productos y servicios que deben continuar hasta el comprobante y el cobro.'],
+    [Store, 'Comercios', 'Ventas con inventario, documentos electrónicos y saldos que necesitan una sola lectura.'],
+    [Building2, 'Equipos pequeños', 'Personas que comparten la operación y necesitan saber qué ocurrió sin reconstruirla.'],
+  ];
+  return (
+    <section className="landing-fit landing-reveal" aria-labelledby="fit-title">
+      <div className="landing-shell landing-fit__layout">
+        <header><p>Para quién es</p><h2 id="fit-title">Para negocios que ya venden y necesitan ordenar lo que sigue.</h2></header>
+        <div className="landing-fit__profiles">
+          {profiles.map(([Icon, title, copy]) => (
+            <article key={title}><Icon size={24} /><div><h3>{title}</h3><p>{copy}</p></div></article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function GettingStarted() {
   const steps = [
     ['Envía tu solicitud', 'Comparte los datos básicos de tu empresa desde el formulario de acceso.'],
@@ -367,6 +406,38 @@ function GettingStarted() {
           {steps.map(([title, copy], index) => <li key={title}><span>{index + 1}</span><div><h3>{title}</h3><p>{copy}</p></div>{index < 2 && <ArrowRight aria-hidden="true" />}</li>)}
         </ol>
         <a href="/solicitar-acceso" className="landing-button landing-button--primary">Solicitar acceso <ArrowRight size={17} /></a>
+      </div>
+    </section>
+  );
+}
+
+function Pricing() {
+  const included = [
+    'Cotizaciones y clientes',
+    'Facturas, boletas y documentos electrónicos',
+    'Productos, servicios e inventario',
+    'Pagos, cuotas y saldos pendientes',
+    'Reportes y trazabilidad documental',
+  ];
+  return (
+    <section className="landing-pricing landing-reveal" id="precios" aria-labelledby="pricing-title">
+      <div className="landing-shell landing-pricing__layout">
+        <header>
+          <p>Precio</p>
+          <h2 id="pricing-title">Un solo plan para mantener la operación conectada.</h2>
+          <span>Sin una tabla de niveles que te obligue a decidir qué parte del flujo dejar fuera.</span>
+        </header>
+        <article className="landing-plan">
+          <div className="landing-plan__top">
+            <div><span>PLAN INKORA</span><h3>Precio confirmado durante la revisión</h3></div>
+            <span className="landing-plan__status">TARIFA AÚN NO PUBLICADA</span>
+          </div>
+          <ul>{included.map((item) => <li key={item}><Check size={16} /> <span>{item}</span></li>)}</ul>
+          <div className="landing-plan__action">
+            <p>Solicita acceso para conocer la condición comercial vigente antes de la habilitación.</p>
+            <a href="/solicitar-acceso" className="landing-button landing-button--primary">Solicitar acceso <ArrowRight size={17} /></a>
+          </div>
+        </article>
       </div>
     </section>
   );
@@ -400,7 +471,7 @@ function Footer() {
     <footer className="landing-footer">
       <div className="landing-shell landing-footer__inner">
         <div><Brand /><p>Gestión comercial para pymes peruanas.</p></div>
-        <nav aria-label="Enlaces del producto"><strong>Producto</strong><a href="#que-resuelve">Qué resuelve</a><a href="#recorrido">Cómo funciona</a><a href="#confianza">Confianza</a></nav>
+        <nav aria-label="Enlaces del producto"><strong>Producto</strong><a href="#que-resuelve">Qué resuelve</a><a href="#recorrido">Cómo funciona</a><a href="#confianza">Confianza</a><a href="#precios">Precio</a></nav>
         <nav aria-label="Enlaces de acceso"><strong>Acceso</strong><a href="/login">Iniciar sesión</a><a href="/solicitar-acceso">Solicitar acceso</a></nav>
       </div>
       <div className="landing-shell landing-footer__bottom"><span>© {new Date().getFullYear()} Inkora</span><span>Operación conectada, de la cotización al cobro.</span></div>
@@ -456,19 +527,30 @@ function useRouteReveal() {
 }
 
 export default function LandingPage() {
+  const [theme, setTheme] = useState(() => {
+    const saved = window.localStorage.getItem('inkora-landing-theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
   useLandingMetadata();
   useRouteReveal();
 
+  useEffect(() => {
+    window.localStorage.setItem('inkora-landing-theme', theme);
+  }, [theme]);
+
   return (
-    <div className="landing-page">
+    <div className="landing-page" data-theme={theme}>
       <a className="landing-skip" href="#contenido">Saltar al contenido</a>
-      <Header />
+      <Header theme={theme} onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />
       <main id="contenido">
         <Hero />
         <Journey />
         <Connected />
+        <ForWhom />
         <Trust />
         <GettingStarted />
+        <Pricing />
         <FAQ />
         <FinalCTA />
       </main>

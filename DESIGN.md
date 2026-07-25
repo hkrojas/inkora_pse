@@ -10,6 +10,9 @@ colors:
   green-ink: "#172019"
   muted-ink: "#536057"
   document-line: "#DCE4D8"
+  night-paper: "#101610"
+  night-sheet: "#172019"
+  night-ink: "#EDF5E9"
 typography:
   display:
     fontFamily: "Mona Sans, Arial, sans-serif"
@@ -93,6 +96,8 @@ La ruta verde es la firma reutilizable: conecta elementos, marca progreso y conv
 ## Colors
 
 La paleta combina papel frío, tinta verdosa y un verde lima de alta presencia.
+
+El modo oscuro traduce el mismo documento a una mesa de trabajo con poca luz: papel nocturno `#101610`, hojas `#172019`, tinta clara `#EDF5E9` y líneas `#344238`. El verde lima no cambia y conserva su función de ruta. La preferencia se toma del sistema la primera vez y después queda bajo control explícito de la persona.
 
 ### Primary
 
@@ -181,7 +186,7 @@ Los radios son contenidos: sellos de 4px, controles de 7px, hojas de 8px y secci
 
 ### Navigation
 
-Navegación ligera sobre papel frío. El estado activo se expresa con una línea verde profunda. En móvil ocupa una superficie completa, bloquea el scroll y conserva acciones separadas.
+Navegación ligera sobre papel frío o papel nocturno. El estado activo se expresa con una línea verde profunda en claro y verde lima en oscuro. En móvil ocupa una superficie completa, bloquea el scroll y conserva acciones separadas. El selector de tema muestra texto e icono, anuncia el destino del cambio y persiste la selección.
 
 ### Ruta operativa
 

@@ -28,6 +28,7 @@ La operación incluye clientes, productos y servicios, cotizaciones, facturas y 
 - La solicitud registra la empresa y un administrador, queda sujeta a revisión y no habilita automáticamente un espacio activo.
 - La web puede utilizar información sintética claramente identificada para demostrar el producto.
 - No se deben inventar precios, clientes, testimonios, cifras de rendimiento, compromisos de soporte ni capacidades futuras.
+- El lanzamiento utiliza un solo plan comercial, pero el repositorio no confirma una tarifa pública; la landing debe decirlo de forma explícita y derivar la consulta al proceso de revisión.
 - El rediseño de marketing no debe modificar el sistema autenticado, el backend, las APIs ni la lógica fiscal.
 
 ## Brand Commitments

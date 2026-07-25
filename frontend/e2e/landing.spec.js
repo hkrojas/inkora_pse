@@ -23,6 +23,7 @@ for (const viewport of viewports) {
       await expect(page.locator('h1')).toHaveCount(1);
       await expect(page.getByRole('link', { name: 'Solicitar acceso' }).first()).toBeVisible();
       await expect(page.locator('h2').first()).toHaveText('El hilo de una venta.');
+      await expect(page.getByRole('heading', { name: /Un solo plan/ })).toBeAttached();
       const layout = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
       expect(layout.scroll).toBeLessThanOrEqual(layout.client);
     } finally { await context.close(); }
@@ -45,6 +46,31 @@ test('la landing no descarga el shell autenticado ni fuentes remotas', async ({ 
     const resources = await page.evaluate(() => performance.getEntriesByType('resource').map(({ name }) => name));
     expect(resources.some((url) => /globals(?:-|\.css)|fonts\.googleapis\.com|\/assets\/App-/.test(url))).toBe(false);
     expect(resources.some((url) => /LandingPage-.*\.css|\/src\/styles\/landing\.css/.test(url))).toBe(true);
+  } finally { await context.close(); }
+});
+
+test('el modo oscuro respeta la preferencia, se puede cambiar y persiste', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 }, colorScheme: 'light', storageState: { cookies: [], origins: [] } });
+  const page = await context.newPage();
+  try {
+    await page.goto('/presentacion');
+    await expect(page.locator('.landing-page')).toHaveAttribute('data-theme', 'light');
+    await page.getByRole('button', { name: 'Cambiar a modo oscuro' }).click();
+    await expect(page.locator('.landing-page')).toHaveAttribute('data-theme', 'dark');
+    expect(await page.evaluate(() => localStorage.getItem('inkora-landing-theme'))).toBe('dark');
+    await page.reload();
+    await expect(page.locator('.landing-page')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.getByRole('button', { name: 'Cambiar a modo claro' })).toBeVisible();
+  } finally { await context.close(); }
+});
+
+test('la sección de precio comunica un solo plan sin inventar una tarifa', async ({ browser, baseURL }) => {
+  const { context, page } = await openPublicPage(browser, baseURL, { width: 1024, height: 900 }, '/presentacion');
+  try {
+    const pricing = page.locator('#precios');
+    await expect(pricing.getByRole('heading', { name: /Un solo plan/ })).toBeVisible();
+    await expect(pricing).toContainText(/Tarifa aún no publicada/i);
+    await expect(pricing.getByRole('link', { name: 'Solicitar acceso' })).toHaveAttribute('href', '/solicitar-acceso');
   } finally { await context.close(); }
 });
 
@@ -109,6 +135,7 @@ test('movimiento reducido deja ruta y contenido visibles', async ({ browser, bas
   const page = await context.newPage();
   try {
     await page.goto('/presentacion');
+    await page.locator('.landing-route-line--hero path').waitFor({ state: 'attached' });
     const result = await page.evaluate(() => ({
       dash: getComputedStyle(document.querySelector('.landing-route-line--hero path')).strokeDashoffset,
       opacity: getComputedStyle(document.querySelector('.landing-hero-route li')).opacity,
