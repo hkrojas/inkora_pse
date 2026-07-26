@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
+  ExternalLink,
   FileCheck2,
   FileText,
   Menu,
@@ -23,6 +24,7 @@ import {
   PackageCheck,
   Printer,
   ReceiptText,
+  Search,
   ShieldCheck,
   Store,
   Sun,
@@ -34,6 +36,7 @@ const navigation = [
   { id: 'que-resuelve', label: 'Qué resuelve' },
   { id: 'recorrido', label: 'Cómo funciona' },
   { id: 'confianza', label: 'Confianza' },
+  { id: 'consulta', label: 'Consulta' },
   { id: 'precios', label: 'Precio' },
 ];
 
@@ -90,8 +93,17 @@ const faqs = [
   ['¿Cómo solicito el alta?', 'Completa la solicitud de acceso con los datos básicos de tu empresa. La habilitación está sujeta a revisión y aprobación.'],
   ['¿Qué ocurre después de solicitar acceso?', 'Revisamos la información enviada. Si la solicitud es aprobada, habilitamos el espacio de trabajo y podrás iniciar sesión.'],
   ['¿Cuánto cuesta Inkora?', 'Inkora tendrá un único plan. Como todavía no hay una tarifa pública confirmada, la condición comercial vigente se informa durante la revisión, antes de habilitar el espacio de trabajo.'],
-  ['¿Mis clientes podrán consultar sus comprobantes?', 'La consulta pública de comprobantes está contemplada para una etapa posterior; todavía no está disponible.'],
+  ['¿Mis clientes podrán consultar sus comprobantes?', 'La landing muestra una vista previa del flujo de consulta. La búsqueda pública real todavía no está conectada y se habilitará cuando exista el servicio correspondiente.'],
 ];
+
+const lookupDemo = {
+  ruc: '20123456789',
+  documentType: '01',
+  series: 'F001',
+  number: '00184',
+  issueDate: '2026-07-18',
+  amount: '498.00',
+};
 
 function Brand() {
   return (
@@ -411,6 +423,128 @@ function GettingStarted() {
   );
 }
 
+function DocumentLookup() {
+  const [fields, setFields] = useState(lookupDemo);
+  const [errors, setErrors] = useState({});
+  const [resultState, setResultState] = useState('demo');
+  const formRef = useRef(null);
+  const resultRef = useRef(null);
+  const documentLabel = { '01': 'FACTURA ELECTRÓNICA', '03': 'BOLETA ELECTRÓNICA', '07': 'NOTA DE CRÉDITO', '08': 'NOTA DE DÉBITO' }[fields.documentType] || 'COMPROBANTE ELECTRÓNICO';
+  const formattedDate = fields.issueDate ? fields.issueDate.split('-').reverse().join('/') : '—';
+
+  const update = (name, value) => {
+    const normalized = name === 'series' ? value.toUpperCase() : value;
+    setFields((current) => ({ ...current, [name]: normalized }));
+    setErrors((current) => ({ ...current, [name]: '' }));
+    setResultState('waiting');
+  };
+
+  const validate = () => {
+    const next = {};
+    if (!/^\d{11}$/.test(fields.ruc)) next.ruc = 'Ingresa los 11 dígitos del RUC emisor.';
+    if (!fields.documentType) next.documentType = 'Selecciona el tipo de comprobante.';
+    if (!/^[A-Z0-9]{4}$/.test(fields.series)) next.series = 'Ingresa una serie de 4 caracteres.';
+    if (!/^\d{1,8}$/.test(fields.number)) next.number = 'Ingresa el correlativo sin guiones.';
+    if (!fields.issueDate) next.issueDate = 'Selecciona la fecha de emisión.';
+    if (!/^\d+(\.\d{1,2})?$/.test(fields.amount) || Number(fields.amount) <= 0) next.amount = 'Ingresa el importe total con hasta 2 decimales.';
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const submit = (event) => {
+    event.preventDefault();
+    if (!validate()) {
+      window.requestAnimationFrame(() => formRef.current?.querySelector('[aria-invalid="true"]')?.focus());
+      return;
+    }
+    const isDemo = Object.entries(lookupDemo).every(([key, value]) => fields[key] === value);
+    setResultState(isDemo ? 'demo' : 'unavailable');
+    window.requestAnimationFrame(() => resultRef.current?.focus());
+  };
+
+  const useExample = () => {
+    setFields(lookupDemo);
+    setErrors({});
+    setResultState('waiting');
+    window.requestAnimationFrame(() => formRef.current?.querySelector('input')?.focus());
+  };
+
+  return (
+    <section className="landing-lookup landing-reveal" id="consulta" aria-labelledby="lookup-title">
+      <div className="landing-shell">
+        <header className="landing-section-heading">
+          <div><p>Consulta de comprobantes</p><h2 id="lookup-title">Cinco datos. Una respuesta legible.</h2></div>
+          <p>Vista previa del flujo público basada en los datos de validación solicitados por SUNAT. Esta demostración no consulta información real.</p>
+        </header>
+        <div className="landing-lookup__desk">
+          <form ref={formRef} className="landing-lookup__form" onSubmit={submit} noValidate>
+            <div className="landing-lookup__form-heading">
+              <div><span>VENTANILLA DE CONSULTA</span><h3>Datos del comprobante</h3></div>
+              <span className="landing-plan__status">PROTOTIPO FRONTEND</span>
+            </div>
+            <div className="landing-lookup__fields">
+              <label className="landing-field landing-field--wide">
+                <span>RUC del emisor</span>
+                <input value={fields.ruc} onChange={(event) => update('ruc', event.target.value.replace(/\D/g, '').slice(0, 11))} inputMode="numeric" autoComplete="off" maxLength="11" aria-invalid={Boolean(errors.ruc)} aria-describedby={errors.ruc ? 'lookup-ruc-error' : undefined} />
+                {errors.ruc && <small id="lookup-ruc-error">{errors.ruc}</small>}
+              </label>
+              <label className="landing-field">
+                <span>Tipo de comprobante</span>
+                <select value={fields.documentType} onChange={(event) => update('documentType', event.target.value)} aria-invalid={Boolean(errors.documentType)} aria-describedby={errors.documentType ? 'lookup-type-error' : undefined}>
+                  <option value="">Selecciona</option><option value="01">Factura electrónica</option><option value="03">Boleta electrónica</option><option value="07">Nota de crédito</option><option value="08">Nota de débito</option>
+                </select>
+                {errors.documentType && <small id="lookup-type-error">{errors.documentType}</small>}
+              </label>
+              <fieldset className="landing-document-number">
+                <legend>Número del comprobante</legend>
+                <div className="landing-document-number__fields">
+                  <label className="landing-field">
+                    <span>Serie</span>
+                    <input value={fields.series} onChange={(event) => update('series', event.target.value.replace(/[^a-z0-9]/gi, '').slice(0, 4))} autoComplete="off" maxLength="4" aria-invalid={Boolean(errors.series)} aria-describedby={errors.series ? 'lookup-series-error' : undefined} />
+                    {errors.series && <small id="lookup-series-error">{errors.series}</small>}
+                  </label>
+                  <label className="landing-field">
+                    <span>Correlativo</span>
+                    <input value={fields.number} onChange={(event) => update('number', event.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" autoComplete="off" maxLength="8" aria-invalid={Boolean(errors.number)} aria-describedby={errors.number ? 'lookup-number-error' : undefined} />
+                    {errors.number && <small id="lookup-number-error">{errors.number}</small>}
+                  </label>
+                </div>
+              </fieldset>
+              <label className="landing-field">
+                <span>Fecha de emisión</span>
+                <input type="date" value={fields.issueDate} onChange={(event) => update('issueDate', event.target.value)} aria-invalid={Boolean(errors.issueDate)} aria-describedby={errors.issueDate ? 'lookup-date-error' : undefined} />
+                {errors.issueDate && <small id="lookup-date-error">{errors.issueDate}</small>}
+              </label>
+              <label className="landing-field">
+                <span>Importe total</span>
+                <span className="landing-money-input"><b>S/</b><input value={fields.amount} onChange={(event) => update('amount', event.target.value.replace(/[^\d.]/g, '').slice(0, 15))} inputMode="decimal" autoComplete="off" aria-invalid={Boolean(errors.amount)} aria-describedby={errors.amount ? 'lookup-amount-error' : undefined} /></span>
+                {errors.amount && <small id="lookup-amount-error">{errors.amount}</small>}
+              </label>
+            </div>
+            <div className="landing-lookup__actions">
+              <button type="submit" className="landing-button landing-button--primary"><Search size={17} /> Consultar demostración</button>
+              <button type="button" className="landing-button landing-button--text" onClick={useExample}>Usar datos de ejemplo</button>
+            </div>
+            <a className="landing-lookup__source" href="https://ww1.sunat.gob.pe/ol-ti-itconsvalicpe/ConsValiCpe.htm" target="_blank" rel="noreferrer">Ver consulta oficial de SUNAT <ExternalLink size={13} /></a>
+          </form>
+          <div className="landing-lookup__result" ref={resultRef} tabIndex="-1" aria-live="polite">
+            {resultState === 'demo' ? (
+              <>
+                <div className="landing-lookup__result-top"><span className="landing-status"><CheckCircle2 size={14} /> DEMOSTRACIÓN</span><small>Resultado sintético</small></div>
+                <div><p>{documentLabel}</p><strong className="landing-folio">{fields.series}-{fields.number}</strong><span>Comercial Andina SAC</span></div>
+                <dl>
+                  <div><dt>Estado de ejemplo</dt><dd>ACEPTADO</dd></div><div><dt>Fecha de emisión</dt><dd>{formattedDate}</dd></div><div><dt>Importe total</dt><dd>S/ {fields.amount}</dd></div>
+                </dl>
+                <div className="landing-lookup__evidence"><span>PDF</span><span>XML</span><span>CDR</span><p>Los archivos son parte de esta representación visual; no se descargan desde el prototipo.</p></div>
+              </>
+            ) : resultState === 'unavailable' ? <div className="landing-lookup__waiting"><ReceiptText size={42} /><strong>La consulta real aún no está conectada.</strong><p>Usa los datos de ejemplo para revisar el resultado diseñado. Ningún dato ingresado salió de tu navegador.</p></div> : <div className="landing-lookup__waiting"><ReceiptText size={42} /><strong>Completa la ficha y consulta.</strong><p>La respuesta aparecerá en esta misma hoja, sin abrir otra ventana.</p></div>}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Pricing() {
   const included = [
     'Cotizaciones y clientes',
@@ -471,7 +605,7 @@ function Footer() {
     <footer className="landing-footer">
       <div className="landing-shell landing-footer__inner">
         <div><Brand /><p>Gestión comercial para pymes peruanas.</p></div>
-        <nav aria-label="Enlaces del producto"><strong>Producto</strong><a href="#que-resuelve">Qué resuelve</a><a href="#recorrido">Cómo funciona</a><a href="#confianza">Confianza</a><a href="#precios">Precio</a></nav>
+        <nav aria-label="Enlaces del producto"><strong>Producto</strong><a href="#que-resuelve">Qué resuelve</a><a href="#recorrido">Cómo funciona</a><a href="#confianza">Confianza</a><a href="#consulta">Consulta</a><a href="#precios">Precio</a></nav>
         <nav aria-label="Enlaces de acceso"><strong>Acceso</strong><a href="/login">Iniciar sesión</a><a href="/solicitar-acceso">Solicitar acceso</a></nav>
       </div>
       <div className="landing-shell landing-footer__bottom"><span>© {new Date().getFullYear()} Inkora</span><span>Operación conectada, de la cotización al cobro.</span></div>
@@ -550,6 +684,7 @@ export default function LandingPage() {
         <ForWhom />
         <Trust />
         <GettingStarted />
+        <DocumentLookup />
         <Pricing />
         <FAQ />
         <FinalCTA />

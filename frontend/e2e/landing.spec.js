@@ -23,6 +23,7 @@ for (const viewport of viewports) {
       await expect(page.locator('h1')).toHaveCount(1);
       await expect(page.getByRole('link', { name: 'Solicitar acceso' }).first()).toBeVisible();
       await expect(page.locator('h2').first()).toHaveText('El hilo de una venta.');
+      await expect(page.getByRole('heading', { name: 'Cinco datos. Una respuesta legible.' })).toBeAttached();
       await expect(page.getByRole('heading', { name: /Un solo plan/ })).toBeAttached();
       const layout = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
       expect(layout.scroll).toBeLessThanOrEqual(layout.client);
@@ -71,6 +72,32 @@ test('la sección de precio comunica un solo plan sin inventar una tarifa', asyn
     await expect(pricing.getByRole('heading', { name: /Un solo plan/ })).toBeVisible();
     await expect(pricing).toContainText(/Tarifa aún no publicada/i);
     await expect(pricing.getByRole('link', { name: 'Solicitar acceso' })).toHaveAttribute('href', '/solicitar-acceso');
+  } finally { await context.close(); }
+});
+
+test('la consulta demuestra campos SUNAT, validación y resultado sin invocar una API', async ({ browser, baseURL }) => {
+  const { context, page } = await openPublicPage(browser, baseURL, { width: 1440, height: 900 }, '/presentacion');
+  const apiRequests = [];
+  page.on('request', (request) => {
+    if (['fetch', 'xhr'].includes(request.resourceType())) apiRequests.push(request.url());
+  });
+  try {
+    const lookup = page.locator('#consulta');
+    await expect(lookup.getByRole('heading', { name: 'Datos del comprobante' })).toBeVisible();
+    await lookup.getByLabel('RUC del emisor').fill('123');
+    await lookup.getByRole('button', { name: 'Consultar demostración' }).click();
+    await expect(lookup.getByText('Ingresa los 11 dígitos del RUC emisor.')).toBeVisible();
+    await expect(lookup.getByLabel('RUC del emisor')).toBeFocused();
+    await expect(lookup.getByLabel('RUC del emisor')).toHaveAttribute('aria-describedby', 'lookup-ruc-error');
+    await lookup.getByRole('button', { name: 'Usar datos de ejemplo' }).click();
+    await expect(lookup.getByText('Completa la ficha y consulta.')).toBeVisible();
+    await lookup.getByRole('button', { name: 'Consultar demostración' }).click();
+    await expect(lookup.getByText('DEMOSTRACIÓN', { exact: true })).toBeVisible();
+    await expect(lookup).toContainText('F001-00184');
+    await lookup.getByLabel(/Importe total/).fill('499.00');
+    await lookup.getByRole('button', { name: 'Consultar demostración' }).click();
+    await expect(lookup.getByText('La consulta real aún no está conectada.')).toBeVisible();
+    expect(apiRequests).toEqual([]);
   } finally { await context.close(); }
 });
 
