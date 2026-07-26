@@ -26,6 +26,7 @@ from routers import (
     ops,
     pagos,
     productos,
+    public_receipts,
     reportes,
     superadmin,
     sunat,
@@ -99,6 +100,7 @@ def create_app() -> FastAPI:
     app.include_router(tenants.router)
     app.include_router(clientes.router)
     app.include_router(productos.router)
+    app.include_router(public_receipts.router)
     app.include_router(cotizaciones.router)
     app.include_router(pagos.router)
     app.include_router(reportes.router)
