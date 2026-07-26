@@ -1,17 +1,8 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import {
-  ArrowRight,
-  Check,
-  Eye,
-  EyeOff,
-  Loader2,
-  LockKeyhole,
-  Mail,
-  ShieldCheck,
-} from 'lucide-react';
+import { ArrowRight, Check, Eye, EyeOff, Loader2, LockKeyhole, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import AuthBrandPanel, { AuthInlineBrand } from '../components/auth/AuthBrandPanel';
+import AuthBrandPanel from '../components/auth/AuthBrandPanel';
 
 export default function Login() {
   const { login, user, loading } = useAuth();
@@ -48,103 +39,84 @@ export default function Login() {
   };
 
   return (
-    <main className="login-shell">
-      <AuthBrandPanel />
+    <main className="auth-expedition">
+      <AuthBrandPanel mode="login" />
 
-      <section className="login-form-panel">
-        <form className="login-card" onSubmit={handleSubmit}>
-          <AuthInlineBrand />
-
-          <div className="login-card-header">
-            <div className="login-card-icon">
-              <ShieldCheck size={20} />
-            </div>
+      <section className="auth-sheet" aria-labelledby="login-title">
+        <span className="auth-sheet-fold" aria-hidden="true" />
+        <div className="auth-sheet-scroll">
+          <header className="auth-sheet-header">
             <div>
-              <h2>Bienvenido de vuelta</h2>
-              <p>Ingresa con tu usuario para continuar.</p>
+              <p className="auth-sheet-code">ACCESO / USUARIO</p>
+              <h2 id="login-title">Bienvenido de vuelta.</h2>
+              <p>Ingresa con el correo asociado a tu espacio de trabajo.</p>
             </div>
-          </div>
+            <span className="auth-status-stamp"><i /> SESIÓN SEGURA</span>
+          </header>
 
-          {error && (
-            <div className="login-alert" role="alert">
-              {error}
-            </div>
-          )}
+          <form className="auth-login-form" onSubmit={handleSubmit}>
+            {error && <div className="auth-alert" role="alert">{error}</div>}
 
-          <label className="login-field">
-            <span>Correo / Usuario</span>
-            <div className="login-input-wrap">
-              <Mail size={17} />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                autoComplete="username"
-                autoFocus
-                placeholder="usuario@empresa.pe"
-              />
-            </div>
-          </label>
-
-          <label className="login-field">
-            <span>Contraseña</span>
-            <div className="login-input-wrap">
-              <LockKeyhole size={17} />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                placeholder="Ingresa tu clave"
-              />
-              <button
-                type="button"
-                className="login-eye-btn"
-                onClick={() => setShowPassword((value) => !value)}
-                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </label>
-
-          <div className="login-row">
-            <label className="login-check">
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(event) => setRemember(event.target.checked)}
-              />
-              <span aria-hidden="true">
-                <Check size={12} />
+            <label className="auth-field">
+              <span>Correo electrónico</span>
+              <span className="auth-field-control">
+                <Mail size={18} aria-hidden="true" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  autoComplete="username"
+                  autoFocus
+                  placeholder="usuario@empresa.pe"
+                />
               </span>
-              Recordar dispositivo
             </label>
-            <Link to="/recuperar-password" className="login-link">
-              Olvidé mi clave
-            </Link>
-          </div>
 
-          <button type="submit" className="login-submit" disabled={submitting}>
-            {submitting ? (
-              <>
-                <Loader2 size={17} className="login-spin" />
-                Ingresando
-              </>
-            ) : (
-              <>
-                Acceder al dashboard
-                <ArrowRight size={17} />
-              </>
-            )}
-          </button>
+            <label className="auth-field">
+              <span>Contraseña</span>
+              <span className="auth-field-control">
+                <LockKeyhole size={18} aria-hidden="true" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete="current-password"
+                  placeholder="Ingresa tu contraseña"
+                />
+                <button
+                  type="button"
+                  className="auth-icon-button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </span>
+            </label>
 
-          <p className="login-request">
-            ¿No tienes cuenta? <Link to="/solicitar-acceso">Solicitar acceso</Link>
-          </p>
-        </form>
+            <div className="auth-form-row">
+              <label className="auth-check">
+                <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
+                <span aria-hidden="true"><Check size={12} /></span>
+                Recordar este dispositivo
+              </label>
+              <Link to="/recuperar-password" className="auth-text-link">Olvidé mi contraseña</Link>
+            </div>
+
+            <button type="submit" className="auth-primary-action" disabled={submitting}>
+              <span>{submitting ? 'Ingresando…' : 'Iniciar sesión'}</span>
+              {submitting ? <Loader2 size={18} className="login-spin" /> : <ArrowRight size={18} />}
+            </button>
+
+            <p className="auth-switch-copy">
+              ¿Tu empresa todavía no tiene acceso? <Link to="/solicitar-acceso">Solicitar acceso</Link>
+            </p>
+          </form>
+
+          <footer className="auth-sheet-footer"><span>INKORA · ACCESO</span><span>01 / 01</span></footer>
+        </div>
       </section>
     </main>
   );

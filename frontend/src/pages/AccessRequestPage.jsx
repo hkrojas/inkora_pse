@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
-  ArrowLeft, Building2, CheckCircle2, Clock3, IdCard, LockKeyhole,
-  Mail, MapPin, Phone, Search, Send, UserRound, XCircle,
+  ArrowLeft, ArrowRight, Asterisk, CheckCircle2, Clock3, Eye, EyeOff,
+  LockKeyhole, Search, Send, XCircle,
 } from 'lucide-react';
-import AuthBrandPanel, { AuthInlineBrand } from '../components/auth/AuthBrandPanel';
+import AuthBrandPanel from '../components/auth/AuthBrandPanel';
 import Spinner from '../components/ui/Spinner';
 import { useAuth } from '../context/AuthContext';
 import { accessRequests } from '../services/accessRequests';
@@ -20,19 +20,19 @@ const statusCopy = {
     icon: Clock3,
     title: 'Solicitud en revisión',
     description: 'El superadministrador de Inkora revisará la empresa y el contacto antes de habilitar el acceso.',
-    tone: 'text-[var(--color-warning)] bg-[var(--color-warning-soft)]',
+    className: 'is-pending',
   },
   approved: {
     icon: CheckCircle2,
     title: 'Alta aprobada',
     description: 'Tu empresa y usuario administrador ya están activos. Ingresa con el correo y la contraseña que registraste.',
-    tone: 'text-[var(--color-success)] bg-[var(--color-success-soft)]',
+    className: 'is-approved',
   },
   rejected: {
     icon: XCircle,
     title: 'Solicitud denegada',
     description: 'La solicitud no fue aprobada. Revisa el motivo antes de enviar una nueva.',
-    tone: 'text-[var(--color-danger)] bg-[var(--color-danger-soft)]',
+    className: 'is-rejected',
   },
 };
 
@@ -40,33 +40,42 @@ function StatusView({ status, onRestart }) {
   const copy = statusCopy[status.status] || statusCopy.pending;
   const Icon = copy.icon;
   return (
-    <div className="space-y-5" aria-live="polite">
-      <div className={`grid h-12 w-12 place-items-center rounded-2xl ${copy.tone}`}><Icon size={22} /></div>
-      <div>
-        <p className="text-xs font-black uppercase tracking-[0.14em] text-[var(--color-text-muted)]">{status.business_name}</p>
-        <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{copy.title}</h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">{copy.description}</p>
-      </div>
-      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 text-sm">
-        <p><span className="text-[var(--color-text-muted)]">Correo:</span> <b>{status.email}</b></p>
-        {status.review_notes && <p className="mt-2"><span className="text-[var(--color-text-muted)]">Revisión:</span> {status.review_notes}</p>}
-      </div>
-      {status.status === 'approved' && <Link to="/login" className="login-submit inline-flex w-full items-center justify-center">Ingresar a Inkora</Link>}
-      {status.status === 'rejected' && <button type="button" className="login-submit w-full" onClick={onRestart}>Enviar nueva solicitud</button>}
-      {status.status === 'pending' && <p className="text-center text-xs text-[var(--color-text-muted)]">Puedes volver a esta pantalla para consultar el estado.</p>}
-    </div>
+    <section className={`auth-request-status ${copy.className}`} aria-live="polite" tabIndex={-1}>
+      <span className="auth-success-mark"><Icon size={28} /></span>
+      <p className="auth-sheet-code">SOLICITUD / ESTADO</p>
+      <h3>{copy.title}</h3>
+      <p>{copy.description}</p>
+      <dl>
+        <div><dt>Empresa</dt><dd>{status.business_name}</dd></div>
+        <div><dt>Correo</dt><dd>{status.email}</dd></div>
+        {status.review_notes && <div><dt>Revisión</dt><dd>{status.review_notes}</dd></div>}
+      </dl>
+      {status.status === 'approved' && <Link to="/login" className="auth-primary-action auth-primary-action--center">Ingresar a Inkora</Link>}
+      {status.status === 'rejected' && <button type="button" className="auth-primary-action auth-primary-action--center" onClick={onRestart}>Enviar nueva solicitud</button>}
+      {status.status === 'pending' && <p className="auth-request-status__note">Puedes volver a esta pantalla para consultar el estado.</p>}
+    </section>
   );
 }
 
 export default function AccessRequestPage() {
   const { user, loading } = useAuth();
+  const formRef = useRef(null);
   const [form, setForm] = useState(initialForm);
+  const [step, setStep] = useState(1);
+  const [furthestStep, setFurthestStep] = useState(1);
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
   const [requestStatus, setRequestStatus] = useState(null);
   const [error, setError] = useState('');
   const [lookingUpRuc, setLookingUpRuc] = useState(false);
   const [rucFeedback, setRucFeedback] = useState(null);
+
+  useEffect(() => {
+    if (requestStatus) {
+      window.requestAnimationFrame(() => document.querySelector('.auth-request-status')?.focus());
+    }
+  }, [requestStatus]);
 
   useEffect(() => {
     const token = localStorage.getItem(REQUEST_TOKEN_KEY);
@@ -88,6 +97,7 @@ export default function AccessRequestPage() {
       value = value.replace(/\D/g, '').slice(0, 11);
       setRucFeedback(null);
     }
+    setError('');
     setForm((current) => ({ ...current, [key]: value }));
   };
 
@@ -113,13 +123,55 @@ export default function AccessRequestPage() {
     }
   };
 
+  const validateStep = (currentStep) => {
+    const scope = formRef.current?.querySelector(`[data-request-step="${currentStep}"]`);
+    const invalidField = [...(scope?.querySelectorAll('[required]') || [])].find((field) => !field.checkValidity());
+    if (invalidField) {
+      const revealInvalidField = () => {
+        invalidField.reportValidity();
+        invalidField.focus();
+      };
+      if (currentStep !== step) {
+        setStep(currentStep);
+        window.requestAnimationFrame(revealInvalidField);
+      } else {
+        revealInvalidField();
+      }
+      return false;
+    }
+    if (currentStep === 2 && form.password !== form.confirm_password) {
+      setError('Las contraseñas no coinciden. Revísalas antes de continuar.');
+      const focusConfirmation = () => document.querySelector('#access-confirm-password')?.focus();
+      if (step !== 2) {
+        setStep(2);
+        window.requestAnimationFrame(focusConfirmation);
+      } else {
+        focusConfirmation();
+      }
+      return false;
+    }
+    return true;
+  };
+
+  const moveToStep = (nextStep) => {
+    setStep(nextStep);
+    window.requestAnimationFrame(() => {
+      formRef.current?.querySelector(`[data-request-step="${nextStep}"] legend`)?.focus();
+    });
+  };
+
+  const nextStep = () => {
+    setError('');
+    if (!validateStep(step)) return;
+    const next = Math.min(3, step + 1);
+    moveToStep(next);
+    setFurthestStep((current) => Math.max(current, next));
+  };
+
   const submit = async (event) => {
     event.preventDefault();
     setError('');
-    if (form.password !== form.confirm_password) {
-      setError('Las contraseñas no coinciden.');
-      return;
-    }
+    if (!validateStep(1) || !validateStep(2)) return;
     setSubmitting(true);
     try {
       const result = await accessRequests.create(form);
@@ -141,56 +193,117 @@ export default function AccessRequestPage() {
   const restart = () => {
     localStorage.removeItem(REQUEST_TOKEN_KEY);
     setRequestStatus(null);
+    setForm(initialForm);
+    setStep(1);
+    setFurthestStep(1);
     setError('');
   };
 
   return (
-    <main className="login-shell auth-support-shell">
-      <AuthBrandPanel />
-      <section className="login-form-panel">
-        <div className="login-card auth-support-card">
-          <AuthInlineBrand />
-          <Link to="/login" className="auth-back-link"><ArrowLeft size={15} />Volver al login</Link>
-          {checking ? <div className="grid min-h-64 place-items-center"><Spinner label="Consultando solicitud" /></div> : requestStatus ? (
+    <main className="auth-expedition auth-expedition--request">
+      <AuthBrandPanel mode="request" />
+
+      <section className="auth-sheet" aria-labelledby="request-title">
+        <span className="auth-sheet-fold" aria-hidden="true" />
+        <div className="auth-sheet-scroll">
+          <header className="auth-sheet-header auth-request-header">
+            <div>
+              <p className="auth-sheet-code">SOLICITUD / NUEVA EMPRESA</p>
+              <h2 id="request-title">Prepara tu espacio de trabajo.</h2>
+              <p>Completa los datos de la empresa y del responsable. La activación requiere revisión.</p>
+            </div>
+            <div className="auth-request-header__actions">
+              <span className="auth-status-stamp auth-status-stamp--review"><i /> SUJETO A APROBACIÓN</span>
+              <Link to="/login" className="auth-text-link"><ArrowLeft size={13} /> Iniciar sesión</Link>
+            </div>
+          </header>
+
+          {checking ? (
+            <div className="auth-request-loading"><Spinner label="Consultando solicitud" /></div>
+          ) : requestStatus ? (
             <StatusView status={requestStatus} onRestart={restart} />
           ) : (
-            <form onSubmit={submit} className="auth-request-form">
-              <div className="login-card-header">
-                <div className="login-card-icon"><Building2 size={20} /></div>
-                <div><h2>Solicitar alta en Inkora</h2><p>Registra la empresa y el usuario que será su administrador.</p></div>
-              </div>
+            <>
+              <ol className="auth-request-steps" aria-label="Progreso de la solicitud">
+                {['Empresa', 'Responsable', 'Confirmación'].map((label, index) => {
+                  const itemStep = index + 1;
+                  const isCurrent = step === itemStep;
+                  const isComplete = furthestStep > itemStep;
+                  return (
+                    <li className={isCurrent ? 'is-current' : isComplete ? 'is-complete' : ''} key={label}>
+                      <button
+                        type="button"
+                        onClick={() => moveToStep(itemStep)}
+                        disabled={itemStep > furthestStep}
+                        aria-current={isCurrent ? 'step' : undefined}
+                      >
+                        <span>0{itemStep}</span><strong>{label}</strong>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
 
-              <div className="auth-request-groups">
-                <fieldset className="auth-request-group">
-                  <legend className="auth-request-group__title"><Building2 size={16} /><span>Datos del negocio</span></legend>
-                  <div className="login-field">
-                    <label htmlFor="access-business-ruc">RUC</label>
-                    <div className="login-input-wrap login-input-wrap--action">
-                      <IdCard size={17} />
-                      <input id="access-business-ruc" required inputMode="numeric" maxLength={11} value={form.business_ruc} onChange={setField('business_ruc')} placeholder="20XXXXXXXXX" aria-describedby={rucFeedback ? 'access-ruc-feedback' : undefined} />
-                      <button type="button" className="auth-ruc-lookup" onClick={lookupRuc} disabled={lookingUpRuc || form.business_ruc.length !== 11} aria-label="Consultar datos del RUC"><Search size={15} /><span>{lookingUpRuc ? 'Consultando…' : 'Consultar'}</span></button>
-                    </div>
-                    {rucFeedback && <span id="access-ruc-feedback" className={`auth-ruc-feedback auth-ruc-feedback--${rucFeedback.tone}`} role="status" aria-live="polite">{rucFeedback.message}</span>}
+              <form ref={formRef} onSubmit={submit} className="auth-request-form" noValidate>
+                <fieldset className="auth-request-step" data-request-step="1" hidden={step !== 1}>
+                  <legend tabIndex={-1}>Datos de la empresa</legend>
+                  <p className="auth-step-help">Empezamos por el RUC para reducir la digitación y mantener la razón social correcta.</p>
+                  <div className="auth-field-grid">
+                    <label className="auth-field auth-field--wide">
+                      <span>RUC</span>
+                      <span className="auth-field-control auth-field-control--action">
+                        <input id="access-business-ruc" required inputMode="numeric" minLength={11} maxLength={11} pattern="20[0-9]{9}" title="Ingresa un RUC válido de 11 dígitos que empiece por 20" value={form.business_ruc} onChange={setField('business_ruc')} placeholder="20XXXXXXXXX" aria-describedby="access-ruc-feedback" />
+                        <button type="button" className="auth-inline-action" onClick={lookupRuc} disabled={lookingUpRuc || form.business_ruc.length !== 11}>
+                          <Search size={15} />{lookingUpRuc ? 'Consultando…' : 'Consultar RUC'}
+                        </button>
+                      </span>
+                      <small id="access-ruc-feedback" className={rucFeedback ? `is-${rucFeedback.tone}` : ''}>{rucFeedback?.message || 'Ingresa los 11 dígitos del RUC.'}</small>
+                    </label>
+                    <label className="auth-field auth-field--wide"><span>Razón social</span><span className="auth-field-control"><input required value={form.business_name} onChange={setField('business_name')} placeholder="Nombre registrado de la empresa" /></span></label>
+                    <label className="auth-field"><span>Dirección fiscal <em>Opcional</em></span><span className="auth-field-control"><input value={form.business_address} onChange={setField('business_address')} placeholder="Dirección de la empresa" /></span></label>
+                    <label className="auth-field"><span>Teléfono operativo <em>Opcional</em></span><span className="auth-field-control"><input inputMode="tel" value={form.business_phone} onChange={setField('business_phone')} placeholder="987 654 321" /></span></label>
                   </div>
-                  <label className="login-field"><span>Empresa</span><div className="login-input-wrap"><Building2 size={17} /><input required value={form.business_name} onChange={setField('business_name')} placeholder="Razón social" /></div></label>
-                  <label className="login-field"><span>Dirección fiscal <small>(opcional)</small></span><div className="login-input-wrap"><MapPin size={17} /><input value={form.business_address} onChange={setField('business_address')} placeholder="Dirección de la empresa" /></div></label>
-                  <label className="login-field"><span>Teléfono operativo <small>(opcional)</small></span><div className="login-input-wrap"><Phone size={17} /><input inputMode="tel" value={form.business_phone} onChange={setField('business_phone')} placeholder="987654321" /></div></label>
                 </fieldset>
 
-                <fieldset className="auth-request-group">
-                  <legend className="auth-request-group__title"><UserRound size={16} /><span>Datos del administrador</span></legend>
-                  <label className="login-field"><span>Administrador</span><div className="login-input-wrap"><UserRound size={17} /><input required value={form.contact_name} onChange={setField('contact_name')} placeholder="Nombre y apellido" /></div></label>
-                  <label className="login-field"><span>Correo</span><div className="login-input-wrap"><Mail size={17} /><input required type="email" autoComplete="email" value={form.email} onChange={setField('email')} placeholder="contacto@empresa.pe" /></div></label>
-                  <label className="login-field"><span>Contraseña</span><div className="login-input-wrap"><LockKeyhole size={17} /><input required type="password" minLength={10} maxLength={64} autoComplete="new-password" value={form.password} onChange={setField('password')} /></div></label>
-                  <label className="login-field"><span>Confirmar contraseña</span><div className="login-input-wrap"><LockKeyhole size={17} /><input required type="password" minLength={10} maxLength={64} autoComplete="new-password" value={form.confirm_password} onChange={setField('confirm_password')} /></div></label>
+                <fieldset className="auth-request-step" data-request-step="2" hidden={step !== 2}>
+                  <legend tabIndex={-1}>Responsable del acceso</legend>
+                  <p className="auth-step-help">Esta persona administrará inicialmente el espacio de trabajo de la empresa.</p>
+                  <div className="auth-field-grid">
+                    <label className="auth-field auth-field--wide"><span>Nombre y apellido</span><span className="auth-field-control"><input required value={form.contact_name} onChange={setField('contact_name')} placeholder="Responsable de la cuenta" /></span></label>
+                    <label className="auth-field auth-field--wide"><span>Correo electrónico</span><span className="auth-field-control"><input required type="email" autoComplete="email" value={form.email} onChange={setField('email')} placeholder="contacto@empresa.pe" /></span></label>
+                    <label className="auth-field" htmlFor="access-password"><span>Contraseña</span><span className="auth-field-control"><LockKeyhole size={17} /><input id="access-password" required type={showPassword ? 'text' : 'password'} minLength={10} maxLength={64} autoComplete="new-password" value={form.password} onChange={setField('password')} /><button type="button" className="auth-icon-button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></span><small>Usa entre 10 y 64 caracteres.</small></label>
+                    <label className="auth-field" htmlFor="access-confirm-password"><span>Confirmar contraseña</span><span className="auth-field-control"><LockKeyhole size={17} /><input id="access-confirm-password" required type="password" minLength={10} maxLength={64} autoComplete="new-password" value={form.confirm_password} onChange={setField('confirm_password')} /></span><small>Debe coincidir con la contraseña anterior.</small></label>
+                  </div>
                 </fieldset>
-              </div>
 
-              <div className="auth-static-notice"><Clock3 size={15} /><div><strong>Alta sujeta a aprobación</strong><p>No se creará una empresa ni un usuario activo hasta que el superadministrador apruebe la solicitud.</p></div></div>
-              {error && <p role="alert" className="rounded-xl bg-[var(--color-danger-soft)] p-3 text-sm font-semibold text-[var(--color-danger)]">{error}</p>}
-              <div className="auth-request-submit-bar"><button type="submit" className="login-submit inline-flex w-full items-center justify-center gap-2" disabled={submitting}>{submitting ? <Spinner size="sm" /> : <Send size={17} />}{submitting ? 'Enviando solicitud...' : 'Enviar solicitud'}</button></div>
-            </form>
+                <fieldset className="auth-request-step" data-request-step="3" hidden={step !== 3}>
+                  <legend tabIndex={-1}>Revisa antes de enviar</legend>
+                  <p className="auth-step-help">Estos datos se usarán para revisar la solicitud. Todavía no se creará una cuenta activa.</p>
+                  <dl className="auth-review-list">
+                    <div><dt>Empresa</dt><dd>{form.business_name}</dd></div>
+                    <div><dt>RUC</dt><dd>{form.business_ruc}</dd></div>
+                    <div><dt>Responsable</dt><dd>{form.contact_name}</dd></div>
+                    <div><dt>Correo de acceso</dt><dd>{form.email}</dd></div>
+                  </dl>
+                  <div className="auth-approval-note"><span aria-hidden="true"><Asterisk size={18} /></span><div><strong>La solicitud queda en revisión</strong><p>Inkora verificará los datos antes de habilitar la empresa y el usuario administrador.</p></div></div>
+                </fieldset>
+
+                {error && <p role="alert" className="auth-alert auth-alert--request">{error}</p>}
+
+                <div className="auth-request-actions">
+                  <button type="button" className="auth-secondary-action" onClick={() => moveToStep(Math.max(1, step - 1))} disabled={step === 1}><ArrowLeft size={16} />Anterior</button>
+                  <p><span>Paso {step} de 3</span><small>Alta sujeta a aprobación.</small></p>
+                  {step < 3 ? (
+                    <button type="button" className="auth-primary-action auth-primary-action--compact" onClick={nextStep}>Continuar<ArrowRight size={17} /></button>
+                  ) : (
+                    <button type="submit" className="auth-primary-action auth-primary-action--compact" disabled={submitting}>{submitting ? <Spinner size="sm" /> : <Send size={17} />}{submitting ? 'Enviando…' : 'Enviar solicitud'}</button>
+                  )}
+                </div>
+              </form>
+            </>
           )}
+
+          <footer className="auth-sheet-footer"><span>INKORA · SOLICITUD DE ACCESO</span><span>0{step} / 03</span></footer>
         </div>
       </section>
     </main>
