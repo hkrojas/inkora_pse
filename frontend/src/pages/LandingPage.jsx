@@ -15,6 +15,8 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  CircleX,
+  Clock3,
   CircleDollarSign,
   ExternalLink,
   FileCheck2,
@@ -31,6 +33,7 @@ import {
   X,
 } from 'lucide-react';
 import { publicReceipts } from '../services/publicReceipts';
+import { DocumentTypeSelect, IssueDatePicker } from '../components/landing/ReceiptLookupControls';
 import '../styles/landing.css';
 
 const navigation = [
@@ -434,6 +437,7 @@ function DocumentLookup() {
   const lookupRequestRef = useRef(null);
   const resultType = result?.tipo_comprobante || fields.documentType;
   const documentLabel = { '01': 'FACTURA ELECTRÓNICA', '03': 'BOLETA ELECTRÓNICA', '07': 'NOTA DE CRÉDITO', '08': 'NOTA DE DÉBITO' }[resultType] || 'COMPROBANTE ELECTRÓNICO';
+  const ResultStatusIcon = ['ANULADO', 'RECHAZADO'].includes(result?.estado) ? CircleX : result?.estado === 'EN_PROCESO' ? Clock3 : CheckCircle2;
   const formattedDate = result?.fecha_emision
     ? new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${result.fecha_emision}T00:00:00Z`))
     : '—';
@@ -531,13 +535,7 @@ function DocumentLookup() {
                 <input value={fields.ruc} onChange={(event) => update('ruc', event.target.value.replace(/\D/g, '').slice(0, 11))} inputMode="numeric" autoComplete="off" maxLength="11" aria-invalid={Boolean(errors.ruc)} aria-describedby={errors.ruc ? 'lookup-ruc-error' : undefined} />
                 {errors.ruc && <small id="lookup-ruc-error">{errors.ruc}</small>}
               </label>
-              <label className="landing-field">
-                <span>Tipo de comprobante</span>
-                <select value={fields.documentType} onChange={(event) => update('documentType', event.target.value)} aria-invalid={Boolean(errors.documentType)} aria-describedby={errors.documentType ? 'lookup-type-error' : undefined}>
-                  <option value="">Selecciona</option><option value="01">Factura electrónica</option><option value="03">Boleta electrónica</option><option value="07">Nota de crédito</option><option value="08">Nota de débito</option>
-                </select>
-                {errors.documentType && <small id="lookup-type-error">{errors.documentType}</small>}
-              </label>
+              <DocumentTypeSelect value={fields.documentType} onChange={(value) => update('documentType', value)} invalid={Boolean(errors.documentType)} describedBy={errors.documentType ? 'lookup-type-error' : undefined} />
               <fieldset className="landing-document-number">
                 <legend>Número del comprobante</legend>
                 <div className="landing-document-number__fields">
@@ -553,11 +551,7 @@ function DocumentLookup() {
                   </label>
                 </div>
               </fieldset>
-              <label className="landing-field">
-                <span>Fecha de emisión</span>
-                <input type="date" value={fields.issueDate} onChange={(event) => update('issueDate', event.target.value)} aria-invalid={Boolean(errors.issueDate)} aria-describedby={errors.issueDate ? 'lookup-date-error' : undefined} />
-                {errors.issueDate && <small id="lookup-date-error">{errors.issueDate}</small>}
-              </label>
+              <IssueDatePicker value={fields.issueDate} onChange={(value) => update('issueDate', value)} invalid={Boolean(errors.issueDate)} describedBy={errors.issueDate ? 'lookup-date-error' : undefined} />
               <label className="landing-field">
                 <span>Importe total</span>
                 <span className="landing-money-input"><b>S/</b><input value={fields.amount} onChange={(event) => update('amount', event.target.value.replace(/[^\d.]/g, '').slice(0, 15))} inputMode="decimal" autoComplete="off" aria-invalid={Boolean(errors.amount)} aria-describedby={errors.amount ? 'lookup-amount-error' : undefined} /></span>
@@ -573,7 +567,7 @@ function DocumentLookup() {
           <div className="landing-lookup__result" ref={resultRef} tabIndex="-1" aria-live="polite" aria-atomic="true" aria-busy={resultState === 'loading'}>
             {resultState === 'success' && result ? (
               <>
-                <div className="landing-lookup__result-top"><span className={`landing-status landing-status--${result.estado.toLowerCase().replace('_', '-')}`}><CheckCircle2 size={14} /> {result.estado.replace('_', ' ')}</span><small>Resultado de Inkora</small></div>
+                <div className="landing-lookup__result-top"><span className={`landing-status landing-status--${result.estado.toLowerCase().replace('_', '-')}`}><ResultStatusIcon size={14} /> {result.estado.replace('_', ' ')}</span><small>Resultado de Inkora</small></div>
                 <div><p>{documentLabel}</p><strong className="landing-folio">{result.numero}</strong><span>{result.emisor}</span></div>
                 <dl>
                   <div><dt>Estado del documento</dt><dd>{result.estado.replace('_', ' ')}</dd></div><div><dt>Fecha de emisión</dt><dd>{formattedDate}</dd></div><div><dt>Importe total</dt><dd>{formattedAmount}</dd></div>

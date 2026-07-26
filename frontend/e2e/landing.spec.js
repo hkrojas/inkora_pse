@@ -110,10 +110,12 @@ test('la consulta valida, envía los cinco datos y representa el resultado real'
     await expect(lookup.getByLabel('RUC del emisor')).toBeFocused();
     await expect(lookup.getByLabel('RUC del emisor')).toHaveAttribute('aria-describedby', 'lookup-ruc-error');
     await lookup.getByLabel('RUC del emisor').fill('20123456789');
-    await lookup.getByLabel('Tipo de comprobante').selectOption('01');
+    await lookup.getByLabel('Tipo de comprobante').click();
+    await lookup.getByRole('option', { name: /Factura electrónica/ }).click();
     await lookup.getByLabel('Serie').fill('F001');
     await lookup.getByLabel('Correlativo').fill('184');
-    await lookup.getByLabel('Fecha de emisión').fill('2026-07-18');
+    await lookup.getByLabel('Fecha de emisión').click();
+    await lookup.getByRole('gridcell', { name: /18 de julio de 2026/ }).click();
     await lookup.getByLabel(/Importe total/).fill('498.00');
     await lookup.getByRole('button', { name: 'Consultar comprobante' }).click();
     await expect(lookup.getByText('ACEPTADO', { exact: true }).first()).toBeVisible();
@@ -131,6 +133,39 @@ test('la consulta valida, envía los cinco datos y representa el resultado real'
     await lookup.getByRole('button', { name: 'Consultar comprobante' }).click();
     await expect(lookup.getByText('No encontramos una coincidencia.')).toBeVisible();
     expect(requests).toHaveLength(2);
+  } finally { await context.close(); }
+});
+
+test('los controles de consulta son operables con teclado y restauran el foco', async ({ browser, baseURL }) => {
+  const { context, page } = await openPublicPage(browser, baseURL, { width: 375, height: 812 }, '/presentacion');
+  try {
+    const lookup = page.locator('#consulta');
+    const typeTrigger = lookup.getByLabel('Tipo de comprobante');
+    await typeTrigger.focus();
+    await typeTrigger.press('Enter');
+    await expect(lookup.getByRole('listbox', { name: 'Tipo de comprobante' })).toBeVisible();
+    await page.keyboard.press('End');
+    await expect(lookup.getByRole('option', { name: /Nota de débito/ })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(typeTrigger).toContainText('Nota de débito');
+    await expect(typeTrigger).toBeFocused();
+
+    const dateTrigger = lookup.getByLabel('Fecha de emisión');
+    await dateTrigger.focus();
+    await dateTrigger.press('ArrowDown');
+    const calendar = lookup.getByRole('dialog', { name: 'Seleccionar fecha de emisión' });
+    await expect(calendar).toBeVisible();
+    await calendar.getByRole('button', { name: 'Mes siguiente' }).click();
+    await expect(calendar.locator('[role="gridcell"]:focus')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(dateTrigger).toBeFocused();
+    await dateTrigger.press('Enter');
+    await calendar.getByRole('button', { name: 'Mes siguiente' }).focus();
+    await page.keyboard.press('Escape');
+    await expect(dateTrigger).toBeFocused();
+    await dateTrigger.press('Enter');
+    await lookup.getByRole('button', { name: 'Hoy', exact: true }).click();
+    await expect(dateTrigger).toHaveText(/\d{2}\/\d{2}\/\d{4}/);
   } finally { await context.close(); }
 });
 
