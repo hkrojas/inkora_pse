@@ -27,6 +27,7 @@ La operación incluye clientes, productos y servicios, cotizaciones, facturas y 
 - La acción comercial principal de la web es solicitar acceso.
 - La solicitud registra la empresa y un administrador, queda sujeta a revisión y no habilita automáticamente un espacio activo.
 - La web puede utilizar información sintética claramente identificada para demostrar el producto.
+- La consulta pública verifica facturas, boletas y sus notas de crédito o débito mediante RUC emisor, tipo, serie/correlativo, fecha e importe exactos. No expone datos del receptor ni archivos fiscales.
 - No se deben inventar precios, clientes, testimonios, cifras de rendimiento, compromisos de soporte ni capacidades futuras.
 - El lanzamiento utiliza un solo plan comercial, pero el repositorio no confirma una tarifa pública; la landing debe decirlo de forma explícita y derivar la consulta al proceso de revisión.
 - El rediseño de marketing no debe modificar el sistema autenticado, el backend, las APIs ni la lógica fiscal.

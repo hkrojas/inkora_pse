@@ -75,29 +75,62 @@ test('la sección de precio comunica un solo plan sin inventar una tarifa', asyn
   } finally { await context.close(); }
 });
 
-test('la consulta demuestra campos SUNAT, validación y resultado sin invocar una API', async ({ browser, baseURL }) => {
+test('la consulta valida, envía los cinco datos y representa el resultado real', async ({ browser, baseURL }) => {
   const { context, page } = await openPublicPage(browser, baseURL, { width: 1440, height: 900 }, '/presentacion');
-  const apiRequests = [];
-  page.on('request', (request) => {
-    if (['fetch', 'xhr'].includes(request.resourceType())) apiRequests.push(request.url());
+  const requests = [];
+  await page.route('**/public/comprobantes/consulta', async (route) => {
+    const payload = route.request().postDataJSON();
+    requests.push(payload);
+    if (payload.importe_total === '499.00') {
+      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: 'No encontramos un comprobante que coincida con todos los datos.' }) });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        encontrado: true,
+        emisor: 'Imprenta Andina SAC',
+        tipo_comprobante: '01',
+        numero: 'F001-00000184',
+        fecha_emision: '2026-07-18',
+        moneda: 'PEN',
+        importe_total: '498.00',
+        estado: 'ACEPTADO',
+        evidencias: { pdf: true, xml: true, cdr: true },
+      }),
+    });
   });
   try {
     const lookup = page.locator('#consulta');
     await expect(lookup.getByRole('heading', { name: 'Datos del comprobante' })).toBeVisible();
     await lookup.getByLabel('RUC del emisor').fill('123');
-    await lookup.getByRole('button', { name: 'Consultar demostración' }).click();
+    await lookup.getByRole('button', { name: 'Consultar comprobante' }).click();
     await expect(lookup.getByText('Ingresa los 11 dígitos del RUC emisor.')).toBeVisible();
     await expect(lookup.getByLabel('RUC del emisor')).toBeFocused();
     await expect(lookup.getByLabel('RUC del emisor')).toHaveAttribute('aria-describedby', 'lookup-ruc-error');
-    await lookup.getByRole('button', { name: 'Usar datos de ejemplo' }).click();
-    await expect(lookup.getByText('Completa la ficha y consulta.')).toBeVisible();
-    await lookup.getByRole('button', { name: 'Consultar demostración' }).click();
-    await expect(lookup.getByText('DEMOSTRACIÓN', { exact: true })).toBeVisible();
-    await expect(lookup).toContainText('F001-00184');
+    await lookup.getByLabel('RUC del emisor').fill('20123456789');
+    await lookup.getByLabel('Tipo de comprobante').selectOption('01');
+    await lookup.getByLabel('Serie').fill('F001');
+    await lookup.getByLabel('Correlativo').fill('184');
+    await lookup.getByLabel('Fecha de emisión').fill('2026-07-18');
+    await lookup.getByLabel(/Importe total/).fill('498.00');
+    await lookup.getByRole('button', { name: 'Consultar comprobante' }).click();
+    await expect(lookup.getByText('ACEPTADO', { exact: true }).first()).toBeVisible();
+    await expect(lookup).toContainText('F001-00000184');
+    await expect(lookup).toContainText('Imprenta Andina SAC');
+    expect(requests[0]).toEqual({
+      ruc: '20123456789',
+      tipo_comprobante: '01',
+      serie: 'F001',
+      correlativo: '184',
+      fecha_emision: '2026-07-18',
+      importe_total: '498.00',
+    });
     await lookup.getByLabel(/Importe total/).fill('499.00');
-    await lookup.getByRole('button', { name: 'Consultar demostración' }).click();
-    await expect(lookup.getByText('La consulta real aún no está conectada.')).toBeVisible();
-    expect(apiRequests).toEqual([]);
+    await lookup.getByRole('button', { name: 'Consultar comprobante' }).click();
+    await expect(lookup.getByText('No encontramos una coincidencia.')).toBeVisible();
+    expect(requests).toHaveLength(2);
   } finally { await context.close(); }
 });
 
