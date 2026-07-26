@@ -152,9 +152,11 @@ test('los controles de consulta son operables con teclado y restauran el foco', 
 
     const dateTrigger = lookup.getByLabel('Fecha de emisión');
     await dateTrigger.focus();
+    const scrollBeforeOpen = await page.evaluate(() => window.scrollY);
     await dateTrigger.press('ArrowDown');
     const calendar = lookup.getByRole('dialog', { name: 'Seleccionar fecha de emisión' });
     await expect(calendar).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollBeforeOpen);
     await calendar.getByRole('button', { name: 'Mes siguiente' }).click();
     await expect(calendar.locator('[role="gridcell"]:focus')).toHaveCount(1);
     await page.keyboard.press('Escape');
@@ -180,9 +182,18 @@ test('el login no recibe cambios funcionales', async ({ browser, baseURL }) => {
 test('las anclas actualizan URL y estado activo', async ({ browser, baseURL }) => {
   const { context, page } = await openPublicPage(browser, baseURL, { width: 1440, height: 900 }, '/presentacion');
   try {
+    await page.evaluate(() => {
+      window.__landingScrollBehaviors = [];
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function scrollIntoView(options) {
+        window.__landingScrollBehaviors.push(options?.behavior);
+        return original.call(this, options);
+      };
+    });
     const nav = page.getByRole('navigation', { name: 'Navegación principal' });
     await nav.getByRole('link', { name: 'Cómo funciona' }).click();
     await expect(page).toHaveURL(/#recorrido$/);
+    await expect.poll(() => page.evaluate(() => window.__landingScrollBehaviors)).toContain('smooth');
     await expect(nav.getByRole('link', { name: 'Cómo funciona' })).toHaveClass(/is-active/);
     await expect(page.locator('.landing-header')).toHaveClass(/is-scrolled/);
     const position = await page.evaluate(() => ({
@@ -226,10 +237,20 @@ test('el recorrido funciona con flechas, Home y End', async ({ browser, baseURL 
 });
 
 test('movimiento reducido deja ruta y contenido visibles', async ({ browser, baseURL }) => {
-  const context = await browser.newContext({ baseURL, viewport: { width: 1024, height: 900 }, reducedMotion: 'reduce', storageState: { cookies: [], origins: [] } });
+  const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   try {
     await page.goto('/presentacion');
+    await page.evaluate(() => {
+      window.__landingScrollBehaviors = [];
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function scrollIntoView(options) {
+        window.__landingScrollBehaviors.push(options?.behavior);
+        return original.call(this, options);
+      };
+    });
+    await page.getByRole('navigation', { name: 'Navegación principal' }).getByRole('link', { name: 'Confianza' }).click();
+    await expect.poll(() => page.evaluate(() => window.__landingScrollBehaviors)).toContain('auto');
     await page.locator('.landing-route-line--hero path').waitFor({ state: 'attached' });
     const result = await page.evaluate(() => ({
       dash: getComputedStyle(document.querySelector('.landing-route-line--hero path')).strokeDashoffset,

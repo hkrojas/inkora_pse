@@ -183,14 +183,23 @@ function Header({ theme, onToggleTheme }) {
   }, [open]);
 
   const close = () => setOpen(false);
+  const navigateTo = (event, id) => {
+    event.preventDefault();
+    close();
+    const target = document.getElementById(id);
+    if (!target) return;
+    window.history.pushState(null, '', `#${id}`);
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })));
+  };
 
   return (
     <header className={`landing-header${scrolled ? ' is-scrolled' : ''}`}>
       <div className="landing-shell landing-header__inner">
-        <a className="landing-logo-link" href="#inicio" aria-label="Inkora, ir al inicio"><Brand /></a>
+        <a className="landing-logo-link" href="#inicio" aria-label="Inkora, ir al inicio" onClick={(event) => navigateTo(event, 'inicio')}><Brand /></a>
         <nav ref={menuPanel} id="landing-mobile-menu" className={`landing-nav${open ? ' is-open' : ''}`} aria-label="Navegación principal">
           {navigation.map(({ id, label }) => (
-            <a key={id} href={`#${id}`} className={active === id ? 'is-active' : ''} onClick={close}>{label}</a>
+            <a key={id} href={`#${id}`} className={active === id ? 'is-active' : ''} onClick={(event) => navigateTo(event, id)}>{label}</a>
           ))}
           <div className="landing-nav__mobile-actions">
             <ThemeToggle theme={theme} onToggle={onToggleTheme} compact />

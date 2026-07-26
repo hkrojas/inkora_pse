@@ -123,6 +123,7 @@ export function DocumentTypeSelect({ value, onChange, invalid, describedBy }) {
 
 export function IssueDatePicker({ value, onChange, invalid, describedBy }) {
   const [open, setOpen] = useState(false);
+  const [placement, setPlacement] = useState({ side: 'below', maxHeight: 460 });
   const selectedDate = fromIsoDate(value);
   const [visibleMonth, setVisibleMonth] = useState(() => selectedDate || new Date());
   const [focusedDate, setFocusedDate] = useState(() => selectedDate || new Date());
@@ -139,11 +140,22 @@ export function IssueDatePicker({ value, onChange, invalid, describedBy }) {
   }, [visibleMonth]);
 
   useEffect(() => {
-    if (open) rootRef.current?.querySelector(`[data-date="${toIsoDate(focusedDate)}"]`)?.focus();
+    if (open) rootRef.current?.querySelector(`[data-date="${toIsoDate(focusedDate)}"]`)?.focus({ preventScroll: true });
   }, [focusedDate, open, visibleMonth]);
 
   const show = () => {
     const start = selectedDate || new Date();
+    const triggerRect = triggerRef.current?.getBoundingClientRect();
+    if (triggerRect) {
+      const gap = 9;
+      const viewportGutter = 16;
+      const preferredHeight = 460;
+      const spaceBelow = Math.max(0, window.innerHeight - triggerRect.bottom - gap - viewportGutter);
+      const spaceAbove = Math.max(0, triggerRect.top - gap - viewportGutter);
+      const side = spaceBelow >= preferredHeight || spaceBelow >= spaceAbove ? 'below' : 'above';
+      const availableSpace = side === 'below' ? spaceBelow : spaceAbove;
+      setPlacement({ side, maxHeight: Math.max(260, Math.min(preferredHeight, availableSpace)) });
+    }
     setVisibleMonth(start);
     setFocusedDate(start);
     setOpen(true);
@@ -163,7 +175,7 @@ export function IssueDatePicker({ value, onChange, invalid, describedBy }) {
   const selectDate = (date) => {
     onChange(toIsoDate(date));
     setOpen(false);
-    window.requestAnimationFrame(() => triggerRef.current?.focus());
+    window.requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }));
   };
 
   const onDayKeyDown = (event, date) => {
@@ -194,7 +206,7 @@ export function IssueDatePicker({ value, onChange, invalid, describedBy }) {
         <CalendarDays size={18} aria-hidden="true" />
       </button>
       {open && (
-        <div className="landing-calendar" id="lookup-date-calendar" role="dialog" aria-modal="false" aria-label="Seleccionar fecha de emisión" onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setOpen(false); triggerRef.current?.focus(); } }}>
+        <div className={`landing-calendar${placement.side === 'above' ? ' is-above' : ''}`} id="lookup-date-calendar" role="dialog" aria-modal="false" aria-label="Seleccionar fecha de emisión" style={{ '--landing-calendar-max-height': `${placement.maxHeight}px` }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setOpen(false); triggerRef.current?.focus({ preventScroll: true }); } }}>
           <div className="landing-calendar__header">
             <div><span>FECHA DE EMISIÓN</span><strong>{MONTHS[visibleMonth.getMonth()]} de {visibleMonth.getFullYear()}</strong></div>
             <div><button type="button" aria-label="Mes anterior" onClick={() => changeMonth(-1)}><ChevronLeft size={18} /></button><button type="button" aria-label="Mes siguiente" onClick={() => changeMonth(1)}><ChevronRight size={18} /></button></div>
@@ -207,7 +219,7 @@ export function IssueDatePicker({ value, onChange, invalid, describedBy }) {
               return <button type="button" role="gridcell" data-date={iso} tabIndex={iso === toIsoDate(focusedDate) ? 0 : -1} aria-label={new Intl.DateTimeFormat('es-PE', { dateStyle: 'full' }).format(date)} aria-selected={iso === value} className={`${outside ? 'is-outside' : ''}${iso === todayIso ? ' is-today' : ''}`} key={iso} onClick={() => selectDate(date)} onKeyDown={(event) => onDayKeyDown(event, date)}>{date.getDate()}</button>;
             })}
           </div>
-          <div className="landing-calendar__footer"><button type="button" onClick={() => { onChange(''); setOpen(false); triggerRef.current?.focus(); }}>Borrar</button><button type="button" onClick={() => selectDate(new Date())}>Hoy</button></div>
+          <div className="landing-calendar__footer"><button type="button" onClick={() => { onChange(''); setOpen(false); triggerRef.current?.focus({ preventScroll: true }); }}>Borrar</button><button type="button" onClick={() => selectDate(new Date())}>Hoy</button></div>
         </div>
       )}
       {invalid && <small id="lookup-date-error">Selecciona la fecha de emisión.</small>}

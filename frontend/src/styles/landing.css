@@ -236,7 +236,8 @@ body:has(.landing-page) { margin: 0; background: var(--landing-paper, #f7f9f4); 
 .landing-select-menu > button.is-selected { background: var(--landing-lime-soft); color: var(--landing-green); }
 .landing-select-menu > button > span { display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 680; }
 .landing-select-menu > button b { display: grid; width: 30px; height: 26px; place-items: center; border: 1px solid var(--landing-line); border-radius: 4px; background: var(--landing-white); font: 700 9px 'Recursive Mono', monospace; }
-.landing-calendar { width: min(356px, calc(100vw - 48px)); padding: 16px; }
+.landing-calendar { width: min(356px, calc(100vw - 48px)); max-height: var(--landing-calendar-max-height, 460px); padding: 16px; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--landing-control-line) transparent; scrollbar-width: thin; }
+.landing-calendar.is-above { top: auto; bottom: calc(100% + 9px); }
 .landing-calendar__header { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--landing-line); padding-bottom: 14px; }
 .landing-calendar__header > div:first-child { display: flex; flex-direction: column; gap: 3px; }
 .landing-calendar__header strong { font-size: 17px; font-weight: 780; text-transform: lowercase; }
