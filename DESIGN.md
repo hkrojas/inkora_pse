@@ -84,7 +84,7 @@ components:
 
 Inkora se presenta como un documento vivo que conserva el hilo de una venta. Pliegues, folios, líneas de expediente y sellos convierten estados abstractos en evidencia legible. La densidad cambia entre manifiesto editorial y registro operativo para que la interfaz tenga carácter sin parecer un dashboard público.
 
-La ruta verde es la firma reutilizable: conecta elementos, marca progreso y convierte el color de marca en infraestructura. El movimiento se concentra en una sola revelación inicial; toda la información permanece disponible sin animación.
+La ruta verde es la firma reutilizable: conecta elementos, marca progreso y convierte el color de marca en infraestructura. El movimiento se concentra en la revelación inicial y en transiciones que explican continuidad: el expediente cambia de etapa, los desplegables se abren como hojas y las anclas recorren la página sin saltos. Toda la información permanece disponible con movimiento reducido.
 
 **Key Characteristics:**
 

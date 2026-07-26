@@ -280,17 +280,25 @@ function JourneyPreview({ step }) {
 
 function Journey() {
   const [step, setStep] = useState(0);
+  const [direction, setDirection] = useState('forward');
   const tabs = useRef([]);
+
+  const changeStep = (next, nextDirection = next >= step ? 'forward' : 'backward') => {
+    if (next === step) return;
+    setDirection(nextDirection);
+    setStep(next);
+  };
 
   const selectByKey = (event, index) => {
     let next = index;
+    let nextDirection = 'forward';
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % journey.length;
-    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + journey.length) % journey.length;
-    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') { next = (index - 1 + journey.length) % journey.length; nextDirection = 'backward'; }
+    else if (event.key === 'Home') { next = 0; nextDirection = 'backward'; }
     else if (event.key === 'End') next = journey.length - 1;
     else return;
     event.preventDefault();
-    setStep(next);
+    changeStep(next, nextDirection);
     tabs.current[next]?.focus();
   };
 
@@ -314,7 +322,7 @@ function Journey() {
                 aria-controls="journey-panel"
                 tabIndex={step === index ? 0 : -1}
                 className={step === index ? 'is-active' : ''}
-                onClick={() => setStep(index)}
+                onClick={() => changeStep(index)}
                 onKeyDown={(event) => selectByKey(event, index)}
               >
                 <span>{String(index + 1).padStart(2, '0')}</span>
@@ -322,9 +330,9 @@ function Journey() {
               </button>
             ))}
           </div>
-          <div className="landing-journey__story" aria-live="polite">
-            <div><p>{journey[step].label}</p><h3>{journey[step].title}</h3><span>{journey[step].copy}</span></div>
-            <JourneyPreview step={step} />
+          <div className="landing-journey__story" data-direction={direction} aria-live="polite">
+            <div className="landing-journey__copy" key={`copy-${step}`}><p>{journey[step].label}</p><h3>{journey[step].title}</h3><span>{journey[step].copy}</span></div>
+            <JourneyPreview key={`preview-${step}`} step={step} />
           </div>
         </div>
       </div>
@@ -635,7 +643,7 @@ function FAQ() {
     <section className="landing-faq landing-reveal" aria-labelledby="faq-title">
       <div className="landing-shell landing-faq__layout">
         <header><p>Preguntas frecuentes</p><h2 id="faq-title">Antes de solicitar acceso.</h2><span>Respuestas directas sobre el producto y el proceso de alta.</span></header>
-        <div>{faqs.map(([question, answer]) => <details key={question}><summary>{question}<ChevronDown size={19} /></summary><p>{answer}</p></details>)}</div>
+        <div>{faqs.map(([question, answer]) => <details key={question}><summary>{question}<ChevronDown size={19} /></summary><div className="landing-faq__answer"><p>{answer}</p></div></details>)}</div>
       </div>
     </section>
   );
@@ -726,8 +734,21 @@ export default function LandingPage() {
     window.localStorage.setItem('inkora-landing-theme', theme);
   }, [theme]);
 
+  const navigateFromPageLink = (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const anchor = event.target.closest('a[href^="#"]');
+    if (!anchor) return;
+    const id = anchor.getAttribute('href')?.slice(1);
+    const target = id ? document.getElementById(id) : null;
+    if (!target) return;
+    event.preventDefault();
+    window.history.pushState(null, '', `#${id}`);
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+  };
+
   return (
-    <div className="landing-page" data-theme={theme}>
+    <div className="landing-page" data-theme={theme} onClick={navigateFromPageLink}>
       <a className="landing-skip" href="#contenido">Saltar al contenido</a>
       <Header theme={theme} onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />
       <main id="contenido">
