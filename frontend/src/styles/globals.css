@@ -24387,10 +24387,57 @@ body:has(.auth-expedition) {
   .auth-review-list dd { text-align: left; }
 }
 
-@media (min-width: 781px) and (max-height: 720px) {
-  .auth-route-intro > p:last-child, .auth-route-assurance { display: none; }
-  .auth-operation-route { margin: 20px 0 0; }
-  .auth-sheet-footer { display: none; }
+@media (min-width: 781px) and (max-height: 820px) {
+  .auth-expedition {
+    height: calc(100dvh - 16px);
+    margin: 8px auto;
+  }
+
+  .auth-route-panel { padding: 22px 28px; }
+  .auth-route-brand { top: 20px; left: 28px; }
+  .auth-theme-toggle { top: 18px; right: 28px; min-height: 38px; padding-block: 6px; }
+  .auth-route-intro { margin-top: 48px; }
+  .auth-route-intro h1 { margin-top: 10px; font-size: 38px; }
+  .auth-route-intro > p:last-child {
+    display: block;
+    margin-top: 9px;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .auth-operation-route { margin: 10px 0; }
+  .auth-route-thread { top: 20px; bottom: 20px; left: 19px; width: 4px; }
+  .auth-route-event {
+    min-height: 56px;
+    grid-template-columns: 40px 1fr;
+    gap: 13px;
+  }
+  .auth-route-node { width: 40px; height: 40px; }
+  .auth-route-node svg { width: 15px; }
+  .auth-route-event > div { padding-top: 1px; }
+  .auth-route-event strong { margin-top: 2px; font-size: 14px; }
+  .auth-route-event p { margin-top: 1px; font-size: 10px; }
+  .auth-route-assurance { display: block; padding-top: 9px; }
+  .auth-route-assurance p { margin-top: 5px; font-size: 10px; line-height: 1.35; }
+
+  .auth-sheet-scroll { padding: 22px 32px 16px; }
+  .auth-sheet-header { gap: 18px; padding-bottom: 12px; }
+  .auth-sheet-header h2 { margin-top: 6px; font-size: 36px; }
+  .auth-sheet-header > div:first-child > p:last-child { margin-top: 7px; font-size: 12px; line-height: 1.35; }
+  .auth-request-header h2 { font-size: 34px; }
+  .auth-request-header__actions { gap: 6px; }
+  .auth-request-steps { margin-top: 12px; }
+  .auth-request-steps button { min-height: 44px; padding-block: 6px; }
+  .auth-request-form { margin-top: 11px; }
+  .auth-request-step legend { font-size: 18px; }
+  .auth-step-help { margin-top: 4px; font-size: 10px; }
+  .auth-field-grid { gap: 8px 14px; margin-top: 10px; }
+  .auth-field { gap: 4px; }
+  .auth-field-control { min-height: 42px; }
+  .auth-field-control input { height: 40px; font-size: 14px; }
+  .auth-field small { min-height: 13px; }
+  .auth-request-actions { padding-top: 9px; }
+  .auth-sheet-footer { display: flex; padding-top: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
