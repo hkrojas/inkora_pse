@@ -407,6 +407,18 @@ html.theme-switching--light body::before {
     #f3f6f1;
 }
 
+@keyframes ink-theme-settle {
+  from { opacity: .9; }
+  to { opacity: 0; }
+}
+
+html.theme-switching--operational body::before {
+  background: var(--theme-transition-color, var(--color-bg));
+  animation: ink-theme-settle 190ms var(--ease-out) both;
+  opacity: 0;
+  will-change: opacity;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

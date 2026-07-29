@@ -87,8 +87,12 @@ export function ThemeProvider({ children }) {
       return;
     }
 
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
     const root = document.documentElement;
-    const { x, y } = getOriginPoint(origin);
+    const isOperationalSurface = Boolean(document.querySelector('.app-dashboard-shell'));
 
     if (transitionTimeoutRef.current) {
       window.clearTimeout(transitionTimeoutRef.current);
@@ -100,10 +104,22 @@ export function ThemeProvider({ children }) {
       'theme-switching--dark',
       'theme-switching--from-light',
       'theme-switching--from-dark',
+      'theme-switching--operational',
     );
-    root.style.setProperty('--theme-origin-x', x);
-    root.style.setProperty('--theme-origin-y', y);
-    root.classList.add('theme-switching', `theme-switching--${nextResolvedTheme}`);
+
+    if (isOperationalSurface) {
+      root.style.setProperty(
+        '--theme-transition-color',
+        resolvedTheme === 'dark' ? '#101610' : '#f3f6f1',
+      );
+      root.classList.add('theme-switching', 'theme-switching--operational');
+    } else {
+      const { x, y } = getOriginPoint(origin);
+      root.style.setProperty('--theme-origin-x', x);
+      root.style.setProperty('--theme-origin-y', y);
+      root.classList.add('theme-switching', `theme-switching--${nextResolvedTheme}`);
+    }
+
     void root.offsetWidth;
 
     transitionTimeoutRef.current = window.setTimeout(() => {
@@ -113,11 +129,13 @@ export function ThemeProvider({ children }) {
         'theme-switching--dark',
         'theme-switching--from-light',
         'theme-switching--from-dark',
+        'theme-switching--operational',
       );
       root.style.removeProperty('--theme-origin-x');
       root.style.removeProperty('--theme-origin-y');
+      root.style.removeProperty('--theme-transition-color');
       transitionTimeoutRef.current = null;
-    }, 760);
+    }, isOperationalSurface ? 240 : 760);
   }, [resolvedTheme]);
 
   useEffect(() => {
