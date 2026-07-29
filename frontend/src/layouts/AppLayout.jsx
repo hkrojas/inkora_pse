@@ -75,6 +75,7 @@ const ROUTE_META = {
   '/dashboard': { title: 'Dashboard', sub: 'Centro de control diario' },
   '/clientes': { title: 'Clientes', sub: 'Relación comercial' },
   '/productos': { title: 'Productos', sub: 'Catálogo reusable' },
+  '/inventario': { title: 'Inventario', sub: 'Existencias y movimientos' },
   '/cotizaciones': { title: 'Cotizaciones', sub: 'Motor comercial' },
   '/cobranza': { title: 'Cobranza', sub: 'Seguimiento de pagos' },
   '/guias': { title: 'Guías de remisión', sub: 'Despacho fiscal' },
@@ -313,6 +314,7 @@ export default function AppLayout() {
   const isClientesRoute = location.pathname === '/clientes';
   const isCotizacionesRoute = location.pathname.startsWith('/cotizaciones');
   const isProductosRoute = location.pathname === '/productos';
+  const isInventarioRoute = location.pathname === '/inventario';
   const isCobranzaRoute = location.pathname === '/cobranza';
   const isComprobantesNuevoRoute = location.pathname === '/comprobantes/nuevo';
   const isFacturasRoute = location.pathname === '/facturas';
@@ -336,6 +338,7 @@ export default function AppLayout() {
         isClientesRoute && 'app-route-clientes',
         isCotizacionesRoute && 'app-route-cotizaciones',
         isProductosRoute && 'app-route-productos',
+        isInventarioRoute && 'app-route-inventario',
         isGuiasRoute && 'app-route-guias',
         isNotasRoute && 'app-route-notas',
         isResumenDiarioRoute && 'app-route-resumen-diario',
@@ -616,7 +619,8 @@ export default function AppLayout() {
         <SubscriptionBanner user={user} />
 
         <main
-          className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7"
+          id="main-content"
+          className="app-content-scroll flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7"
           onScroll={(event) => setIsContentScrolled(event.currentTarget.scrollTop > 4)}
         >
           <PageTransition>

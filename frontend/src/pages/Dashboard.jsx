@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { dashboard } from '../services/dashboard';
 import OperationalPageHeader from '../components/ui/OperationalPageHeader';
+import OperationalRouteNav from '../components/ui/OperationalRouteNav';
 
 function safeNumber(value) {
   const parsed = Number(value ?? 0);
@@ -230,6 +231,8 @@ export default function Dashboard() {
           </span>
         }
       />
+
+      <OperationalRouteNav />
 
       {error && (
         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '12px 16px', borderRadius: '14px', background: 'var(--color-danger-soft)', color: 'var(--color-danger-text)', fontSize: '13px', marginBottom: '16px' }}>

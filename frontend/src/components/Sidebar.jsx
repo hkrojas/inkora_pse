@@ -229,6 +229,8 @@ export default function Sidebar() {
               'mx-3 mb-3 inline-flex h-9 items-center gap-2 rounded-xl border border-white/[0.08] px-3 text-[10px] font-black uppercase tracking-[0.1em] text-white/50 transition-colors hover:bg-white/[0.05] hover:text-white/70',
               showCollapsed && 'justify-center px-0',
             )}
+            aria-label={showCollapsed ? 'Expandir navegación' : 'Contraer navegación'}
+            aria-expanded={!showCollapsed}
           >
             {showCollapsed ? <ChevronRight size={12} /> : <PanelLeftClose size={12} />}
             {!showCollapsed && <span>Contraer</span>}
@@ -253,6 +255,8 @@ export default function Sidebar() {
                   <NavLink
                     key={to}
                     to={to}
+                    aria-label={showCollapsed ? label : undefined}
+                    title={showCollapsed ? label : undefined}
                     onMouseEnter={(event) => showCollapsed && showTooltip(event, label)}
                     onMouseLeave={hideTooltip}
                     className={cn(

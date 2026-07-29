@@ -207,3 +207,17 @@ Un SVG decorativo dibuja la conexión mientras una lista HTML equivalente conser
 - **Don't** estructurar la página como un mosaico bento de tarjetas anidadas.
 - **Don't** usar fotografías de stock para sustituir evidencia de producto.
 - **Don't** inventar clientes, testimonios, precios, métricas o compromisos comerciales.
+
+## Superficie autenticada: Mesa operativa
+
+El sistema interno adapta la ruta operativa a una mesa de trabajo compacta. La jerarquía es `orientar → priorizar → operar → verificar`: una barra superior de utilidades, una sola cabecera de página, las prioridades reales y después los registros y formularios. No se ocultan ni eliminan controles existentes para lograr limpieza visual.
+
+- **Verde lima:** hilo de navegación, acción primaria y continuidad entre módulos.
+- **Naranja:** clientes, productos, inventario y guías; identifica contexto, no estados.
+- **Morado:** cotizaciones y documentos fiscales; identifica familia documental, no aceptación SUNAT.
+- **Semánticos:** verde éxito, ámbar advertencia y rojo error se reservan para estados reales.
+- **Densidad:** controles de al menos 44 px, paneles de radio 12 px, tablas compactas y máximo de 1440 px para el área operativa.
+- **Movimiento:** entrada de vista de 320 ms, hilo de 680 ms una vez y filas escalonadas hasta 160 ms. `prefers-reduced-motion` conserva toda la información sin desplazamientos.
+- **Responsive:** el hilo se reorganiza a dos columnas en móvil; prioridades, métricas y formularios pasan a una columna sin perder acciones.
+
+La ruta del dashboard es navegación real hacia Cotizaciones, Nuevo comprobante, Inventario y Cobranza. No representa que una operación específica haya completado esas etapas.

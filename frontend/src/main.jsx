@@ -20,6 +20,7 @@ async function bootstrap() {
     import('./styles/tokens.css'),
     import('./styles/globals.css'),
   ]);
+  await import('./styles/operations-redesign.css');
   const [{ default: App }, { ThemeProvider }] = await Promise.all([
     import('./App.jsx'),
     import('./context/ThemeContext'),

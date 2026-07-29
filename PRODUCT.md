@@ -22,6 +22,8 @@ Inkora no es un ERP genérico completo. Su mecanismo diferenciador es conservar 
 
 La operación incluye clientes, productos y servicios, cotizaciones, facturas y boletas electrónicas, evidencia XML/CDR, estados SUNAT, almacenes, Kardex, pagos y saldos pendientes. La web pública debe explicar esta relación a una persona que todavía no usa el producto.
 
+Dentro del producto autenticado, la persona necesita reconocer en pocos segundos qué requiere atención y pasar entre cotización, emisión, inventario y cobranza sin reaprender la interfaz. El sistema debe conservar todas las herramientas operativas, filtros y acciones existentes; la simplificación es jerárquica y visual, no funcional.
+
 ## Capabilities and Constraints
 
 - La acción comercial principal de la web es solicitar acceso.
@@ -31,6 +33,7 @@ La operación incluye clientes, productos y servicios, cotizaciones, facturas y 
 - No se deben inventar precios, clientes, testimonios, cifras de rendimiento, compromisos de soporte ni capacidades futuras.
 - El lanzamiento utiliza un solo plan comercial, pero el repositorio no confirma una tarifa pública; la landing debe decirlo de forma explícita y derivar la consulta al proceso de revisión.
 - El rediseño de marketing no debe modificar el sistema autenticado, el backend, las APIs ni la lógica fiscal.
+- El rediseño autenticado “Mesa operativa” es una capa de presentación: no elimina rutas, opciones, controles ni estados del sistema existente.
 
 ## Brand Commitments
 
