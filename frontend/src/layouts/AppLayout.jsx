@@ -356,7 +356,7 @@ export default function AppLayout() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
           className={cn(
-            'app-topbar sticky top-0 z-30 grid min-h-[72px] flex-shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-[var(--color-border)] bg-[rgba(255,255,255,0.94)] px-4 backdrop-blur-[18px] transition-shadow duration-200 sm:px-6',
+            'app-topbar sticky top-0 z-30 grid min-h-[72px] flex-shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_94%,transparent)] px-4 backdrop-blur-[18px] transition-shadow duration-200 sm:px-6',
             isContentScrolled && 'shadow-[0_8px_20px_rgba(18,30,24,0.08)]',
           )}
         >
@@ -538,7 +538,7 @@ export default function AppLayout() {
               <div id="topbar-user-menu" className="absolute right-0 top-[calc(100%+10px)] z-50 w-[300px] overflow-hidden rounded-[18px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-floating)]">
                 <div className="border-b border-[var(--color-border)] p-4">
                   <div className="flex items-center gap-3">
-                    <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#e3e941] to-[#7cc63f] text-[14px] font-black text-white">
+                    <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl bg-[#a3e635] text-[14px] font-black text-[#243b0b]">
                       {userInitial}
                     </span>
                     <div className="min-w-0">
@@ -592,7 +592,7 @@ export default function AppLayout() {
             </div>
 
             <button
-              className="hidden items-center gap-2 rounded-[18px] bg-[var(--color-dark-btn)] px-4 py-3 text-[14px] font-extrabold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 sm:flex lg:px-6 lg:text-[16px]"
+              className="hidden items-center gap-2 rounded-[18px] bg-[var(--color-primary)] px-4 py-3 text-[14px] font-extrabold text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 sm:flex lg:px-6 lg:text-[16px]"
               type="button"
               onClick={() => navigate('/comprobantes/nuevo')}
               aria-label="Crear comprobante"
@@ -603,7 +603,7 @@ export default function AppLayout() {
               </span>
             </button>
             <button
-              className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-[13px] bg-[var(--color-dark-btn)] text-white shadow-[var(--shadow-soft)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 sm:hidden"
+              className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-[13px] bg-[var(--color-primary)] text-[var(--color-primary-text)] shadow-[var(--shadow-soft)] transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 sm:hidden"
               type="button"
               onClick={() => navigate('/comprobantes/nuevo')}
               aria-label="Crear comprobante"
