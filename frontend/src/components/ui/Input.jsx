@@ -24,7 +24,7 @@ export default function Input({
           'placeholder:text-[var(--color-text-soft)]',
           error
             ? 'border-[var(--color-danger)] focus:shadow-[0_0_0_4px_rgba(220,38,38,0.09)]'
-            : 'border-[var(--color-border)] focus:border-[var(--color-primary)] focus:shadow-[0_0_0_4px_rgba(163,230,53,0.16)]'
+            : 'border-[var(--color-border)] focus:border-[var(--color-primary)] focus:shadow-[0_0_0_4px_rgba(37,99,235,0.09)]'
         )}
         {...props}
       />

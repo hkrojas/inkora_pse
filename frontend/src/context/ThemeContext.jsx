@@ -110,7 +110,7 @@ export function ThemeProvider({ children }) {
     if (isOperationalSurface) {
       root.style.setProperty(
         '--theme-transition-color',
-        resolvedTheme === 'dark' ? '#101610' : '#f3f6f1',
+        resolvedTheme === 'dark' ? '#0f1a10' : '#eef1f4',
       );
       root.classList.add('theme-switching', 'theme-switching--operational');
     } else {
@@ -155,7 +155,7 @@ export function ThemeProvider({ children }) {
     if (meta) {
       meta.setAttribute(
         'content',
-        resolvedTheme === 'dark' ? '#101610' : '#f3f6f1'
+        resolvedTheme === 'dark' ? '#0f1a10' : '#eef1f4'
       );
     }
 

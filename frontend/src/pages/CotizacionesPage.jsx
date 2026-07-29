@@ -1934,7 +1934,7 @@ return (
                                 value={line.color}
                                 onChange={(val) => updateObservationLine(index, { color: val })}
                                 fallback={index === 0 ? '#DC2626' : '#111111'}
-                                presets={['#DC2626', '#D97706', '#111111', '#a3e635']}
+                                presets={['#DC2626', '#D97706', '#111111', '#8DC63F']}
                                 openUpward
                               />
                             </span>

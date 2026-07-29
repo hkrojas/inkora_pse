@@ -176,7 +176,7 @@ export default function Sidebar() {
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          className="fixed left-3 top-3 z-40 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-[var(--color-sidebar)] text-white shadow-[var(--shadow-floating)] lg:hidden"
+          className="fixed left-3 top-3 z-40 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-[#102b16] text-white shadow-[var(--shadow-floating)] lg:hidden"
           aria-label="Abrir menú"
         >
           <Menu size={18} />
@@ -192,7 +192,7 @@ export default function Sidebar() {
 
       <aside
         className={cn(
-          'group/sidebar flex flex-shrink-0 flex-col bg-[var(--color-sidebar)] transition-[width,transform] duration-300',
+          'group/sidebar flex flex-shrink-0 flex-col bg-[linear-gradient(180deg,#102b16_0%,#0d2212_100%)] transition-[width,transform] duration-300',
           isMobile
             ? 'fixed inset-y-0 left-0 z-50 w-[264px] shadow-[var(--shadow-floating)] transition-transform duration-300'
             : 'sticky top-0 h-screen',
@@ -226,7 +226,7 @@ export default function Sidebar() {
             type="button"
             onClick={handleToggle}
             className={cn(
-              'mx-3 mb-3 inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--color-sidebar-border)] px-3 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--color-sidebar-text)] transition-colors hover:bg-white/[0.06] hover:text-white',
+              'mx-3 mb-3 inline-flex h-9 items-center gap-2 rounded-xl border border-white/[0.08] px-3 text-[10px] font-black uppercase tracking-[0.1em] text-white/50 transition-colors hover:bg-white/[0.05] hover:text-white/70',
               showCollapsed && 'justify-center px-0',
             )}
           >
@@ -239,7 +239,7 @@ export default function Sidebar() {
           {groups.map((group) => (
             <div key={group.id}>
               <div className={cn(
-                'px-3 pb-1.5 pt-3 text-[9px] font-black uppercase tracking-[0.14em] text-[var(--color-sidebar-section)]',
+                'px-3 pb-1.5 pt-3 text-[9px] font-black uppercase tracking-[0.14em] text-white/25',
                 showCollapsed && 'px-1 text-center',
               )}>
                 {showCollapsed ? '·' : group.label}
@@ -259,17 +259,17 @@ export default function Sidebar() {
                       'sidebar-item mb-0.5 flex items-center gap-2.5 rounded-[11px] px-3 py-[9px] text-[13px] transition-all duration-[150ms]',
                       showCollapsed && 'justify-center px-0',
                       isActive
-                        ? 'is-active bg-[var(--color-sidebar-active-bg)] font-bold text-[var(--color-sidebar-text-active)]'
-                        : 'font-medium text-[var(--color-sidebar-text)] hover:bg-white/[0.06] hover:text-white',
+                        ? 'is-active bg-[rgba(132,204,63,0.14)] font-bold text-white'
+                        : 'font-medium text-white/55 hover:bg-white/[0.04] hover:text-white/80',
                     )}
                   >
                     <Icon
                       size={15}
-                      className={cn('flex-shrink-0', isActive ? 'text-[#a3e635]' : 'text-white/55')}
+                      className={cn('flex-shrink-0', isActive ? 'text-[#a3e635]' : 'text-white/40')}
                     />
                     {!showCollapsed && <span className="truncate">{label}</span>}
                     {!showCollapsed && accent && isActive && (
-                      <span className="ml-auto flex-shrink-0 rounded-full bg-[#a3e635]/20 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-[#b8eb62]">
+                      <span className="ml-auto flex-shrink-0 rounded-full bg-[#8DC63F]/20 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-[#8DC63F]">
                         SA
                       </span>
                     )}
@@ -280,7 +280,7 @@ export default function Sidebar() {
           ))}
         </nav>
 
-        <div className="space-y-1.5 border-t border-[var(--color-sidebar-border)] p-2.5">
+        <div className="border-t border-white/[0.07] p-2.5 space-y-1.5">
           <button
             type="button"
             onClick={(event) => toggleTheme(event)}
@@ -290,7 +290,7 @@ export default function Sidebar() {
             }
             onMouseLeave={hideTooltip}
             className={cn(
-              'flex w-full items-center gap-2 rounded-[11px] border border-[var(--color-sidebar-border)] px-3 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--color-sidebar-text)] transition-colors hover:bg-white/[0.06] hover:text-white',
+              'flex w-full items-center gap-2 rounded-[11px] border border-white/[0.08] px-3 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-white/40 transition-colors hover:bg-white/[0.05] hover:text-white/65',
               showCollapsed && 'justify-center px-0',
             )}
             aria-label="Cambiar tema"
@@ -309,7 +309,7 @@ export default function Sidebar() {
             onMouseEnter={(event) => showCollapsed && showTooltip(event, 'Cerrar sesión')}
             onMouseLeave={hideTooltip}
           >
-            <div className="grid h-[32px] w-[32px] flex-shrink-0 place-items-center rounded-full bg-[#a3e635] text-[11px] font-black text-[#243b0b]">
+            <div className="grid h-[32px] w-[32px] flex-shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#e3e941] to-[#7cc63f] text-[11px] font-black text-white">
               {userInitial}
             </div>
             {!showCollapsed && (
@@ -318,7 +318,7 @@ export default function Sidebar() {
                   <p className="truncate text-[12px] font-bold text-white leading-tight">
                     {user?.nombre_completo || user?.email}
                   </p>
-                  <p className="truncate text-[10px] capitalize leading-tight text-white/60">{roleLabel}</p>
+                  <p className="truncate text-[10px] capitalize text-white/40 leading-tight">{roleLabel}</p>
                 </div>
                 <button
                   type="button"
@@ -338,7 +338,7 @@ export default function Sidebar() {
       {tooltip &&
         createPortal(
           <div
-            className="pointer-events-none fixed z-[60] -translate-y-1/2 rounded-lg bg-[#172019] px-2.5 py-1.5 text-xs font-bold text-white shadow-[var(--shadow-floating)]"
+            className="pointer-events-none fixed z-[60] -translate-y-1/2 rounded-lg bg-[#102b16] px-2.5 py-1.5 text-xs font-bold text-white shadow-[var(--shadow-floating)]"
             style={{ top: tooltip.y, left: tooltip.x }}
           >
             {tooltip.label}

@@ -2,8 +2,8 @@ import { cn } from '../../lib/utils/cn';
 
 const variants = {
   draft: 'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]',
-  sent: 'bg-[var(--color-warning-soft)] text-[var(--color-warning-text)]',
-  accepted: 'bg-[var(--color-success-soft)] text-[var(--color-success-text)]',
+  sent: 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]',
+  accepted: 'bg-[var(--color-purple-soft)] text-[var(--color-purple-text)]',
   paid: 'bg-[var(--color-success-soft)] text-[var(--color-success-text)]',
   partial: 'bg-[var(--color-warning-soft)] text-[var(--color-warning-text)]',
   overdue: 'bg-[var(--color-danger-soft)] text-[var(--color-danger-text)]',
@@ -14,15 +14,15 @@ const variants = {
   warning: 'bg-[var(--color-warning-soft)] text-[var(--color-warning-text)]',
   danger: 'bg-[var(--color-danger-soft)] text-[var(--color-danger-text)]',
   error: 'bg-[var(--color-danger-soft)] text-[var(--color-danger-text)]',
-  info: 'bg-[var(--color-primary-soft)] text-[var(--color-primary-text)]',
-  brand: 'bg-[var(--color-primary-soft)] text-[var(--color-primary-text)]',
+  info: 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]',
+  brand: 'bg-[var(--color-purple-soft)] text-[var(--color-purple-text)]',
   outline: 'border border-[var(--color-border)] text-[var(--color-text-muted)]',
   pending: 'bg-[var(--color-warning-soft)] text-[var(--color-warning-text)]',
   rejected: 'bg-[var(--color-danger-soft)] text-[var(--color-danger-text)]',
   observed: 'bg-[var(--color-warning-soft)] text-[var(--color-warning-text)]',
   activo: 'bg-[var(--color-success-soft)] text-[var(--color-success-text)]',
   inactivo: 'bg-[var(--color-danger-soft)] text-[var(--color-danger-text)]',
-  trial: 'bg-[var(--color-warning-soft)] text-[var(--color-warning-text)]',
+  trial: 'bg-[var(--color-purple-soft)] text-[var(--color-purple-text)]',
   facturado: 'bg-[var(--color-success-soft)] text-[var(--color-success-text)]',
 };
 
