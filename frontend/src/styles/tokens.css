@@ -29,14 +29,14 @@
   --color-primary-text: #243b0b;
 
   /* === Sidebar === */
-  --color-sidebar: #172019;
-  --color-sidebar-dark: #101610;
+  --color-sidebar: #243b0b;
+  --color-sidebar-dark: #1b2d0c;
   --color-sidebar-accent: #a3e635;
-  --color-sidebar-border: rgba(255, 255, 255, 0.07);
-  --color-sidebar-text: rgba(255, 255, 255, 0.48);
+  --color-sidebar-border: rgba(255, 255, 255, 0.1);
+  --color-sidebar-text: rgba(255, 255, 255, 0.68);
   --color-sidebar-text-active: #ffffff;
-  --color-sidebar-active-bg: rgba(163, 230, 53, 0.14);
-  --color-sidebar-section: rgba(255, 255, 255, 0.25);
+  --color-sidebar-active-bg: rgba(163, 230, 53, 0.18);
+  --color-sidebar-section: rgba(255, 255, 255, 0.52);
 
   /* === Accent === */
   --color-accent-orange: #985407;
