@@ -105,9 +105,11 @@ export default function Login() {
               <Link to="/recuperar-password" className="auth-text-link">Olvidé mi contraseña</Link>
             </div>
 
-            <button type="submit" className="auth-primary-action" disabled={submitting}>
-              <span>{submitting ? 'Ingresando…' : 'Iniciar sesión'}</span>
-              {submitting ? <Loader2 size={18} className="login-spin" /> : <ArrowRight size={18} />}
+            <button type="submit" className="auth-primary-action auth-primary-action--route" disabled={submitting}>
+              <span className="auth-primary-action__label">{submitting ? 'Ingresando…' : 'Iniciar sesión'}</span>
+              <span className="auth-primary-action__route-icon" aria-hidden="true">
+                {submitting ? <Loader2 size={18} className="login-spin" /> : <ArrowRight size={18} />}
+              </span>
             </button>
 
             <p className="auth-switch-copy">

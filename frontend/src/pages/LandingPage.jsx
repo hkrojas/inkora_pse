@@ -118,6 +118,15 @@ function Brand() {
   );
 }
 
+function RouteAction({ children, iconSize = 17 }) {
+  return (
+    <>
+      <span className="landing-button__label">{children}</span>
+      <span className="landing-button__route-icon" aria-hidden="true"><ArrowRight size={iconSize} /></span>
+    </>
+  );
+}
+
 function ThemeToggle({ theme, onToggle, compact = false }) {
   const isDark = theme === 'dark';
   return (
@@ -210,7 +219,7 @@ function Header({ theme, onToggleTheme }) {
         <div className="landing-header__actions">
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
           <a href="/login" className="landing-login-link">Iniciar sesión</a>
-          <a href="/solicitar-acceso" className="landing-button landing-button--primary">Solicitar acceso <ArrowRight size={15} /></a>
+          <a href="/solicitar-acceso" className="landing-button landing-button--primary landing-button--route"><RouteAction iconSize={15}>Solicitar acceso</RouteAction></a>
         </div>
         <button ref={menuButton} type="button" className="landing-menu-button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-controls="landing-mobile-menu" aria-label={open ? 'Cerrar menú' : 'Abrir menú'}>
           {open ? <X size={22} /> : <Menu size={22} />}
@@ -252,7 +261,7 @@ function Hero() {
           <h1>De la cotización al cobro, <span>sin perder el hilo.</span></h1>
           <p className="landing-hero__lead">Inkora conecta ventas, comprobantes electrónicos, inventario y cobranza en una sola operación.</p>
           <div className="landing-hero__actions">
-            <a href="/solicitar-acceso" className="landing-button landing-button--primary">Solicitar acceso <ArrowRight size={17} /></a>
+            <a href="/solicitar-acceso" className="landing-button landing-button--primary landing-button--route"><RouteAction>Solicitar acceso</RouteAction></a>
             <a href="#recorrido" className="landing-button landing-button--text">Ver cómo funciona <ArrowDown size={16} /></a>
           </div>
           <p className="landing-hero__note"><span aria-hidden="true">↳</span> Una solicitud inicia el proceso de revisión; el acceso está sujeto a aprobación.</p>
@@ -438,7 +447,7 @@ function GettingStarted() {
         <ol>
           {steps.map(([title, copy], index) => <li key={title}><span>{index + 1}</span><div><h3>{title}</h3><p>{copy}</p></div>{index < 2 && <ArrowRight aria-hidden="true" />}</li>)}
         </ol>
-        <a href="/solicitar-acceso" className="landing-button landing-button--primary">Solicitar acceso <ArrowRight size={17} /></a>
+        <a href="/solicitar-acceso" className="landing-button landing-button--primary landing-button--route"><RouteAction>Solicitar acceso</RouteAction></a>
       </div>
     </section>
   );
@@ -630,7 +639,7 @@ function Pricing() {
           <ul>{included.map((item) => <li key={item}><Check size={16} /> <span>{item}</span></li>)}</ul>
           <div className="landing-plan__action">
             <p>Solicita acceso para conocer la condición comercial vigente antes de la habilitación.</p>
-            <a href="/solicitar-acceso" className="landing-button landing-button--primary">Solicitar acceso <ArrowRight size={17} /></a>
+            <a href="/solicitar-acceso" className="landing-button landing-button--primary landing-button--route"><RouteAction>Solicitar acceso</RouteAction></a>
           </div>
         </article>
       </div>
@@ -655,7 +664,7 @@ function FinalCTA() {
       <div className="landing-shell landing-final__inner">
         <svg viewBox="0 0 1100 150" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 76 H760 Q820 76 820 122 H1070" /><circle cx="1070" cy="122" r="10" /></svg>
         <div><p>El siguiente paso</p><h2 id="final-title">Que tu próxima venta no pierda el hilo.</h2></div>
-        <div><a href="/solicitar-acceso" className="landing-button landing-button--dark">Solicitar acceso <ArrowRight size={18} /></a><span>Sujeto a revisión y aprobación.</span></div>
+        <div><a href="/solicitar-acceso" className="landing-button landing-button--dark landing-button--route"><RouteAction iconSize={18}>Solicitar acceso</RouteAction></a><span>Sujeto a revisión y aprobación.</span></div>
       </div>
     </section>
   );

@@ -294,7 +294,10 @@ export default function AccessRequestPage() {
                   <button type="button" className="auth-secondary-action" onClick={() => moveToStep(Math.max(1, step - 1))} disabled={step === 1}><ArrowLeft size={16} />Anterior</button>
                   <p><span>Paso {step} de 3</span><small>Alta sujeta a aprobación.</small></p>
                   {step < 3 ? (
-                    <button type="button" className="auth-primary-action auth-primary-action--compact" onClick={nextStep}>Continuar<ArrowRight size={17} /></button>
+                    <button type="button" className="auth-primary-action auth-primary-action--compact auth-primary-action--route" onClick={nextStep}>
+                      <span className="auth-primary-action__label">Continuar</span>
+                      <span className="auth-primary-action__route-icon" aria-hidden="true"><ArrowRight size={17} /></span>
+                    </button>
                   ) : (
                     <button type="submit" className="auth-primary-action auth-primary-action--compact" disabled={submitting}>{submitting ? <Spinner size="sm" /> : <Send size={17} />}{submitting ? 'Enviando…' : 'Enviar solicitud'}</button>
                   )}
