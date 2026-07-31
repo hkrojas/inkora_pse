@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import Button from '../components/ui/Button';
 import CustomSelect from '../components/ui/CustomSelect';
+import DatePicker from '../components/ui/DatePicker';
 import Drawer from '../components/ui/Drawer';
 import EmptyState from '../components/ui/EmptyState';
 import OperationalPageHeader from '../components/ui/OperationalPageHeader';
@@ -26,6 +27,30 @@ const tabs = [
   { id: 'returns', label: 'Devoluciones', icon: RotateCcw },
 ];
 const labels = { ok: 'Disponible', low: 'Stock bajo', out: 'Sin existencias', negative: 'Stock negativo' };
+const stockStatusOptions = [
+  { value: 'all', label: 'Todos los estados' },
+  { value: 'available', label: 'Disponible' },
+  { value: 'out', label: 'Sin stock' },
+  { value: 'low', label: 'Stock bajo' },
+  { value: 'negative', label: 'Negativo' },
+];
+const movementDirectionOptions = [
+  { value: '', label: 'Entradas y salidas' },
+  { value: 'entry', label: 'Solo entradas' },
+  { value: 'exit', label: 'Solo salidas' },
+];
+const movementTypeOptions = [
+  { value: '', label: 'Todos los tipos' },
+  { value: 'sale_out', label: 'Venta' },
+  { value: 'opening', label: 'Apertura' },
+  { value: 'opening_adjustment', label: 'Entrada manual' },
+  { value: 'adjustment', label: 'Ajuste' },
+  { value: 'bulk_entry', label: 'Carga masiva' },
+  { value: 'physical_count', label: 'Conteo físico' },
+  { value: 'transfer_in', label: 'Transferencia recibida' },
+  { value: 'transfer_out', label: 'Transferencia enviada' },
+  { value: 'return_received', label: 'Devolución recibida' },
+];
 const qty = (value) => Number(value || 0).toLocaleString('es-PE', { maximumFractionDigits: 4 });
 
 function Metric({ label, value, description, icon: Icon, tone = 'neutral' }) {
@@ -488,8 +513,8 @@ export default function InventarioPage() {
           <div className="inventory-toolbar">
             <label className="inventory-search"><Search size={16} /><span className="sr-only">Buscar existencias</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar producto, SKU o almacén" /></label>
             <div className="inventory-filter-row">
-              <select aria-label="Filtrar por almacén" value={stockWarehouse} onChange={(event) => setStockWarehouse(event.target.value)}><option value="">Todos los almacenes</option>{warehouses.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
-              <select aria-label="Filtrar por estado de stock" value={stockStatus} onChange={(event) => setStockStatus(event.target.value)}><option value="all">Todos los estados</option><option value="available">Disponible</option><option value="out">Sin stock</option><option value="low">Stock bajo</option><option value="negative">Negativo</option></select>
+              <CustomSelect compact className="inventory-filter-select" ariaLabel="Filtrar por almacén" value={stockWarehouse} onChange={setStockWarehouse} options={[{ value: '', label: 'Todos los almacenes' }, ...warehouses.map((row) => ({ value: row.id, label: row.name }))]} />
+              <CustomSelect compact className="inventory-filter-select" ariaLabel="Filtrar por estado de stock" value={stockStatus} onChange={setStockStatus} options={stockStatusOptions} />
             </div>
           </div>
           {filtered.length === 0 ? <div className="p-8"><EmptyState icon={<PackageCheck size={22} />} title={query ? 'No encontramos productos' : 'Aún no hay productos registrados'} description={query ? 'Prueba con otro nombre, SKU o almacén.' : 'Los productos nuevos aparecerán aquí automáticamente con stock cero.'} /></div> : (
@@ -504,7 +529,7 @@ export default function InventarioPage() {
                       <td className="is-number"><strong>{qty(row.on_hand)}</strong></td>
                       <td className="is-number">{qty(row.committed)}</td>
                       <td className="is-number is-available"><span className="inventory-balance-chip"><strong>{qty(row.available)}</strong><small>{row.unit}</small></span></td>
-                      <td><div className="inventory-status-cell"><StockStatus status={row.status} /><small>Mín. {qty(row.minimum_stock)}</small></div></td>
+                      <td><div className="inventory-status-cell"><StockStatus status={row.status} />{Number(row.minimum_stock) > 0 && <small>Mín. {qty(row.minimum_stock)}</small>}</div></td>
                       <td className="is-action"><div className="inventory-row-actions"><button type="button" onClick={() => openProductHistory(row)} className="inventory-stock-action"><ClipboardList size={13} />Historial</button>{isAdmin && <button type="button" onClick={() => openStock(row)} className="inventory-stock-action"><Plus size={13} />Stock</button>}</div></td>
                     </tr>
                   ))}</tbody>
@@ -515,7 +540,7 @@ export default function InventarioPage() {
                   <div className="inventory-stock-card__head"><div><p>{row.product_name}</p><span>{row.product_code || 'Sin SKU'} · {row.unit}</span></div><StockStatus status={row.status} /></div>
                   <p className="inventory-stock-card__warehouse"><Warehouse size={14} />{row.warehouse_name}</p>
                   <dl><div><dt>Actual</dt><dd>{qty(row.on_hand)}</dd></div><div><dt>Comprometido</dt><dd>{qty(row.committed)}</dd></div><div><dt>Disponible</dt><dd>{qty(row.available)}</dd></div></dl>
-                  <div className="inventory-stock-card__foot"><span>Stock mínimo: {qty(row.minimum_stock)}</span><div className="inventory-row-actions"><button type="button" onClick={() => openProductHistory(row)}><ClipboardList size={13} />Historial</button>{isAdmin && <button type="button" onClick={() => openStock(row)}><Plus size={13} />Stock</button>}</div></div>
+                  <div className="inventory-stock-card__foot">{Number(row.minimum_stock) > 0 && <span>Stock mínimo: {qty(row.minimum_stock)}</span>}<div className="inventory-row-actions"><button type="button" onClick={() => openProductHistory(row)}><ClipboardList size={13} />Historial</button>{isAdmin && <button type="button" onClick={() => openStock(row)}><Plus size={13} />Stock</button>}</div></div>
                 </article>
               ))}</div>
               <div className="inventory-list-footer">
@@ -531,13 +556,13 @@ export default function InventarioPage() {
         <section className="inventory-panel">
           <PanelHeading eyebrow="Trazabilidad" title="Kardex de movimientos" description="Cada entrada y salida conserva su documento o motivo de origen y el saldo resultante." meta={`${movementTotal} movimientos`} />
           <div className="inventory-kardex-filters">
-            <label>Producto<select value={movementFilters.product_id} onChange={(event) => setMovementFilters({ ...movementFilters, product_id: event.target.value })}><option value="">Todos los productos</option>{uniqueProducts.map((row) => <option key={row.product_id} value={row.product_id}>{row.product_name}</option>)}</select></label>
-            <label>Almacén<select value={movementFilters.warehouse_id} onChange={(event) => setMovementFilters({ ...movementFilters, warehouse_id: event.target.value })}><option value="">Todos</option>{warehouses.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
-            <label>Movimiento<select value={movementFilters.direction} onChange={(event) => setMovementFilters({ ...movementFilters, direction: event.target.value })}><option value="">Entradas y salidas</option><option value="entry">Solo entradas</option><option value="exit">Solo salidas</option></select></label>
-            <label>Origen<select value={movementFilters.movement_type} onChange={(event) => setMovementFilters({ ...movementFilters, movement_type: event.target.value })}><option value="">Todos los tipos</option><option value="sale_out">Venta</option><option value="opening">Apertura</option><option value="opening_adjustment">Entrada manual</option><option value="adjustment">Ajuste</option><option value="bulk_entry">Carga masiva</option><option value="physical_count">Conteo físico</option><option value="transfer_in">Transferencia recibida</option><option value="transfer_out">Transferencia enviada</option><option value="return_received">Devolución recibida</option></select></label>
-            <label>Desde<input type="date" value={movementFilters.desde} onChange={(event) => setMovementFilters({ ...movementFilters, desde: event.target.value })} /></label>
-            <label>Hasta<input type="date" value={movementFilters.hasta} onChange={(event) => setMovementFilters({ ...movementFilters, hasta: event.target.value })} /></label>
-            <label className="inventory-document-filter">Factura o boleta<input value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} placeholder="Ej. F001-58" />{documentSearchLoading && <small>Buscando…</small>}{documentOptions.length > 0 && <select aria-label="Seleccionar comprobante" value={movementFilters.document_id} onChange={(event) => setMovementFilters({ ...movementFilters, document_id: event.target.value })}><option value="">Selecciona una coincidencia</option>{documentOptions.map((row) => <option key={row.id} value={row.id}>{row.document_number}</option>)}</select>}</label>
+            <label>Producto<CustomSelect compact ariaLabel="Filtrar kardex por producto" value={movementFilters.product_id} onChange={(value) => setMovementFilters({ ...movementFilters, product_id: value })} options={[{ value: '', label: 'Todos los productos' }, ...uniqueProducts.map((row) => ({ value: row.product_id, label: row.product_name }))]} /></label>
+            <label>Almacén<CustomSelect compact ariaLabel="Filtrar kardex por almacén" value={movementFilters.warehouse_id} onChange={(value) => setMovementFilters({ ...movementFilters, warehouse_id: value })} options={[{ value: '', label: 'Todos' }, ...warehouses.map((row) => ({ value: row.id, label: row.name }))]} /></label>
+            <label>Movimiento<CustomSelect compact ariaLabel="Filtrar kardex por dirección" value={movementFilters.direction} onChange={(value) => setMovementFilters({ ...movementFilters, direction: value })} options={movementDirectionOptions} /></label>
+            <label>Origen<CustomSelect compact ariaLabel="Filtrar kardex por origen" value={movementFilters.movement_type} onChange={(value) => setMovementFilters({ ...movementFilters, movement_type: value })} options={movementTypeOptions} /></label>
+            <label>Desde<DatePicker compact value={movementFilters.desde} onChange={(value) => setMovementFilters({ ...movementFilters, desde: value })} /></label>
+            <label>Hasta<DatePicker compact value={movementFilters.hasta} onChange={(value) => setMovementFilters({ ...movementFilters, hasta: value })} /></label>
+            <label className="inventory-document-filter">Factura o boleta<input value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} placeholder="Ej. F001-58" />{documentSearchLoading && <small>Buscando…</small>}{documentOptions.length > 0 && <CustomSelect compact ariaLabel="Seleccionar comprobante" value={movementFilters.document_id} onChange={(value) => setMovementFilters({ ...movementFilters, document_id: value })} options={[{ value: '', label: 'Selecciona una coincidencia' }, ...documentOptions.map((row) => ({ value: row.id, label: row.document_number }))]} />}</label>
             {Object.values(movementFilters).some(Boolean) && <button type="button" className="inventory-clear-filters" onClick={clearMovementFilters}><X size={13} />Limpiar</button>}
           </div>
           {movements.length === 0 ? <div className="p-8"><EmptyState icon={<ClipboardList size={22} />} title="El kardex está vacío" description="Aperturas, ventas aceptadas, ajustes y transferencias aparecerán aquí." /></div> : <>
@@ -632,10 +657,10 @@ export default function InventarioPage() {
         <form id="warehouse-edit-form" onSubmit={submitWarehouseEdit} className="inventory-action-form"><section className="inventory-form-section"><div className="inventory-form-section__heading"><span><Warehouse size={14} /></span><div><h3>Datos de la ubicación</h3><p>El código se conserva para no perder referencias históricas.</p></div></div><label>Código<input disabled className="input mt-1" value={warehouseForm.code} /></label><label>Nombre<input required minLength={2} className="input mt-1" value={warehouseForm.name} onChange={(event) => setWarehouseForm({ ...warehouseForm, name: event.target.value })} /></label><label>Dirección o referencia<input className="input mt-1" value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} /></label></section><label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_default} disabled={editingWarehouse?.is_default} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_default: event.target.checked })} /><span><strong>Usar como almacén principal</strong><small>{editingWarehouse?.is_default ? 'Este almacén ya es el principal.' : 'Reemplazará al almacén principal actual.'}</small></span></label></form>
       </Drawer>
 
-      <Drawer open={modal === 'bulk'} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Operación por lote" status="Vista previa obligatoria" initialFocus="select" title="Carga masiva de existencias" subtitle="Registra varios productos en una sola operación trazable." icon={<Upload size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="bulk-stock-form" className="btn-primary" disabled={saving || !Object.values(bulk.quantities).some((value) => value !== '')}>{saving ? 'Procesando…' : 'Confirmar carga'}</button></>}>
+      <Drawer open={modal === 'bulk'} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Operación por lote" status="Vista previa obligatoria" initialFocus=".ink-select-trigger" title="Carga masiva de existencias" subtitle="Registra varios productos en una sola operación trazable." icon={<Upload size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="bulk-stock-form" className="btn-primary" disabled={saving || !Object.values(bulk.quantities).some((value) => value !== '')}>{saving ? 'Procesando…' : 'Confirmar carga'}</button></>}>
         <form id="bulk-stock-form" onSubmit={submitBulk} className="inventory-action-form inventory-bulk-form">
           <section className="inventory-form-section inventory-bulk-setup">
-            <div className="inventory-form-grid"><label>Almacén<select className="input mt-1" required value={bulk.warehouse_id} onChange={(event) => setBulk({ ...bulk, warehouse_id: event.target.value, quantities: {} })}>{warehouses.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label><label>Tipo de carga<select className="input mt-1" value={bulk.mode} onChange={(event) => setBulk({ ...bulk, mode: event.target.value, quantities: {} })}><option value="add">Sumar entrada</option><option value="set">Conteo físico final</option></select></label></div>
+            <div className="inventory-form-grid"><label>Almacén<CustomSelect required ariaLabel="Almacén para carga masiva" value={bulk.warehouse_id} onChange={(value) => setBulk({ ...bulk, warehouse_id: value, quantities: {} })} placeholder="Selecciona un almacén" options={warehouses.map((row) => ({ value: row.id, label: row.name }))} /></label><label>Tipo de carga<CustomSelect ariaLabel="Tipo de carga masiva" value={bulk.mode} onChange={(value) => setBulk({ ...bulk, mode: value, quantities: {} })} options={[{ value: 'add', label: 'Sumar entrada' }, { value: 'set', label: 'Conteo físico final' }]} /></label></div>
             <label>Motivo<textarea required minLength={3} className="input mt-1 min-h-20" value={bulk.reason} onChange={(event) => setBulk({ ...bulk, reason: event.target.value })} /></label>
             <div className="inventory-import-actions"><button type="button" onClick={downloadTemplate}><Download size={14} />Descargar plantilla</button><label><Upload size={14} />Importar CSV/XLSX<input type="file" accept=".csv,.xlsx" onChange={previewImport} /></label></div>
             {importErrors.length > 0 && <div className="inventory-import-errors"><strong>{importErrors.length} filas necesitan corrección</strong>{importErrors.slice(0, 5).map((error) => <span key={`${error.fila}-${error.campo}`}>Fila {error.fila}: {error.mensaje}</span>)}</div>}
