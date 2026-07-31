@@ -116,6 +116,28 @@ def _parse_rows(ext: str, raw_bytes: bytes) -> list[dict]:
     return _rows_from_excel(raw_bytes)
 
 
+def parse_inventory_stock(ext: str, raw_bytes: bytes) -> tuple[list[dict], list[dict]]:
+    """Parsea una carga de stock sin persistirla."""
+    validas, errores = [], []
+    for index, raw in enumerate(_parse_rows(ext, raw_bytes), start=2):
+        row = _normalize_row(raw)
+        code = _get_field(row, "codigo_interno", "sku", "codigo")
+        name = _get_field(row, "producto", "nombre", "product_name")
+        quantity_raw = _get_field(row, "cantidad", "quantity", "stock")
+        if not code and not name:
+            errores.append({"fila": index, "campo": "producto", "mensaje": "Indica SKU o nombre del producto."})
+            continue
+        try:
+            quantity = Decimal(quantity_raw)
+            if quantity < 0:
+                raise InvalidOperation
+        except (InvalidOperation, ValueError):
+            errores.append({"fila": index, "campo": "cantidad", "mensaje": "La cantidad debe ser un numero mayor o igual a cero."})
+            continue
+        validas.append({"fila": index, "codigo_interno": code, "nombre": name, "quantity": quantity})
+    return validas, errores
+
+
 def _normalize_row(row: dict) -> dict:
     """Normaliza claves: lower + strip."""
     return {k.lower().strip(): _str(v) for k, v in row.items()}

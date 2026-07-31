@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowDown, ArrowLeftRight, ArrowUp, Boxes, ClipboardList,
-  MapPin, PackageCheck, PackageMinus, Plus, RefreshCw, RotateCcw, Search, Warehouse,
+  Download, MapPin, PackageCheck, PackageMinus, Pencil, Plus, RefreshCw, RotateCcw,
+  Search, Upload, Warehouse, X,
 } from 'lucide-react';
 import Button from '../components/ui/Button';
 import CustomSelect from '../components/ui/CustomSelect';
@@ -95,7 +96,8 @@ export default function InventarioPage() {
   const toast = useToast();
   const isAdmin = user?.is_superadmin || user?.rol === 'admin';
   const canOperate = isAdmin || user?.rol === 'operador';
-  const [tab, setTab] = useState('stock');
+  const initialParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const [tab, setTab] = useState(() => initialParams.get('tab') || 'stock');
   const [stockPage, setStockPage] = useState(1);
   const [stock, setStock] = useState([]);
   const [movements, setMovements] = useState([]);
@@ -103,7 +105,21 @@ export default function InventarioPage() {
   const [movementPage, setMovementPage] = useState(1);
   const [warehouses, setWarehouses] = useState([]);
   const [returns, setReturns] = useState([]);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => initialParams.get('stock_q') || '');
+  const [stockStatus, setStockStatus] = useState(() => initialParams.get('stock_status') || 'all');
+  const [stockWarehouse, setStockWarehouse] = useState(() => initialParams.get('stock_warehouse') || '');
+  const [movementFilters, setMovementFilters] = useState(() => ({
+    product_id: initialParams.get('product_id') || '',
+    warehouse_id: initialParams.get('warehouse_id') || '',
+    document_id: initialParams.get('document_id') || '',
+    desde: initialParams.get('desde') || '',
+    hasta: initialParams.get('hasta') || '',
+    direction: initialParams.get('direction') || '',
+    movement_type: initialParams.get('movement_type') || '',
+  }));
+  const [documentQuery, setDocumentQuery] = useState('');
+  const [documentOptions, setDocumentOptions] = useState([]);
+  const [documentSearchLoading, setDocumentSearchLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -114,6 +130,9 @@ export default function InventarioPage() {
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [form, setForm] = useState({ warehouse_id: '', product_id: '', quantity: '', reason: '', movement_type: 'adjustment' });
   const [warehouseForm, setWarehouseForm] = useState({ code: '', name: '', location: '', is_default: false });
+  const [editingWarehouse, setEditingWarehouse] = useState(null);
+  const [bulk, setBulk] = useState({ warehouse_id: '', mode: 'add', reason: 'Carga masiva de existencias', query: '', quantities: {} });
+  const [importErrors, setImportErrors] = useState([]);
   const [config, setConfig] = useState({ product_id: '', warehouse_id: '', opening_stock: '0', minimum_stock: '0', item_type: 'inventory' });
   const [transfer, setTransfer] = useState({ source_warehouse_id: '', destination_warehouse_id: '', product_id: '', quantity: '', reason: '' });
   const [receipt, setReceipt] = useState({});
@@ -123,9 +142,11 @@ export default function InventarioPage() {
     setError('');
     try {
       const skip = (movementPage - 1) * PAGE_SIZE;
+      const movementParams = new URLSearchParams({ skip: String(skip), limit: String(PAGE_SIZE) });
+      Object.entries(movementFilters).forEach(([key, value]) => { if (value) movementParams.set(key, value); });
       const [stockRows, movementData, warehouseRows, returnRows] = await Promise.all([
         inventory.stock(),
-        inventory.movementsPage(`?skip=${skip}&limit=${PAGE_SIZE}`),
+        inventory.movementsPage(`?${movementParams.toString()}`),
         inventory.warehouses(),
         inventory.returns('?skip=0&limit=15'),
       ]);
@@ -139,9 +160,19 @@ export default function InventarioPage() {
     } finally {
       setLoading(false);
     }
-  }, [movementPage]);
+  }, [movementFilters, movementPage]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (tab !== 'stock') params.set('tab', tab);
+    if (query) params.set('stock_q', query);
+    if (stockStatus !== 'all') params.set('stock_status', stockStatus);
+    if (stockWarehouse) params.set('stock_warehouse', stockWarehouse);
+    Object.entries(movementFilters).forEach(([key, value]) => { if (value) params.set(key, value); });
+    const search = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}`);
+  }, [movementFilters, query, stockStatus, stockWarehouse, tab]);
   useEffect(() => {
     const searchTerm = productQuery.trim();
     if (searchTerm.length < 2) {
@@ -167,13 +198,39 @@ export default function InventarioPage() {
       controller.abort();
     };
   }, [productQuery]);
+  useEffect(() => {
+    const term = documentQuery.trim();
+    if (!term) {
+      setDocumentOptions([]);
+      setDocumentSearchLoading(false);
+      return undefined;
+    }
+    let active = true;
+    const controller = new AbortController();
+    setDocumentSearchLoading(true);
+    const timer = window.setTimeout(() => {
+      inventory.searchDocuments(term, 20, { signal: controller.signal })
+        .then((rows) => { if (active) setDocumentOptions(rows); })
+        .catch((requestError) => { if (active && !requestError?.isCanceled) setDocumentOptions([]); })
+        .finally(() => { if (active) setDocumentSearchLoading(false); });
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [documentQuery]);
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return term
-      ? stock.filter((row) => `${row.product_name} ${row.product_code || ''} ${row.warehouse_name}`.toLowerCase().includes(term))
-      : stock;
-  }, [query, stock]);
+    return stock.filter((row) => {
+      const matchesTerm = !term || `${row.product_name} ${row.product_code || ''} ${row.warehouse_name}`.toLowerCase().includes(term);
+      const matchesWarehouse = !stockWarehouse || String(row.warehouse_id) === String(stockWarehouse);
+      const expectedStatus = stockStatus === 'available' ? 'ok' : stockStatus;
+      const matchesStatus = stockStatus === 'all' || row.status === expectedStatus;
+      return matchesTerm && matchesWarehouse && matchesStatus;
+    });
+  }, [query, stock, stockStatus, stockWarehouse]);
   const stockPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginatedStock = useMemo(() => {
     const start = (stockPage - 1) * PAGE_SIZE;
@@ -196,7 +253,8 @@ export default function InventarioPage() {
     returns: returns.length,
   };
 
-  useEffect(() => { setStockPage(1); }, [query]);
+  useEffect(() => { setStockPage(1); }, [query, stockStatus, stockWarehouse]);
+  useEffect(() => { setMovementPage(1); }, [movementFilters]);
   useEffect(() => {
     if (stockPage > stockPages) setStockPage(stockPages);
   }, [stockPage, stockPages]);
@@ -252,6 +310,86 @@ export default function InventarioPage() {
     event.preventDefault();
     return run(() => inventory.createWarehouse(warehouseForm), 'Almacén creado.');
   };
+  const openWarehouseEdit = (row) => {
+    setEditingWarehouse(row);
+    setWarehouseForm({ code: row.code, name: row.name, location: row.location || '', is_default: row.is_default });
+    setModal('warehouse-edit');
+  };
+  const submitWarehouseEdit = (event) => {
+    event.preventDefault();
+    return run(
+      () => inventory.updateWarehouse(editingWarehouse.id, {
+        name: warehouseForm.name,
+        location: warehouseForm.location || null,
+        is_default: warehouseForm.is_default,
+      }),
+      'Almacén actualizado.',
+    );
+  };
+  const openProductHistory = (row) => {
+    setMovementFilters((current) => ({ ...current, product_id: String(row.product_id), warehouse_id: String(row.warehouse_id) }));
+    setTab('kardex');
+  };
+  const clearMovementFilters = () => {
+    setMovementFilters({ product_id: '', warehouse_id: '', document_id: '', desde: '', hasta: '', direction: '', movement_type: '' });
+    setDocumentQuery('');
+  };
+  const openBulk = () => {
+    setBulk({ warehouse_id: warehouses[0]?.id || '', mode: 'add', reason: 'Carga masiva de existencias', query: '', quantities: {} });
+    setImportErrors([]);
+    setModal('bulk');
+  };
+  const bulkRows = stock.filter((row) => String(row.warehouse_id) === String(bulk.warehouse_id)
+    && (!bulk.query.trim() || `${row.product_name} ${row.product_code || ''}`.toLowerCase().includes(bulk.query.trim().toLowerCase())));
+  const submitBulk = (event) => {
+    event.preventDefault();
+    const items = Object.entries(bulk.quantities)
+      .filter(([, value]) => value !== '' && Number(value) >= 0 && (bulk.mode === 'set' || Number(value) > 0))
+      .map(([productId, quantity]) => ({ product_id: Number(productId), quantity: Number(quantity) }));
+    if (!bulk.warehouse_id || items.length === 0) {
+      toast('Indica al menos una cantidad para procesar.', 'error');
+      return;
+    }
+    return run(() => inventory.bulkAdjust({
+      warehouse_id: Number(bulk.warehouse_id),
+      mode: bulk.mode,
+      reason: bulk.reason,
+      idempotency_key: window.crypto.randomUUID(),
+      items,
+    }), 'Carga masiva registrada en el kardex.');
+  };
+  const previewImport = async (event) => {
+    const [file] = event.target.files || [];
+    event.target.value = '';
+    if (!file) return;
+    setSaving(true);
+    try {
+      const preview = await inventory.previewImport(file);
+      setBulk((current) => ({
+        ...current,
+        quantities: Object.fromEntries((preview.items || []).map((item) => [item.product_id, String(item.quantity)])),
+      }));
+      setImportErrors(preview.errors || []);
+      toast(`${preview.items?.length || 0} productos listos para revisar.`, preview.errors?.length ? 'warning' : 'success');
+    } catch (err) {
+      toast(err.message || 'No se pudo leer el archivo.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const downloadTemplate = async () => {
+    try {
+      const { blob } = await inventory.downloadTemplate();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'plantilla_stock.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast(err.message || 'No se pudo descargar la plantilla.', 'error');
+    }
+  };
   const submitConfig = (event) => {
     event.preventDefault();
     if (!config.product_id || (config.item_type === 'inventory' && !config.warehouse_id)) {
@@ -306,6 +444,7 @@ export default function InventarioPage() {
         actions={<>
           <Button variant="secondary" onClick={load}><RefreshCw size={15} />Actualizar</Button>
           {isAdmin && warehouses.length > 0 && <Button variant="secondary" onClick={() => setModal('config')}><PackageCheck size={15} />Configurar producto</Button>}
+          {canOperate && stock.length > 0 && <Button variant="secondary" onClick={openBulk}><Upload size={15} />Carga masiva</Button>}
           {canOperate && stock.length > 0 && <Button onClick={openAdjustment}><Plus size={15} />Registrar movimiento</Button>}
         </>}
       />
@@ -348,13 +487,16 @@ export default function InventarioPage() {
           </div>
           <div className="inventory-toolbar">
             <label className="inventory-search"><Search size={16} /><span className="sr-only">Buscar existencias</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar producto, SKU o almacén" /></label>
-            <p><span aria-hidden="true" /> El stock disponible descuenta las unidades comprometidas.</p>
+            <div className="inventory-filter-row">
+              <select aria-label="Filtrar por almacén" value={stockWarehouse} onChange={(event) => setStockWarehouse(event.target.value)}><option value="">Todos los almacenes</option>{warehouses.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
+              <select aria-label="Filtrar por estado de stock" value={stockStatus} onChange={(event) => setStockStatus(event.target.value)}><option value="all">Todos los estados</option><option value="available">Disponible</option><option value="out">Sin stock</option><option value="low">Stock bajo</option><option value="negative">Negativo</option></select>
+            </div>
           </div>
           {filtered.length === 0 ? <div className="p-8"><EmptyState icon={<PackageCheck size={22} />} title={query ? 'No encontramos productos' : 'Aún no hay productos registrados'} description={query ? 'Prueba con otro nombre, SKU o almacén.' : 'Los productos nuevos aparecerán aquí automáticamente con stock cero.'} /></div> : (
             <>
               <div className="inventory-table-wrap">
                 <table className="inventory-table">
-                  <thead><tr><th>Producto</th><th>Almacén</th><th className="is-number">Actual</th><th className="is-number">Comprometido</th><th className="is-number">Disponible</th><th>Estado</th>{isAdmin && <th className="is-action">Acción</th>}</tr></thead>
+                  <thead><tr><th>Producto</th><th>Almacén</th><th className="is-number">Actual</th><th className="is-number">Comprometido</th><th className="is-number">Disponible</th><th>Estado</th><th className="is-action">Acciones</th></tr></thead>
                   <tbody>{paginatedStock.map((row) => (
                     <tr key={`${row.warehouse_id}-${row.product_id}`} className={`inventory-stock-row inventory-stock-row--${row.status}`}>
                       <td><div className="inventory-product-cell"><span className="inventory-product-cell__icon" aria-hidden="true"><Boxes size={15} /></span><div><p>{row.product_name}</p><span>{row.product_code || 'Sin SKU'} · {row.unit}</span></div></div></td>
@@ -363,7 +505,7 @@ export default function InventarioPage() {
                       <td className="is-number">{qty(row.committed)}</td>
                       <td className="is-number is-available"><span className="inventory-balance-chip"><strong>{qty(row.available)}</strong><small>{row.unit}</small></span></td>
                       <td><div className="inventory-status-cell"><StockStatus status={row.status} /><small>Mín. {qty(row.minimum_stock)}</small></div></td>
-                      {isAdmin && <td className="is-action"><button type="button" onClick={() => openStock(row)} className="inventory-stock-action"><Plus size={13} />Registrar stock</button></td>}
+                      <td className="is-action"><div className="inventory-row-actions"><button type="button" onClick={() => openProductHistory(row)} className="inventory-stock-action"><ClipboardList size={13} />Historial</button>{isAdmin && <button type="button" onClick={() => openStock(row)} className="inventory-stock-action"><Plus size={13} />Stock</button>}</div></td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -373,7 +515,7 @@ export default function InventarioPage() {
                   <div className="inventory-stock-card__head"><div><p>{row.product_name}</p><span>{row.product_code || 'Sin SKU'} · {row.unit}</span></div><StockStatus status={row.status} /></div>
                   <p className="inventory-stock-card__warehouse"><Warehouse size={14} />{row.warehouse_name}</p>
                   <dl><div><dt>Actual</dt><dd>{qty(row.on_hand)}</dd></div><div><dt>Comprometido</dt><dd>{qty(row.committed)}</dd></div><div><dt>Disponible</dt><dd>{qty(row.available)}</dd></div></dl>
-                  <div className="inventory-stock-card__foot"><span>Stock mínimo: {qty(row.minimum_stock)}</span>{isAdmin && <button type="button" onClick={() => openStock(row)}><Plus size={13} />Registrar stock</button>}</div>
+                  <div className="inventory-stock-card__foot"><span>Stock mínimo: {qty(row.minimum_stock)}</span><div className="inventory-row-actions"><button type="button" onClick={() => openProductHistory(row)}><ClipboardList size={13} />Historial</button>{isAdmin && <button type="button" onClick={() => openStock(row)}><Plus size={13} />Stock</button>}</div></div>
                 </article>
               ))}</div>
               <div className="inventory-list-footer">
@@ -388,6 +530,16 @@ export default function InventarioPage() {
       {tab === 'kardex' && (
         <section className="inventory-panel">
           <PanelHeading eyebrow="Trazabilidad" title="Kardex de movimientos" description="Cada entrada y salida conserva su documento o motivo de origen y el saldo resultante." meta={`${movementTotal} movimientos`} />
+          <div className="inventory-kardex-filters">
+            <label>Producto<select value={movementFilters.product_id} onChange={(event) => setMovementFilters({ ...movementFilters, product_id: event.target.value })}><option value="">Todos los productos</option>{uniqueProducts.map((row) => <option key={row.product_id} value={row.product_id}>{row.product_name}</option>)}</select></label>
+            <label>Almacén<select value={movementFilters.warehouse_id} onChange={(event) => setMovementFilters({ ...movementFilters, warehouse_id: event.target.value })}><option value="">Todos</option>{warehouses.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
+            <label>Movimiento<select value={movementFilters.direction} onChange={(event) => setMovementFilters({ ...movementFilters, direction: event.target.value })}><option value="">Entradas y salidas</option><option value="entry">Solo entradas</option><option value="exit">Solo salidas</option></select></label>
+            <label>Origen<select value={movementFilters.movement_type} onChange={(event) => setMovementFilters({ ...movementFilters, movement_type: event.target.value })}><option value="">Todos los tipos</option><option value="sale_out">Venta</option><option value="opening">Apertura</option><option value="opening_adjustment">Entrada manual</option><option value="adjustment">Ajuste</option><option value="bulk_entry">Carga masiva</option><option value="physical_count">Conteo físico</option><option value="transfer_in">Transferencia recibida</option><option value="transfer_out">Transferencia enviada</option><option value="return_received">Devolución recibida</option></select></label>
+            <label>Desde<input type="date" value={movementFilters.desde} onChange={(event) => setMovementFilters({ ...movementFilters, desde: event.target.value })} /></label>
+            <label>Hasta<input type="date" value={movementFilters.hasta} onChange={(event) => setMovementFilters({ ...movementFilters, hasta: event.target.value })} /></label>
+            <label className="inventory-document-filter">Factura o boleta<input value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} placeholder="Ej. F001-58" />{documentSearchLoading && <small>Buscando…</small>}{documentOptions.length > 0 && <select aria-label="Seleccionar comprobante" value={movementFilters.document_id} onChange={(event) => setMovementFilters({ ...movementFilters, document_id: event.target.value })}><option value="">Selecciona una coincidencia</option>{documentOptions.map((row) => <option key={row.id} value={row.id}>{row.document_number}</option>)}</select>}</label>
+            {Object.values(movementFilters).some(Boolean) && <button type="button" className="inventory-clear-filters" onClick={clearMovementFilters}><X size={13} />Limpiar</button>}
+          </div>
           {movements.length === 0 ? <div className="p-8"><EmptyState icon={<ClipboardList size={22} />} title="El kardex está vacío" description="Aperturas, ventas aceptadas, ajustes y transferencias aparecerán aquí." /></div> : <>
             <div className="inventory-kardex-table-wrap">
               <table className="inventory-table inventory-kardex-table">
@@ -416,7 +568,7 @@ export default function InventarioPage() {
         </section>
       )}
 
-      {tab === 'warehouses' && <section className="inventory-panel"><PanelHeading eyebrow="Ubicaciones" title="Almacenes activos" description="Organiza el stock por sede y prepara transferencias entre ubicaciones." meta={`${warehouses.length} almacenes`} /><div className="inventory-warehouse-grid">{warehouses.length === 0 ? <EmptyState icon={<Warehouse size={22} />} title="Configura el almacén principal" description="El inventario seguirá desactivado hasta completar este paso." actionLabel={isAdmin ? 'Activar inventario' : undefined} onAction={activate} /> : <>{warehouses.map((row) => <article key={row.id} className={`inventory-warehouse-card ${row.is_default ? 'is-primary' : ''}`}><div className="inventory-warehouse-card__top"><span className="inventory-warehouse-card__icon"><Warehouse size={18} /></span>{row.is_default ? <span className="inventory-warehouse-card__badge">Almacén principal</span> : <span className="inventory-warehouse-card__badge inventory-warehouse-card__badge--secondary">Sede adicional</span>}</div><div className="inventory-warehouse-card__identity"><span>{row.code}</span><h3>{row.name}</h3></div><div className="inventory-warehouse-card__location"><MapPin size={14} /><span>{row.location || 'Ubicación pendiente de registrar'}</span></div><div className="inventory-warehouse-card__foot"><span><span aria-hidden="true" />Disponible para movimientos</span><small>ID {row.id}</small></div></article>)}{isAdmin && <button type="button" onClick={() => setModal('warehouse')} className="inventory-add-warehouse"><span className="inventory-add-warehouse__icon"><Plus size={18} /></span><strong>Añadir almacén</strong><small>Crea otra ubicación para distribuir existencias.</small></button>}</>}</div></section>}
+      {tab === 'warehouses' && <section className="inventory-panel"><PanelHeading eyebrow="Ubicaciones" title="Almacenes activos" description="Organiza el stock por sede y prepara transferencias entre ubicaciones." meta={`${warehouses.length} almacenes`} /><div className="inventory-warehouse-grid">{warehouses.length === 0 ? <EmptyState icon={<Warehouse size={22} />} title="Configura el almacén principal" description="El inventario seguirá desactivado hasta completar este paso." actionLabel={isAdmin ? 'Activar inventario' : undefined} onAction={activate} /> : <>{warehouses.map((row) => <article key={row.id} className={`inventory-warehouse-card ${row.is_default ? 'is-primary' : ''}`}><div className="inventory-warehouse-card__top"><span className="inventory-warehouse-card__icon"><Warehouse size={18} /></span>{row.is_default ? <span className="inventory-warehouse-card__badge">Almacén principal</span> : <span className="inventory-warehouse-card__badge inventory-warehouse-card__badge--secondary">Sede adicional</span>}</div><div className="inventory-warehouse-card__identity"><span>{row.code}</span><h3>{row.name}</h3></div><div className="inventory-warehouse-card__location"><MapPin size={14} /><span>{row.location || 'Ubicación pendiente de registrar'}</span></div><div className="inventory-warehouse-card__foot"><span><span aria-hidden="true" />Disponible para movimientos</span>{isAdmin ? <button type="button" onClick={() => openWarehouseEdit(row)} className="inventory-warehouse-edit"><Pencil size={12} />Editar</button> : <small>ID {row.id}</small>}</div></article>)}{isAdmin && <button type="button" onClick={() => setModal('warehouse')} className="inventory-add-warehouse"><span className="inventory-add-warehouse__icon"><Plus size={18} /></span><strong>Añadir almacén</strong><small>Crea otra ubicación para distribuir existencias.</small></button>}</>}</div></section>}
 
       {tab === 'transfers' && <section className="inventory-panel"><PanelHeading eyebrow="Movimiento interno" title="Transferencias entre almacenes" description="Mueve existencias sin perder la trazabilidad del almacén de origen y destino." /><div className="inventory-transfer-empty"><div className="inventory-transfer-route" aria-hidden="true"><span><Warehouse size={18} /></span><i /><span><ArrowLeftRight size={18} /></span><i /><span><Warehouse size={18} /></span></div><EmptyState icon={<ArrowLeftRight size={22} />} title="Mueve stock entre almacenes" description="Cada transferencia genera una salida y una entrada enlazadas en el kardex." actionLabel={canOperate && warehouses.length > 1 && stock.length ? 'Nueva transferencia' : undefined} onAction={() => setModal('transfer')} />{warehouses.length < 2 && <p>Necesitas al menos dos almacenes activos.</p>}</div></section>}
 
@@ -474,6 +626,25 @@ export default function InventarioPage() {
 
       <Drawer open={modal === 'warehouse'} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Red de almacenes" status="Nueva ubicación" initialFocus="input" title="Crear almacén" subtitle="Añade una ubicación para organizar stock y realizar transferencias." icon={<Warehouse size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="warehouse-form" className="btn-primary" disabled={saving}>{saving ? 'Creando…' : 'Crear almacén'}</button></>}>
         <form id="warehouse-form" onSubmit={submitWarehouse} className="inventory-action-form"><section className="inventory-form-section"><div className="inventory-form-section__heading"><span>01</span><div><h3>Identificación</h3><p>Usa un código corto que permita reconocer esta ubicación.</p></div></div><label>Código<input required maxLength={30} className="input mt-1 uppercase" value={warehouseForm.code} onChange={(event) => setWarehouseForm({ ...warehouseForm, code: event.target.value.toUpperCase() })} placeholder="TIENDA-01" /></label><label>Nombre<input required minLength={2} className="input mt-1" value={warehouseForm.name} onChange={(event) => setWarehouseForm({ ...warehouseForm, name: event.target.value })} placeholder="Tienda principal" /></label><label>Ubicación <small>(opcional)</small><input className="input mt-1" value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} placeholder="Dirección o referencia" /></label></section><label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_default} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_default: event.target.checked })} /><span><strong>Usar como almacén principal</strong><small>Será la ubicación sugerida en nuevas operaciones.</small></span></label></form>
+      </Drawer>
+
+      <Drawer open={modal === 'warehouse-edit' && Boolean(editingWarehouse)} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Red de almacenes" status="Edición segura" initialFocus="input" title="Editar almacén" subtitle={editingWarehouse?.code || ''} icon={<Pencil size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="warehouse-edit-form" className="btn-primary" disabled={saving}>{saving ? 'Guardando…' : 'Guardar cambios'}</button></>}>
+        <form id="warehouse-edit-form" onSubmit={submitWarehouseEdit} className="inventory-action-form"><section className="inventory-form-section"><div className="inventory-form-section__heading"><span><Warehouse size={14} /></span><div><h3>Datos de la ubicación</h3><p>El código se conserva para no perder referencias históricas.</p></div></div><label>Código<input disabled className="input mt-1" value={warehouseForm.code} /></label><label>Nombre<input required minLength={2} className="input mt-1" value={warehouseForm.name} onChange={(event) => setWarehouseForm({ ...warehouseForm, name: event.target.value })} /></label><label>Dirección o referencia<input className="input mt-1" value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} /></label></section><label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_default} disabled={editingWarehouse?.is_default} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_default: event.target.checked })} /><span><strong>Usar como almacén principal</strong><small>{editingWarehouse?.is_default ? 'Este almacén ya es el principal.' : 'Reemplazará al almacén principal actual.'}</small></span></label></form>
+      </Drawer>
+
+      <Drawer open={modal === 'bulk'} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Operación por lote" status="Vista previa obligatoria" initialFocus="select" title="Carga masiva de existencias" subtitle="Registra varios productos en una sola operación trazable." icon={<Upload size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="bulk-stock-form" className="btn-primary" disabled={saving || !Object.values(bulk.quantities).some((value) => value !== '')}>{saving ? 'Procesando…' : 'Confirmar carga'}</button></>}>
+        <form id="bulk-stock-form" onSubmit={submitBulk} className="inventory-action-form inventory-bulk-form">
+          <section className="inventory-form-section inventory-bulk-setup">
+            <div className="inventory-form-grid"><label>Almacén<select className="input mt-1" required value={bulk.warehouse_id} onChange={(event) => setBulk({ ...bulk, warehouse_id: event.target.value, quantities: {} })}>{warehouses.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label><label>Tipo de carga<select className="input mt-1" value={bulk.mode} onChange={(event) => setBulk({ ...bulk, mode: event.target.value, quantities: {} })}><option value="add">Sumar entrada</option><option value="set">Conteo físico final</option></select></label></div>
+            <label>Motivo<textarea required minLength={3} className="input mt-1 min-h-20" value={bulk.reason} onChange={(event) => setBulk({ ...bulk, reason: event.target.value })} /></label>
+            <div className="inventory-import-actions"><button type="button" onClick={downloadTemplate}><Download size={14} />Descargar plantilla</button><label><Upload size={14} />Importar CSV/XLSX<input type="file" accept=".csv,.xlsx" onChange={previewImport} /></label></div>
+            {importErrors.length > 0 && <div className="inventory-import-errors"><strong>{importErrors.length} filas necesitan corrección</strong>{importErrors.slice(0, 5).map((error) => <span key={`${error.fila}-${error.campo}`}>Fila {error.fila}: {error.mensaje}</span>)}</div>}
+          </section>
+          <label className="inventory-search inventory-bulk-search"><Search size={15} /><span className="sr-only">Buscar producto en carga masiva</span><input value={bulk.query} onChange={(event) => setBulk({ ...bulk, query: event.target.value })} placeholder="Buscar producto o SKU" /></label>
+          <div className="inventory-bulk-table-wrap"><table className="inventory-table inventory-bulk-table"><thead><tr><th>Producto</th><th className="is-number">Actual</th><th className="is-number">Comprometido</th><th>{bulk.mode === 'add' ? 'Entrada' : 'Conteo final'}</th><th className="is-number">Resultado</th></tr></thead><tbody>{bulkRows.map((row) => { const raw = bulk.quantities[row.product_id] ?? ''; const value = raw === '' ? null : Number(raw); const result = value === null ? Number(row.on_hand) : bulk.mode === 'add' ? Number(row.on_hand) + value : value; const invalid = bulk.mode === 'set' && value !== null && value < Number(row.committed); return <tr key={row.product_id} className={invalid ? 'is-invalid' : ''}><td><div className="inventory-product-cell"><div><p>{row.product_name}</p><span>{row.product_code || 'Sin SKU'} · {row.unit}</span></div></div></td><td className="is-number">{qty(row.on_hand)}</td><td className="is-number">{qty(row.committed)}</td><td><input aria-label={`Cantidad de ${row.product_name}`} type="number" min="0" step="0.0001" value={raw} onChange={(event) => setBulk({ ...bulk, quantities: { ...bulk.quantities, [row.product_id]: event.target.value } })} placeholder="—" />{invalid && <small>No puede ser menor al comprometido</small>}</td><td className="is-number"><strong>{qty(result)}</strong></td></tr>; })}</tbody></table></div>
+          {bulkRows.length === 0 && <EmptyState icon={<Boxes size={20} />} title="No hay productos para mostrar" description="Cambia el almacén o la búsqueda." />}
+          <p className="inventory-stock-drawer__notice"><ClipboardList size={15} />{bulk.mode === 'add' ? 'Las cantidades se sumarán al saldo existente.' : 'Se registrará únicamente la diferencia entre el saldo actual y el conteo final.'}</p>
+        </form>
       </Drawer>
 
       <Drawer open={modal === 'config'} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Catálogo comercial" status="Control de stock" initialFocus=".ink-select-trigger" title="Configurar producto" subtitle="Define cómo se comporta un producto dentro del inventario." icon={<PackageCheck size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="config-form" className="btn-primary" disabled={saving}>{saving ? 'Guardando…' : 'Guardar configuración'}</button></>}>

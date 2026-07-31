@@ -65,6 +65,21 @@ def create_warehouse(db: Session, tenant_id: int, data):
     return warehouse
 
 
+def update_warehouse(db: Session, tenant_id: int, warehouse_id: int, data):
+    warehouse = get_warehouse(db, tenant_id, warehouse_id)
+    warehouse.name = data.name.strip()
+    warehouse.location = data.location.strip() if data.location and data.location.strip() else None
+    if data.is_default and not warehouse.is_default:
+        db.query(models.Warehouse).filter(
+            models.Warehouse.tenant_id == tenant_id,
+            models.Warehouse.id != warehouse.id,
+        ).update({models.Warehouse.is_default: False}, synchronize_session=False)
+        warehouse.is_default = True
+    db.commit()
+    db.refresh(warehouse)
+    return warehouse
+
+
 def activate_inventory(db: Session, tenant_id: int, data):
     tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).with_for_update().first()
     if tenant.inventory_enabled:
@@ -257,7 +272,7 @@ def list_stock(db, tenant_id, *, warehouse_id=None, q=None):
         models.Warehouse.is_active.is_(True),
     )
     if warehouse_id:
-        query = query.filter(models.InventoryBalance.warehouse_id == warehouse_id)
+        query = query.filter(models.Warehouse.id == warehouse_id)
     if q:
         term = f"%{q.strip()}%"
         query = query.filter(or_(models.Producto.nombre.ilike(term), models.Producto.codigo_interno.ilike(term)))
@@ -278,7 +293,42 @@ def list_stock(db, tenant_id, *, warehouse_id=None, q=None):
     return result
 
 
-def list_movements(db, tenant_id, *, product_id=None, warehouse_id=None, skip=0, limit=15):
+def list_stock_page(db, tenant_id, *, warehouse_id=None, q=None, status=None, skip=0, limit=15):
+    rows = list_stock(db, tenant_id, warehouse_id=warehouse_id, q=q)
+    if status and status != "all":
+        expected = "ok" if status == "available" else status
+        rows = [row for row in rows if row["status"] == expected]
+    total = len(rows)
+    return {"items": rows[skip:skip + min(limit, 100)], "total": total, "skip": skip, "limit": limit}
+
+
+def _movement_filters(query, *, product_id=None, warehouse_id=None, document_id=None,
+                      date_from=None, date_to=None, movement_type=None, direction=None):
+    if product_id:
+        query = query.filter(models.InventoryMovement.product_id == product_id)
+    if warehouse_id:
+        query = query.filter(models.InventoryMovement.warehouse_id == warehouse_id)
+    if document_id:
+        query = query.filter(
+            models.InventoryMovement.source_id == document_id,
+            models.InventoryMovement.source_type.in_({"fiscal_document", "credit_note", "fiscal_void"}),
+        )
+    if date_from:
+        query = query.filter(models.InventoryMovement.created_at >= date_from)
+    if date_to:
+        query = query.filter(models.InventoryMovement.created_at <= date_to)
+    if movement_type:
+        query = query.filter(models.InventoryMovement.movement_type == movement_type)
+    if direction == "entry":
+        query = query.filter(models.InventoryMovement.quantity > ZERO)
+    elif direction == "exit":
+        query = query.filter(models.InventoryMovement.quantity < ZERO)
+    return query
+
+
+def list_movements(db, tenant_id, *, product_id=None, warehouse_id=None, document_id=None,
+                   date_from=None, date_to=None, movement_type=None, direction=None,
+                   skip=0, limit=15):
     query = db.query(models.InventoryMovement, models.Producto, models.Warehouse).join(
         models.Producto, models.Producto.id == models.InventoryMovement.product_id
     ).join(models.Warehouse, models.Warehouse.id == models.InventoryMovement.warehouse_id).filter(
@@ -286,10 +336,10 @@ def list_movements(db, tenant_id, *, product_id=None, warehouse_id=None, skip=0,
         models.Producto.tenant_id == tenant_id,
         models.Warehouse.tenant_id == tenant_id,
     )
-    if product_id:
-        query = query.filter(models.InventoryMovement.product_id == product_id)
-    if warehouse_id:
-        query = query.filter(models.InventoryMovement.warehouse_id == warehouse_id)
+    query = _movement_filters(
+        query, product_id=product_id, warehouse_id=warehouse_id, document_id=document_id,
+        date_from=date_from, date_to=date_to, movement_type=movement_type, direction=direction,
+    )
     rows = query.order_by(models.InventoryMovement.created_at.desc(), models.InventoryMovement.id.desc()).offset(skip).limit(min(limit, 100)).all()
     document_ids = {
         movement.source_id
@@ -317,15 +367,89 @@ def list_movements(db, tenant_id, *, product_id=None, warehouse_id=None, skip=0,
     } for m, p, w in rows]
 
 
-def count_movements(db, tenant_id, *, product_id=None, warehouse_id=None):
+def count_movements(db, tenant_id, *, product_id=None, warehouse_id=None, document_id=None,
+                    date_from=None, date_to=None, movement_type=None, direction=None):
     query = db.query(models.InventoryMovement).filter(
         models.InventoryMovement.tenant_id == tenant_id,
     )
-    if product_id:
-        query = query.filter(models.InventoryMovement.product_id == product_id)
-    if warehouse_id:
-        query = query.filter(models.InventoryMovement.warehouse_id == warehouse_id)
-    return query.count()
+    return _movement_filters(
+        query, product_id=product_id, warehouse_id=warehouse_id, document_id=document_id,
+        date_from=date_from, date_to=date_to, movement_type=movement_type, direction=direction,
+    ).count()
+
+
+def bulk_adjust_stock(db, tenant_id, data, user_id):
+    warehouse = get_warehouse(db, tenant_id, data.warehouse_id)
+    product_ids = [item.product_id for item in data.items]
+    if len(product_ids) != len(set(product_ids)):
+        raise HTTPException(422, "No repitas productos dentro de una misma carga.")
+
+    keys = [f"bulk:{tenant_id}:{data.idempotency_key}:{product_id}" for product_id in product_ids]
+    existing = db.query(models.InventoryMovement).filter(
+        models.InventoryMovement.tenant_id == tenant_id,
+        models.InventoryMovement.idempotency_key.in_(keys),
+    ).all()
+    if existing:
+        existing_product_ids = {row.product_id for row in existing}
+        if not existing_product_ids.issubset(set(product_ids)):
+            raise HTTPException(409, "La clave de idempotencia ya pertenece a otra carga.")
+        requested_by_product = {item.product_id: _decimal(item.quantity) for item in data.items}
+        for movement in existing:
+            matches_payload = (
+                movement.movement_type == "bulk_entry"
+                and data.mode == "add"
+                and _decimal(movement.quantity) == requested_by_product[movement.product_id]
+            ) or (
+                movement.movement_type == "physical_count"
+                and data.mode == "set"
+                and _decimal(movement.balance_after) == requested_by_product[movement.product_id]
+            )
+            if not matches_payload:
+                raise HTTPException(409, "La clave de idempotencia ya pertenece a otra carga.")
+        if data.mode == "add" and len(existing) != len(product_ids):
+            raise HTTPException(409, "La carga ya fue procesada parcialmente con otra composicion.")
+        skipped_existing = 0
+        if data.mode == "set":
+            by_product = {item.product_id: item for item in data.items}
+            for product_id in set(product_ids) - existing_product_ids:
+                balance = _balance(db, tenant_id, warehouse.id, product_id, lock=False)
+                if _decimal(balance.on_hand) != _decimal(by_product[product_id].quantity):
+                    raise HTTPException(409, "La clave de idempotencia ya pertenece a otra carga.")
+                skipped_existing += 1
+        return {"movement_ids": [row.id for row in existing], "applied": len(existing), "skipped": skipped_existing}
+
+    by_product = {item.product_id: item for item in data.items}
+    movements = []
+    skipped = 0
+    try:
+        for product_id in sorted(product_ids):
+            item = by_product[product_id]
+            _get_product(db, tenant_id, product_id)
+            balance = _balance(db, tenant_id, warehouse.id, product_id)
+            requested = _decimal(item.quantity)
+            if data.mode == "add":
+                if requested <= ZERO:
+                    raise HTTPException(422, "Las entradas masivas deben ser mayores que cero.")
+                delta = requested
+                movement_type = "bulk_entry"
+            else:
+                if requested < _decimal(balance.committed):
+                    raise HTTPException(409, "El conteo final no puede ser menor que el stock comprometido.")
+                delta = requested - _decimal(balance.on_hand)
+                movement_type = "physical_count"
+                if delta == ZERO:
+                    skipped += 1
+                    continue
+            movement = _record_movement(
+                db, balance, delta, movement_type, "bulk_adjustment", None, None,
+                user_id, data.reason, f"bulk:{tenant_id}:{data.idempotency_key}:{product_id}",
+            )
+            movements.append(movement)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"movement_ids": [row.id for row in movements], "applied": len(movements), "skipped": skipped}
 
 
 def check_availability(db, tenant_id, data):

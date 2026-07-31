@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -8,7 +9,11 @@ import schemas
 from fastapi import HTTPException
 from conftest import make_cliente, make_producto, make_tenant, make_user
 from crud._cotizaciones_quotes import _validated_warehouse_id
-from schemas.inventory import InventoryActivation, InventoryAdjustmentCreate, ProductInventoryConfig, TransferCreate, TransferLine
+from schemas.inventory import (
+    BulkInventoryAdjustmentCreate, BulkInventoryLine, InventoryActivation,
+    InventoryAdjustmentCreate, ProductInventoryConfig, TransferCreate, TransferLine,
+    WarehouseUpdate,
+)
 from services import emission_queue_service, inventory_service
 
 
@@ -437,3 +442,137 @@ def test_credit_note_distinguishes_undelivered_and_physical_return(db_session):
     pending = inventory_service.apply_credit_note_inventory(db_session, physical); db_session.commit()
     assert pending.status == "pending"
     assert inventory_service.list_stock(db_session, tenant.id)[0]["on_hand"] == Decimal("8.0000")
+
+
+def test_inventory_filters_warehouse_status_product_and_dates(db_session):
+    tenant = make_tenant(db_session, "707")
+    user = make_user(db_session, tenant, email="inv-filters@test.pe")
+    product = make_producto(db_session, tenant, "FILTER")
+    warehouse = _activate(db_session, tenant)
+    _inventory_product(db_session, tenant, product, warehouse, user, stock="5")
+
+    page = inventory_service.list_stock_page(
+        db_session, tenant.id, warehouse_id=warehouse.id, status="available", skip=0, limit=15,
+    )
+    assert page["total"] == 1
+    assert page["items"][0]["product_id"] == product.id
+
+    movement = db_session.query(models.InventoryMovement).filter_by(
+        tenant_id=tenant.id, product_id=product.id,
+    ).one()
+    movement.created_at = datetime.now() - timedelta(days=2)
+    db_session.commit()
+
+    assert inventory_service.count_movements(
+        db_session, tenant.id, product_id=product.id,
+        date_from=datetime.now() - timedelta(days=3),
+        date_to=datetime.now() - timedelta(days=1),
+        direction="entry",
+    ) == 1
+    assert inventory_service.count_movements(
+        db_session, tenant.id, date_from=datetime.now() - timedelta(hours=1),
+    ) == 0
+
+
+def test_warehouse_update_is_tenant_scoped_and_switches_default(db_session):
+    tenant = make_tenant(db_session, "708")
+    other = make_tenant(db_session, "709")
+    principal = _activate(db_session, tenant)
+    secondary = inventory_service.create_warehouse(
+        db_session, tenant.id,
+        SimpleNamespace(code="TIENDA", name="Tienda", location=None, is_default=False),
+    )
+
+    updated = inventory_service.update_warehouse(
+        db_session, tenant.id, secondary.id,
+        WarehouseUpdate(name="Tienda Centro", location="Av. Lima 123", is_default=True),
+    )
+    db_session.refresh(principal)
+    assert updated.name == "Tienda Centro"
+    assert updated.location == "Av. Lima 123"
+    assert updated.is_default is True
+    assert principal.is_default is False
+
+    with pytest.raises(HTTPException, match="no encontrado"):
+        inventory_service.update_warehouse(
+            db_session, other.id, secondary.id,
+            WarehouseUpdate(name="Intruso", location=None, is_default=True),
+        )
+
+
+def test_bulk_inventory_add_set_and_idempotency(db_session):
+    tenant = make_tenant(db_session, "710")
+    user = make_user(db_session, tenant, email="inv-bulk@test.pe")
+    warehouse = _activate(db_session, tenant)
+    first = make_producto(db_session, tenant, "BULK-A")
+    second = make_producto(db_session, tenant, "BULK-B")
+    _inventory_product(db_session, tenant, first, warehouse, user, stock="2")
+    _inventory_product(db_session, tenant, second, warehouse, user, stock="3")
+
+    payload = BulkInventoryAdjustmentCreate(
+        warehouse_id=warehouse.id, mode="add", reason="Carga inicial del local",
+        idempotency_key="bulk-test-710",
+        items=[
+            BulkInventoryLine(product_id=first.id, quantity=Decimal("5")),
+            BulkInventoryLine(product_id=second.id, quantity=Decimal("7")),
+        ],
+    )
+    result = inventory_service.bulk_adjust_stock(db_session, tenant.id, payload, user.id)
+    repeated = inventory_service.bulk_adjust_stock(db_session, tenant.id, payload, user.id)
+    assert result == repeated
+    with pytest.raises(HTTPException, match="idempotencia"):
+        inventory_service.bulk_adjust_stock(
+            db_session, tenant.id,
+            payload.model_copy(update={
+                "items": [
+                    BulkInventoryLine(product_id=first.id, quantity=Decimal("6")),
+                    BulkInventoryLine(product_id=second.id, quantity=Decimal("7")),
+                ],
+            }), user.id,
+        )
+    stock = {row["product_id"]: row for row in inventory_service.list_stock(db_session, tenant.id)}
+    assert stock[first.id]["on_hand"] == Decimal("7.0000")
+    assert stock[second.id]["on_hand"] == Decimal("10.0000")
+
+    counted = inventory_service.bulk_adjust_stock(
+        db_session, tenant.id,
+        BulkInventoryAdjustmentCreate(
+            warehouse_id=warehouse.id, mode="set", reason="Conteo fisico de cierre",
+            idempotency_key="count-test-710",
+            items=[
+                BulkInventoryLine(product_id=first.id, quantity=Decimal("6")),
+                BulkInventoryLine(product_id=second.id, quantity=Decimal("10")),
+            ],
+        ), user.id,
+    )
+    assert counted["applied"] == 1
+    assert counted["skipped"] == 1
+
+
+def test_bulk_inventory_rolls_back_when_count_conflicts_with_committed(db_session):
+    tenant = make_tenant(db_session, "711")
+    user = make_user(db_session, tenant, email="inv-bulk-rollback@test.pe")
+    warehouse = _activate(db_session, tenant)
+    first = make_producto(db_session, tenant, "ROLL-A")
+    second = make_producto(db_session, tenant, "ROLL-B")
+    _inventory_product(db_session, tenant, first, warehouse, user, stock="5")
+    _inventory_product(db_session, tenant, second, warehouse, user, stock="5")
+    balance = inventory_service._balance(db_session, tenant.id, warehouse.id, second.id)
+    balance.committed = Decimal("4")
+    db_session.commit()
+
+    with pytest.raises(HTTPException, match="comprometido"):
+        inventory_service.bulk_adjust_stock(
+            db_session, tenant.id,
+            BulkInventoryAdjustmentCreate(
+                warehouse_id=warehouse.id, mode="set", reason="Conteo invalido",
+                idempotency_key="rollback-711",
+                items=[
+                    BulkInventoryLine(product_id=first.id, quantity=Decimal("8")),
+                    BulkInventoryLine(product_id=second.id, quantity=Decimal("2")),
+                ],
+            ), user.id,
+        )
+    stock = {row["product_id"]: row for row in inventory_service.list_stock(db_session, tenant.id)}
+    assert stock[first.id]["on_hand"] == Decimal("5.0000")
+    assert stock[second.id]["on_hand"] == Decimal("5.0000")

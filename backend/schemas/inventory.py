@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -21,6 +21,12 @@ class WarehouseResponse(WarehouseCreate):
     id: int
     is_active: bool
     model_config = ConfigDict(from_attributes=True)
+
+
+class WarehouseUpdate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=120)
+    location: Optional[str] = Field(default=None, max_length=500)
+    is_default: bool = False
 
 
 class InventoryActivation(BaseModel):
@@ -76,6 +82,32 @@ class MovementPageResponse(BaseModel):
     total: int
     skip: int
     limit: int
+
+
+class StockPageResponse(BaseModel):
+    items: List[StockResponse]
+    total: int
+    skip: int
+    limit: int
+
+
+class BulkInventoryLine(BaseModel):
+    product_id: int
+    quantity: Decimal = Field(..., ge=0)
+
+
+class BulkInventoryAdjustmentCreate(BaseModel):
+    warehouse_id: int
+    mode: Literal["add", "set"]
+    reason: str = Field(..., min_length=3, max_length=500)
+    idempotency_key: str = Field(..., min_length=8, max_length=120)
+    items: List[BulkInventoryLine] = Field(..., min_length=1, max_length=500)
+
+
+class BulkInventoryAdjustmentResponse(BaseModel):
+    movement_ids: List[int]
+    applied: int
+    skipped: int
 
 
 class TransferLine(BaseModel):
