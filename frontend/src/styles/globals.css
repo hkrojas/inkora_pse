@@ -10704,7 +10704,8 @@ textarea.input:focus,
 .line-row-cell { min-width: 0; }
 .line-table--comprobante .line-head,
 .line-table--comprobante .line-row--comprobante {
-  grid-template-columns: minmax(240px, 1fr) 92px 80px 110px 110px 44px;
+  grid-template-columns: minmax(240px, 1fr) 92px 116px 148px 124px 44px;
+  min-width: 780px;
 }
 .line-table--avanzado .line-head,
 .line-table--avanzado .line-row {
@@ -23757,12 +23758,14 @@ textarea.input:focus,
 
 .cotizaciones-page .line-table:not(.line-table--avanzado) .line-head,
 .cotizaciones-page .line-table:not(.line-table--avanzado) .line-row {
-  grid-template-columns: minmax(260px, 1fr) 72px 126px 108px 42px;
+  grid-template-columns: minmax(260px, 1fr) 116px 148px 124px 42px;
+  min-width: 720px;
 }
 
 .cotizaciones-page .line-table--avanzado .line-head,
 .cotizaciones-page .line-table--avanzado .line-row {
-  grid-template-columns: minmax(180px, 1fr) 84px 84px 64px 126px 108px 36px;
+  grid-template-columns: minmax(180px, 1fr) 84px 84px 116px 148px 124px 36px;
+  min-width: 820px;
 }
 
 .cotizaciones-page .line-price-control {
@@ -23840,6 +23843,12 @@ textarea.input:focus,
     min-width: 0;
     justify-content: space-between;
     padding-inline: 10px;
+  }
+
+  .cotizaciones-page .line-table:not(.line-table--avanzado) .line-row,
+  .cotizaciones-page .line-table--avanzado .line-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 0;
   }
 
   .cotizaciones-page .line-row-cell--price {
