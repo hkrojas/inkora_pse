@@ -9991,10 +9991,10 @@ textarea.input:focus,
 .cobranza-list-head,
 .cobranza-row {
   display: grid;
-  grid-template-columns: minmax(240px, 1.5fr) minmax(140px, .6fr) minmax(150px, .65fr) minmax(120px, .5fr) 148px;
+  grid-template-columns: minmax(240px, 1.5fr) minmax(140px, .6fr) minmax(150px, .65fr) minmax(120px, .5fr) 248px;
   gap: 14px;
   align-items: center;
-  min-width: 900px;
+  min-width: 1000px;
 }
 .cobranza-list-head {
   padding: 8px 10px 10px;
@@ -10036,6 +10036,74 @@ textarea.input:focus,
 .cobranza-page .actions-col {
   opacity: 1;
 }
+
+.cobranza-quick-pay-btn {
+  min-height: 34px;
+  padding: 7px 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--color-success) 35%, var(--color-border));
+  border-radius: 10px;
+  background: var(--color-success-soft);
+  color: var(--color-success-text);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  transition: transform .16s var(--ease-out), background-color .16s ease, border-color .16s ease;
+}
+
+.cobranza-quick-pay-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success-soft) 78%, var(--color-success));
+}
+
+.cobranza-quick-pay-btn:active { transform: translateY(0); }
+
+.cobranza-quick-pay-form { display: grid; gap: 18px; }
+
+.cobranza-quick-pay-summary {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface-soft);
+}
+
+.cobranza-quick-pay-summary > div { display: grid; gap: 4px; }
+.cobranza-quick-pay-summary span,
+.cobranza-quick-pay-field > span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.cobranza-quick-pay-summary strong { color: var(--color-text); font-size: 14px; }
+.cobranza-quick-pay-summary small { color: var(--color-text-muted); font-family: var(--font-mono); font-size: 11px; }
+.cobranza-quick-pay-amount {
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+.cobranza-quick-pay-amount strong {
+  color: var(--color-success-text);
+  font-family: var(--font-mono);
+  font-size: 24px;
+  letter-spacing: -.02em;
+}
+.cobranza-quick-pay-field { display: grid; gap: 7px; }
+.cobranza-quick-pay-field small { font-weight: 500; }
+.cobranza-quick-pay-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cobranza-quick-pay-notice svg { flex: 0 0 auto; margin-top: 1px; color: var(--color-warning); }
 
 .cobranza-aging-legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 

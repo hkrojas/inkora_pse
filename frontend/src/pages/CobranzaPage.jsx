@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   Calendar,
+  CheckCircle2,
   CreditCard,
   DollarSign,
   Eye,
@@ -14,8 +15,12 @@ import { PageError } from '../components/ui/PageState';
 import EmptyState from '../components/ui/EmptyState';
 import { useToast } from '../components/ui/Toast';
 import OperationalPageHeader from '../components/ui/OperationalPageHeader';
+import Modal from '../components/ui/Modal';
+import CustomSelect from '../components/ui/CustomSelect';
 
 const AVATAR_COLORS = ['a-green', 'a-blue', 'a-purple', 'a-yellow', 'a-red'];
+const PAYMENT_METHODS = ['Yape', 'Efectivo', 'Transferencia', 'BCP', 'Interbank', 'BBVA', 'Tarjeta']
+  .map((method) => ({ value: method, label: method }));
 
 function fmt(v) {
   return Number(v || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -68,6 +73,10 @@ export default function CobranzaPage() {
   const [error, setError] = useState(null);
   const [search, setSearch] = useState(() => searchParams.get('q') || '');
   const [segment, setSegment] = useState('all');
+  const [quickPayItem, setQuickPayItem] = useState(null);
+  const [quickPayMethod, setQuickPayMethod] = useState('Yape');
+  const [quickPayReference, setQuickPayReference] = useState('');
+  const [quickPaySaving, setQuickPaySaving] = useState(false);
 
   const loadCobranza = useCallback(() => {
     setLoading(true);
@@ -92,6 +101,52 @@ export default function CobranzaPage() {
     const query = searchParams.get('q') || '';
     setSearch((current) => (current === query ? current : query));
   }, [searchParams]);
+
+  const openQuickPay = (item) => {
+    setQuickPayItem(item);
+    setQuickPayMethod('Yape');
+    setQuickPayReference('');
+  };
+
+  const closeQuickPay = () => {
+    if (quickPaySaving) return;
+    setQuickPayItem(null);
+    setQuickPayReference('');
+  };
+
+  const handleQuickPay = async (event) => {
+    event.preventDefault();
+    if (!quickPayItem) return;
+
+    const documentId = quickPayItem.cotizacion_id || quickPayItem.id;
+    const amount = Number(quickPayItem.saldo_pendiente || 0);
+    if (!documentId || !Number.isFinite(amount) || amount <= 0) {
+      toast('El documento ya no tiene un saldo válido para cobrar.', 'error');
+      setQuickPayItem(null);
+      loadCobranza();
+      return;
+    }
+
+    setQuickPaySaving(true);
+    try {
+      await cobranza.saldar(documentId, {
+        monto_pagado: amount,
+        metodo_pago: quickPayMethod,
+        tipo: 'pago',
+        referencia_operacion: quickPayReference.trim(),
+      });
+      toast(`Cuenta saldada por S/ ${fmt(amount)}.`, 'success');
+      setQuickPayItem(null);
+      setQuickPayReference('');
+      loadCobranza();
+    } catch (err) {
+      toast(err.message || 'No se pudo registrar el pago total. Actualiza la cobranza e inténtalo nuevamente.', 'error');
+      setQuickPayItem(null);
+      loadCobranza();
+    } finally {
+      setQuickPaySaving(false);
+    }
+  };
 
   const counts = useMemo(() => ({
     all:      vencidas.length,
@@ -283,9 +338,19 @@ export default function CobranzaPage() {
                     </div>
 
                     <div className="actions-col">
+                      <button
+                        type="button"
+                        className="cobranza-quick-pay-btn"
+                        onClick={() => openQuickPay(item)}
+                        aria-label={`Saldar ${getDocLabel(item)} por S/ ${fmt(item.saldo_pendiente)}`}
+                      >
+                        <CheckCircle2 size={14} aria-hidden="true" />
+                        Saldar
+                      </button>
                       <Link
                         to={`/cotizaciones/${item.cotizacion_id || item.id}`}
                         className="edit-btn"
+                        aria-label={`Ver detalle de ${getDocLabel(item)}`}
                       >
                         <Eye size={13} />
                         Ver
@@ -293,7 +358,8 @@ export default function CobranzaPage() {
                       <Link
                         to={`/cotizaciones/${item.cotizacion_id || item.id}`}
                         className="more-btn"
-                        title="Registrar pago"
+                        title="Registrar pago manual"
+                        aria-label={`Registrar pago manual de ${getDocLabel(item)}`}
                       >
                         <DollarSign size={14} />
                       </Link>
@@ -322,6 +388,66 @@ export default function CobranzaPage() {
           </>
         )}
       </article>
+
+      <Modal
+        open={Boolean(quickPayItem)}
+        onClose={closeQuickPay}
+        title="Saldar cuenta"
+        subtitle="Registra el saldo completo sin digitar el importe."
+        icon={CreditCard}
+        size="sm"
+      >
+        {quickPayItem && (
+          <form onSubmit={handleQuickPay} className="cobranza-quick-pay-form">
+            <div className="cobranza-quick-pay-summary">
+              <div>
+                <span>Cliente</span>
+                <strong>{getClientName(quickPayItem)}</strong>
+                <small>{getDocLabel(quickPayItem)}</small>
+              </div>
+              <div className="cobranza-quick-pay-amount">
+                <span>Total a saldar</span>
+                <strong>S/ {fmt(quickPayItem.saldo_pendiente)}</strong>
+              </div>
+            </div>
+
+            <label className="cobranza-quick-pay-field">
+              <span>Método de pago</span>
+              <CustomSelect
+                value={quickPayMethod}
+                onChange={setQuickPayMethod}
+                options={PAYMENT_METHODS}
+                ariaLabel="Método de pago para saldar la cuenta"
+              />
+            </label>
+
+            <label className="cobranza-quick-pay-field">
+              <span>Referencia <small>(opcional)</small></span>
+              <input
+                className="input"
+                value={quickPayReference}
+                onChange={(event) => setQuickPayReference(event.target.value)}
+                placeholder="Número de operación"
+              />
+            </label>
+
+            <p className="cobranza-quick-pay-notice">
+              <AlertCircle size={15} aria-hidden="true" />
+              Este pago dejará el saldo fiscal del documento en S/ 0.00.
+            </p>
+
+            <div className="responsive-form-actions">
+              <button type="button" className="btn-secondary" onClick={closeQuickPay} disabled={quickPaySaving}>
+                Cancelar
+              </button>
+              <button type="submit" className="btn-primary" disabled={quickPaySaving}>
+                {quickPaySaving ? <Spinner size={14} /> : <CheckCircle2 size={15} aria-hidden="true" />}
+                {quickPaySaving ? 'Registrando...' : `Confirmar S/ ${fmt(quickPayItem.saldo_pendiente)}`}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }
