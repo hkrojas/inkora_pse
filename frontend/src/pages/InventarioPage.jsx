@@ -142,6 +142,7 @@ export default function InventarioPage() {
     direction: initialParams.get('direction') || '',
     movement_type: initialParams.get('movement_type') || '',
   }));
+  const [kardexProductQuery, setKardexProductQuery] = useState('');
   const [documentQuery, setDocumentQuery] = useState('');
   const [documentOptions, setDocumentOptions] = useState([]);
   const [documentSearchLoading, setDocumentSearchLoading] = useState(false);
@@ -262,6 +263,16 @@ export default function InventarioPage() {
     return filtered.slice(start, start + PAGE_SIZE);
   }, [filtered, stockPage]);
   const uniqueProducts = useMemo(() => [...new Map(stock.map((row) => [row.product_id, row])).values()], [stock]);
+  const kardexProductOptions = useMemo(() => {
+    const term = kardexProductQuery.trim().toLowerCase();
+    const selectedProduct = uniqueProducts.find((row) => String(row.product_id) === String(movementFilters.product_id));
+    if (term.length < 2) {
+      return selectedProduct ? [selectedProduct] : [];
+    }
+    return uniqueProducts
+      .filter((row) => `${row.product_name} ${row.product_code || ''}`.toLowerCase().includes(term))
+      .slice(0, 20);
+  }, [kardexProductQuery, movementFilters.product_id, uniqueProducts]);
   const outOfStock = stock.filter((row) => row.status === 'out').length;
   const criticalAlerts = stock.filter((row) => ['low', 'negative'].includes(row.status)).length;
   const committedTotal = stock.reduce((sum, row) => sum + Number(row.committed || 0), 0);
@@ -352,11 +363,13 @@ export default function InventarioPage() {
     );
   };
   const openProductHistory = (row) => {
+    setKardexProductQuery('');
     setMovementFilters((current) => ({ ...current, product_id: String(row.product_id), warehouse_id: String(row.warehouse_id) }));
     setTab('kardex');
   };
   const clearMovementFilters = () => {
     setMovementFilters({ product_id: '', warehouse_id: '', document_id: '', desde: '', hasta: '', direction: '', movement_type: '' });
+    setKardexProductQuery('');
     setDocumentQuery('');
   };
   const openBulk = () => {
@@ -556,7 +569,7 @@ export default function InventarioPage() {
         <section className="inventory-panel">
           <PanelHeading eyebrow="Trazabilidad" title="Kardex de movimientos" description="Cada entrada y salida conserva su documento o motivo de origen y el saldo resultante." meta={`${movementTotal} movimientos`} />
           <div className="inventory-kardex-filters">
-            <label>Producto<CustomSelect compact ariaLabel="Filtrar kardex por producto" value={movementFilters.product_id} onChange={(value) => setMovementFilters({ ...movementFilters, product_id: value })} options={[{ value: '', label: 'Todos los productos' }, ...uniqueProducts.map((row) => ({ value: row.product_id, label: row.product_name }))]} /></label>
+            <label>Producto<CustomSelect compact searchable searchPlaceholder="Buscar por nombre o SKU" ariaLabel="Buscar producto para filtrar el kardex" value={movementFilters.product_id} onSearchChange={setKardexProductQuery} onChange={(value) => { setMovementFilters({ ...movementFilters, product_id: value }); setKardexProductQuery(''); }} placeholder="Todos los productos" noResultsLabel={kardexProductQuery.trim().length < 2 ? 'Escribe al menos 2 caracteres para buscar.' : 'No encontramos productos con esa búsqueda.'} options={kardexProductOptions.map((row) => ({ value: row.product_id, label: row.product_name, searchText: `${row.product_name} ${row.product_code || ''}` }))} /></label>
             <label>Almacén<CustomSelect compact ariaLabel="Filtrar kardex por almacén" value={movementFilters.warehouse_id} onChange={(value) => setMovementFilters({ ...movementFilters, warehouse_id: value })} options={[{ value: '', label: 'Todos' }, ...warehouses.map((row) => ({ value: row.id, label: row.name }))]} /></label>
             <label>Movimiento<CustomSelect compact ariaLabel="Filtrar kardex por dirección" value={movementFilters.direction} onChange={(value) => setMovementFilters({ ...movementFilters, direction: value })} options={movementDirectionOptions} /></label>
             <label>Origen<CustomSelect compact ariaLabel="Filtrar kardex por origen" value={movementFilters.movement_type} onChange={(value) => setMovementFilters({ ...movementFilters, movement_type: value })} options={movementTypeOptions} /></label>
