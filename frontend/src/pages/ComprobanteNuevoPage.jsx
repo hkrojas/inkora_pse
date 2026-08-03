@@ -32,7 +32,6 @@ import { DocumentTypeSwitcher } from '../components/documents/DocumentType';
 import ConfirmEmitDialog from '../components/documents/ConfirmEmitDialog';
 import { useToast } from '../components/ui/Toast';
 import {
-  IGV_FACTOR,
   PAYMENT_OPTIONS,
   MEDIO_PAGO_OPTIONS,
   OPERATION_OPTIONS,
@@ -46,6 +45,17 @@ import {
   computeLine,
   computeDocumentTotals,
 } from '../lib/utils/documents';
+import {
+  isPositiveDecimal,
+  isSameMoney,
+  money,
+  moneyDifference,
+  normalizeQuantity,
+  normalizeUnitPrice,
+  priceWithIgv,
+  priceWithoutIgv,
+  sumMoney,
+} from '../lib/utils/ublCalculations';
 import {
   PRODUCT_INTERNAL_CODE_MAX_LENGTH,
   isValidInternalProductCode,
@@ -127,12 +137,8 @@ function isCreditCondition(value) {
   return Boolean(value && value !== 'contado');
 }
 
-function roundMoney(value) {
-  return Math.round((Number(value) || 0) * 100) / 100;
-}
-
 function moneyInput(value) {
-  return roundMoney(value).toFixed(2);
+  return money(value);
 }
 
 function createCuotaPago(fechaPago, monto) {
@@ -150,7 +156,7 @@ function buildDefaultCuotas(fechaEmision, condicionPago, total) {
 }
 
 function cuotasTotal(cuotas) {
-  return roundMoney((cuotas || []).reduce((sum, cuota) => sum + Number(cuota.monto || 0), 0));
+  return sumMoney((cuotas || []).map((cuota) => cuota.monto));
 }
 
 function lastCuotaDate(cuotas) {
@@ -198,21 +204,21 @@ function buildValidationRules(form) {
         if (fechaEmision && parseInputDate(cuota.fecha_pago) <= fechaEmision) {
           return `La cuota ${index + 1} debe vencer despues de la fecha de emision`;
         }
-        if (Number(cuota.monto || 0) <= 0) {
+        if (!isPositiveDecimal(cuota.monto)) {
           return `La cuota ${index + 1} debe tener monto mayor a cero`;
         }
       }
 
-      const total = roundMoney(computeDocumentTotals(form.items, form.incluye_igv).total);
+      const total = computeDocumentTotals(form.items, form.incluye_igv).total;
       const sumaCuotas = cuotasTotal(cuotas);
-      if (sumaCuotas !== total) {
+      if (!isSameMoney(sumaCuotas, total)) {
         return `La suma de cuotas (${formatCurrency(sumaCuotas, form.moneda)}) debe coincidir con el total (${formatCurrency(total, form.moneda)})`;
       }
       return null;
     },
     items: () => {
       const candidateItems = (form.items || []).filter(
-        (it) => it.descripcion.trim() && Number(it.cantidad) > 0 && Number(it.precio_unitario) > 0,
+        (it) => it.descripcion.trim() && isPositiveDecimal(it.cantidad) && isPositiveDecimal(it.precio_unitario),
       );
       if (candidateItems.length === 0) {
         return 'Agrega al menos una linea con descripcion, cantidad y precio';
@@ -299,7 +305,7 @@ function PreviewModal({ open, onClose, form, totals, tenantData }) {
   };
 
   const fiscalItems = form.items
-    .filter((it) => it.descripcion.trim() && Number(it.cantidad) > 0 && Number(it.precio_unitario) > 0)
+    .filter((it) => it.descripcion.trim() && isPositiveDecimal(it.cantidad) && isPositiveDecimal(it.precio_unitario))
     .map((it) => {
       const line = computeLine(it, form.incluye_igv);
       return {
@@ -311,6 +317,7 @@ function PreviewModal({ open, onClose, form, totals, tenantData }) {
         precioUnitario: line.unitFinal,
         descuento: 0,
         valorVenta: line.subtotal,
+        total: line.total,
       };
     });
 
@@ -539,7 +546,7 @@ export default function ComprobanteNuevoPage() {
   const totals = computeDocumentTotals(form.items, form.incluye_igv);
   const isCreditPayment = isCreditCondition(form.condicion_pago);
   const cuotasMontoTotal = cuotasTotal(form.cuotas_pago);
-  const cuotasDiferencia = roundMoney(totals.total - cuotasMontoTotal);
+  const cuotasDiferencia = moneyDifference(totals.total, cuotasMontoTotal);
   const tipoLabel = form.tipo_comprobante === '01' ? 'Factura' : 'Boleta de venta';
   const requiredClientDocType = getRequiredClientDocType(form.tipo_comprobante);
   const allowedClientDocumentTypes = form.tipo_comprobante === '03'
@@ -713,9 +720,10 @@ export default function ComprobanteNuevoPage() {
 
   const addCuotaPago = useCallback(() => {
     setForm((current) => {
-      const total = roundMoney(computeDocumentTotals(current.items, current.incluye_igv).total);
+      const total = computeDocumentTotals(current.items, current.incluye_igv).total;
       const sumaActual = cuotasTotal(current.cuotas_pago);
-      const restante = Math.max(roundMoney(total - sumaActual), 0);
+      const diferencia = moneyDifference(total, sumaActual);
+      const restante = isPositiveDecimal(diferencia) ? diferencia : '0.00';
       const ultimaFecha = lastCuotaDate(current.cuotas_pago) || current.fecha_emision;
       const fechaPago = addDays(ultimaFecha, 15);
       const cuotas = [
@@ -758,10 +766,10 @@ export default function ComprobanteNuevoPage() {
       ...current,
       incluye_igv: newVal,
       items: current.items.map((item) => {
-        const amount = Number(item.precio_unitario || 0);
-        if (!amount) return item;
-        const converted = newVal ? amount * IGV_FACTOR : amount / IGV_FACTOR;
-        const nextPrice = converted.toFixed(4).replace(/0+$/, '').replace(/\.$/, '.00');
+        if (!isPositiveDecimal(item.precio_unitario)) return item;
+        const nextPrice = newVal
+          ? priceWithIgv(item, false)
+          : priceWithoutIgv(item, true);
         const shouldRefreshSnapshot = item.producto_id && item._catalogSnapshot && !hasCatalogProductOverrides(item);
         return {
           ...item,
@@ -775,7 +783,7 @@ export default function ComprobanteNuevoPage() {
   };
 
   const handleIgvToggle = (newVal) => {
-    const hasPrices = form.items.some((item) => Number(item.precio_unitario) > 0);
+    const hasPrices = form.items.some((item) => isPositiveDecimal(item.precio_unitario));
     if (hasPrices) {
       setPendingIgv(newVal);
       setIgvConfirmOpen(true);
@@ -863,18 +871,16 @@ export default function ComprobanteNuevoPage() {
         ? []
         : (form.cuotas_pago || []).map((cuota) => ({
             fecha_pago: toApiDate(cuota.fecha_pago),
-            monto: Number(Number(cuota.monto || 0).toFixed(2)),
+            monto: money(cuota.monto),
           })),
       items: srcItems
-        .filter((item) => item.descripcion.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0)
+        .filter((item) => item.descripcion.trim() && isPositiveDecimal(item.cantidad) && isPositiveDecimal(item.precio_unitario))
         .map((item) => ({
           producto_id: item.producto_id ? Number(item.producto_id) : null,
           codigo_producto: normalizeInternalProductCode(item.codigo) || null,
           descripcion: item.descripcion.trim(),
-          cantidad: Number(item.cantidad),
-          precio_unitario: Number(
-            (form.incluye_igv ? Number(item.precio_unitario) : Number(item.precio_unitario) * IGV_FACTOR).toFixed(4),
-          ),
+          cantidad: normalizeQuantity(item.cantidad),
+          precio_unitario: priceWithIgv(item, form.incluye_igv),
           unidad_medida: item.unidad_medida || 'NIU',
           tipo_afectacion_igv: item.tipo_afectacion_igv || '10',
         })),
@@ -950,7 +956,7 @@ export default function ComprobanteNuevoPage() {
   const paymentLabel = PAYMENT_OPTIONS.find((option) => option.value === form.condicion_pago)?.label || 'Contado';
   const modeLabel = form.modo_emision === 'contingencia' ? 'Contingencia activada' : 'Emisión estándar';
   const readyLines = form.items.filter(
-    (item) => item.descripcion.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0,
+    (item) => item.descripcion.trim() && isPositiveDecimal(item.cantidad) && isPositiveDecimal(item.precio_unitario),
   ).length;
   const clientName = form.cliente.razon_social?.trim() || 'Sin cliente seleccionado';
   const clientDoc = form.cliente.numero_documento?.trim()
@@ -1195,7 +1201,7 @@ export default function ComprobanteNuevoPage() {
                           <span className="tx-meta">
                             Suma de cuotas: <strong>{formatCurrency(cuotasMontoTotal, form.moneda)}</strong>
                           </span>
-                          <span className={cuotasDiferencia === 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}>
+                          <span className={cuotasDiferencia === '0.00' ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}>
                             Diferencia: {formatCurrency(cuotasDiferencia, form.moneda)}
                           </span>
                         </div>
@@ -1487,8 +1493,8 @@ export default function ComprobanteNuevoPage() {
         <div className="space-y-4">
           <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: 1.6 }}>
             Cambiar el modo de IGV va a <strong>recalcular los precios</strong> de todas las líneas ya ingresadas (
-            {form.items.filter((item) => Number(item.precio_unitario) > 0).length} línea
-            {form.items.filter((item) => Number(item.precio_unitario) > 0).length !== 1 ? 's' : ''}). ¿Sí, cambiar?
+            {form.items.filter((item) => isPositiveDecimal(item.precio_unitario)).length} línea
+            {form.items.filter((item) => isPositiveDecimal(item.precio_unitario)).length !== 1 ? 's' : ''}). ¿Sí, cambiar?
           </p>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
             <button className="btn-secondary" onClick={() => setIgvConfirmOpen(false)}>Cancelar</button>

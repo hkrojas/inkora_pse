@@ -200,7 +200,7 @@ export default function FiscalDocPreview({
             <tbody>
               {displayItems.map((item, index) => {
                 const quantity = Number(item.cantidad || 0);
-                const total = Number(item.precioUnitario || 0) * quantity;
+                const total = Number(item.total ?? 0);
                 return (
                   <tr key={`${item.descripcion || 'item'}-${index}`}>
                     <td>{index + 1}</td>

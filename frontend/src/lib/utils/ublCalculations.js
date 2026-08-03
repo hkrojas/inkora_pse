@@ -64,6 +64,14 @@ export function priceWithIgv(item, incluyeIgv) {
   return entered.toFixed(UNIT_PRICE_DECIMALS);
 }
 
+export function priceWithoutIgv(item, incluyeIgv) {
+  const entered = decimal(normalizeUnitPrice(item?.precio_unitario));
+  if (taxed(item) && incluyeIgv) {
+    return entered.div(IGV_FACTOR).toDecimalPlaces(UNIT_PRICE_DECIMALS, Decimal.ROUND_HALF_UP).toFixed(UNIT_PRICE_DECIMALS);
+  }
+  return entered.toFixed(UNIT_PRICE_DECIMALS);
+}
+
 export function computeUblLine(item, incluyeIgv = true) {
   const quantity = decimal(normalizeQuantity(item?.cantidad));
   const unitFinal = decimal(priceWithIgv(item, incluyeIgv));
