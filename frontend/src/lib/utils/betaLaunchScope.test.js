@@ -207,6 +207,8 @@ test('quote and invoice line prices support extended unit precision', () => {
   assert.doesNotMatch(comprobanteSource, /precio_unitario:\s*Number\(\s*\([^)]*precio_unitario[^)]*\)\.toFixed\(2\)/);
   assert.match(productSource, /type="number"\s+step="0\.0001"[\s\S]+precio_unitario/);
   assert.doesNotMatch(productSource, /type="number"\s+step="0\.01"[\s\S]+precio_unitario/);
+  assert.match(productSource, /function formatUnitPrice\(value\)[\s\S]+maximumFractionDigits: 4/);
+  assert.match(productSource, /formatUnitPrice\(item\.precio_unitario\)/);
   assert.match(quoteModel, /cantidad\s*=\s*Column\(Numeric\(18,\s*4\)\)/);
   assert.match(quoteModel, /precio_unitario\s*=\s*Column\(Numeric\(18,\s*4\)\)/);
   assert.match(quoteModel, /valor_unitario\s*=\s*Column\(Numeric\(18,\s*10\)\)/);

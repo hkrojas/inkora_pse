@@ -86,6 +86,13 @@ function formatCurrency(value) {
   });
 }
 
+function formatUnitPrice(value) {
+  return Number(value || 0).toLocaleString('es-PE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+}
+
 function getCurrencySymbol(moneda = 'PEN') {
   return moneda === 'USD' ? '$' : 'S/';
 }
@@ -275,7 +282,7 @@ function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving, onGenera
                 </div>
                 <div className="flex justify-between">
                   <span>Precio final:</span>
-                  <span className="font-mono font-bold text-[var(--color-primary)]">{currencySymbol} {formatCurrency(precioFinal)}</span>
+                  <span className="font-mono font-bold text-[var(--color-primary)]">{currencySymbol} {formatUnitPrice(precioFinal)}</span>
                 </div>
               </div>
             )}
@@ -705,7 +712,7 @@ export default function ProductosPage() {
                     </div>
 
                     <div className="activity-block">
-                      <strong>{currencySymbol} {formatCurrency(item.precio_unitario)}</strong>
+                      <strong>{currencySymbol} {formatUnitPrice(item.precio_unitario)}</strong>
                       <span>
                         Base {currencySymbol}{' '}
                         {formatCurrency(
