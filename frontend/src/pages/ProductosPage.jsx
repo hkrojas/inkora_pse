@@ -253,7 +253,7 @@ function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving, onGenera
               <input
                 required
                 type="number"
-                step="0.01"
+                step="0.0001"
                 min="0"
                 className="input pl-8 text-right font-mono font-bold"
                 value={form.precio_unitario}
