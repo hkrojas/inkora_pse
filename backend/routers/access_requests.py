@@ -20,8 +20,8 @@ router = APIRouter(tags=["access-requests"])
 @limiter.limit("10/minute")
 async def lookup_access_request_ruc(request: Request, ruc: str):
     normalized = ruc.strip()
-    if not normalized.isdigit() or len(normalized) != 11 or not normalized.startswith("20"):
-        raise HTTPException(400, "Ingresa un RUC válido de 11 dígitos que empiece por 20.")
+    if not normalized.isdigit() or len(normalized) != 11 or not normalized.startswith(("10", "20")):
+        raise HTTPException(400, "Ingresa un RUC válido de 11 dígitos que empiece por 10 o 20.")
 
     token = settings.DNIRUC_TOKEN or settings.API_TOKEN
     result = await _consultar_documento_con_token(normalized, token)

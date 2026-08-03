@@ -102,8 +102,8 @@ export default function AccessRequestPage() {
   };
 
   const lookupRuc = async () => {
-    if (!/^20\d{9}$/.test(form.business_ruc)) {
-      setRucFeedback({ tone: 'error', message: 'Ingresa un RUC válido de 11 dígitos que empiece por 20.' });
+    if (!/^(10|20)\d{9}$/.test(form.business_ruc)) {
+      setRucFeedback({ tone: 'error', message: 'Ingresa un RUC válido de 11 dígitos que empiece por 10 o 20.' });
       return;
     }
     setLookingUpRuc(true);
@@ -252,7 +252,7 @@ export default function AccessRequestPage() {
                     <label className="auth-field auth-field--wide">
                       <span>RUC</span>
                       <span className="auth-field-control auth-field-control--action">
-                        <input id="access-business-ruc" required inputMode="numeric" minLength={11} maxLength={11} pattern="20[0-9]{9}" title="Ingresa un RUC válido de 11 dígitos que empiece por 20" value={form.business_ruc} onChange={setField('business_ruc')} placeholder="20XXXXXXXXX" aria-describedby="access-ruc-feedback" />
+                        <input id="access-business-ruc" required inputMode="numeric" minLength={11} maxLength={11} pattern="(10|20)[0-9]{9}" title="Ingresa un RUC válido de 11 dígitos que empiece por 10 o 20" value={form.business_ruc} onChange={setField('business_ruc')} placeholder="10XXXXXXXXX o 20XXXXXXXXX" aria-describedby="access-ruc-feedback" />
                         <button type="button" className="auth-inline-action" onClick={lookupRuc} disabled={lookingUpRuc || form.business_ruc.length !== 11}>
                           <Search size={15} />{lookingUpRuc ? 'Consultando…' : 'Consultar RUC'}
                         </button>

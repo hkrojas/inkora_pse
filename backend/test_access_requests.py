@@ -1,6 +1,7 @@
 import asyncio
 
 import models
+import pytest
 import schemas
 import security
 from conftest import make_tenant, make_user
@@ -30,6 +31,10 @@ def _superadmin(db_session):
         email="super-access@inkora.pe",
         is_superadmin=True,
     )
+
+
+def test_public_request_schema_accepts_ruc_10():
+    assert _payload(ruc="10467793549").business_ruc == "10467793549"
 
 
 def test_public_request_does_not_create_tenant_or_user(db_session):
@@ -112,9 +117,10 @@ def test_rejection_scrubs_password_and_allows_a_new_request(db_session):
     assert retry["status"] == models.ACCESS_REQUEST_PENDING
 
 
-def test_public_ruc_lookup_returns_only_registration_fields(monkeypatch):
+@pytest.mark.parametrize("ruc", ["10467793549", "20606751509"])
+def test_public_ruc_lookup_returns_only_registration_fields(monkeypatch, ruc):
     async def fake_lookup(ruc, token):
-        assert ruc == "20606751509"
+        assert ruc in {"10467793549", "20606751509"}
         assert token == "public-lookup-token"
         return {
             "razon_social": "INKORA DEMO SAC",
@@ -127,11 +133,11 @@ def test_public_ruc_lookup_returns_only_registration_fields(monkeypatch):
     monkeypatch.setattr(access_requests_router, "_consultar_documento_con_token", fake_lookup)
 
     result = asyncio.run(
-        access_requests_router.lookup_access_request_ruc.__wrapped__(None, "20606751509")
+        access_requests_router.lookup_access_request_ruc.__wrapped__(None, ruc)
     )
 
     assert result == {
-        "ruc": "20606751509",
+        "ruc": ruc,
         "business_name": "INKORA DEMO SAC",
         "business_address": "JR. DEMO 123",
     }

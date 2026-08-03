@@ -21,8 +21,8 @@ class AccessRequestCreate(StrictInputModel):
     @classmethod
     def validate_ruc(cls, value: str) -> str:
         normalized = "".join(character for character in str(value) if character.isdigit())
-        if len(normalized) != 11 or not normalized.startswith("20"):
-            raise ValueError("Ingresa un RUC válido de 11 dígitos que empiece por 20")
+        if len(normalized) != 11 or not normalized.startswith(("10", "20")):
+            raise ValueError("Ingresa un RUC válido de 11 dígitos que empiece por 10 o 20")
         return normalized
 
     @field_validator("business_name", "contact_name")
