@@ -74,6 +74,8 @@ import {
 import { hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
 import { clienteSnapshotFromForm, syncCatalogProductos, upsertCliente, upsertProductos } from '../lib/utils/upsert';
 import { getFiscalDocumentStatus } from '../lib/utils/documentArtifacts';
+import { computeDocumentTotals, computeLine } from '../lib/utils/documents';
+import { isPositiveDecimal, normalizeQuantity, normalizeUnitPrice, sumMoney } from '../lib/utils/ublCalculations';
 import { useAuth } from '../context/AuthContext';
 
 // ─── Constantes de dominio ────────────────────────────────────────────────────
@@ -547,23 +549,19 @@ function CotizacionPreviewSheet({
     tenantData?.quote_default_wallet_id,
   );
   const validItems = items
-    .filter((item) => item.descripcion?.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0)
+    .filter((item) => item.descripcion?.trim() && isPositiveDecimal(item.cantidad) && isPositiveDecimal(item.precio_unitario))
     .map((item) => {
-      const quantity = Number(item.cantidad) || 0;
-      const unitPrice = Number(item.precio_unitario) || 0;
-      const lineTotal = quantity * unitPrice;
-      const itemIgv = item.tipo_afectacion_igv === '10' ? (lineTotal * 0.18) / 1.18 : 0;
-      const subtotal = lineTotal - itemIgv;
+      const line = computeLine(item, true);
       return {
         codigo: item.codigo || item.codigo_producto || '',
         descripcion: item.descripcion.trim(),
-        cantidad: quantity,
+        cantidad: line.cantidad,
         unidad: item.unidad_medida === 'NIU' ? 'UND' : (item.unidad_medida || 'UND'),
-        valor_unitario: quantity > 0 ? subtotal / quantity : 0,
-        precio_unitario: unitPrice,
-        igv: itemIgv,
-        subtotal,
-        total: lineTotal,
+        valor_unitario: line.unitBase,
+        precio_unitario: line.unitFinal,
+        igv: line.igv,
+        subtotal: line.subtotal,
+        total: line.total,
       };
     });
   const displayItems = validItems.length > 0 ? validItems : [{
@@ -584,6 +582,10 @@ function CotizacionPreviewSheet({
   const formatPreviewMoney = (value) => Number(value || 0).toLocaleString('es-PE', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
+  });
+  const formatPreviewUnit = (value) => Number(value || 0).toLocaleString('es-PE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
   });
 
   return (
@@ -655,8 +657,8 @@ function CotizacionPreviewSheet({
                   <td>{`${formatPreviewQuantity(item.cantidad)} ${item.unidad}`}</td>
                   <td>{item.codigo || `ITEM-${String(index + 1).padStart(3, '0')}`}</td>
                   <td>{item.descripcion}</td>
-                  <td>{`${currencySymbol} ${formatPreviewMoney(item.valor_unitario)}`}</td>
-                  <td>{`${currencySymbol} ${formatPreviewMoney(item.precio_unitario)}`}</td>
+                  <td>{`${currencySymbol} ${formatPreviewUnit(item.valor_unitario)}`}</td>
+                  <td>{`${currencySymbol} ${formatPreviewUnit(item.precio_unitario)}`}</td>
                   <td>{`${currencySymbol} ${formatPreviewMoney(item.subtotal)}`}</td>
                   <td>{`${currencySymbol} ${formatPreviewMoney(item.total)}`}</td>
                 </tr>
@@ -1466,13 +1468,13 @@ function NuevaCotizacionForm({
     if (!clienteId && !clienteIsNew && !clienteForm?.razon_social) return;
 
     const validItems = items
-      .filter((it) => it.descripcion?.trim() && Number(it.cantidad) > 0 && Number(it.precio_unitario) > 0)
+      .filter((it) => it.descripcion?.trim() && isPositiveDecimal(it.cantidad) && isPositiveDecimal(it.precio_unitario))
       .map((it) => ({
         producto_id: it.producto_id ? Number(it.producto_id) : undefined,
         codigo_producto: normalizeInternalProductCode(it.codigo) || undefined,
         descripcion: it.descripcion,
-        cantidad: Number(it.cantidad),
-        precio_unitario: Number(it.precio_unitario),
+        cantidad: normalizeQuantity(it.cantidad),
+        precio_unitario: normalizeUnitPrice(it.precio_unitario),
         unidad_medida: it.unidad_medida || 'NIU',
         tipo_afectacion_igv: it.tipo_afectacion_igv || '10',
       }));
@@ -1523,13 +1525,13 @@ function NuevaCotizacionForm({
           ? serializeObservationLines(observationLines)
           : undefined,
         items: resolvedItems
-          .filter((it) => it.descripcion?.trim() && Number(it.cantidad) > 0 && Number(it.precio_unitario) > 0)
+          .filter((it) => it.descripcion?.trim() && isPositiveDecimal(it.cantidad) && isPositiveDecimal(it.precio_unitario))
           .map((it) => ({
             producto_id: it.producto_id ? Number(it.producto_id) : undefined,
             codigo_producto: normalizeInternalProductCode(it.codigo) || undefined,
             descripcion: it.descripcion,
-            cantidad: Number(it.cantidad),
-            precio_unitario: Number(it.precio_unitario),
+            cantidad: normalizeQuantity(it.cantidad),
+            precio_unitario: normalizeUnitPrice(it.precio_unitario),
             unidad_medida: it.unidad_medida || 'NIU',
             tipo_afectacion_igv: it.tipo_afectacion_igv || '10',
           })),
@@ -1562,23 +1564,23 @@ function NuevaCotizacionForm({
   const sym = moneda === 'USD' ? '$' : 'S/';
 
   // Totales desglosados por afectación
+  const documentTotals = computeDocumentTotals(items, true);
   const totales = items.reduce((acc, it) => {
-    const lineTotal = (Number(it.cantidad) * Number(it.precio_unitario) || 0);
+    const line = computeLine(it, true);
     const af = it.tipo_afectacion_igv;
-    if (af === '20') acc.exonerado += lineTotal;
-    else if (af === '30') acc.inafecto += lineTotal;
-    else if (af === '40') acc.exportacion += lineTotal;
-    else acc.gravado += lineTotal;
+    if (af === '20') acc.exonerado.push(line.subtotal);
+    else if (af === '30') acc.inafecto.push(line.subtotal);
+    else acc.gravado.push(line.subtotal);
     return acc;
-  }, { gravado: 0, exonerado: 0, inafecto: 0, exportacion: 0 });
+  }, { gravado: [], exonerado: [], inafecto: [] });
 
-  const igv = totales.gravado * 0.18 / 1.18;
-  const subtotalGravado = totales.gravado - igv;
-  const totalGeneral = totales.gravado + totales.exonerado + totales.inafecto + totales.exportacion;
+  const igv = documentTotals.igv;
+  const subtotalGravado = sumMoney(totales.gravado);
+  const totalGeneral = documentTotals.total;
   const previewClient = getPreviewClientData(clienteId, clienteForm, formClientes);
   const hasObservationLines = observationLines.some((line) => line.text?.trim());
   const walletOptions = getWalletOptions(tenantData?.bank_accounts);
-  const readyLines = items.filter((item) => item.descripcion?.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0).length;
+  const readyLines = items.filter((item) => item.descripcion?.trim() && isPositiveDecimal(item.cantidad) && isPositiveDecimal(item.precio_unitario)).length;
   const quoteReady = Boolean(clienteId || clienteForm?.razon_social) && readyLines > 0;
   const missingQuoteRequirements = [
     !(clienteId || clienteForm?.razon_social) && 'seleccionar un cliente',
@@ -1864,7 +1866,7 @@ return (
                     <div></div>
                   </div>
                   {items.map((item, idx) => {
-                    const lineTotal = Number(item.cantidad) * Number(item.precio_unitario) || 0;
+                    const lineTotal = computeLine(item, true).total;
                     return (
                       <div className="line-row" key={idx}>
                         <div className="product-input line-row-cell line-row-cell--product" data-mobile-label="Producto">
@@ -1887,7 +1889,7 @@ return (
                             <CustomSelect compact value={item.tipo_afectacion_igv} onChange={(v) => setItem(idx, 'tipo_afectacion_igv', v)} options={AFECTACION_IGV} />
                           </div>
                         )}
-                        <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad"><input className="line-edit-input" aria-label={`Cantidad de ${item.descripcion || `línea ${idx + 1}`}`} required type="number" min="0.01" step="any" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
+                        <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad"><input className="line-edit-input" aria-label={`Cantidad de ${item.descripcion || `línea ${idx + 1}`}`} required type="number" min="0.0001" step="0.0001" value={item.cantidad} onChange={(e) => setItem(idx, 'cantidad', e.target.value)} /></div>
                         <div className="line-row-cell line-row-cell--price" data-mobile-label="Precio unitario">
                           <div className="line-price-control">
                             <span aria-hidden="true">{sym}</span>
@@ -1963,7 +1965,7 @@ return (
                 <p>{isEditing ? 'Revisa los nuevos totales antes de actualizar.' : 'Cálculo siempre visible para evitar guardar sin revisar.'}</p>
               </div>
               <div className="summary-body">
-                <div className="total-line"><span>Subtotal</span><strong>{sym} {fmt(subtotalGravado + totales.exonerado + totales.inafecto + totales.exportacion)}</strong></div>
+                <div className="total-line"><span>Subtotal</span><strong>{sym} {fmt(documentTotals.subtotal)}</strong></div>
                 <div className="total-line"><span>IGV (18%)</span><strong>{sym} {fmt(igv)}</strong></div>
                 <div className="total-line"><span>Líneas</span><strong>{items.length}</strong></div>
                 <div className="grand-total"><span>Total</span><strong>{sym} {fmt(totalGeneral)}</strong></div>

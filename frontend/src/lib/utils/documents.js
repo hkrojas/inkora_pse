@@ -3,8 +3,11 @@
 import {
   SUNAT_TAX_AFFECTATION_OPTIONS,
   SUNAT_UNIT_OPTIONS,
-  isTaxedAffectation,
 } from './sunatCatalogs';
+import {
+  computeUblDocumentTotals,
+  computeUblLine,
+} from './ublCalculations';
 
 export const IGV_FACTOR = 1.18;
 
@@ -105,28 +108,11 @@ export function deriveSeries(tipoComprobante, modoEmision, tenant = null) {
 }
 
 export function computeLine(item, incluyeIgv) {
-  const cantidad = Number(item.cantidad || 0);
-  const precioIngresado = Number(item.precio_unitario || 0);
-  const isGravado = isTaxedAffectation(item.tipo_afectacion_igv);
-  const unitBase  = isGravado && incluyeIgv ? precioIngresado / IGV_FACTOR : precioIngresado;
-  const unitFinal = isGravado && !incluyeIgv ? precioIngresado * IGV_FACTOR : precioIngresado;
-  const subtotal  = unitBase * cantidad;
-  const total     = unitFinal * cantidad;
-  const igv       = isGravado ? total - subtotal : 0;
-  return { cantidad, precioIngresado, unitBase, unitFinal, subtotal, igv, total };
+  return computeUblLine(item, incluyeIgv);
 }
 
 export function computeDocumentTotals(items, incluyeIgv) {
-  return items.reduce(
-    (acc, item) => {
-      const line = computeLine(item, incluyeIgv);
-      acc.subtotal += line.subtotal;
-      acc.igv      += line.igv;
-      acc.total    += line.total;
-      return acc;
-    },
-    { subtotal: 0, igv: 0, total: 0 },
-  );
+  return computeUblDocumentTotals(items, incluyeIgv);
 }
 
 export function getSunatStatus(item) {
