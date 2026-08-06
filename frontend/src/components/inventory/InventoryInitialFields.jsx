@@ -1,3 +1,5 @@
+import CustomSelect from '../ui/CustomSelect';
+
 /** Stock setup shared by catalog and quick product creation flows. */
 export default function InventoryInitialFields({ value, onChange, warehouses = [], disabled = false, compact = false }) {
   const enabled = Boolean(value);
@@ -9,35 +11,41 @@ export default function InventoryInitialFields({ value, onChange, warehouses = [
   });
 
   return (
-    <section className={compact ? 'rounded-xl border border-[var(--color-border)] p-3' : 'ink-form-section'}>
-      <label className="flex cursor-pointer items-start gap-3">
-        <input
-          type="checkbox"
-          checked={enabled}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.checked ? {
+    <section className={`inventory-initial-fields${compact ? ' inventory-initial-fields--compact' : ''}`}>
+      <button
+        type="button"
+        className={`inventory-initial-fields__toggle${enabled ? ' is-active' : ''}`}
+        role="switch"
+        aria-checked={enabled}
+        disabled={disabled}
+        onClick={() => onChange(!enabled ? {
             warehouse_id: String(warehouses.find((warehouse) => warehouse.is_default)?.id || ''),
             opening_stock: '0',
             minimum_stock: '0',
           } : null)}
-        />
-        <span>
-          <span className="block text-sm font-bold text-[var(--color-text)]">Controlar inventario</span>
-          <span className="block text-xs text-[var(--color-text-muted)]">Registra el saldo inicial en el kardex con trazabilidad.</span>
+      >
+        <span className="inventory-initial-fields__switch" aria-hidden="true"><span /></span>
+        <span className="inventory-initial-fields__copy">
+          <span>Controlar inventario</span>
+          <small>Registra el saldo inicial en el kardex con trazabilidad.</small>
         </span>
-      </label>
+      </button>
       {enabled && (
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="inventory-initial-fields__grid">
           <label className="text-sm font-bold">Almacén
-            <select className="input mt-1" value={value.warehouse_id || ''} onChange={(event) => update({ warehouse_id: event.target.value })} disabled={disabled || warehouses.length === 0}>
-              {warehouses.length === 0 ? <option value="">Se creará el almacén principal</option> : warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}{warehouse.is_default ? ' · Principal' : ''}</option>)}
-            </select>
+            <CustomSelect
+              value={value.warehouse_id || ''}
+              onChange={(warehouse_id) => update({ warehouse_id: String(warehouse_id || '') })}
+              disabled={disabled || warehouses.length === 0}
+              placeholder={warehouses.length === 0 ? 'Se creará el almacén principal' : 'Selecciona un almacén'}
+              options={warehouses.map((warehouse) => ({ value: String(warehouse.id), label: `${warehouse.name}${warehouse.is_default ? ' · Principal' : ''}` }))}
+            />
           </label>
           <label className="text-sm font-bold">Stock inicial
-            <input className="input mt-1" type="number" min="0" step="0.0001" inputMode="decimal" value={value.opening_stock ?? '0'} onChange={(event) => update({ opening_stock: event.target.value })} disabled={disabled} />
+            <input className="input inventory-initial-fields__number" type="number" min="0" step="0.0001" inputMode="decimal" value={value.opening_stock ?? '0'} onChange={(event) => update({ opening_stock: event.target.value })} disabled={disabled} />
           </label>
           <label className="text-sm font-bold">Stock mínimo
-            <input className="input mt-1" type="number" min="0" step="0.0001" inputMode="decimal" value={value.minimum_stock ?? '0'} onChange={(event) => update({ minimum_stock: event.target.value })} disabled={disabled} />
+            <input className="input inventory-initial-fields__number" type="number" min="0" step="0.0001" inputMode="decimal" value={value.minimum_stock ?? '0'} onChange={(event) => update({ minimum_stock: event.target.value })} disabled={disabled} />
           </label>
         </div>
       )}
