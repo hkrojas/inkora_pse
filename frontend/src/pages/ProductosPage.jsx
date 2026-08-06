@@ -27,6 +27,8 @@ import { PageError } from '../components/ui/PageState';
 import { useToast } from '../components/ui/Toast';
 import useDebouncedValue from '../hooks/useDebouncedValue';
 import OperationalPageHeader from '../components/ui/OperationalPageHeader';
+import InventoryInitialFields from '../components/inventory/InventoryInitialFields';
+import { inventory as inventorySvc } from '../services/inventory';
 import {
   PRODUCT_DESCRIPTION_MAX_LENGTH,
   PRODUCT_INTERNAL_CODE_MAX_LENGTH,
@@ -118,7 +120,7 @@ function getAvatarColor(item) {
   return AVATAR_COLORS[code % AVATAR_COLORS.length];
 }
 
-function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving, onGenerateCode }) {
+function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving, onGenerateCode, warehouses = [] }) {
   const [form, setForm] = useState({
     ...EMPTY_FORM,
     ...initial,
@@ -126,6 +128,7 @@ function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving, onGenera
     unidad_medida: normalizeSunatUnitCode(initial?.unidad_medida || 'NIU'),
     tipo_afectacion_igv: initial?.tipo_afectacion_igv || '10',
     precio_incluye_igv: initial?.precio_incluye_igv ?? true,
+    inventario_inicial: initial?.inventario_inicial ?? null,
   });
   const [errors, setErrors] = useState({});
   const [generatingCode, setGeneratingCode] = useState(false);
@@ -138,6 +141,7 @@ function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving, onGenera
       unidad_medida: normalizeSunatUnitCode(initial?.unidad_medida || 'NIU'),
       tipo_afectacion_igv: initial?.tipo_afectacion_igv || '10',
       precio_incluye_igv: initial?.precio_incluye_igv ?? true,
+      inventario_inicial: initial?.inventario_inicial ?? null,
     }));
     setErrors({});
   }, [initial]);
@@ -241,6 +245,14 @@ function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving, onGenera
           </FormField>
         </div>
       </div>
+
+      {form.unidad_medida !== 'ZZ' && (
+        <InventoryInitialFields
+          value={form.inventario_inicial}
+          onChange={(inventario_inicial) => setForm((current) => ({ ...current, inventario_inicial }))}
+          warehouses={warehouses}
+        />
+      )}
 
       <div className="ink-form-section">
         <h4 className="mb-3 flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-[var(--color-text-muted)]">
@@ -390,6 +402,7 @@ export default function ProductosPage() {
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [warehouses, setWarehouses] = useState([]);
   const requestSeq = useRef(0);
 
   const load = useCallback(() => {
@@ -425,6 +438,10 @@ export default function ProductosPage() {
   }, [debouncedSearch, page, segment, toast]);
 
   useEffect(load, [load]);
+
+  useEffect(() => {
+    inventorySvc.warehouses().then((rows) => setWarehouses(rows || [])).catch(() => setWarehouses([]));
+  }, []);
 
   useEffect(() => {
     const query = searchParams.get('q') || '';
@@ -784,12 +801,13 @@ export default function ProductosPage() {
         icon={<Package size={22} />}
       >
         {modal && (
-          <ProductoForm
+      <ProductoForm
             initial={isEditing ? modal.item : EMPTY_FORM}
             onSave={handleSave}
             onCancel={() => setModal(null)}
             saving={saving}
-            onGenerateCode={handleGenerateCode}
+        onGenerateCode={handleGenerateCode}
+        warehouses={warehouses}
           />
         )}
       </Drawer>

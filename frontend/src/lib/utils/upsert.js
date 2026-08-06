@@ -119,6 +119,7 @@ export async function upsertProductos(items, { priceIncludesIgv = true } = {}) {
         unidad_medida: normalizeSunatUnitCode(item.unidad_medida),
         tipo_afectacion_igv: item.tipo_afectacion_igv || '10',
         descripcion: nombre,
+        inventario_inicial: item.inventario_inicial || undefined,
       });
 
       return {

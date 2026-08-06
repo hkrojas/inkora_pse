@@ -79,9 +79,16 @@ class ProductoBase(BaseModel):
         return normalize_tax_affectation_code(value)
 
 
+class ProductoInventarioInicial(BaseModel):
+    warehouse_id: Optional[int] = None
+    opening_stock: Decimal = Field(default=Decimal("0"), ge=0)
+    minimum_stock: Decimal = Field(default=Decimal("0"), ge=0)
+
+
 class ProductoCreate(ProductoBase):
     precio_unitario: Decimal = Field(..., gt=0)
     precio_incluye_igv: bool = True
+    inventario_inicial: Optional[ProductoInventarioInicial] = None
 
 
 class ProductoResponse(ProductoBase):

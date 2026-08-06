@@ -19,6 +19,7 @@ import { inventory } from '../services/inventory';
 import FiscalDocPreview from '../components/documents/FiscalDocPreview';
 import ClientCombobox from '../components/ui/ClientCombobox';
 import ProductLineCell from '../components/ui/ProductLineCell';
+import InventoryInitialFields from '../components/inventory/InventoryInitialFields';
 import { hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
 import { clienteSnapshotFromForm, syncCatalogProductos, upsertCliente, upsertProductos } from '../lib/utils/upsert';
 import SectionNavigation from '../components/ui/SectionNavigation';
@@ -77,6 +78,7 @@ const EMPTY_ITEM = () => ({
   tipo_afectacion_igv: '10',
   _isNew: false,
   _catalogSnapshot: null,
+  inventario_inicial: null,
   _syncCatalogChanges: false,
 });
 
@@ -499,6 +501,7 @@ export default function ComprobanteNuevoPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [igvConfirmOpen, setIgvConfirmOpen] = useState(false);
   const [pendingIgv, setPendingIgv] = useState(null);
+  const [stockRepair, setStockRepair] = useState(null);
   const [clienteState, setClienteState] = useState({ isDirty: false, isNew: false });
   const [updateExistingClient, setUpdateExistingClient] = useState(true);
   const [recentItemKey, setRecentItemKey] = useState(null);
@@ -924,11 +927,19 @@ export default function ComprobanteNuevoPage() {
       const quote = await cotizacionesSvc.create(buildQuotePayload(clienteId, resolvedItems));
       const availability = await inventory.documentAvailability(quote.id);
       if (availability?.inventory_enabled && !availability.sufficient) {
-        const missing = availability.items
-          .filter((item) => !item.sufficient)
-          .map((item) => `${item.product_name}: ${item.available} de ${item.requested} ${item.unit}`)
-          .join('; ');
-        throw new Error(`Stock insuficiente en ${availability.warehouse_name}. ${missing}`);
+        const missing = availability.items.filter((item) => !item.sufficient);
+        const first = missing[0];
+        setConfirmOpen(false);
+        setStockRepair({
+          quoteId: quote.id,
+          warehouseId: availability.warehouse_id,
+          warehouseName: availability.warehouse_name,
+          items: missing,
+          productId: String(first.product_id),
+          quantity: String(Math.max(0, Number(first.requested) - Number(first.available))),
+          reason: 'Ingreso para completar emisión',
+        });
+        return;
       }
       await cotizacionesSvc.facturar(quote.id, {
         tipo_comprobante: form.tipo_comprobante,
@@ -949,6 +960,44 @@ export default function ComprobanteNuevoPage() {
     } finally {
       setSaving(false);
       setConfirmOpen(false);
+    }
+  };
+
+  const handleStockRepair = async (event) => {
+    event.preventDefault();
+    if (!stockRepair) return;
+    setSaving(true);
+    try {
+      await inventory.adjust({
+        warehouse_id: Number(stockRepair.warehouseId),
+        product_id: Number(stockRepair.productId),
+        quantity: stockRepair.quantity,
+        reason: stockRepair.reason,
+      });
+      const availability = await inventory.documentAvailability(stockRepair.quoteId);
+      if (availability?.inventory_enabled && !availability.sufficient) {
+        const next = availability.items.find((item) => !item.sufficient);
+        setStockRepair((current) => ({
+          ...current,
+          items: availability.items.filter((item) => !item.sufficient),
+          productId: String(next.product_id),
+          quantity: String(Math.max(0, Number(next.requested) - Number(next.available))),
+        }));
+        toast('El ingreso se registró. Aún falta stock en otra línea.', 'error');
+        return;
+      }
+      await cotizacionesSvc.facturar(stockRepair.quoteId, {
+        tipo_comprobante: form.tipo_comprobante,
+        tipo_operacion: form.tipo_operacion,
+        warehouse_id: Number(stockRepair.warehouseId),
+      });
+      setStockRepair(null);
+      toast(`${tipoLabel} emitida correctamente`);
+      navigate('/facturas');
+    } catch (error) {
+      toast(error.message || 'No se pudo registrar el ingreso de stock.', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1362,7 +1411,7 @@ export default function ComprobanteNuevoPage() {
                     <div />
                   </div>
 
-                  {form.items.map((item, index) => (
+                {form.items.map((item, index) => (
                     <LineRow
                       key={item.key}
                       item={item}
@@ -1377,8 +1426,20 @@ export default function ComprobanteNuevoPage() {
                     onRemove={removeItem}
                     onAddNext={addItem}
                     />
-                  ))}
+                ))}
                 </div>
+
+                {form.items.map((item, index) => ({ item, index })).filter(({ item }) => item._isNew && item.unidad_medida !== 'ZZ').map(({ item, index }) => (
+                  <div className="mt-3" key={`inventory-${item.key}`}>
+                    <p className="mb-2 text-sm font-bold">Inventario para {item.descripcion || `producto nuevo ${index + 1}`}</p>
+                    <InventoryInitialFields
+                      compact
+                      value={item.inventario_inicial}
+                      warehouses={warehouses}
+                      onChange={(inventario_inicial) => handleItemChange(index, { ...item, inventario_inicial })}
+                    />
+                  </div>
+                ))}
 
                 {errors.items && (
                   <div style={{ marginTop: '10px' }}>
@@ -1509,6 +1570,24 @@ export default function ComprobanteNuevoPage() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      <Modal open={Boolean(stockRepair)} onClose={() => !saving && setStockRepair(null)} title="Agregar stock para emitir" size="sm">
+        {stockRepair && <form className="space-y-4" onSubmit={handleStockRepair}>
+          <p className="text-sm text-[var(--color-text-muted)]">Registra un ingreso trazable en {stockRepair.warehouseName}; al completarlo se reintentará la emisión.</p>
+          <label className="block text-sm font-bold">Producto
+            <select className="input mt-1" value={stockRepair.productId} onChange={(event) => setStockRepair((current) => ({ ...current, productId: event.target.value }))}>
+              {stockRepair.items.map((item) => <option key={item.product_id} value={item.product_id}>{item.product_name} · faltan {Math.max(0, Number(item.requested) - Number(item.available))} {item.unit}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm font-bold">Cantidad de ingreso
+            <input className="input mt-1" required type="number" min="0.0001" step="0.0001" value={stockRepair.quantity} onChange={(event) => setStockRepair((current) => ({ ...current, quantity: event.target.value }))} />
+          </label>
+          <label className="block text-sm font-bold">Motivo
+            <input className="input mt-1" required minLength="3" value={stockRepair.reason} onChange={(event) => setStockRepair((current) => ({ ...current, reason: event.target.value }))} />
+          </label>
+          <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setStockRepair(null)} disabled={saving}>Cancelar</button><button className="btn-primary" disabled={saving}>{saving ? 'Registrando…' : 'Registrar ingreso y emitir'}</button></div>
+        </form>}
       </Modal>
     </>
   );

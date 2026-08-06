@@ -5,6 +5,8 @@ from sqlalchemy import func, or_
 import models
 import schemas
 from services import calculations
+from services import inventory_service
+from schemas.inventory import InventoryActivation, ProductInventoryConfig
 from crud._base import get_producto_for_tenant
 
 
@@ -112,7 +114,7 @@ def _ensure_inventory_balance(db: Session, product: models.Producto) -> None:
 
 
 def create_producto(db: Session, producto: schemas.ProductoCreate, tenant_id: int):
-    payload = producto.model_dump(exclude={"precio_incluye_igv"})
+    payload = producto.model_dump(exclude={"precio_incluye_igv", "inventario_inicial"})
     precio_final, valor_unitario = _resolve_product_prices(
         precio_referencia=producto.precio_unitario,
         precio_incluye_igv=producto.precio_incluye_igv,
@@ -129,6 +131,22 @@ def create_producto(db: Session, producto: schemas.ProductoCreate, tenant_id: in
         db.add(db_producto)
         db.flush()
         _ensure_inventory_balance(db, db_producto)
+        if producto.inventario_inicial:
+            inventory_service.activate_inventory(db, tenant_id, InventoryActivation(), commit=False)
+            inventory_service.configure_product(
+                db,
+                tenant_id,
+                db_producto.id,
+                ProductInventoryConfig(
+                    item_type="inventory",
+                    inventory_enabled=True,
+                    warehouse_id=producto.inventario_inicial.warehouse_id,
+                    opening_stock=producto.inventario_inicial.opening_stock,
+                    minimum_stock=producto.inventario_inicial.minimum_stock,
+                ),
+                user_id=None,
+                commit=False,
+            )
         db.commit()
         db.refresh(db_producto)
         return db_producto
@@ -141,7 +159,7 @@ def _producto_model_from_schema(
     producto: schemas.ProductoCreate,
     tenant_id: int,
 ) -> models.Producto:
-    payload = producto.model_dump(exclude={"precio_incluye_igv"})
+    payload = producto.model_dump(exclude={"precio_incluye_igv", "inventario_inicial"})
     precio_final, valor_unitario = _resolve_product_prices(
         precio_referencia=producto.precio_unitario,
         precio_incluye_igv=producto.precio_incluye_igv,
@@ -179,7 +197,7 @@ def update_producto(db: Session, producto_id: int, producto_data: schemas.Produc
     db_producto = get_producto_for_tenant(db, producto_id, tenant_id)
     if db_producto:
         update_data = producto_data.model_dump(
-            exclude={"precio_incluye_igv"},
+            exclude={"precio_incluye_igv", "inventario_inicial"},
             exclude_unset=True,
         )
         if 'precio_unitario' in update_data:
@@ -193,6 +211,22 @@ def update_producto(db: Session, producto_id: int, producto_data: schemas.Produc
         for key, value in update_data.items():
             setattr(db_producto, key, value)
         _ensure_inventory_balance(db, db_producto)
+        if producto_data.inventario_inicial:
+            inventory_service.activate_inventory(db, tenant_id, InventoryActivation(), commit=False)
+            inventory_service.configure_product(
+                db,
+                tenant_id,
+                db_producto.id,
+                ProductInventoryConfig(
+                    item_type="inventory",
+                    inventory_enabled=True,
+                    warehouse_id=producto_data.inventario_inicial.warehouse_id,
+                    opening_stock=producto_data.inventario_inicial.opening_stock,
+                    minimum_stock=producto_data.inventario_inicial.minimum_stock,
+                ),
+                user_id=None,
+                commit=False,
+            )
         db.commit()
         db.refresh(db_producto)
     return db_producto

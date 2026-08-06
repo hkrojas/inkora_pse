@@ -7,6 +7,7 @@ import crud
 import schemas
 from conftest import make_cliente, make_tenant, make_user
 from services.import_service import parse_productos
+from services import inventory_service
 
 
 def test_create_producto_con_precio_ingresado_con_igv(db_session):
@@ -41,6 +42,29 @@ def test_create_producto_con_precio_unitario_menor_a_un_centimo(db_session):
 
     assert producto.precio_unitario == Decimal("0.0350")
     assert producto.valor_unitario == Decimal("0.0296610169")
+
+
+def test_create_producto_registra_stock_inicial_en_kardex(db_session):
+    tenant = make_tenant(db_session, "PRINV")
+    producto = crud.create_producto(
+        db_session,
+        schemas.ProductoCreate(
+            nombre="Producto con saldo inicial",
+            precio_unitario=Decimal("1.2500"),
+            inventario_inicial=schemas.ProductoInventarioInicial(
+                opening_stock=Decimal("12.3456"),
+                minimum_stock=Decimal("2.5000"),
+            ),
+        ),
+        tenant.id,
+    )
+
+    stock = inventory_service.list_stock(db_session, tenant.id)
+    assert stock[0]["product_id"] == producto.id
+    assert stock[0]["on_hand"] == Decimal("12.3456")
+    assert stock[0]["minimum_stock"] == Decimal("2.5000")
+    movements = inventory_service.list_movements(db_session, tenant.id, product_id=producto.id)
+    assert movements[0]["movement_type"] == "opening"
 
 
 def test_create_producto_con_precio_ingresado_sin_igv(db_session):

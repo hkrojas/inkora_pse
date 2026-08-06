@@ -22,6 +22,7 @@ import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
 import ClientCombobox from '../components/ui/ClientCombobox';
 import ProductLineCell from '../components/ui/ProductLineCell';
+import InventoryInitialFields from '../components/inventory/InventoryInitialFields';
 import SectionNavigation from '../components/ui/SectionNavigation';
 import { FieldError } from '../components/ui/FieldError';
 import { useToast } from '../components/ui/Toast';
@@ -1208,6 +1209,7 @@ function NuevaCotizacionForm({
     _isNew: false,
     _syncCatalogChanges: false,
     _catalogSnapshot: null,
+    inventario_inicial: null,
   });
 
   const [clienteId, setClienteId]       = useState('');
@@ -1902,6 +1904,17 @@ return (
                     );
                   })}
                 </div>
+                {items.map((item, index) => ({ item, index })).filter(({ item }) => item._isNew && item.unidad_medida !== 'ZZ').map(({ item, index }) => (
+                  <div className="mt-3" key={`inventory-${index}-${item.codigo || item.descripcion}`}>
+                    <p className="mb-2 text-sm font-bold">Inventario para {item.descripcion || `producto nuevo ${index + 1}`}</p>
+                    <InventoryInitialFields
+                      compact
+                      value={item.inventario_inicial}
+                      warehouses={warehouses}
+                      onChange={(inventario_inicial) => setItemAll(index, { ...item, inventario_inicial })}
+                    />
+                  </div>
+                ))}
                 <div className="line-footer">
                   <button type="button" className="link-btn" onClick={addItem}>⊕ Agregar línea</button>
                 </div>

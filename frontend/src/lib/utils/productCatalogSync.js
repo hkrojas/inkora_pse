@@ -89,5 +89,6 @@ export function buildProductCatalogPayloadFromLine(item, { priceIncludesIgv = tr
     precio_incluye_igv: priceIncludesIgv,
     unidad_medida: snapshot.unidad_medida,
     tipo_afectacion_igv: snapshot.tipo_afectacion_igv,
+    inventario_inicial: item?.inventario_inicial || undefined,
   };
 }

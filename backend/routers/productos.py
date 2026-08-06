@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 import crud
 import models
 import schemas
+from access_control import ROLE_ADMIN, ROLE_SUPERADMIN, get_effective_role
 from api_dependencies import get_current_user, get_db_tenant
 from api_utils import read_validated_upload
 from rate_limit import limiter
@@ -329,6 +330,8 @@ def create_producto(
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
+    if producto.inventario_inicial and get_effective_role(current_user) not in {ROLE_ADMIN, ROLE_SUPERADMIN}:
+        raise HTTPException(403, "Solo un administrador puede configurar el stock inicial.")
     return crud.create_producto(db, producto, current_user.tenant_id)
 
 
@@ -339,6 +342,8 @@ def update_producto(
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
+    if producto.inventario_inicial and get_effective_role(current_user) not in {ROLE_ADMIN, ROLE_SUPERADMIN}:
+        raise HTTPException(403, "Solo un administrador puede configurar el stock inicial.")
     try:
         result = crud.update_producto(db, producto_id, producto, current_user.tenant_id)
     except crud.ProductoEnUsoError as exc:

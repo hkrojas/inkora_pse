@@ -80,7 +80,7 @@ def update_warehouse(db: Session, tenant_id: int, warehouse_id: int, data):
     return warehouse
 
 
-def activate_inventory(db: Session, tenant_id: int, data):
+def activate_inventory(db: Session, tenant_id: int, data, *, commit=True):
     tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).with_for_update().first()
     if tenant.inventory_enabled:
         warehouse = get_default_warehouse(db, tenant_id)
@@ -99,8 +99,11 @@ def activate_inventory(db: Session, tenant_id: int, data):
         db.flush()
     tenant.inventory_enabled = True
     tenant.inventory_started_at = datetime.now()
-    db.commit()
-    db.refresh(warehouse)
+    if commit:
+        db.commit()
+        db.refresh(warehouse)
+    else:
+        db.flush()
     return warehouse
 
 
@@ -136,7 +139,7 @@ def _balance(db, tenant_id, warehouse_id, product_id, *, lock=True):
     return balance
 
 
-def configure_product(db, tenant_id, product_id, data, user_id):
+def configure_product(db, tenant_id, product_id, data, user_id, *, commit=True):
     product = _get_product(db, tenant_id, product_id, inventory_required=False)
     if data.inventory_enabled and data.item_type != "inventory":
         raise HTTPException(422, "Solo un producto inventariable puede controlar stock.")
@@ -168,8 +171,11 @@ def configure_product(db, tenant_id, product_id, data, user_id):
                 product.id, None, user_id, "Saldo de apertura",
                 f"opening:{tenant_id}:{warehouse.id}:{product.id}", allow_negative=False,
             )
-    db.commit()
-    db.refresh(product)
+    if commit:
+        db.commit()
+        db.refresh(product)
+    else:
+        db.flush()
     return product
 
 
