@@ -107,7 +107,7 @@ def test_tenant_and_catalog_start_with_inventory_and_zero_stock(db_session):
     assert stock[0]["available"] == Decimal("0.0000")
 
 
-def test_zero_stock_is_visible_in_each_warehouse_without_movements(db_session):
+def test_zero_stock_is_not_repeated_in_warehouses_without_a_balance(db_session):
     tenant = crud.create_tenant(
         db_session,
         schemas.TenantCreate(
@@ -127,7 +127,7 @@ def test_zero_stock_is_visible_in_each_warehouse_without_movements(db_session):
     )
 
     stock = inventory_service.list_stock(db_session, tenant.id)
-    assert len(stock) == 2
+    assert len(stock) == 1
     assert {row["product_id"] for row in stock} == {product.id}
     assert all(row["on_hand"] == Decimal("0.0000") for row in stock)
 

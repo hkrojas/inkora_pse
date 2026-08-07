@@ -936,12 +936,31 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
   const [tipo, setTipo] = useState(() => getRecommendedFiscalReceiptType(cotizacion?.cliente));
   const [availability, setAvailability] = useState(null);
   const [availabilityLoading, setAvailabilityLoading] = useState(true);
+  const [stockEntry, setStockEntry] = useState(null);
+
+  const setAvailabilityWithMissingStock = (response) => {
+    setAvailability(response);
+    const firstMissing = response?.items?.find((item) => !item.sufficient);
+    if (!firstMissing) {
+      setStockEntry(null);
+      return;
+    }
+    setStockEntry((current) => {
+      const stillMissing = response.items.some((item) => String(item.product_id) === String(current?.productId) && !item.sufficient);
+      if (stillMissing) return current;
+      return {
+        productId: String(firstMissing.product_id),
+        quantity: String(Math.max(0, Number(firstMissing.requested) - Number(firstMissing.available))),
+        reason: 'Ingreso para completar emisión',
+      };
+    });
+  };
 
   useEffect(() => {
     let active = true;
     setAvailabilityLoading(true);
     inventory.documentAvailability(cotizacion.id)
-      .then((response) => { if (active) setAvailability(response); })
+      .then((response) => { if (active) setAvailabilityWithMissingStock(response); })
       .catch(() => { if (active) setAvailability(null); })
       .finally(() => { if (active) setAvailabilityLoading(false); });
     return () => { active = false; };
@@ -970,6 +989,33 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
       onSuccess();
     } catch (err) {
       toast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStockEntry = async (event) => {
+    event.preventDefault();
+    if (!stockEntry || !availability?.warehouse_id) return;
+    setSaving(true);
+    try {
+      await inventory.adjust({
+        warehouse_id: Number(availability.warehouse_id),
+        product_id: Number(stockEntry.productId),
+        quantity: stockEntry.quantity,
+        reason: stockEntry.reason,
+      });
+      const nextAvailability = await inventory.documentAvailability(cotizacion.id);
+      setAvailabilityWithMissingStock(nextAvailability);
+      if (!nextAvailability.sufficient) {
+        toast('El ingreso fue registrado. Aún falta stock en otra línea.', 'warning');
+        return;
+      }
+      await svc.facturar(cotizacion.id, { tipo_comprobante: tipo });
+      toast(`Comprobante ${tipo === '01' ? 'Factura' : 'Boleta'} emitido correctamente`);
+      onSuccess();
+    } catch (err) {
+      toast(err.message || 'No se pudo registrar el ingreso de stock.', 'error');
     } finally {
       setSaving(false);
     }
@@ -1022,6 +1068,34 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
           <p className="mt-1 text-xs">Almacén: {availability.warehouse_name}</p>
           {stockInsuficiente && <ul className="mt-2 space-y-1">{availability.items.filter((item) => !item.sufficient).map((item) => <li key={item.product_id}>{item.product_name}: disponible {item.available} de {item.requested} {item.unit}</li>)}</ul>}
         </div>
+      )}
+
+      {stockInsuficiente && stockEntry && (
+        <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-3">
+          <p className="text-sm font-bold">Agregar stock y reintentar</p>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">El ingreso queda registrado en el kardex del almacén seleccionado.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="text-sm font-bold">Producto
+              <CustomSelect
+                value={stockEntry.productId}
+                onChange={(productId) => {
+                  const product = availability.items.find((item) => String(item.product_id) === String(productId));
+                  setStockEntry((current) => ({ ...current, productId: String(productId), quantity: String(Math.max(0, Number(product.requested) - Number(product.available))) }));
+                }}
+                options={availability.items.filter((item) => !item.sufficient).map((item) => ({ value: String(item.product_id), label: `${item.product_name} · faltan ${Math.max(0, Number(item.requested) - Number(item.available))} ${item.unit}` }))}
+              />
+            </label>
+            <label className="text-sm font-bold">Cantidad de ingreso
+              <input className="input mt-1" required type="number" min="0.0001" step="0.0001" inputMode="decimal" value={stockEntry.quantity} onChange={(event) => setStockEntry((current) => ({ ...current, quantity: event.target.value }))} />
+            </label>
+          </div>
+          <label className="mt-3 block text-sm font-bold">Motivo
+            <input className="input mt-1" required minLength="3" value={stockEntry.reason} onChange={(event) => setStockEntry((current) => ({ ...current, reason: event.target.value }))} />
+          </label>
+          <div className="mt-3 flex justify-end">
+            <button type="button" className="btn-secondary" onClick={handleStockEntry} disabled={saving}>Registrar ingreso y emitir</button>
+          </div>
+        </section>
       )}
 
       <div className="flex justify-end gap-3">

@@ -258,23 +258,27 @@ def transfer_stock(db, tenant_id, data, user_id, *, can_override_negative=False)
 
 
 def list_stock(db, tenant_id, *, warehouse_id=None, q=None):
+    # A balance is the inventory record.  Joining every product to every
+    # warehouse made the UI show phantom zero-stock rows for warehouses where
+    # the product had never been configured or moved.
     query = db.query(models.InventoryBalance, models.Producto, models.Warehouse).select_from(
-        models.Producto
+        models.InventoryBalance
+    ).join(
+        models.Producto,
+        and_(
+            models.Producto.id == models.InventoryBalance.product_id,
+            models.Producto.tenant_id == tenant_id,
+        ),
     ).join(
         models.Warehouse,
-        models.Warehouse.tenant_id == models.Producto.tenant_id,
-    ).outerjoin(
-        models.InventoryBalance,
         and_(
-            models.InventoryBalance.tenant_id == tenant_id,
-            models.InventoryBalance.product_id == models.Producto.id,
-            models.InventoryBalance.warehouse_id == models.Warehouse.id,
+            models.Warehouse.id == models.InventoryBalance.warehouse_id,
+            models.Warehouse.tenant_id == tenant_id,
         ),
     ).filter(
-        models.Producto.tenant_id == tenant_id,
+        models.InventoryBalance.tenant_id == tenant_id,
         models.Producto.inventory_enabled.is_(True),
         models.Producto.item_type == "inventory",
-        models.Warehouse.tenant_id == tenant_id,
         models.Warehouse.is_active.is_(True),
     )
     if warehouse_id:
