@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from threading import Thread
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 import crud
@@ -1143,8 +1144,9 @@ def run_worker_loop() -> None:
         while not is_shutdown_requested():
             # Claim jobs at the normal cadence. Recover stale jobs separately
             # so an idle worker does not duplicate that query on every poll.
-            db = SessionLocal()
+            db = None
             try:
+                db = SessionLocal()
                 next_recovery_at = _recover_stale_jobs_if_due(
                     db,
                     now_monotonic=time.monotonic(),
@@ -1164,8 +1166,26 @@ def run_worker_loop() -> None:
                 if submitted == 0:
                     # No work available — sleep briefly and retry
                     _shutdown_requested.wait(timeout=poll_seconds)
+            except SQLAlchemyError:
+                if db is not None:
+                    try:
+                        db.rollback()
+                    except Exception:
+                        logger.exception(
+                            "emission_worker_db_rollback_failed",
+                            extra={"event": "emission_worker_db_rollback_failed"},
+                        )
+                logger.exception(
+                    "emission_worker_database_error",
+                    extra={
+                        "event": "emission_worker_database_error",
+                        "context": "retrying_after_database_error",
+                    },
+                )
+                _shutdown_requested.wait(timeout=poll_seconds)
             finally:
-                db.close()
+                if db is not None:
+                    db.close()
 
     logger.info(
         "emission_worker_stopped",
