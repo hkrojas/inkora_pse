@@ -18,6 +18,7 @@ __pycache__/
 # Archivos de build y logs de Vite/npm
 /frontend/dist/
 /frontend/.vite/
+/frontend/.svelte-kit/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -58,3 +59,6 @@ frontend_dev.log
 
 # Configuracion local de agentes/IDE auxiliares
 /.kilo/
+
+/.vercel/
+/.env.local

@@ -1,0 +1,32 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg"><title>Inkora · prueba aislada de acciones</title></head><body><div id="root"></div>
+<script type="module">
+const rows = [
+  { id: 99001, serie: 'FA01', correlativo: 1, estado: 'facturada', sunat_accepted: true, provider_verification_status: 'verified', has_sunat_xml: true, has_sunat_cdr: true },
+  { id: 99002, serie: 'FA01', correlativo: 2, estado: 'pendiente', sunat_error: '[1033] Resultado pendiente', provider_verification_status: 'pending_confirmation' },
+  { id: 99003, serie: 'FA01', correlativo: 3, estado: 'pendiente', sunat_error: '[3127] Error XML corregible' },
+].map(row => ({ ...row, document_kind: 'fiscal_document', tipo_comprobante: '01', total_venta: 118, moneda: 'PEN', fecha_emision: '2026-09-18', cliente: { razon_social: 'CLIENTE SINTÉTICO · PRUEBA AISLADA', numero_documento: '20123456789' } }));
+const originalFetch = window.fetch.bind(window);
+window.fetch = async (input, options = {}) => {
+  const url = new URL(String(input), location.href);
+  if (url.origin === location.origin) return originalFetch(input, options);
+  const path = url.pathname.replace(/\/$/, '');
+  const respond = (data, status=200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
+  if (path === '/users/me') return respond({ id: 1, tenant_id: 1, rol: 'admin', is_active: true, is_superadmin: false, nombre_completo: 'Operador de prueba' });
+  if (path === '/tenant') return respond({ id: 1, business_name: 'ENTORNO AISLADO', is_active: true });
+  if (path === '/sunat/exchange-rate') return respond({ buy: '3.40', sell: '3.41' });
+  if (path === '/facturas-emitidas/page') return respond({ items: rows, total: 3, counts: { all: 3, emitted: 1, pending: 1, rejected: 1, draft: 0, voided: 0 } });
+  if (path.endsWith('/acciones')) {
+    const id = Number(path.split('/')[2]);
+    return respond({ retry_emission: id === 99003, retry_block_reason: id === 99002 ? 'Resultado pendiente de conciliación. No se permite reenviar.' : null, retry_artifacts: id === 99001, void: id === 99001 });
+  }
+  if (path.endsWith('/reintentar')) return respond({ job_id: 1, job_status: 'contingency_pending', deferred: true }, 202);
+  if (path.endsWith('/artifacts/retry')) return respond({ ok: true });
+  if (path.endsWith('/pdf/download')) return new Response('%PDF-1.4\n%%EOF', { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="prueba-aislada.pdf"' } });
+  if (path === '/bajas/anular') return respond({ ok: true });
+  return respond({ detail: 'Operación no habilitada en la prueba aislada.' }, 404);
+};
+localStorage.setItem('token', 'isolated-fixture-only');
+localStorage.setItem('inkora-theme', new URL(location.href).searchParams.get('theme') || 'light');
+history.replaceState(null, '', '/facturas');
+await import('/src/main.jsx');
+</script></body></html>

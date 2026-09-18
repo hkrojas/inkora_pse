@@ -24,7 +24,8 @@ import crud
 import models
 import schemas
 from conftest import make_cliente, make_tenant, make_user, make_quote_via_crud
-from fastapi import BackgroundTasks, HTTPException, Request
+from fastapi import HTTPException
+from starlette.requests import Request
 from routers import facturacion
 from services import calculations
 from services import emission_queue_service
@@ -38,19 +39,6 @@ from services.fiscal_balance_service import (
     get_credit_note_available_amount,
     get_fiscal_document_balance,
 )
-
-
-def _test_request(path: str = "/facturacion/notas/emitir") -> Request:
-    return Request({
-        "type": "http",
-        "method": "POST",
-        "path": path,
-        "headers": [],
-        "query_string": b"",
-        "server": ("testserver", 80),
-        "client": ("testclient", 50000),
-        "scheme": "http",
-    })
 
 
 # ==========================================
@@ -446,14 +434,20 @@ class TestNotasParcialesFiscalBalance:
 
         with pytest.raises(HTTPException) as exc:
             facturacion.emitir_nota(
-                _test_request(),
+                Request(
+                    {
+                        "type": "http",
+                        "method": "POST",
+                        "path": "/notas/emitir",
+                        "headers": [],
+                    }
+                ),
                 schemas.NotaCreate(
                     comprobante_afectado_id=other_fiscal.id,
                     tipo_nota="credito",
                     cod_motivo="01",
                     descripcion_motivo="Nota de otro tenant",
                 ),
-                BackgroundTasks(),
                 db=db_session,
                 current_user=user,
                 _emission_check=user,
@@ -839,92 +833,9 @@ class TestRedondeoExtremoBimonetario:
 
 
 # ==========================================
-# TEST 2: DETRACCIÓN EXPLÍCITA SPOT
+# TEST 2: DETRACCIÓN AUTOMÁTICA SPOT
 # ==========================================
 
-class TestDetraccionExplicitaSPOT:
-    """La detracción solo se aplica con configuración fiscal explícita."""
-
-    def test_detraccion_no_se_activa_solo_por_superar_umbral(self):
-        items = [_mock_item("Impresión de folletos a todo color", 1, Decimal("850.00"))]
-        cotizacion = _mock_cotizacion(items, moneda="PEN", tipo_comprobante="01")
-        user = _mock_user()
-
-        payload, _ = facturacion_service._base_payload(cotizacion, user, "01")
-        payload["legends"] = [{"code": "1000", "value": "OCHOCIENTOS CINCUENTA..."}]
-
-        resultado = facturacion_service._aplicar_detraccion(payload, cotizacion, user, db=None)
-
-        assert resultado["tipoOperacion"] == "0101"
-        assert "detraccion" not in resultado
-
-    @staticmethod
-    def _configured_quote(items):
-        return _mock_cotizacion(
-            items,
-            moneda="PEN",
-            tipo_comprobante="01",
-            porcentaje_detraccion=Decimal("12.00"),
-            cuenta_banco_nacion="00-123-456789",
-            sujeta_detraccion=True,
-            codigo_detraccion="025",
-        )
-
-    @staticmethod
-    def _apply(items):
-        cotizacion = TestDetraccionExplicitaSPOT._configured_quote(items)
-        user = _mock_user()
-        payload, _ = facturacion_service._base_payload(cotizacion, user, "01")
-        payload["tipoOperacion"] = "1001"
-        payload["legends"] = [{"code": "1000", "value": "test"}]
-        return facturacion_service._aplicar_detraccion(payload, cotizacion, user, db=None), cotizacion
-
-    def test_detraccion_porcentaje_correcto(self):
-        items = [_mock_item("Impresión offset", 1, Decimal("850.00"))]
-        resultado, _ = self._apply(items)
-        detraccion = resultado["detraccion"]
-        assert detraccion["percent"] == Decimal("12.00")
-        assert detraccion["codBienDetraccion"] == "025"
-
-    def test_detraccion_monto_exacto(self):
-        items = [_mock_item("Servicio de impresión digital", 1, Decimal("850.00"))]
-        resultado, _ = self._apply(items)
-        assert resultado["detraccion"]["mount"] == Decimal("102.00")
-
-    def test_detraccion_cuenta_banco_nacion(self):
-        items = [_mock_item("Impresión", 1, Decimal("850.00"))]
-        resultado, _ = self._apply(items)
-        assert resultado["detraccion"]["ctaBanco"] == "00-123-456789"
-
-    def test_detraccion_NO_se_activa_bajo_umbral(self):
-        items = [_mock_item("Impresión básica", 1, Decimal("650.00"))]
-        cotizacion = _mock_cotizacion(items, moneda="PEN", tipo_comprobante="01")
-        user = _mock_user()
-
-        payload, _ = facturacion_service._base_payload(cotizacion, user, "01")
-        payload["legends"] = [{"code": "1000", "value": "test"}]
-        resultado = facturacion_service._aplicar_detraccion(payload, cotizacion, user, db=None)
-
-        assert "detraccion" not in resultado
-
-    def test_detraccion_NO_se_activa_en_boletas(self):
-        items = [_mock_item("Impresión volantes", 1, Decimal("900.00"))]
-        cotizacion = _mock_cotizacion(items, moneda="PEN", tipo_comprobante="03")
-        user = _mock_user()
-
-        payload, _ = facturacion_service._base_payload(cotizacion, user, "03")
-        payload["legends"] = [{"code": "1000", "value": "test"}]
-        resultado = facturacion_service._aplicar_detraccion(payload, cotizacion, user, db=None)
-
-        assert "detraccion" not in resultado
-
-    def test_detraccion_persiste_en_modelo(self):
-        items = [_mock_item("Impresión", 1, Decimal("850.00"))]
-        _, cotizacion = self._apply(items)
-
-        assert cotizacion.sujeta_detraccion is True
-        assert cotizacion.porcentaje_detraccion == Decimal("12.00")
-        assert cotizacion.monto_detraccion == Decimal("102.00")
 
 
 # ==========================================
@@ -1043,3 +954,88 @@ class TestAmortizacionAnticipos:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
+
+
+class TestDetraccionExplicitaSPOT:
+    """La detracción solo se aplica con configuración fiscal explícita."""
+
+    def test_detraccion_no_se_activa_solo_por_superar_umbral(self):
+        items = [_mock_item("Impresión de folletos a todo color", 1, Decimal("850.00"))]
+        cotizacion = _mock_cotizacion(items, moneda="PEN", tipo_comprobante="01")
+        user = _mock_user()
+
+        payload, _ = facturacion_service._base_payload(cotizacion, user, "01")
+        payload["legends"] = [{"code": "1000", "value": "OCHOCIENTOS CINCUENTA..."}]
+
+        resultado = facturacion_service._aplicar_detraccion(payload, cotizacion, user, db=None)
+
+        assert resultado["tipoOperacion"] == "0101"
+        assert "detraccion" not in resultado
+
+    @staticmethod
+    def _configured_quote(items):
+        return _mock_cotizacion(
+            items,
+            moneda="PEN",
+            tipo_comprobante="01",
+            porcentaje_detraccion=Decimal("12.00"),
+            cuenta_banco_nacion="00-123-456789",
+            sujeta_detraccion=True,
+            codigo_detraccion="025",
+        )
+
+    @staticmethod
+    def _apply(items):
+        cotizacion = TestDetraccionExplicitaSPOT._configured_quote(items)
+        user = _mock_user()
+        payload, _ = facturacion_service._base_payload(cotizacion, user, "01")
+        payload["tipoOperacion"] = "1001"
+        payload["legends"] = [{"code": "1000", "value": "test"}]
+        return facturacion_service._aplicar_detraccion(payload, cotizacion, user, db=None), cotizacion
+
+    def test_detraccion_porcentaje_correcto(self):
+        items = [_mock_item("Impresión offset", 1, Decimal("850.00"))]
+        resultado, _ = self._apply(items)
+        detraccion = resultado["detraccion"]
+        assert detraccion["percent"] == Decimal("12.00")
+        assert detraccion["codBienDetraccion"] == "025"
+
+    def test_detraccion_monto_exacto(self):
+        items = [_mock_item("Servicio de impresión digital", 1, Decimal("850.00"))]
+        resultado, _ = self._apply(items)
+        assert resultado["detraccion"]["mount"] == Decimal("102.00")
+
+    def test_detraccion_cuenta_banco_nacion(self):
+        items = [_mock_item("Impresión", 1, Decimal("850.00"))]
+        resultado, _ = self._apply(items)
+        assert resultado["detraccion"]["ctaBanco"] == "00-123-456789"
+
+    def test_detraccion_NO_se_activa_bajo_umbral(self):
+        items = [_mock_item("Impresión básica", 1, Decimal("650.00"))]
+        cotizacion = _mock_cotizacion(items, moneda="PEN", tipo_comprobante="01")
+        user = _mock_user()
+
+        payload, _ = facturacion_service._base_payload(cotizacion, user, "01")
+        payload["legends"] = [{"code": "1000", "value": "test"}]
+        resultado = facturacion_service._aplicar_detraccion(payload, cotizacion, user, db=None)
+
+        assert "detraccion" not in resultado
+
+    def test_detraccion_NO_se_activa_en_boletas(self):
+        items = [_mock_item("Impresión volantes", 1, Decimal("900.00"))]
+        cotizacion = _mock_cotizacion(items, moneda="PEN", tipo_comprobante="03")
+        user = _mock_user()
+
+        payload, _ = facturacion_service._base_payload(cotizacion, user, "03")
+        payload["legends"] = [{"code": "1000", "value": "test"}]
+        resultado = facturacion_service._aplicar_detraccion(payload, cotizacion, user, db=None)
+
+        assert "detraccion" not in resultado
+
+    def test_detraccion_persiste_en_modelo(self):
+        items = [_mock_item("Impresión", 1, Decimal("850.00"))]
+        _, cotizacion = self._apply(items)
+
+        assert cotizacion.sujeta_detraccion is True
+        assert cotizacion.porcentaje_detraccion == Decimal("12.00")
+        assert cotizacion.monto_detraccion == Decimal("102.00")

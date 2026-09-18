@@ -12,7 +12,7 @@ import models
 from api_dependencies import get_current_user, get_db, get_db_tenant
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
 from routers import superadmin as superadmin_router
-from services import facturacion_service
+from services import emission_queue_service, facturacion_service
 
 
 def _client_for_superadmin(db_session, user):
@@ -159,7 +159,7 @@ def test_superadmin_check_smartpse_gre_credentials_updates_status_without_exposi
     assert tenant.smartpse_gre_checked_at is not None
 
 
-def test_emitir_guia_rechaza_respuesta_smartpse_sin_cdr(db_session):
+def test_emitir_guia_con_ticket_sin_cdr_permanece_pendiente(db_session):
     tenant, user, guia = _make_gre_user_and_guia(db_session, "GRC03")
     fake_client = MagicMock()
     fake_client.process_xml.return_value = {
@@ -171,10 +171,11 @@ def test_emitir_guia_rechaza_respuesta_smartpse_sin_cdr(db_session):
         "rechazado": False,
     }
     with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
-        with pytest.raises(facturacion_service.FacturacionException) as exc_info:
-            facturacion_service.emitir_guia_remision(guia, user)
+        result = facturacion_service.emitir_guia_remision(guia, user)
 
-    assert "no devolvio CDR" in str(exc_info.value)
+    assert result["success"] is True
+    assert result["pending"] is True
+    assert result["ticket"] == "GRE-TICKET-1"
     fake_client.process_xml.assert_called_once()
     extra_payload = fake_client.process_xml.call_args.kwargs["extra_payload"]
     assert extra_payload == {
@@ -182,12 +183,13 @@ def test_emitir_guia_rechaza_respuesta_smartpse_sin_cdr(db_session):
         "client_secret_sunat": "client-secret",
         "sol_user": "20123403SOLUSER",
         "sol_password": "sol-password-demo",
+        "environment": "demo",
     }
 
 
 def test_emitir_guia_smartpse_acepta_cdr_y_persiste_evidencia(db_session):
     tenant, user, guia = _make_gre_user_and_guia(db_session, "GRC03CDR")
-    cdr_xml = "<ApplicationResponse>aceptada</ApplicationResponse>"
+    cdr_xml = """<ApplicationResponse xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"><cac:DocumentResponse><cac:Response><cbc:ResponseCode>0</cbc:ResponseCode><cbc:Description>Aceptada</cbc:Description></cac:Response><cac:DocumentReference><cbc:ID>T001-1</cbc:ID></cac:DocumentReference></cac:DocumentResponse></ApplicationResponse>"""
     fake_client = MagicMock()
     fake_client.process_xml.return_value = {
         "estado": 200,
@@ -235,12 +237,116 @@ def test_guardar_respuesta_sunat_gre_persists_pending_signed_artifacts(db_sessio
     assert updated.sunat_error is None
 
 
-def test_emitir_guia_blocks_missing_dedicated_gre_credentials(db_session):
+def test_worker_keeps_ticket_without_cdr_pending_and_does_not_cover_dispatch(db_session):
+    tenant, user, guia = _make_gre_user_and_guia(db_session, "GRC04WORKER")
+    guia.frozen_payload = {"tipoDoc": "09", "serie": guia.serie, "correlativo": "1"}
+    guia.frozen_xml = "<DespatchAdvice/>"
+    guia.emission_environment = "demo"
+    db_session.commit()
+    job, created = emission_queue_service.enqueue_guide_job(db_session, guia, user)
+    assert created is True
+
+    pending_result = {
+        "success": True,
+        "pending": True,
+        "ticket": "GRE-WORKER-TICKET",
+        "xml": "<DespatchAdvice Signed='true'/>",
+        "hash": "worker-hash",
+        "provider_endpoint": "/api/cpe/procesar-demo",
+        "provider_status_code": 200,
+        "provider_response": {"estado": 200, "ticket": "GRE-WORKER-TICKET"},
+    }
+    with patch(
+        "services.emission_queue_service.sale_dispatch_service.validate_guide_for_emission",
+        return_value={"valid": True, "errors": [], "warnings": []},
+    ), patch(
+        "services.emission_queue_service.facturacion_service.emitir_guia_remision",
+        return_value=pending_result,
+    ), patch(
+        "services.emission_queue_service.sale_dispatch_service.apply_guide_result",
+    ) as apply_result:
+        assert emission_queue_service.process_emission_job(job.id, db_session=db_session) is True
+
+    db_session.expire_all()
+    updated_job = crud.get_emission_job(db_session, job.id)
+    updated_guide = db_session.get(models.GuiaRemision, guia.id)
+    assert updated_job.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION
+    assert updated_job.provider_ticket == "GRE-WORKER-TICKET"
+    assert updated_guide.estado == "pendiente_smartpse"
+    assert updated_guide.sunat_ticket == "GRE-WORKER-TICKET"
+    assert updated_guide.cdr_disponible is False
+    apply_result.assert_not_called()
+
+
+def test_emitir_guia_demo_allows_missing_dedicated_gre_credentials(db_session):
     _, user, guia = _make_gre_user_and_guia(db_session, "GRC05")
     user.tenant.smartpse_gre_client_secret_enc = None
     db_session.commit()
+    fake_client = MagicMock()
+    fake_client.process_xml.return_value = {
+        "estado": 200,
+        "mensaje": "Pendiente",
+        "ticket": "GRE-DEMO-TICKET",
+        "xml_firmado": "<DespatchAdvice/>",
+        "codigo_hash": "hash-gre-demo",
+        "rechazado": False,
+    }
 
-    with pytest.raises(facturacion_service.FacturacionException) as exc_info:
-        facturacion_service.emitir_guia_remision(guia, user)
+    with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
+        result = facturacion_service.emitir_guia_remision(guia, user)
+
+    assert result["pending"] is True
+    assert "extra_payload" not in fake_client.process_xml.call_args.kwargs
+
+
+def test_emitir_guia_production_blocks_missing_dedicated_gre_credentials(
+    db_session,
+    monkeypatch,
+):
+    _, user, guia = _make_gre_user_and_guia(db_session, "GRC05PROD")
+    user.tenant.smartpse_environment = "produccion"
+    user.tenant.smartpse_gre_client_secret_enc = None
+    db_session.commit()
+    monkeypatch.setattr(facturacion_service.settings, "FISCAL_ENV", "production")
+    fake_client = MagicMock()
+
+    with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
+        with pytest.raises(facturacion_service.FacturacionException) as exc_info:
+            facturacion_service.emitir_guia_remision(guia, user)
 
     assert "credenciales SUNAT GRE" in str(exc_info.value)
+    assert "produccion" in str(exc_info.value)
+    fake_client.process_xml.assert_not_called()
+
+
+def test_consultar_guia_reenvia_credenciales_gre_sin_exponerlas_en_nombre(db_session):
+    _, user, guia = _make_gre_user_and_guia(db_session, "GRC06")
+    guia.frozen_payload = {
+        "company": {"ruc": user.tenant.business_ruc},
+        "tipoDoc": "09",
+        "serie": guia.serie,
+        "correlativo": str(guia.correlativo).zfill(6),
+    }
+    guia.sunat_ticket = "GRE-TICKET-6"
+    db_session.commit()
+    fake_client = MagicMock()
+    fake_client.consult_ticket.side_effect = facturacion_service.smartpse_client.SmartPSEException(
+        "Pendiente"
+    )
+
+    with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
+        with pytest.raises(facturacion_service.FacturacionException):
+            facturacion_service.consultar_guia_remision(guia, user)
+
+    called_tenant, filename = fake_client.consult_ticket.call_args.args
+    assert called_tenant.id == user.tenant.id
+    expected_ruc = "".join(ch for ch in user.tenant.business_ruc if ch.isdigit())
+    assert filename.startswith(f"{expected_ruc}-09-")
+    assert "client-secret" not in filename
+    assert fake_client.consult_ticket.call_args.kwargs["extra_payload"] == {
+        "client_id_sunat": "client-id",
+        "client_secret_sunat": "client-secret",
+        "sol_user": f"{expected_ruc}SOLUSER",
+        "sol_password": "sol-password-demo",
+        "environment": "demo",
+    }

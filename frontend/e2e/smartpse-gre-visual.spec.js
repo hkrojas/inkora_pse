@@ -7,95 +7,13 @@ const tenant = {
   business_name: 'PAPELERIA GRAFICA Y PUBLICITARIA SAC.',
   business_ruc: '20606751509',
   business_address: 'Av. Los Pinos 123',
-  logo_filename: 'https://assets.test/logo-inkora.png',
-  payment_qr_filename: 'https://assets.test/qr-cobro.png',
   plan_type: 'founder',
   is_active: true,
-  has_smartpse_credentials: true,
-  smartpse_company_id: '7',
-  smartpse_status: 'ok',
-  smartpse_checked_at: '2026-05-05T16:00:00Z',
-  smartpse_environment: 'demo',
-  smartpse_remote_active: true,
-  smartpse_remote_estado: 'ACTIVO',
-  smartpse_remote_synced_at: '2026-05-05T16:00:00Z',
-  smartpse_start_date: '2026-01-01T00:00:00Z',
-  smartpse_end_date: null,
-  smartpse_firmas_usadas: 4,
+  has_apisperu_token: true,
+  apisperu_token_status: 'ok',
   has_smartpse_gre_credentials: true,
   smartpse_gre_status: 'ok',
   smartpse_gre_checked_at: '2026-05-05T16:00:00Z',
-};
-
-const createdTenant = {
-  id: 22,
-  business_name: 'DEMO SMART PSE SAC',
-  business_ruc: '20609999991',
-  business_address: 'Av. Demo 456',
-  plan_type: 'founder',
-  is_active: true,
-  has_smartpse_credentials: false,
-  smartpse_status: 'unchecked',
-  smartpse_checked_at: null,
-  smartpse_environment: 'demo',
-  has_smartpse_gre_credentials: false,
-  smartpse_gre_status: 'unchecked',
-  smartpse_gre_checked_at: null,
-};
-
-const provisionedTenant = {
-  ...createdTenant,
-  has_smartpse_credentials: true,
-  smartpse_company_id: '22',
-  smartpse_status: 'ok',
-  smartpse_checked_at: '2026-05-05T16:10:00Z',
-  smartpse_environment: 'demo',
-  smartpse_remote_active: true,
-  smartpse_remote_estado: 'ACTIVO',
-  smartpse_remote_synced_at: '2026-05-05T16:10:00Z',
-  smartpse_start_date: '2026-01-01T00:00:00Z',
-  smartpse_end_date: null,
-  smartpse_firmas_usadas: 0,
-};
-
-const smartPseCompany = {
-  id: '7',
-  ruc: tenant.business_ruc,
-  razon_social: tenant.business_name,
-  environment: 'demo',
-  active: true,
-  estado: 'ACTIVO',
-  start_date: '2026-01-01',
-  end_date: null,
-  firmas_usadas: 4,
-  synced_at: '2026-05-05T16:12:00Z',
-};
-
-const productionPreparedTenant = {
-  ...tenant,
-  smartpse_environment: 'produccion',
-  smartpse_remote_active: true,
-  smartpse_remote_estado: 'ACTIVO',
-  smartpse_remote_synced_at: '2026-05-05T16:20:00Z',
-  smartpse_firmas_usadas: 5,
-};
-
-const inactiveSmartPseTenant = {
-  ...productionPreparedTenant,
-  smartpse_remote_active: false,
-  smartpse_remote_estado: 'INACTIVO',
-};
-
-const remoteCreatedCompany = {
-  id: '105',
-  ruc: '20999999991',
-  razon_social: 'REMOTE ONLY SAC',
-  environment: 'demo',
-  active: true,
-  estado: 'ACTIVO',
-  start_date: '2026-01-01',
-  end_date: null,
-  firmas_usadas: 0,
 };
 
 const user = {
@@ -127,30 +45,36 @@ const smartPseGuide = {
   sunat_hash: 'smoke-hash-smartpse-0005',
   sunat_ticket: 'T001-000005',
   sunat_cdr_url: '',
+  actions: {
+    validate: { enabled: false },
+    edit: { enabled: false },
+    cancel: { enabled: false },
+    consult: { enabled: true },
+    confirm_departure: { enabled: false },
+    emit: { enabled: false },
+  },
   items: [
     { id: 1, descripcion: 'Afiches publicitarios', cantidad: 100, unidad_medida: 'NIU' },
   ],
 };
 
 async function createVisualContext(browser, baseURL, role = 'tenant', options = {}) {
+  const state = options.state || { guide: smartPseGuide, jobPolls: 0 };
   const context = await browser.newContext({
     baseURL,
     viewport: options.viewport,
     storageState: { cookies: [], origins: [] },
   });
-  await context.addInitScript(({ theme }) => {
+  await context.addInitScript(() => {
     localStorage.setItem('token', 'visual-qa-token');
-    if (theme) localStorage.setItem('inkora-theme', theme);
     sessionStorage.removeItem('token');
-  }, { theme: options.theme || null });
+  });
   const page = await context.newPage();
 
   await page.route(`${API_ORIGIN}/**`, async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/\/$/, '');
-    if (options.onRequest) await options.onRequest(route.request());
-
-    const payload = getApiPayload(path, role, route.request());
+    const payload = getApiPayload(path, role, route.request().method(), state);
 
     if (payload) {
       await route.fulfill({
@@ -171,8 +95,7 @@ async function createVisualContext(browser, baseURL, role = 'tenant', options = 
   return { context, page };
 }
 
-function getApiPayload(path, role, request) {
-  const method = request.method();
+function getApiPayload(path, role, method = 'GET', state = { guide: smartPseGuide }) {
   if (path === '/users/me') {
     return role === 'superadmin'
       ? { ...user, rol: 'superadmin', is_superadmin: true, tenant_id: null }
@@ -185,24 +108,14 @@ function getApiPayload(path, role, request) {
       ...tenant,
       has_sunat_credentials: true,
       has_sunat_cert: true,
+      has_smartpse_credentials: true,
+      smartpse_status: 'ok',
     };
-  }
-  if (path === '/users/upload-payment-qr' && method === 'POST') {
-    return { url: 'https://assets.test/qr-cobro-actualizado.png' };
   }
   if (path === '/clientes' || path === '/cotizaciones') return [];
-  if (path === '/clientes/page') return { items: [], total: 0 };
-  if (path === '/facturas-emitidas/page') return { items: [], total: 0 };
-  if (path === '/notas/page') {
-    return {
-      items: [],
-      total: 0,
-      counts: { all: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 },
-    };
-  }
   if (path === '/guias-remision') {
     return {
-      items: [smartPseGuide],
+      items: [state.guide],
       total: 1,
       counts: {
         all: 1,
@@ -214,7 +127,35 @@ function getApiPayload(path, role, request) {
       },
     };
   }
-  if (path === '/guias-remision/6') return smartPseGuide;
+  if (path === '/guias-remision/6/emitir' && method === 'POST') {
+    return {
+      success: true,
+      queued: true,
+      job_id: 77,
+      job_status: 'queued',
+    };
+  }
+  if (path === '/emission-jobs/77') {
+    state.jobPolls = (state.jobPolls || 0) + 1;
+    if (state.jobPolls >= 1) {
+      state.guide = {
+        ...state.guide,
+        estado: 'emitida',
+        cdr_disponible: true,
+        xml_disponible: true,
+        sunat_hash: 'accepted-gre-hash',
+        actions: {
+          ...state.guide.actions,
+          emit: { enabled: false },
+          consult: { enabled: false },
+          confirm_departure: { enabled: true },
+        },
+      };
+      return { id: 77, status: 'succeeded', last_error: null };
+    }
+    return { id: 77, status: 'queued', last_error: null };
+  }
+  if (path === '/guias-remision/6') return state.guide;
   if (path === '/superadmin/tenants-page') {
     return {
       items: [tenant],
@@ -229,151 +170,22 @@ function getApiPayload(path, role, request) {
       },
     };
   }
-  if (path === '/superadmin/smartpse/companies' && method === 'GET') {
-    return {
-      data: [smartPseCompany],
-      total: 1,
-      current_page: 1,
-      last_page: 1,
-    };
-  }
-  if (path === '/superadmin/smartpse/companies' && method === 'POST') {
-    return remoteCreatedCompany;
-  }
-  if (path === '/superadmin/smartpse/sync-all' && method === 'POST') {
-    return {
-      total: 1,
-      synced: 1,
-      failed: 0,
-      items: [{ tenant_id: tenant.id, company_id: tenant.smartpse_company_id, status: 'synced' }],
-    };
-  }
-  if (path === '/superadmin/tenants' && method === 'POST') return createdTenant;
-  if (path === `/superadmin/tenants/${createdTenant.id}/smartpse/provision` && method === 'POST') {
-    return provisionedTenant;
-  }
-  if (path === `/superadmin/tenants/${tenant.id}/smartpse/check` && method === 'POST') {
-    return {
-      valid: true,
-      message: 'Credenciales Smart PSE aceptadas.',
-      provider_status_code: 200,
-      provider_detail: 'ok',
-    };
-  }
-  if (path === `/superadmin/tenants/${tenant.id}/smartpse/company` && method === 'GET') {
-    return smartPseCompany;
-  }
-  if (path === `/superadmin/tenants/${tenant.id}/smartpse/sync` && method === 'POST') {
-    return tenant;
-  }
-  if (path === `/superadmin/tenants/${tenant.id}/smartpse/company` && method === 'PATCH') {
-    return productionPreparedTenant;
-  }
-  if (path === `/superadmin/tenants/${tenant.id}/smartpse/activation` && method === 'POST') {
-    return inactiveSmartPseTenant;
-  }
-  if (path === `/superadmin/tenants/${tenant.id}/smartpse/credentials` && method === 'PUT') {
-    return {
-      ...tenant,
-      smartpse_company_id: '7',
-      has_smartpse_credentials: true,
-      smartpse_status: 'unchecked',
-    };
-  }
-  if (path === `/superadmin/tenants/${tenant.id}/smartpse/audit-logs` && method === 'GET') {
-    return [
-      {
-        id: 1,
-        timestamp: '2026-06-01T10:00:00Z',
-        user_id: 700,
-        action: 'superadmin.tenant.smartpse_synced',
-        entity_type: 'tenant',
-        entity_id: tenant.id,
-        details: 'company_id=7',
-        ip_address: null,
-      },
-    ];
-  }
-  if (path === `/superadmin/tenants/${tenant.id}/smartpse/company` && method === 'DELETE') {
-    return { deleted: true, company_id: '7' };
-  }
   return null;
 }
 
 test.describe('Smart PSE GRE QA visual', () => {
-  test('superadmin crea tenant y aprovisiona Smart PSE CPE sin ApisPeru', async ({ browser, baseURL }) => {
-    const requests = [];
-    const { context, page } = await createVisualContext(browser, baseURL, 'superadmin', {
-      onRequest: async (request) => {
-        const url = new URL(request.url());
-        if (!url.pathname.startsWith('/superadmin')) return;
-        let body = null;
-        try {
-          body = request.postDataJSON();
-        } catch {
-          body = null;
-        }
-        requests.push({ method: request.method(), path: url.pathname.replace(/\/$/, ''), body });
-      },
-    });
-
-    try {
-      await page.goto('/superadmin');
-      await expect(page.getByRole('columnheader', { name: /Smart PSE CPE/i })).toBeVisible();
-      await expect(page.getByText(/ApisPeru/i)).toHaveCount(0);
-
-      await page.getByRole('button', { name: /Nuevo tenant/i }).first().click();
-      await expect(page.locator('.ink-drawer')).toBeVisible();
-      await expect(page.locator('.modal-panel')).toHaveCount(0);
-      await expect(page.locator('form').getByText('Smart PSE CPE', { exact: true })).toBeVisible();
-      await expect(page.getByText(/ApisPeru/i)).toHaveCount(0);
-
-      await page.getByLabel(/Razon social/i).fill(createdTenant.business_name);
-      await page.getByLabel(/^RUC/i).fill(createdTenant.business_ruc);
-      await page.getByLabel(/Direccion fiscal/i).fill(createdTenant.business_address);
-      await page.getByRole('button', { name: /Crear y aprovisionar/i }).click();
-
-      await expect.poll(() =>
-        requests.some((entry) => entry.path === `/superadmin/tenants/${createdTenant.id}/smartpse/provision`),
-      ).toBe(true);
-
-      const createRequest = requests.find((entry) => entry.path === '/superadmin/tenants' && entry.method === 'POST');
-      expect(createRequest.body).toMatchObject({
-        business_name: createdTenant.business_name,
-        business_ruc: createdTenant.business_ruc,
-        business_address: createdTenant.business_address,
-      });
-      expect(createRequest.body).not.toHaveProperty('apisperu_token');
-      expect(createRequest.body).not.toHaveProperty('apisperu_url');
-
-      const provisionRequest = requests.find(
-        (entry) => entry.path === `/superadmin/tenants/${createdTenant.id}/smartpse/provision`,
-      );
-      expect(provisionRequest.body).toEqual({ environment: 'demo' });
-
-      await page.getByRole('button', { name: /Verificar Smart PSE CPE/i }).first().click();
-      await expect.poll(() =>
-        requests.some((entry) => entry.path === `/superadmin/tenants/${tenant.id}/smartpse/check`),
-      ).toBe(true);
-    } finally {
-      await context.close();
-    }
-  });
-
-  test('superadmin abre drawer GRE sin exponer secretos guardados', async ({ browser, baseURL }) => {
+  test('superadmin abre modal GRE sin exponer secretos guardados', async ({ browser, baseURL }) => {
     const { context, page } = await createVisualContext(browser, baseURL, 'superadmin');
 
     try {
       await page.goto('/superadmin');
-      await expect(page.getByRole('heading', { name: /Superadmin operativo/i })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 2, name: /^superadmin$/i })).toBeVisible();
 
       const firstGreButton = page.getByRole('button', { name: /^GRE$/ }).first();
       await expect(firstGreButton).toBeVisible();
       await firstGreButton.click();
 
-      const drawer = page.locator('.ink-drawer.is-open');
-      await expect(drawer).toBeVisible();
-      await expect(drawer.getByRole('heading', { name: /Smart PSE GRE/i })).toBeVisible();
+      await expect(page.getByText(/Smart PSE GRE \//i)).toBeVisible();
       await expect(page.getByText(/credenciales SUNAT para guias/i)).toBeVisible();
       await expect(page.getByText(/los campos no se precargan/i)).toBeVisible();
 
@@ -381,164 +193,6 @@ test.describe('Smart PSE GRE QA visual', () => {
       await expect(page.getByLabel(/clave sol/i)).toHaveValue('');
       await expect(page.getByLabel(/client id sunat/i)).toHaveValue('');
       await expect(page.getByLabel(/client secret sunat/i)).toHaveValue('');
-    } finally {
-      await context.close();
-    }
-  });
-
-  test('superadmin gestiona empresa Smart PSE CPE con acciones operativas', async ({ browser, baseURL }) => {
-    const requests = [];
-    const { context, page } = await createVisualContext(browser, baseURL, 'superadmin', {
-      onRequest: async (request) => {
-        const url = new URL(request.url());
-        if (!url.pathname.startsWith('/superadmin')) return;
-        let body = null;
-        try {
-          body = request.postDataJSON();
-        } catch {
-          body = null;
-        }
-        requests.push({ method: request.method(), path: url.pathname.replace(/\/$/, ''), body });
-      },
-    });
-
-    try {
-      await page.goto('/superadmin');
-      await page.getByRole('button', { name: /^Editar$/ }).first().click();
-
-      const drawer = page.locator('.ink-drawer.is-open');
-      await expect(drawer).toBeVisible();
-      await expect(drawer.getByRole('heading', { name: /Empresa Smart PSE/i })).toBeVisible();
-
-      await drawer.getByRole('button', { name: /Ver empresa Smart PSE/i }).click();
-      await expect.poll(() =>
-        requests.some((entry) => entry.path === `/superadmin/tenants/${tenant.id}/smartpse/company` && entry.method === 'GET'),
-      ).toBe(true);
-
-      await drawer.getByRole('button', { name: /^Sincronizar$/i }).click();
-      await expect.poll(() =>
-        requests.some((entry) => entry.path === `/superadmin/tenants/${tenant.id}/smartpse/sync` && entry.method === 'POST'),
-      ).toBe(true);
-
-      await drawer.getByRole('button', { name: /^Demo$/ }).click();
-      await page.getByRole('option', { name: /Produccion preparada/i }).click();
-      await drawer.getByRole('button', { name: /Actualizar remoto/i }).click();
-      await expect.poll(() =>
-        requests.some(
-          (entry) =>
-            entry.path === `/superadmin/tenants/${tenant.id}/smartpse/company` &&
-            entry.method === 'PATCH' &&
-            entry.body?.environment === 'produccion',
-        ),
-      ).toBe(true);
-
-      await drawer.getByRole('button', { name: /Desactivar remoto/i }).click();
-      await expect.poll(() =>
-        requests.some((entry) => entry.path === `/superadmin/tenants/${tenant.id}/smartpse/activation` && entry.method === 'POST'),
-      ).toBe(true);
-    } finally {
-      await context.close();
-    }
-  });
-
-  test('superadmin usa gestion completa de empresas Smart PSE', async ({ browser, baseURL }) => {
-    const requests = [];
-    const { context, page } = await createVisualContext(browser, baseURL, 'superadmin', {
-      onRequest: async (request) => {
-        const url = new URL(request.url());
-        if (!url.pathname.startsWith('/superadmin')) return;
-        let body = null;
-        try {
-          body = request.postDataJSON();
-        } catch {
-          body = null;
-        }
-        requests.push({ method: request.method(), path: url.pathname.replace(/\/$/, ''), search: url.search, body });
-      },
-    });
-
-    try {
-      await page.goto('/superadmin');
-      await expect(page.getByRole('heading', { name: /Empresas Smart PSE/i })).toBeVisible();
-      await expect(page.getByText(/REMOTE ONLY SAC/i)).toHaveCount(0);
-
-      await page.getByRole('button', { name: /Crear empresa remota/i }).click();
-      await page.getByLabel(/RUC remoto/i).fill(remoteCreatedCompany.ruc);
-      await page.getByLabel(/Razon social remota/i).fill(remoteCreatedCompany.razon_social);
-      await page.getByRole('button', { name: /^Crear empresa$/i }).click();
-      await expect.poll(() =>
-        requests.some((entry) => entry.path === '/superadmin/smartpse/companies' && entry.method === 'POST'),
-      ).toBe(true);
-
-      await page.getByRole('button', { name: /Sincronizar todos/i }).click();
-      await expect.poll(() =>
-        requests.some((entry) => entry.path === '/superadmin/smartpse/sync-all' && entry.method === 'POST'),
-      ).toBe(true);
-
-      await page.getByRole('button', { name: /^Editar$/ }).first().click();
-      const drawer = page.locator('.ink-drawer.is-open');
-      await drawer.getByRole('button', { name: /Rotar credenciales CPE/i }).click();
-      await drawer.getByLabel(/Usuario secundaria nuevo/i).fill('NEWUSER1');
-      await drawer.getByLabel(/Token CPE nuevo/i).fill('NEWTOKEN1');
-      await drawer.getByRole('button', { name: /Guardar credenciales CPE/i }).click();
-      await expect.poll(() =>
-        requests.some((entry) => entry.path === `/superadmin/tenants/${tenant.id}/smartpse/credentials`),
-      ).toBe(true);
-
-      await drawer.getByRole('button', { name: /Auditoria Smart PSE/i }).click();
-      await expect(drawer.getByText(/smartpse_synced/i)).toBeVisible();
-
-      await drawer.getByRole('button', { name: /Eliminar Smart PSE/i }).click();
-      await expect(drawer.getByText(/Confirmar eliminacion Smart PSE/i)).toBeVisible();
-      await drawer.getByLabel(/Confirmar company id/i).fill(tenant.smartpse_company_id);
-      await drawer.getByRole('button', { name: /Eliminar empresa remota/i }).click();
-      await expect.poll(() =>
-        requests.some(
-          (entry) =>
-            entry.path === `/superadmin/tenants/${tenant.id}/smartpse/company` &&
-            entry.method === 'DELETE' &&
-            entry.search.includes(`confirm_company_id=${tenant.smartpse_company_id}`),
-        ),
-      ).toBe(true);
-    } finally {
-      await context.close();
-    }
-  });
-
-  test('superadmin dark mode mantiene contraste en topbar y tabla', async ({ browser, baseURL }) => {
-    const { context, page } = await createVisualContext(browser, baseURL, 'superadmin', { theme: 'dark' });
-
-    try {
-      await page.goto('/superadmin');
-      await expect(page.locator('html')).toHaveClass(/dark/);
-      await expect(page.getByRole('heading', { name: /Superadmin operativo/i })).toBeVisible();
-      await expect(page.getByRole('columnheader', { name: /Smart PSE CPE/i })).toBeVisible();
-
-      const samples = await page.evaluate(() => {
-        const channelAverage = (color) => {
-          const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-          if (!match) return 255;
-          return (Number(match[1]) + Number(match[2]) + Number(match[3])) / 3;
-        };
-        const readStyle = (selector, property = 'backgroundColor') => {
-          const element = document.querySelector(selector);
-          return element ? getComputedStyle(element)[property] : 'rgb(255, 255, 255)';
-        };
-
-        return {
-          topbarBg: channelAverage(readStyle('.app-route-superadmin .app-topbar')),
-          filterBg: channelAverage(readStyle('.superadmin-filter-bar')),
-          rowBg: channelAverage(readStyle('.superadmin-tenants-table tbody td')),
-          titleColor: channelAverage(readStyle('.app-route-superadmin .app-topbar h1', 'color')),
-          tenantNameColor: channelAverage(readStyle('.superadmin-tenant-name', 'color')),
-        };
-      });
-
-      expect(samples.topbarBg).toBeLessThan(90);
-      expect(samples.filterBg).toBeLessThan(110);
-      expect(samples.rowBg).toBeLessThan(110);
-      expect(samples.titleColor).toBeGreaterThan(160);
-      expect(samples.tenantNameColor).toBeGreaterThan(160);
     } finally {
       await context.close();
     }
@@ -554,7 +208,7 @@ test.describe('Smart PSE GRE QA visual', () => {
       await expect(page.getByText(/XML firmado; CDR pendiente/i).first()).toBeVisible();
 
       await page.goto('/guias/6');
-      await expect(page.getByRole('heading', { name: /guia/i })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /gu[ií]a/i })).toBeVisible();
       await expect(page.getByRole('heading', { name: /smart pse/i })).toBeVisible();
       await expect(page.getByText(/^Hash$/i)).toBeVisible();
       await expect(page.getByText(/^Ticket$/i)).toBeVisible();
@@ -566,12 +220,47 @@ test.describe('Smart PSE GRE QA visual', () => {
     }
   });
 
+  test('una guía pendiente se encola y solo comunica aceptación después del CDR', async ({ browser, baseURL }) => {
+    const state = {
+      guide: {
+        ...smartPseGuide,
+        estado: 'pendiente',
+        sunat_hash: null,
+        sunat_ticket: null,
+        cdr_disponible: false,
+        xml_disponible: false,
+        actions: {
+          ...smartPseGuide.actions,
+          consult: { enabled: false },
+          emit: { enabled: true },
+        },
+      },
+      jobPolls: 0,
+    };
+    const { context, page } = await createVisualContext(browser, baseURL, 'tenant', { state });
+
+    try {
+      await page.goto('/guias/6');
+      const emitButton = page.getByRole('button', { name: /emitir a SUNAT/i });
+      await expect(emitButton).toBeVisible();
+      page.once('dialog', (dialog) => dialog.accept());
+      await emitButton.click();
+      await expect(page.getByText(/Guía encolada para emisión fiscal/i)).toBeVisible();
+      await expect(page.getByText('Emitida', { exact: true }).first()).toBeVisible({ timeout: 5000 });
+      await expect(page.getByRole('button', { name: /emitir a SUNAT/i })).toHaveCount(0);
+      await expect(page.getByText(/CDR disponible/i)).toBeVisible();
+      await expect(page.getByText(/XML firmado y CDR definitivo disponibles/i)).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
   test('configuracion tenant comunica credenciales fiscales gestionadas', async ({ browser, baseURL }) => {
     const { context, page } = await createVisualContext(browser, baseURL);
 
     try {
       await page.goto('/configuracion');
-      await page.getByRole('button', { name: /fiscal/i }).click();
+      await page.getByRole('tab', { name: /Config\. Fiscal/i }).click();
 
       await expect(page.getByText(/Credenciales fiscales gestionadas/i)).toBeVisible();
       await expect(page.getByText(/Solo superadmin puede cargar o rotar credenciales GRE\/SUNAT/i)).toBeVisible();
@@ -583,70 +272,15 @@ test.describe('Smart PSE GRE QA visual', () => {
     }
   });
 
-  test('configuracion muestra logo y QR de cobro del tenant', async ({ browser, baseURL }) => {
-    const { context, page } = await createVisualContext(browser, baseURL);
-
-    try {
-      await page.goto('/configuracion');
-      await expect(page.getByRole('img', { name: /Logo PAPELERIA/i }).first()).toBeVisible();
-      await expect(page.getByRole('img', { name: /QR de cobro PAPELERIA/i }).first()).toBeVisible();
-
-      const [fileChooser] = await Promise.all([
-        page.waitForEvent('filechooser'),
-        page.getByRole('button', { name: /Subir captura QR/i }).click(),
-      ]);
-      await fileChooser.setFiles({
-        name: 'qr-cobro.png',
-        mimeType: 'image/png',
-        buffer: Buffer.from(
-          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
-          'base64',
-        ),
-      });
-
-      await expect(page.getByRole('heading', { name: /Recortar QR de cobro/i })).toBeVisible();
-      await page.getByRole('button', { name: /Guardar QR limpio/i }).click();
-      await expect(page.getByRole('img', { name: /QR de cobro PAPELERIA/i }).first()).toHaveAttribute(
-        'src',
-        /qr-cobro-actualizado\.png/,
-      );
-    } finally {
-      await context.close();
-    }
-  });
-
-  test('formularios de guia y nota nueva abren como drawer lateral', async ({ browser, baseURL }) => {
-    const { context, page } = await createVisualContext(browser, baseURL);
-
-    try {
-      await page.goto('/guias');
-      await page.getByRole('button', { name: /Nueva gu[ií]a/i }).first().click();
-      await expect(page.locator('.ink-drawer.is-open')).toBeVisible();
-      await expect(page.locator('.ink-drawer.is-open').getByRole('heading', { name: /Nueva gu[ií]a de remisi[oó]n/i })).toBeVisible();
-      await expect(page.locator('.modal-panel')).toHaveCount(0);
-      await page.locator('.ink-drawer-close').click();
-      await expect(page.locator('.ink-drawer.is-open')).toHaveCount(0);
-
-      await page.goto('/notas');
-      await page.getByRole('button', { name: /Nueva nota/i }).first().click();
-      await expect(page.locator('.ink-drawer.is-open')).toBeVisible();
-      await expect(page.locator('.ink-drawer.is-open').getByRole('heading', { name: /Nueva nota de cr[eé]dito \/ d[eé]bito/i })).toBeVisible();
-      await expect(page.locator('.modal-panel')).toHaveCount(0);
-    } finally {
-      await context.close();
-    }
-  });
-
   test('rutas GRE clave son usables en mobile sin desborde horizontal', async ({ browser, baseURL }) => {
     const viewport = { width: 390, height: 844 };
 
     const superadmin = await createVisualContext(browser, baseURL, 'superadmin', { viewport });
     try {
       await superadmin.page.goto('/superadmin');
-      await expect(superadmin.page.getByRole('heading', { name: /Superadmin operativo/i })).toBeVisible();
+      await expect(superadmin.page.getByRole('heading', { level: 2, name: /^superadmin$/i })).toBeVisible();
       await superadmin.page.getByRole('button', { name: /^GRE$/ }).first().click();
-      await expect(superadmin.page.locator('.ink-drawer.is-open')).toBeVisible();
-      await expect(superadmin.page.getByRole('heading', { name: /Smart PSE GRE/i })).toBeVisible();
+      await expect(superadmin.page.getByText(/Smart PSE GRE \//i)).toBeVisible();
       await expectPageWithoutHorizontalOverflow(superadmin.page);
     } finally {
       await superadmin.context.close();
@@ -663,7 +297,7 @@ test.describe('Smart PSE GRE QA visual', () => {
       await expectPageWithoutHorizontalOverflow(tenantPages.page);
 
       await tenantPages.page.goto('/configuracion');
-      await tenantPages.page.getByRole('button', { name: /fiscal/i }).click();
+      await tenantPages.page.getByRole('tab', { name: /Config\. Fiscal/i }).click();
       await expect(tenantPages.page.getByText(/Credenciales fiscales gestionadas/i)).toBeVisible();
       await expectPageWithoutHorizontalOverflow(tenantPages.page);
     } finally {

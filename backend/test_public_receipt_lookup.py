@@ -238,3 +238,11 @@ def test_public_lookup_is_rate_limited(db_session):
 
     assert responses[9].status_code == 404
     assert responses[10].status_code == 429
+
+
+@pytest.mark.parametrize('error', ['[1033] Ya informado', 'Timeout del proveedor', 'Connection reset'])
+def test_public_lookup_does_not_present_ambiguous_errors_as_rejection(db_session, error):
+    from crud.public_receipts import _public_status
+    tenant = make_tenant(db_session, '00009')
+    document = _document(db_session, tenant, sunat_error=error, with_cdr=False)
+    assert _public_status(document) == 'EN_PROCESO'

@@ -32,7 +32,11 @@ cd C:\Users\HP\Desktop\inkora_smartpse\backend
 alembic upgrade head
 ```
 
-Columnas esperadas:
+La revisión esperada para esta entrega es `0022_gre_sales_documents`. Además de
+las columnas GRE incorporadas previamente, deben existir los campos de origen
+01/03, evidencia de aceptación, observaciones y acuerdo de transporte.
+
+Columnas base esperadas:
 
 - `tenants.smartpse_gre_sol_username`
 - `tenants.smartpse_gre_sol_password_enc`
@@ -115,13 +119,63 @@ No debe marcarse como `emitida` sin CDR o aceptacion final.
 
 ## Consulta de Ticket
 
-La documentacion publica de Smart PSE muestra `GET /api/cpe/consultar/{nombre_archivo}` para resumenes `RC/RA/RR`.
+La documentacion vigente de Smart PSE indica que una GRE queda pendiente al
+enviarse y debe conciliarse mediante:
 
-Con la evidencia actual en demo, ese endpoint no cierra GRE:
+```http
+GET /api/cpe/consultar/{nombre_archivo}
+```
 
-- sin credenciales GRE, Smart PSE exige `client_id_sunat`, `client_secret_sunat`, `sol_user`, `sol_password`;
-- con credenciales GRE en la consulta, Smart PSE puede responder `estado=404` / `Resource not found`;
-- por eso Inkora no debe hacer polling automatico de GRE con `/consultar`.
+Para GRE 09 y 31 se deben reenviar los cuatro campos OAuth/SOL:
+
+- `client_id_sunat`
+- `client_secret_sunat`
+- `sol_user`
+- `sol_password`
+
+Inkora los envia en el cuerpo JSON de la consulta para no exponer secretos en
+la URL. Este detalle de transporte debe confirmarse con una ejecucion demo: la
+documentacion publica exige los campos "en el request", pero no publica un
+ejemplo completo de la consulta GRE.
+
+Cuando las cuatro credenciales se envían, Inkora añade también `environment`
+con el ambiente congelado de la guía (`demo` o `produccion`). El worker vuelve a
+validar que ese ambiente coincida con la empresa antes de llamar al proveedor.
+
+En `procesar-demo` los cuatro campos son opcionales segun Smart PSE. Inkora los
+omite solo si el tenant esta configurado expresamente en `demo`; en produccion
+siguen siendo obligatorios. Un ticket, HTTP 200 o XML firmado no equivalen a
+aceptacion: solo el CDR definitivo permite marcar la guia como aceptada.
+
+### Preflight histórico Papeleria Grafica - 15/09/2026
+
+La comprobacion de solo lectura contra la base configurada encontro:
+
+- tenant presente, pero `smartpse_environment = produccion`;
+- credenciales CPE presentes;
+- las cuatro credenciales GRE ausentes;
+- `SMARTPSE_API_TOKEN` de gestion ausente en el runtime local;
+- base remota en Alembic `0018_access_requests`, sin las tablas de despacho de
+  `0021_sale_dispatch_guides`.
+
+Resultado: **no se realizo ninguna emision ni consulta externa**. Para probar
+Papeleria Grafica sin riesgo se requiere una empresa Smart PSE configurada en
+`demo`, credenciales CPE demo almacenadas y una base aislada migrada hasta
+`0021`. No debe cambiarse a demo la empresa productiva existente como atajo.
+
+Este resultado es una evidencia histórica y no describe necesariamente el
+estado actual del despliegue. El preflight queda disponible como comando
+repetible y de solo lectura:
+
+```powershell
+cd C:\Users\HP\Desktop\inkora_smartpse\backend
+python preflight_smartpse_gre_demo.py --tenant-id 5
+```
+
+El comando devuelve codigo `0` unicamente cuando tenant, runtime, host,
+credenciales CPE y esquema permiten una homologacion demo. Devuelve codigo `2`
+ante cualquier bloqueo. Nunca llama al proveedor, no modifica la base y no
+imprime secretos ni el RUC completo.
 
 ## Evidencia en BD
 
@@ -145,7 +199,11 @@ python -m compileall -q services routers schemas models crud
 
 ## Pendientes Separados
 
-- Agregar UI superadmin para cargar y rotar credenciales GRE.
-- Mostrar estado `pendiente_smartpse` en la pantalla de guias.
-- Definir flujo operativo para actualizar CDR cuando Smart PSE entregue cierre GRE verificable.
-- Validar comportamiento GRE en produccion antes de marcar guias como aceptadas automaticamente.
+- Confirmar en demo que Smart PSE acepta las cuatro credenciales GRE en cuerpo
+  JSON durante `GET /consultar/{nombre_archivo}`.
+- Confirmar con Smart PSE la inconsistencia de su documentación pública sobre
+  si las cuatro credenciales son opcionales o exigibles en `procesar-demo`.
+- Obtener evidencia de homologación demo. Una falla conocida del ambiente demo
+  se documenta como limitación del proveedor, no como aceptación.
+- Validar comportamiento GRE en producción únicamente con autorización nueva y
+  un traslado real; nunca mediante un comprobante ficticio.

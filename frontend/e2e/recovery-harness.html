@@ -1,0 +1,35 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg"><title>Inkora · recuperación aislada</title></head><body><div id="root"></div>
+<script type="module">
+const params = new URL(location.href).searchParams;
+const route = params.get('page') || '/configuracion';
+const tenant = { id: 99001, business_name: 'EMPRESA SINTÉTICA · RECUPERACIÓN', business_ruc: '20123456789', business_address: 'Dirección de prueba', business_phone: '987654321', is_active: true, inventory_enabled: true, smartpse_environment: 'demo', has_smartpse_credentials: true, fiscal_invoice_series: 'FA01', fiscal_boleta_series: 'BB01', bank_accounts: [], primary_color: '#004AAD', pdf_note_1_color: '#FF0000', fiscal_feature_flags: { guides: true } };
+const user = { id: 99001, tenant_id: tenant.id, tenant, rol: 'admin', is_active: true, is_superadmin: route === '/superadmin', nombre_completo: 'Operador sintético', email: 'operador@example.test' };
+const products = [{ id: 99001, nombre: 'PRODUCTO DE PRUEBA', codigo_interno: 'TEST-01', precio_unitario: '0.0350', valor_unitario: '0.0297', moneda: 'PEN', unidad_medida: 'NIU', tipo_afectacion_igv: '10', inventory_enabled: true, item_type: 'inventory' }];
+const warehouses = [{ id: 99001, code: 'TEST', name: 'Almacén aislado', is_default: true, is_active: true }];
+const originalFetch = window.fetch.bind(window);
+window.fetch = async (input, options = {}) => {
+  const url = new URL(String(input), location.href);
+  if (url.origin === location.origin) return originalFetch(input, options);
+  // Never forward API traffic: writes and reads are synthetic in this harness.
+  const path = url.pathname.replace(/\/$/, '');
+  const respond = (data, status=200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
+  if (path === '/users/me') return respond(user);
+  if (path === '/tenant' || path === '/tenants/me') return respond(tenant);
+  if (path === '/sunat/exchange-rate') return respond({ buy: '3.40', sell: '3.41' });
+  if (path === '/inventario/almacenes') return respond(warehouses);
+  if (path === '/productos/page') return respond({ items: products, total: 1, counts: { all: 1, productos: 1, servicios: 0, con_sku: 1, con_precio: 1 } });
+  if (path === '/productos') return respond(products);
+  if (path === '/inventario/existencias') return respond([{ product_id: 99001, product_name: 'PRODUCTO DE PRUEBA', product_code: 'TEST-01', warehouse_id: 99001, warehouse_name: 'Almacén aislado', on_hand: 100, committed: 10, available: 90, minimum_stock: 5, unit_code: 'NIU' }]);
+  if (path === '/inventario/kardex/page') return respond({ items: [], total: 0, skip: 0, limit: 15 });
+  if (path === '/inventario/devoluciones') return respond([]);
+  if (path === '/superadmin/tenants-page') return respond({ items: [tenant], total: 1, metrics: { total: 1, active: 1 }, skip: 0, limit: 15 });
+  if (path === '/superadmin/access-requests') return respond({ items: [], total: 0, skip: 0, limit: 15 });
+  if (path === '/superadmin/smartpse/companies') return respond({ items: [], total: 0, page: 1, per_page: 15 });
+  if (path.endsWith('/users-detail')) return respond([{ ...user, metrics: { cotizaciones_total: 0, cotizaciones_pendientes: 0, facturas_emitidas: 0, total_facturado: 0, clientes_total: 0, productos_total: 0 } }]);
+  return respond({ detail: 'Ruta no simulada: ' + path }, 404);
+};
+localStorage.setItem('token', 'isolated-fixture-only');
+localStorage.setItem('inkora-theme', params.get('theme') || 'light');
+history.replaceState(null, '', route);
+await import('/src/main.jsx');
+</script></body></html>

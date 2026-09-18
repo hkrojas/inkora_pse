@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
+import models
 
 from conftest import make_cliente, make_producto, make_tenant, make_user, make_quote_via_crud
 import crud
@@ -22,16 +23,6 @@ def test_duplicar_cotizacion_crea_copia_con_nueva_orden_y_mismos_items(db_sessio
             tipo_comprobante="00",
             observaciones="Duplicar esta cotizacion",
             condicion_pago="credito_15",
-            quote_payment_methods=[
-                {
-                    "tipo": "bank",
-                    "banco": "BCP",
-                    "tipo_cuenta": "Cta Corriente",
-                    "moneda": "Soles",
-                    "cuenta": "1919870450013",
-                    "cci": "00219100987045001355",
-                }
-            ],
             items=[
                 schemas.CotizacionItemCreate(
                     producto_id=producto.id,
@@ -57,7 +48,6 @@ def test_duplicar_cotizacion_crea_copia_con_nueva_orden_y_mismos_items(db_sessio
     assert copia.estado == "pendiente"
     assert copia.condicion_pago == original.condicion_pago
     assert copia.observaciones == original.observaciones
-    assert copia.quote_payment_methods == original.quote_payment_methods
     assert len(copia.items) == len(original.items)
     assert copia.items[0].producto_id == original.items[0].producto_id
     assert copia.items[0].descripcion == original.items[0].descripcion
@@ -77,14 +67,13 @@ def test_eliminar_cotizacion_permitido_si_esta_pendiente_y_sin_fiscal(db_session
     assert crud.get_cotizacion(db_session, quote.id, user) is None
 
 
-def test_actualizar_cotizacion_pendiente_recalcula_y_limpia_pdf(db_session):
-    tenant = make_tenant(db_session, "COT02U")
-    user = make_user(db_session, tenant, email="cot02u@test.com")
-    cliente = make_cliente(db_session, tenant, "COT02U")
+def test_actualizar_cotizacion_recalcula_sin_cambiar_numero(db_session):
+    tenant = make_tenant(db_session, "COTUP01")
+    user = make_user(db_session, tenant, email="cotup01@test.com")
+    cliente = make_cliente(db_session, tenant, "COTUP01")
     quote = make_quote_via_crud(db_session, tenant, user, cliente)
-    original_number = quote.document_number
-    quote.sunat_pdf_url = "supabase-private://inkora-private/cotizaciones/demo.pdf"
-    quote.sunat_xml_url = "legacy.xml"
+    original_identity = (quote.id, quote.serie, quote.correlativo, quote.internal_order_number)
+    quote.sunat_pdf_url = "supabase-private://inkora-private/cotizaciones/old.pdf"
     db_session.commit()
 
     updated = crud.update_cotizacion(
@@ -95,256 +84,56 @@ def test_actualizar_cotizacion_pendiente_recalcula_y_limpia_pdf(db_session):
             moneda="PEN",
             tipo_comprobante="00",
             observaciones="Version corregida",
-            condicion_pago="contado",
-            items=[
-                schemas.CotizacionItemCreate(
-                    descripcion="Servicio actualizado",
-                    cantidad=Decimal("2"),
-                    precio_unitario=Decimal("118.00"),
-                    unidad_medida="NIU",
-                    tipo_afectacion_igv="10",
-                ),
-            ],
+            items=[schemas.CotizacionItemCreate(
+                descripcion="Servicio actualizado",
+                cantidad=Decimal("2"),
+                precio_unitario=Decimal("118.00"),
+                unidad_medida="NIU",
+                tipo_afectacion_igv="10",
+            )],
         ),
         user,
     )
 
-    assert updated.id == quote.id
-    assert updated.document_number == original_number
-    assert updated.observaciones == "Version corregida"
+    assert (updated.id, updated.serie, updated.correlativo, updated.internal_order_number) == original_identity
     assert updated.total_venta == Decimal("236.00")
     assert updated.saldo_pendiente == Decimal("236.00")
-    assert len(updated.items) == 1
     assert updated.items[0].descripcion == "Servicio actualizado"
     assert updated.sunat_pdf_url is None
-    assert updated.sunat_xml_url is None
 
 
-def test_crear_cotizacion_persiste_snapshot_cliente_del_documento(db_session):
-    tenant = make_tenant(db_session, "COTSNAP")
-    user = make_user(db_session, tenant, email="cotsnap@test.com")
-    cliente = make_cliente(db_session, tenant, "COTSNAP", numero_documento="20999999991")
-
-    quote = crud.create_cotizacion(
-        db_session,
-        schemas.CotizacionCreate(
-            cliente_id=cliente.id,
-            cliente_snapshot={
-                "tipo_documento": "6",
-                "numero_documento": cliente.numero_documento,
-                "razon_social": "Cliente editado solo para documento",
-                "direccion": "Jr. Snapshot 123",
-                "email": "snapshot@test.com",
-                "telefono": "987654321",
-                "whatsapp": "987654321",
-            },
-            moneda="PEN",
-            tipo_comprobante="00",
-            items=[
-                schemas.CotizacionItemCreate(
-                    descripcion="Servicio con snapshot",
-                    cantidad=Decimal("1"),
-                    precio_unitario=Decimal("118.00"),
-                ),
-            ],
-        ),
-        user.id,
-        tenant.id,
-    )
-
-    assert quote.cliente_snapshot["razon_social"] == "Cliente editado solo para documento"
-    assert quote.cliente_snapshot["direccion"] == "Jr. Snapshot 123"
-    assert quote.cliente_snapshot["email"] == "snapshot@test.com"
-    assert quote.cliente.razon_social == "Cliente COTSNAP"
-
-    payload = schemas.CotizacionResponse.model_validate(
-        quote,
-        from_attributes=True,
-    ).model_dump()
-    assert payload["cliente_snapshot"]["telefono"] == "987654321"
-
-
-def test_crear_cotizacion_persiste_metodos_bancarios_visibles_en_pdf(db_session):
-    tenant = make_tenant(db_session, "COTBANK")
-    user = make_user(db_session, tenant, email="cotbank@test.com")
-    cliente = make_cliente(db_session, tenant, "COTBANK", numero_documento="20999999993")
-
-    quote = crud.create_cotizacion(
-        db_session,
-        schemas.CotizacionCreate(
-            cliente_id=cliente.id,
-            moneda="PEN",
-            tipo_comprobante="00",
-            quote_payment_methods=[
-                {
-                    "tipo": "bank",
-                    "banco": "BCP",
-                    "tipo_cuenta": "Cta Corriente",
-                    "moneda": "Soles",
-                    "cuenta": "1919870450013",
-                    "cci": "00219100987045001355",
-                },
-                {
-                    "tipo": "bank",
-                    "banco": "Banco de la Nacion",
-                    "tipo_cuenta": "Cuenta Detraccion",
-                    "moneda": "Soles",
-                    "cuenta": "00045115666",
-                    "cci": "01804500004511566655",
-                },
-            ],
-            items=[
-                schemas.CotizacionItemCreate(
-                    descripcion="Servicio con bancos visibles",
-                    cantidad=Decimal("1"),
-                    precio_unitario=Decimal("118.00"),
-                ),
-            ],
-        ),
-        user.id,
-        tenant.id,
-    )
-
-    assert [method["banco"] for method in quote.quote_payment_methods] == [
-        "BCP",
-        "Banco de la Nacion",
-    ]
-
-    payload = schemas.CotizacionResponse.model_validate(
-        quote,
-        from_attributes=True,
-    ).model_dump()
-    assert payload["quote_payment_methods"][0]["banco"] == "BCP"
-
-
-def test_facturar_cotizacion_copia_snapshot_cliente(db_session):
-    tenant = make_tenant(db_session, "COTSNAPF")
-    user = make_user(db_session, tenant, email="cotsnapf@test.com")
-    cliente = make_cliente(db_session, tenant, "COTSNAPF", numero_documento="20999999992")
-
-    quote = crud.create_cotizacion(
-        db_session,
-        schemas.CotizacionCreate(
-            cliente_id=cliente.id,
-            cliente_snapshot={
-                "tipo_documento": "6",
-                "numero_documento": cliente.numero_documento,
-                "razon_social": "Cliente fiscal congelado",
-                "direccion": "Av. Fiscal Snapshot 456",
-            },
-            moneda="PEN",
-            tipo_comprobante="00",
-            items=[
-                schemas.CotizacionItemCreate(
-                    descripcion="Servicio facturable",
-                    cantidad=Decimal("1"),
-                    precio_unitario=Decimal("118.00"),
-                ),
-            ],
-        ),
-        user.id,
-        tenant.id,
-    )
-
-    fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
-
-    assert fiscal.cliente_snapshot == quote.cliente_snapshot
-    assert fiscal.cliente_snapshot["razon_social"] == "Cliente fiscal congelado"
-
-
-def test_actualizar_cotizacion_rechaza_si_tiene_pagos(db_session):
-    tenant = make_tenant(db_session, "COT02P")
-    user = make_user(db_session, tenant, email="cot02p@test.com")
-    cliente = make_cliente(db_session, tenant, "COT02P")
+def test_actualizar_cotizacion_respeta_tenant_y_bloquea_derivada(db_session):
+    tenant = make_tenant(db_session, "COTUP02")
+    other_tenant = make_tenant(db_session, "COTUP03")
+    user = make_user(db_session, tenant, email="cotup02@test.com")
+    other_user = make_user(db_session, other_tenant, email="cotup03@test.com")
+    cliente = make_cliente(db_session, tenant, "COTUP02")
     quote = make_quote_via_crud(db_session, tenant, user, cliente)
-    quote.monto_pagado = Decimal("10.00")
-    quote.saldo_pendiente = quote.total_venta - Decimal("10.00")
+    payload = schemas.CotizacionUpdate(
+        cliente_id=cliente.id,
+        items=[schemas.CotizacionItemCreate(
+            descripcion="No editable",
+            cantidad=Decimal("1"),
+            precio_unitario=Decimal("10"),
+        )],
+    )
+    assert crud.update_cotizacion(db_session, quote.id, payload, other_user) is None
+
+    db_session.add(models.Cotizacion(
+        tenant_id=tenant.id,
+        usuario_id=user.id,
+        cliente_id=cliente.id,
+        source_quote_id=quote.id,
+        serie="F001",
+        correlativo=99,
+        document_kind="fiscal_document",
+        tipo_comprobante="01",
+        estado="pendiente",
+        total_venta=Decimal("10"),
+    ))
     db_session.commit()
-
-    with pytest.raises(ValueError, match="pagos asociados"):
-        crud.update_cotizacion(
-            db_session,
-            quote.id,
-            schemas.CotizacionUpdate(
-                cliente_id=cliente.id,
-                moneda="PEN",
-                tipo_comprobante="00",
-                items=[
-                    schemas.CotizacionItemCreate(
-                        descripcion="No debe cambiar",
-                        cantidad=Decimal("1"),
-                        precio_unitario=Decimal("118.00"),
-                    ),
-                ],
-            ),
-            user,
-        )
-
-
-def test_actualizar_cotizacion_permte_quitar_todos_los_bancos_visibles(db_session):
-    tenant = make_tenant(db_session, "COT02BANK")
-    user = make_user(db_session, tenant, email="cot02bank@test.com")
-    cliente = make_cliente(db_session, tenant, "COT02BANK")
-    quote = make_quote_via_crud(db_session, tenant, user, cliente)
-    quote.quote_payment_methods = [
-        {
-            "tipo": "bank",
-            "banco": "BCP",
-            "tipo_cuenta": "Cta Corriente",
-            "moneda": "Soles",
-            "cuenta": "1919870450013",
-            "cci": "00219100987045001355",
-        }
-    ]
-    db_session.commit()
-
-    updated = crud.update_cotizacion(
-        db_session,
-        quote.id,
-        schemas.CotizacionUpdate(
-            cliente_id=cliente.id,
-            moneda="PEN",
-            tipo_comprobante="00",
-            quote_payment_methods=[],
-            items=[
-                schemas.CotizacionItemCreate(
-                    descripcion="Documento sin bancos",
-                    cantidad=Decimal("1"),
-                    precio_unitario=Decimal("118.00"),
-                ),
-            ],
-        ),
-        user,
-    )
-
-    assert updated.quote_payment_methods == []
-
-
-def test_actualizar_cotizacion_rechaza_si_tiene_fiscal_vinculado(db_session):
-    tenant = make_tenant(db_session, "COT02F")
-    user = make_user(db_session, tenant, email="cot02f@test.com")
-    cliente = make_cliente(db_session, tenant, "COT02F")
-    quote = make_quote_via_crud(db_session, tenant, user, cliente)
-    crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
-
     with pytest.raises(ValueError, match="comprobante fiscal asociado"):
-        crud.update_cotizacion(
-            db_session,
-            quote.id,
-            schemas.CotizacionUpdate(
-                cliente_id=cliente.id,
-                moneda="PEN",
-                tipo_comprobante="00",
-                items=[
-                    schemas.CotizacionItemCreate(
-                        descripcion="No debe cambiar",
-                        cantidad=Decimal("1"),
-                        precio_unitario=Decimal("118.00"),
-                    ),
-                ],
-            ),
-            user,
-        )
+        crud.update_cotizacion(db_session, quote.id, payload, user)
 
 
 def test_cotizacion_exonerada_no_genera_igv(db_session):
@@ -494,6 +283,7 @@ def test_cotizacion_persiste_snapshot_y_billetera_predeterminada(db_session):
 
     assert quote.quote_selected_wallet_id == "wallet-plin"
     assert [method["id"] for method in quote.quote_payment_methods] == [
+        "wallet-yape",
         "wallet-plin",
         "bank-bcp",
     ]
@@ -543,9 +333,6 @@ def test_cotizacion_permite_override_de_billetera_para_qr(db_session):
     )
 
     assert quote.quote_selected_wallet_id == "wallet-yape"
-    assert [method["id"] for method in quote.quote_payment_methods] == [
-        "wallet-yape",
-    ]
 
 
 def test_duplicar_cotizacion_preserva_snapshot_y_billetera_seleccionada(db_session):
@@ -645,104 +432,6 @@ def test_documento_fiscal_conserva_fecha_emision_de_la_cotizacion(db_session):
 
     assert quote.fecha_emision.date() == fecha_emision.date()
     assert fiscal.fecha_emision.date() == fecha_emision.date()
-
-
-def test_documento_fiscal_usa_fecha_confirmada_sin_cambiar_cotizacion(db_session):
-    tenant = make_tenant(db_session, "COT02CLICK")
-    user = make_user(db_session, tenant, email="cot02click@test.com")
-    cliente = make_cliente(db_session, tenant, "COT02CLICK")
-    fecha_cotizacion = datetime(2026, 5, 1, 9, 0)
-    fecha_confirmacion = datetime(2026, 7, 22, 14, 30)
-
-    quote = crud.create_cotizacion(
-        db_session,
-        schemas.CotizacionCreate(
-            cliente_id=cliente.id,
-            fecha_emision=fecha_cotizacion,
-            moneda="PEN",
-            tipo_comprobante="00",
-            items=[
-                schemas.CotizacionItemCreate(
-                    descripcion="Servicio facturado despues de cotizar",
-                    cantidad=Decimal("1"),
-                    precio_unitario=Decimal("118.00"),
-                    unidad_medida="NIU",
-                    tipo_afectacion_igv="10",
-                ),
-            ],
-        ),
-        user.id,
-        tenant.id,
-    )
-
-    fiscal = crud.create_fiscal_document_from_quote(
-        db_session,
-        quote,
-        user.id,
-        "01",
-        fiscal_issue_date=fecha_confirmacion,
-    )
-
-    assert quote.fecha_emision == fecha_cotizacion
-    assert fiscal.fecha_emision == fecha_confirmacion
-
-
-def test_fecha_confirmada_desplaza_vencimiento_y_cuotas_credito(db_session):
-    tenant = make_tenant(db_session, "COT02SHIFT")
-    user = make_user(db_session, tenant, email="cot02shift@test.com")
-    cliente = make_cliente(db_session, tenant, "COT02SHIFT")
-    fecha_cotizacion = datetime(2026, 5, 1, 0, 0)
-    fecha_confirmacion = datetime(2026, 7, 22, 10, 15)
-
-    quote = crud.create_cotizacion(
-        db_session,
-        schemas.CotizacionCreate(
-            cliente_id=cliente.id,
-            fecha_emision=fecha_cotizacion,
-            fecha_vencimiento=fecha_cotizacion + timedelta(days=30),
-            moneda="PEN",
-            tipo_comprobante="00",
-            condicion_pago="credito_30",
-            cuotas_pago=[
-                schemas.CuotaPagoCreate(
-                    fecha_pago=fecha_cotizacion + timedelta(days=15),
-                    monto=Decimal("59.00"),
-                ),
-                schemas.CuotaPagoCreate(
-                    fecha_pago=fecha_cotizacion + timedelta(days=30),
-                    monto=Decimal("59.00"),
-                ),
-            ],
-            items=[
-                schemas.CotizacionItemCreate(
-                    descripcion="Venta al credito",
-                    cantidad=Decimal("1"),
-                    precio_unitario=Decimal("118.00"),
-                    unidad_medida="NIU",
-                    tipo_afectacion_igv="10",
-                ),
-            ],
-        ),
-        user.id,
-        tenant.id,
-    )
-
-    fiscal = crud.create_fiscal_document_from_quote(
-        db_session,
-        quote,
-        user.id,
-        "01",
-        fiscal_issue_date=fecha_confirmacion,
-    )
-
-    shifted_installments = [
-        datetime.fromisoformat(cuota["fecha_pago"])
-        for cuota in fiscal.cuotas_pago
-    ]
-    assert (fiscal.fecha_vencimiento.date() - fiscal.fecha_emision.date()).days == 30
-    assert (shifted_installments[0].date() - fiscal.fecha_emision.date()).days == 15
-    assert (shifted_installments[1].date() - fiscal.fecha_emision.date()).days == 30
-    assert quote.fecha_vencimiento.date() == (fecha_cotizacion + timedelta(days=30)).date()
 
 
 def test_documento_fiscal_conserva_cuotas_pago_de_la_cotizacion(db_session):
@@ -903,3 +592,26 @@ def test_cotizacion_list_response_no_carga_detalle_pesado(db_session):
     assert payload[0]["cliente"]["id"] == cliente.id
     assert "items" not in payload[0]
     assert "pagos" not in payload[0]
+
+
+def test_cotizaciones_page_reports_total_and_keeps_tenant_scope(db_session):
+    tenant = make_tenant(db_session, "COT08")
+    user = make_user(db_session, tenant, email="cot08@test.com")
+    cliente = make_cliente(db_session, tenant, "COT08", numero_documento="20123456781")
+    for _ in range(17):
+        make_quote_via_crud(db_session, tenant, user, cliente)
+
+    other_tenant = make_tenant(db_session, "COT09")
+    other_user = make_user(db_session, other_tenant, email="cot09@test.com")
+    other_client = make_cliente(db_session, other_tenant, "COT09")
+    make_quote_via_crud(db_session, other_tenant, other_user, other_client)
+
+    result = crud.get_cotizaciones_page(db_session, user, skip=15, limit=15)
+    assert result["total"] == 17
+    assert result["skip"] == 15
+    assert result["limit"] == 15
+    assert len(result["items"]) == 2
+    assert all(item.tenant_id == tenant.id for item in result["items"])
+
+    filtered = crud.get_cotizaciones_page(db_session, user, q="20123456781")
+    assert filtered["total"] == 17

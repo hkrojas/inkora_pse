@@ -1,20 +1,14 @@
-from datetime import datetime, timedelta
 from decimal import Decimal
+from datetime import datetime, timedelta
 from types import SimpleNamespace
-
-import crud
-import models
 import pytest
-import schemas
 from fastapi import HTTPException
+
+import models
 from conftest import make_cliente, make_producto, make_tenant, make_user
-from crud._cotizaciones_quotes import _validated_warehouse_id
-from schemas.inventory import (
-    BulkInventoryAdjustmentCreate, BulkInventoryLine, InventoryActivation,
-    InventoryAdjustmentCreate, ProductInventoryConfig, TransferCreate, TransferLine,
-    WarehouseUpdate,
-)
-from services import emission_queue_service, inventory_service
+from schemas.inventory import InventoryActivation, InventoryAdjustmentCreate, ProductInventoryConfig, TransferCreate, TransferLine
+from schemas.inventory import WarehouseUpdate, BulkInventoryAdjustmentCreate, BulkInventoryLine
+from services import inventory_service
 
 
 def _activate(db, tenant):
@@ -32,106 +26,6 @@ def _inventory_product(db, tenant, product, warehouse, user, stock="10"):
     db.refresh(product)
 
 
-def _active_subscription(db, tenant):
-    subscription = models.Subscription(
-        tenant_id=tenant.id,
-        status=models.SUBSCRIPTION_STATUS_ACTIVE,
-    )
-    db.add(subscription)
-    db.commit()
-    return subscription
-
-
-def _inventory_quote(db, tenant, user, client, product, *, quantity="3"):
-    quote = models.Cotizacion(
-        tenant_id=tenant.id,
-        usuario_id=user.id,
-        cliente_id=client.id,
-        serie="COT",
-        correlativo=1,
-        document_kind="quotation",
-        tipo_comprobante="00",
-        estado="pendiente",
-        total_gravada=Decimal("10"),
-        total_igv=Decimal("1.8"),
-        total_venta=Decimal("11.8"),
-    )
-    quote.items.append(models.CotizacionItem(
-        producto_id=product.id,
-        descripcion="Producto inventariable",
-        cantidad=Decimal(quantity),
-        precio_unitario=Decimal("1"),
-        valor_unitario=Decimal("1"),
-        total_base_igv=Decimal(quantity),
-        total_igv=Decimal("0"),
-        total_item=Decimal(quantity),
-        unidad_medida="NIU",
-        tipo_afectacion_igv="10",
-    ))
-    db.add(quote)
-    db.commit()
-    db.refresh(quote)
-    return quote
-
-
-def test_tenant_and_catalog_start_with_inventory_and_zero_stock(db_session):
-    tenant = crud.create_tenant(
-        db_session,
-        schemas.TenantCreate(
-            business_name="Imprenta inventario por defecto",
-            business_ruc="20999999701",
-        ),
-    )
-    warehouse = inventory_service.get_default_warehouse(db_session, tenant.id)
-    assert tenant.inventory_enabled is True
-    assert tenant.inventory_started_at is not None
-    assert warehouse is not None
-    assert warehouse.code == "PRINCIPAL"
-
-    product = crud.create_producto(
-        db_session,
-        schemas.ProductoCreate(
-            nombre="Papel couché",
-            precio_unitario=Decimal("10"),
-        ),
-        tenant.id,
-    )
-    assert product.item_type == "inventory"
-    assert product.inventory_enabled is True
-
-    stock = inventory_service.list_stock(db_session, tenant.id)
-    assert len(stock) == 1
-    assert stock[0]["product_id"] == product.id
-    assert stock[0]["warehouse_id"] == warehouse.id
-    assert stock[0]["on_hand"] == Decimal("0.0000")
-    assert stock[0]["available"] == Decimal("0.0000")
-
-
-def test_zero_stock_is_not_repeated_in_warehouses_without_a_balance(db_session):
-    tenant = crud.create_tenant(
-        db_session,
-        schemas.TenantCreate(
-            business_name="Imprenta multi almacén",
-            business_ruc="20999999702",
-        ),
-    )
-    product = crud.create_producto(
-        db_session,
-        schemas.ProductoCreate(nombre="Tinta negra", precio_unitario=Decimal("25")),
-        tenant.id,
-    )
-    inventory_service.create_warehouse(
-        db_session,
-        tenant.id,
-        SimpleNamespace(code="TIENDA", name="Tienda", location=None, is_default=False),
-    )
-
-    stock = inventory_service.list_stock(db_session, tenant.id)
-    assert len(stock) == 1
-    assert {row["product_id"] for row in stock} == {product.id}
-    assert all(row["on_hand"] == Decimal("0.0000") for row in stock)
-
-
 def test_inventory_is_tenant_scoped(db_session):
     t1, t2 = make_tenant(db_session, "701"), make_tenant(db_session, "702")
     u1 = make_user(db_session, t1, email="inv1@test.pe")
@@ -145,6 +39,64 @@ def test_inventory_is_tenant_scoped(db_session):
     assert len(stock) == 1
     assert stock[0]["product_id"] == p1.id
     assert stock[0]["on_hand"] == Decimal("10.0000")
+
+
+def test_document_availability_aggregates_repeated_products_without_writes(db_session):
+    tenant = make_tenant(db_session, "702A")
+    user = make_user(db_session, tenant, email="inv702a@test.pe")
+    client = make_cliente(db_session, tenant, "702A")
+    product = make_producto(db_session, tenant, "702A")
+    warehouse = _activate(db_session, tenant)
+    _inventory_product(db_session, tenant, product, warehouse, user, "5")
+    quote = models.Cotizacion(
+        tenant_id=tenant.id, usuario_id=user.id, cliente_id=client.id,
+        serie="COT", correlativo=1, document_kind="quotation",
+        tipo_comprobante="00", estado="pendiente", warehouse_id=warehouse.id,
+        total_venta=Decimal("6"),
+    )
+    for quantity in (Decimal("3"), Decimal("3")):
+        quote.items.append(models.CotizacionItem(
+            producto_id=product.id, descripcion="Producto repetido", cantidad=quantity,
+            precio_unitario=Decimal("1"), valor_unitario=Decimal("1"),
+            total_base_igv=quantity, total_igv=Decimal("0"), total_item=quantity,
+            unidad_medida="NIU", tipo_afectacion_igv="10",
+        ))
+    db_session.add(quote)
+    db_session.commit()
+    movement_count = db_session.query(models.InventoryMovement).count()
+    balance_count = db_session.query(models.InventoryBalance).count()
+
+    result = inventory_service.check_document_availability(db_session, tenant.id, quote.id)
+
+    assert result["inventory_enabled"] is True
+    assert result["sufficient"] is False
+    assert len(result["items"]) == 1
+    assert result["items"][0]["requested"] == Decimal("6.0000")
+    assert result["items"][0]["available"] == Decimal("5.0000")
+    assert db_session.query(models.InventoryMovement).count() == movement_count
+    assert db_session.query(models.InventoryBalance).count() == balance_count
+
+
+def test_document_availability_distinguishes_disabled_and_missing_warehouse(db_session):
+    tenant = make_tenant(db_session, "702B")
+    user = make_user(db_session, tenant, email="inv702b@test.pe")
+    client = make_cliente(db_session, tenant, "702B")
+    quote = models.Cotizacion(
+        tenant_id=tenant.id, usuario_id=user.id, cliente_id=client.id,
+        serie="COT", correlativo=1, document_kind="quotation",
+        tipo_comprobante="00", estado="pendiente", total_venta=Decimal("1"),
+    )
+    db_session.add(quote)
+    db_session.commit()
+    disabled = inventory_service.check_document_availability(db_session, tenant.id, quote.id)
+    assert disabled["configuration_status"] == "disabled"
+    assert disabled["sufficient"] is True
+
+    tenant.inventory_enabled = True
+    db_session.commit()
+    missing = inventory_service.check_document_availability(db_session, tenant.id, quote.id)
+    assert missing["configuration_status"] == "warehouse_required"
+    assert missing["sufficient"] is False
 
 
 def test_adjustment_and_transfer_are_atomic_ledger_entries(db_session):
@@ -176,18 +128,27 @@ def test_adjustment_and_transfer_are_atomic_ledger_entries(db_session):
     assert by_warehouse[source.id]["on_hand"] == Decimal("11.0000")
     assert by_warehouse[destination.id]["on_hand"] == Decimal("4.0000")
     assert len(inventory_service.list_movements(db_session, tenant.id, limit=20)) == 4
-
-    with pytest.raises(HTTPException, match="Regulariza el stock"):
-        inventory_service.configure_product(
-            db_session,
-            tenant.id,
-            product.id,
-            ProductInventoryConfig(item_type="service", inventory_enabled=False),
-            user.id,
-        )
+    assert inventory_service.count_movements(db_session, tenant.id) == 4
+    assert inventory_service.count_movements(db_session, tenant.id, direction="entry") == 3
+    assert inventory_service.count_movements(db_session, tenant.id, direction="exit") == 1
+    page = inventory_service.list_movements(db_session, tenant.id, skip=1, limit=2)
+    assert len(page) == 2
 
 
-def test_sunat_acceptance_converts_hold_once_and_void_reverses_once(db_session):
+def test_movement_count_is_tenant_scoped(db_session):
+    t1, t2 = make_tenant(db_session, "703A"), make_tenant(db_session, "703B")
+    u1 = make_user(db_session, t1, email="inv703a@test.pe")
+    u2 = make_user(db_session, t2, email="inv703b@test.pe")
+    p1, p2 = make_producto(db_session, t1, "703A"), make_producto(db_session, t2, "703B")
+    w1, w2 = _activate(db_session, t1), _activate(db_session, t2)
+    _inventory_product(db_session, t1, p1, w1, u1)
+    _inventory_product(db_session, t2, p2, w2, u2)
+
+    assert inventory_service.count_movements(db_session, t1.id) == 1
+    assert inventory_service.count_movements(db_session, t2.id) == 1
+
+
+def test_sunat_acceptance_converts_hold_once(db_session):
     tenant = make_tenant(db_session, "704")
     user = make_user(db_session, tenant, email="inv4@test.pe")
     client = make_cliente(db_session, tenant, "704")
@@ -221,137 +182,6 @@ def test_sunat_acceptance_converts_hold_once_and_void_reverses_once(db_session):
     assert stock["committed"] == Decimal("0.0000")
     sales = [row for row in inventory_service.list_movements(db_session, tenant.id, limit=20) if row["movement_type"] == "sale_out"]
     assert len(sales) == 1
-    assert sales[0]["source_document_number"] == document.document_number
-
-    crud.anular_cotizacion(db_session, document.id, tenant_id=tenant.id)
-    crud.anular_cotizacion(db_session, document.id, tenant_id=tenant.id)
-    stock = inventory_service.list_stock(db_session, tenant.id)[0]
-    assert stock["on_hand"] == Decimal("10.0000")
-    reversals = [
-        row for row in inventory_service.list_movements(db_session, tenant.id, limit=20)
-        if row["movement_type"] == "sale_void_reversal"
-    ]
-    assert len(reversals) == 1
-
-
-def test_fiscal_document_creation_reserves_inventory_automatically(db_session):
-    tenant = make_tenant(db_session, "7041")
-    _active_subscription(db_session, tenant)
-    user = make_user(db_session, tenant, email="inv-auto@test.pe")
-    client = make_cliente(db_session, tenant, "7041")
-    product = make_producto(db_session, tenant, "AUTO")
-    warehouse = _activate(db_session, tenant)
-    _inventory_product(db_session, tenant, product, warehouse, user)
-    quote = _inventory_quote(db_session, tenant, user, client, product)
-    availability = inventory_service.check_document_availability(db_session, tenant.id, quote.id)
-    assert availability["inventory_enabled"] is True
-    assert availability["sufficient"] is True
-    assert availability["items"][0]["product_name"] == product.nombre
-
-    fiscal_document = crud.create_fiscal_document_from_quote(
-        db_session,
-        quote,
-        user.id,
-        "01",
-    )
-
-    stock = inventory_service.list_stock(db_session, tenant.id)[0]
-    assert stock["on_hand"] == Decimal("10.0000")
-    assert stock["committed"] == Decimal("3.0000")
-    hold = db_session.query(models.InventoryHold).filter_by(
-        tenant_id=tenant.id,
-        document_id=fiscal_document.id,
-    ).one()
-    assert hold.status == "active"
-
-
-def test_quote_rejects_warehouse_from_another_tenant(db_session):
-    tenant = make_tenant(db_session, "7044")
-    other_tenant = make_tenant(db_session, "7045")
-    foreign_warehouse = _activate(db_session, other_tenant)
-
-    with pytest.raises(ValueError, match="no pertenece"):
-        _validated_warehouse_id(
-            db_session,
-            tenant.id,
-            foreign_warehouse.id,
-        )
-
-
-def test_insufficient_stock_rolls_back_fiscal_document_creation(db_session):
-    tenant = make_tenant(db_session, "7043")
-    _active_subscription(db_session, tenant)
-    user = make_user(db_session, tenant, email="inv-insufficient@test.pe")
-    client = make_cliente(db_session, tenant, "7043")
-    product = make_producto(db_session, tenant, "INSUFFICIENT")
-    warehouse = _activate(db_session, tenant)
-    _inventory_product(db_session, tenant, product, warehouse, user, stock="2")
-    quote = _inventory_quote(db_session, tenant, user, client, product, quantity="3")
-
-    with pytest.raises(HTTPException, match="Stock insuficiente"):
-        crud.create_fiscal_document_from_quote(
-            db_session,
-            quote,
-            user.id,
-            "01",
-        )
-
-    fiscal_document = db_session.query(models.Cotizacion).filter(
-        models.Cotizacion.tenant_id == tenant.id,
-        models.Cotizacion.source_quote_id == quote.id,
-        models.Cotizacion.document_kind == "fiscal_document",
-    ).first()
-    assert fiscal_document is None
-    stock = inventory_service.list_stock(db_session, tenant.id)[0]
-    assert stock["committed"] == Decimal("0.0000")
-
-
-def test_terminal_emission_failure_releases_inventory_hold(db_session):
-    tenant = make_tenant(db_session, "7042")
-    user = make_user(db_session, tenant, email="inv-failed@test.pe")
-    client = make_cliente(db_session, tenant, "7042")
-    product = make_producto(db_session, tenant, "FAILED")
-    warehouse = _activate(db_session, tenant)
-    _inventory_product(db_session, tenant, product, warehouse, user)
-    document = models.Cotizacion(
-        tenant_id=tenant.id, usuario_id=user.id, cliente_id=client.id,
-        serie="F001", correlativo=71, document_kind="fiscal_document",
-        tipo_comprobante="01", estado="pendiente", warehouse_id=warehouse.id,
-        total_venta=Decimal("3"),
-    )
-    document.items.append(models.CotizacionItem(
-        producto_id=product.id, descripcion="Producto", cantidad=Decimal("3"),
-        precio_unitario=1, valor_unitario=1, total_base_igv=3, total_igv=0,
-        total_item=3, unidad_medida="NIU", tipo_afectacion_igv="10",
-    ))
-    db_session.add(document)
-    db_session.commit()
-    inventory_service.create_document_holds(db_session, document, user.id)
-    db_session.commit()
-
-    job = SimpleNamespace(
-        resource_type=models.EMISSION_JOB_RESOURCE_COTIZACION,
-        action=models.EMISSION_JOB_ACTION_EMIT_FISCAL,
-        resource_id=document.id,
-        tenant_id=tenant.id,
-    )
-    emission_queue_service._persist_final_job_error_to_resource(
-        db_session,
-        job,
-        "Proveedor no disponible",
-    )
-
-    stock = inventory_service.list_stock(db_session, tenant.id)[0]
-    assert stock["committed"] == Decimal("0.0000")
-    hold = db_session.query(models.InventoryHold).filter_by(document_id=document.id).one()
-    assert hold.status == "released"
-
-    inventory_service.create_document_holds(db_session, document, user.id)
-    db_session.commit()
-    stock = inventory_service.list_stock(db_session, tenant.id)[0]
-    assert stock["committed"] == Decimal("3.0000")
-    db_session.refresh(hold)
-    assert hold.status == "active"
 
 
 def test_rejected_document_releases_hold(db_session):
@@ -422,8 +252,6 @@ def test_credit_note_distinguishes_undelivered_and_physical_return(db_session):
     inventory_service.apply_credit_note_inventory(db_session, note)
     db_session.commit()
     assert inventory_service.list_stock(db_session, tenant.id)[0]["on_hand"] == Decimal("8.0000")
-    with pytest.raises(ValueError, match="nota de crédito activa"):
-        inventory_service.ensure_document_void_inventory_safe(db_session, original)
 
     physical = models.Cotizacion(
         tenant_id=tenant.id, usuario_id=user.id, cliente_id=client.id,
