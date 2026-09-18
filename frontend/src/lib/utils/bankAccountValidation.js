@@ -1,4 +1,4 @@
-import { normalizePeruMobileInput, validatePeruMobilePhone } from './peruPhoneValidation';
+import { normalizePeruMobileInput, validatePeruMobilePhone } from './peruPhoneValidation.js';
 
 function normalizeText(value) {
   return String(value || '').trim();
@@ -64,9 +64,8 @@ export function getBankAccountRule(bankName, accountType = '') {
 
   if (matchesBank(bankKey, ['banco de la nacion', 'banco de la nacion', 'nacion'])) {
     return buildRule({
-      minLength: 10,
-      maxLength: 13,
-      description: '10 a 13 digitos para cuentas del Banco de la Nacion.',
+      allowedLengths: [10, 11, 13],
+      description: '10, 11 o 13 digitos para cuentas del Banco de la Nacion.',
     });
   }
 

@@ -1,0 +1,5 @@
+.fiscal-actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 7px; opacity: 1; min-height: 40px; }
+.fiscal-tracking-badge { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 4px 8px; color: var(--color-text-muted); font-size: 11px; background: var(--color-surface-soft); border-radius: 8px; }
+.fiscal-actions .history-action-button { min-height: 40px; white-space: nowrap; padding: 0 11px; }
+.fiscal-actions button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+@media (max-width: 768px) { .fiscal-actions { justify-content: flex-start; flex-wrap: wrap; } .fiscal-actions .history-action-button, .fiscal-tracking-badge { min-height: 44px; } }

@@ -1,29 +1,42 @@
-"""Persist per-tenant production fiscal series and remote floors."""
+"""Persist per-tenant production fiscal series and remote floors.
+
+This revision was referenced by the commercial-inventory chain but absent from
+this checkout.  It is intentionally idempotent because the production schema
+may already contain these operational columns.
+"""
 from __future__ import annotations
 
 from alembic import op
+import sqlalchemy as sa
 
 
-# Alembic stores revision IDs in alembic_version.version_num VARCHAR(32).
 revision = "0014_tenant_fiscal_series"
-# The production database is currently stamped at this revision. Attach the
-# additive series configuration after it so Railway has one unambiguous head.
 down_revision = "0008_fiscal_doc_provider_trace"
 branch_labels = None
 depends_on = None
 
 
+_COLUMNS = (
+    ("fiscal_invoice_series", sa.String(length=4)),
+    ("fiscal_invoice_series_floor", sa.Integer()),
+    ("fiscal_boleta_series", sa.String(length=4)),
+    ("fiscal_boleta_series_floor", sa.Integer()),
+)
+
+
+def _tenant_columns() -> set[str]:
+    return {column["name"] for column in sa.inspect(op.get_bind()).get_columns("tenants")}
+
+
 def upgrade():
-    # The columns were applied operationally before this revision was added.
-    # Keep pre-deploy idempotent for that production database.
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS fiscal_invoice_series VARCHAR(4)")
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS fiscal_invoice_series_floor INTEGER")
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS fiscal_boleta_series VARCHAR(4)")
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS fiscal_boleta_series_floor INTEGER")
+    existing = _tenant_columns()
+    for name, column_type in _COLUMNS:
+        if name not in existing:
+            op.add_column("tenants", sa.Column(name, column_type, nullable=True))
 
 
 def downgrade():
-    op.execute("ALTER TABLE tenants DROP COLUMN IF EXISTS fiscal_boleta_series_floor")
-    op.execute("ALTER TABLE tenants DROP COLUMN IF EXISTS fiscal_boleta_series")
-    op.execute("ALTER TABLE tenants DROP COLUMN IF EXISTS fiscal_invoice_series_floor")
-    op.execute("ALTER TABLE tenants DROP COLUMN IF EXISTS fiscal_invoice_series")
+    existing = _tenant_columns()
+    for name, _ in reversed(_COLUMNS):
+        if name in existing:
+            op.drop_column("tenants", name)

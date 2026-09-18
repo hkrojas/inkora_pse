@@ -162,83 +162,10 @@ def upload_to_storage(
 
 def check_storage_ready() -> dict:
     if not settings.has_supabase_storage:
-        return {
-            "ok": False,
-            "configured": False,
-            "bucket": settings.SUPABASE_STORAGE_BUCKET,
-            "public_assets_bucket": settings.SUPABASE_PUBLIC_ASSETS_BUCKET,
-        }
-
-    client = get_supabase_client()
-    bucket = settings.SUPABASE_STORAGE_BUCKET
-    public_assets_bucket = settings.SUPABASE_PUBLIC_ASSETS_BUCKET
-
-    def inspect_bucket(bucket_id: str, *, write_probe: bool = False) -> dict:
-        bucket_accessible = False
-        bucket_error = None
-        objects_listable = False
-        list_error = None
-        probe_writable = False
-        probe_error = None
-
-        try:
-            client.storage.get_bucket(bucket_id)
-            bucket_accessible = True
-        except Exception as exc:
-            bucket_error = type(exc).__name__
-
-        if bucket_accessible:
-            try:
-                client.storage.from_(bucket_id).list("", {"limit": 1})
-                objects_listable = True
-            except Exception as exc:
-                list_error = type(exc).__name__
-
-        if bucket_accessible and write_probe:
-            probe_path = "_health/storage-readiness.txt"
-            try:
-                client.storage.from_(bucket_id).upload(
-                    path=probe_path,
-                    file=b"ok",
-                    file_options={"content-type": "text/plain", "upsert": "true"},
-                )
-                downloaded = client.storage.from_(bucket_id).download(probe_path)
-                if isinstance(downloaded, bytes):
-                    probe_writable = downloaded == b"ok"
-                else:
-                    probe_writable = getattr(downloaded, "content", b"") == b"ok"
-                try:
-                    client.storage.from_(bucket_id).remove([probe_path])
-                except Exception:
-                    pass
-            except Exception as exc:
-                probe_error = type(exc).__name__
-
-        return {
-            "bucket_accessible": bucket_accessible,
-            "bucket_error": bucket_error,
-            "objects_listable": objects_listable,
-            "list_error": list_error,
-            "probe_writable": probe_writable,
-            "probe_error": probe_error,
-        }
-
-    private_bucket_status = inspect_bucket(bucket, write_probe=True)
-    public_assets_bucket_status = inspect_bucket(public_assets_bucket)
-
+        return {"configured": False, "bucket": settings.SUPABASE_STORAGE_BUCKET}
+    get_supabase_client()
     return {
-        "ok": (
-            private_bucket_status["bucket_accessible"]
-            and private_bucket_status["probe_writable"]
-            and public_assets_bucket_status["bucket_accessible"]
-        ),
         "configured": True,
-        "bucket": bucket,
-        "public_assets_bucket": public_assets_bucket,
+        "bucket": settings.SUPABASE_STORAGE_BUCKET,
         "uses_server_key": bool(settings.SUPABASE_SERVICE_ROLE_KEY.strip()),
-        **private_bucket_status,
-        "public_assets_bucket_accessible": public_assets_bucket_status["bucket_accessible"],
-        "public_assets_bucket_error": public_assets_bucket_status["bucket_error"],
-        "public_assets_objects_listable": public_assets_bucket_status["objects_listable"],
-        "public_assets_list_error": public_assets_bucket_status["list_error"],
     }

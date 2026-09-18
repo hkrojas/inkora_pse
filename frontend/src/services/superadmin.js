@@ -29,6 +29,8 @@ export const superadmin = {
   toggleSmartPseTenantCompanyActivation: (tenantId) => api.post(`/superadmin/tenants/${tenantId}/smartpse/activation`),
   updateSmartPseGreCredentials: (tenantId, data) => api.put(`/superadmin/tenants/${tenantId}/smartpse/gre-credentials`, data),
   checkSmartPseGreCredentials:  (tenantId)       => api.post(`/superadmin/tenants/${tenantId}/smartpse/gre-credentials/check`),
+  fiscalContingency:            (tenantId)       => api.get(`/superadmin/tenants/${tenantId}/fiscal-contingency`),
+  updateFiscalContingency:      (tenantId, data) => api.patch(`/superadmin/tenants/${tenantId}/fiscal-contingency`, data),
 
   // Usuarios
   createUser:           (tenantId, data) => api.post(`/superadmin/tenants/${tenantId}/users`, data),

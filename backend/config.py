@@ -9,6 +9,7 @@ _DEFAULT_LOCAL_CORS_ORIGINS = [
     "http://localhost:5174",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
 ]
 _DEFAULT_REMOTE_CORS_ORIGINS = [
     "https://inkora-pse.vercel.app",
@@ -50,7 +51,8 @@ class Settings(BaseSettings):
     DNIRUC_TOKEN: str = ""
     GEMINI_API_KEY: str = ""
     EMISSION_MODE_DEFAULT: str = "async"
-    EMISSION_WORKER_POLL_SECONDS: int = 2
+    EMISSION_WORKER_POLL_SECONDS: int = 3
+    EMISSION_STALE_RECOVERY_INTERVAL_SECONDS: int = 60
     EMISSION_MAX_ATTEMPTS: int = 5
     EMISSION_RETRY_BASE_SECONDS: int = 15
     EMISSION_PROCESSING_TIMEOUT_SECONDS: int = 300
@@ -66,6 +68,9 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     SUPABASE_STORAGE_BUCKET: str = "printflow-archivos"
     SUPABASE_PUBLIC_ASSETS_BUCKET: str = "inkora-public-assets"
+    # Bucket público ya separado de los comprobantes y documentos privados.
+    CATALOG_PUBLIC_STORAGE_BUCKET: str = "inkora-public-assets"
+    MAX_CATALOG_UPLOAD_BYTES: int = 5 * 1024 * 1024
 
     # App / runtime
     BACKEND_URL: str = "http://localhost:8000"
@@ -179,11 +184,10 @@ class Settings(BaseSettings):
 
     @property
     def has_supabase_storage(self) -> bool:
-        if not self.SUPABASE_URL.strip():
-            return False
-        if self.is_non_local:
-            return bool(self.SUPABASE_SERVICE_ROLE_KEY.strip())
-        return bool(self.SUPABASE_SERVICE_ROLE_KEY.strip() or self.SUPABASE_KEY.strip())
+        return bool(
+            self.SUPABASE_URL.strip()
+            and (self.SUPABASE_SERVICE_ROLE_KEY.strip() or self.SUPABASE_KEY.strip())
+        )
 
     @property
     def is_fiscal_beta(self) -> bool:

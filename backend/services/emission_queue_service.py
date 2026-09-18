@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from threading import Thread
 
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 import crud
@@ -23,6 +22,7 @@ from services import (
     fiscal_provider_service,
     inventory_service,
     pdf_storage_service,
+    sale_dispatch_service,
 )
 from services.facturacion_background_service import process_direct_sunat_emission_bg
 from services.fiscal_balance_service import ensure_credit_note_within_available_amount
@@ -39,6 +39,12 @@ EMISSION_ALLOWED_SUBSCRIPTION_STATUSES = {
 EMISSION_BLOCKED_NO_ACTIVE_SUBSCRIPTION_MESSAGE = (
     "El tenant no tiene una suscripción activa para emitir."
 )
+
+EMISSION_ERROR_TRANSIENT = "transient"
+EMISSION_ERROR_AMBIGUOUS = "ambiguous"
+EMISSION_ERROR_PROVIDER_POLICY = "provider_policy"
+EMISSION_ERROR_VALIDATION = "validation"
+EMISSION_ERROR_TERMINAL = "terminal"
 
 # Graceful shutdown flag
 _shutdown_requested = threading.Event()
@@ -105,10 +111,18 @@ def build_job_acceptance_payload(
     resource_type: str,
     internal_order_number: str | None = None,
 ) -> dict:
+    deferred = job.status == models.EMISSION_JOB_STATUS_CONTINGENCY_PENDING
+    pending_confirmation = job.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION
     return {
         "success": True,
         "queued": True,
-        "message": message,
+        "deferred": deferred,
+        "pending_confirmation": pending_confirmation,
+        "message": (
+            "Documento reservado en contingencia; queda pendiente de envio y validacion fiscal."
+            if deferred
+            else message
+        ),
         "job_id": job.id,
         "job_status": job.status,
         "resource_type": resource_type,
@@ -117,36 +131,40 @@ def build_job_acceptance_payload(
     }
 
 
+def _initial_cpe_job_status(user: models.User) -> str:
+    tenant = getattr(user, "tenant", None)
+    if tenant and bool(getattr(tenant, "fiscal_contingency_mode", False)):
+        return models.EMISSION_JOB_STATUS_CONTINGENCY_PENDING
+    return models.EMISSION_JOB_STATUS_QUEUED
+
+
 def enqueue_fiscal_document_job(
     db: Session,
     fiscal_document: models.Cotizacion,
     user: models.User,
     *,
     tipo_comprobante: str,
-    tipo_operacion: str | None = None,
-    clear_legacy_detraccion: bool = False,
 ):
     idempotency_key = f"emit:fiscal:{fiscal_document.id}"
     existing = crud.get_emission_job_by_key(db, fiscal_document.tenant_id, idempotency_key)
     provider = "smartpse"
+    initial_status = _initial_cpe_job_status(user)
     if existing:
         if existing.status in {
             models.EMISSION_JOB_STATUS_QUEUED,
             models.EMISSION_JOB_STATUS_PROCESSING,
             models.EMISSION_JOB_STATUS_RETRY,
+            models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION,
+            models.EMISSION_JOB_STATUS_CONTINGENCY_PENDING,
             models.EMISSION_JOB_STATUS_SUCCEEDED,
         }:
             return existing, False
         existing = crud.requeue_emission_job(
             db,
             existing.id,
-            payload_snapshot={
-                "tipo_comprobante": tipo_comprobante,
-                "tipo_operacion": tipo_operacion,
-                "clear_legacy_detraccion": clear_legacy_detraccion,
-            },
+            payload_snapshot={"tipo_comprobante": tipo_comprobante},
             provider=provider,
-            reset_attempts=True,
+            target_status=initial_status,
         )
         return existing, False
 
@@ -159,12 +177,9 @@ def enqueue_fiscal_document_job(
         action=models.EMISSION_JOB_ACTION_EMIT_FISCAL,
         provider=provider,
         idempotency_key=idempotency_key,
-        payload_snapshot={
-            "tipo_comprobante": tipo_comprobante,
-            "tipo_operacion": tipo_operacion,
-            "clear_legacy_detraccion": clear_legacy_detraccion,
-        },
+        payload_snapshot={"tipo_comprobante": tipo_comprobante},
         max_attempts=settings.EMISSION_MAX_ATTEMPTS,
+        initial_status=initial_status,
     )
     return job, True
 
@@ -180,11 +195,14 @@ def enqueue_note_job(
 ):
     idempotency_key = f"emit:note:{nota.id}"
     existing = crud.get_emission_job_by_key(db, nota.tenant_id, idempotency_key)
+    initial_status = _initial_cpe_job_status(user)
     if existing:
         if existing.status in {
             models.EMISSION_JOB_STATUS_QUEUED,
             models.EMISSION_JOB_STATUS_PROCESSING,
             models.EMISSION_JOB_STATUS_RETRY,
+            models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION,
+            models.EMISSION_JOB_STATUS_CONTINGENCY_PENDING,
             models.EMISSION_JOB_STATUS_SUCCEEDED,
         }:
             return existing, False
@@ -197,7 +215,7 @@ def enqueue_note_job(
                 "descripcion_motivo": descripcion_motivo,
             },
             provider="smartpse",
-            reset_attempts=True,
+            target_status=initial_status,
         )
         return existing, False
 
@@ -216,6 +234,7 @@ def enqueue_note_job(
             "descripcion_motivo": descripcion_motivo,
         },
         max_attempts=settings.EMISSION_MAX_ATTEMPTS,
+        initial_status=initial_status,
     )
     return job, True
 
@@ -234,6 +253,8 @@ def enqueue_void_document_job(
             models.EMISSION_JOB_STATUS_QUEUED,
             models.EMISSION_JOB_STATUS_PROCESSING,
             models.EMISSION_JOB_STATUS_RETRY,
+            models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION,
+            models.EMISSION_JOB_STATUS_CONTINGENCY_PENDING,
             models.EMISSION_JOB_STATUS_SUCCEEDED,
         }:
             return existing, False
@@ -242,7 +263,6 @@ def enqueue_void_document_job(
             existing.id,
             payload_snapshot={"motivo": motivo},
             provider="smartpse",
-            reset_attempts=True,
         )
         return existing, False
 
@@ -268,19 +288,30 @@ def enqueue_guide_job(
 ):
     idempotency_key = f"emit:guide:{guia.id}"
     existing = crud.get_emission_job_by_key(db, guia.tenant_id, idempotency_key)
+    initial_status = _initial_cpe_job_status(user)
+    snapshot = {
+        "tipo_documento": guia.tipo_documento,
+        "serie": guia.serie,
+        "correlativo": guia.correlativo,
+        "dispatch_id": guia.dispatch_id,
+        "emission_environment": guia.emission_environment,
+    }
     if existing:
         if existing.status in {
             models.EMISSION_JOB_STATUS_QUEUED,
             models.EMISSION_JOB_STATUS_PROCESSING,
             models.EMISSION_JOB_STATUS_RETRY,
+            models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION,
+            models.EMISSION_JOB_STATUS_CONTINGENCY_PENDING,
             models.EMISSION_JOB_STATUS_SUCCEEDED,
         }:
             return existing, False
         existing = crud.requeue_emission_job(
             db,
             existing.id,
+            payload_snapshot=snapshot,
             provider="smartpse",
-            reset_attempts=True,
+            target_status=initial_status,
         )
         return existing, False
 
@@ -293,10 +324,45 @@ def enqueue_guide_job(
         action=models.EMISSION_JOB_ACTION_EMIT_GUIDE,
         provider="smartpse",
         idempotency_key=idempotency_key,
-        payload_snapshot=None,
+        payload_snapshot=snapshot,
         max_attempts=settings.EMISSION_MAX_ATTEMPTS,
+        initial_status=initial_status,
     )
     return job, True
+
+
+def enqueue_guide_consult_job(db: Session, guia: models.GuiaRemision, user: models.User):
+    """Queue status reconciliation without ever resending the GRE."""
+    idempotency_key = f"consult:guide:{guia.id}"
+    existing = crud.get_emission_job_by_key(db, guia.tenant_id, idempotency_key)
+    snapshot = {"ticket": guia.sunat_ticket, "serie": guia.serie, "correlativo": guia.correlativo}
+    if existing:
+        if existing.status in {
+            models.EMISSION_JOB_STATUS_QUEUED,
+            models.EMISSION_JOB_STATUS_PROCESSING,
+            models.EMISSION_JOB_STATUS_RETRY,
+            models.EMISSION_JOB_STATUS_SUCCEEDED,
+        }:
+            return existing, False
+        # A pending confirmation is not a definitive fiscal result. Requeue it
+        # only when the operator explicitly requests another consultation; this
+        # path never calls /despatch/send and therefore cannot duplicate the GRE.
+        return crud.requeue_emission_job(
+            db, existing.id, payload_snapshot=snapshot, provider="smartpse",
+            target_status=models.EMISSION_JOB_STATUS_QUEUED,
+        ), False
+    return crud.create_emission_job(
+        db,
+        tenant_id=guia.tenant_id,
+        created_by_user_id=user.id,
+        resource_type=models.EMISSION_JOB_RESOURCE_GUIA,
+        resource_id=guia.id,
+        action=models.EMISSION_JOB_ACTION_CONSULT_GUIDE,
+        provider="smartpse",
+        idempotency_key=idempotency_key,
+        payload_snapshot=snapshot,
+        max_attempts=settings.EMISSION_MAX_ATTEMPTS,
+    ), True
 
 
 def _retry_delay_seconds(attempts: int) -> int:
@@ -322,6 +388,45 @@ def _is_retryable_error(message: str) -> bool:
         "todavia no ha sido procesado",
     )
     return any(fragment in normalized for fragment in retryable_fragments)
+
+
+def _classify_emission_error(message: str) -> str:
+    """Clasifica errores sin convertir estados ambiguos en rechazos fiscales."""
+    normalized = (message or "").lower()
+    provider_policy_fragments = (
+        "[0111]",
+        "no tiene el perfil para enviar comprobantes",
+        "rejected by policy",
+    )
+    ambiguous_fragments = (
+        "[1033]",
+        "[http] bad request",
+        "http 400",
+        "status 400",
+        "smart pse remote verification missing",
+        "no devolvio cdr",
+        "sin cdr",
+        "no puede marcarse como aceptado",
+    )
+    if any(fragment in normalized for fragment in provider_policy_fragments):
+        return EMISSION_ERROR_PROVIDER_POLICY
+    if any(fragment in normalized for fragment in ambiguous_fragments):
+        return EMISSION_ERROR_AMBIGUOUS
+    if _is_retryable_error(message):
+        return EMISSION_ERROR_TRANSIENT
+    return EMISSION_ERROR_TERMINAL
+
+
+def _must_hold_exhausted_consultation(
+    job: models.DocumentEmissionJob,
+    error_classification: str,
+) -> bool:
+    """Keep an inconclusive GRE query out of the definitive failure state."""
+    return (
+        job.action == models.EMISSION_JOB_ACTION_CONSULT_GUIDE
+        and error_classification == EMISSION_ERROR_TRANSIENT
+        and (job.attempts or 0) >= (job.max_attempts or settings.EMISSION_MAX_ATTEMPTS)
+    )
 
 
 def _apply_optional_tenant_context(db: Session, tenant_id: int):
@@ -455,7 +560,7 @@ def _resolve_job_feature_key(db: Session, job: models.DocumentEmissionJob) -> st
             _raise_non_retryable_validation(
                 "Tipo de nota no soportado para feature flags fiscales."
             )
-    if job.action == models.EMISSION_JOB_ACTION_EMIT_GUIDE:
+    if job.action in {models.EMISSION_JOB_ACTION_EMIT_GUIDE, models.EMISSION_JOB_ACTION_CONSULT_GUIDE}:
         return beta_feature_flags.FISCAL_FEATURE_GUIDES
     if job.action == models.EMISSION_JOB_ACTION_VOID_FISCAL:
         return beta_feature_flags.FISCAL_FEATURE_VOIDING
@@ -579,6 +684,7 @@ def _get_tenant_guia(db: Session, tenant_id: int, guia_id: int):
         joinedload(models.GuiaRemision.items),
         joinedload(models.GuiaRemision.cotizacion).joinedload(models.Cotizacion.cliente),
         joinedload(models.GuiaRemision.usuario).joinedload(models.User.tenant),
+        joinedload(models.GuiaRemision.dispatch).joinedload(models.SaleDispatch.lines),
     ).filter(
         models.GuiaRemision.id == guia_id,
         models.GuiaRemision.tenant_id == tenant_id,
@@ -594,22 +700,13 @@ def _process_emit_fiscal_job(
     if not fiscal_document:
         raise RuntimeError("No se encontró el documento fiscal a emitir.")
 
-    inventory_service.create_document_holds(db, fiscal_document, user.id)
-    db.commit()
-
     payload_snapshot = job.payload_snapshot or {}
     result = facturacion_service.emitir_factura(
         fiscal_document,
         db,
         user,
         tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
-        tipo_operacion_override=payload_snapshot.get("tipo_operacion"),
     )
-    if payload_snapshot.get("clear_legacy_detraccion"):
-        fiscal_document.sujeta_detraccion = False
-        fiscal_document.porcentaje_detraccion = None
-        fiscal_document.monto_detraccion = None
-        fiscal_document.cuenta_banco_nacion = None
     persisted_document = crud.guardar_respuesta_sunat(
         db,
         fiscal_document.id,
@@ -627,8 +724,6 @@ def _process_emit_fiscal_job(
                 )
             )
         except Exception as cdr_err:
-            persisted_document.cdr_artifact_status = "failed"
-            db.commit()
             logger.warning(
                 "cdr_artifact_persist_failed_but_emission_ok",
                 extra={
@@ -642,10 +737,6 @@ def _process_emit_fiscal_job(
     try:
         _run_async_syncsafe(pdf_storage_service.process_pdf_background(fiscal_document.id, job.tenant_id))
     except Exception as pdf_err:
-        failed_document = _get_tenant_cotizacion(db, job.tenant_id, fiscal_document.id)
-        if failed_document:
-            failed_document.pdf_artifact_status = "failed"
-            db.commit()
         logger.error(
             "pdf_generation_failed_but_emission_ok",
             extra={
@@ -695,8 +786,6 @@ def _process_emit_note_job(
                 )
             )
         except Exception as cdr_err:
-            updated_note.cdr_artifact_status = "failed"
-            db.commit()
             logger.warning(
                 "cdr_artifact_persist_failed_but_emission_ok",
                 extra={
@@ -717,10 +806,6 @@ def _process_emit_note_job(
     try:
         _run_async_syncsafe(pdf_storage_service.process_pdf_background(nota.id, job.tenant_id))
     except Exception as pdf_err:
-        failed_note = _get_tenant_cotizacion(db, job.tenant_id, nota.id)
-        if failed_note:
-            failed_note.pdf_artifact_status = "failed"
-            db.commit()
         logger.error(
             "pdf_generation_failed_but_emission_ok",
             extra={
@@ -741,12 +826,13 @@ def _process_void_fiscal_job(
     if not comprobante:
         raise RuntimeError("No se encontró el comprobante a anular.")
 
+    payload_snapshot = job.payload_snapshot or {}
     try:
         inventory_service.ensure_document_void_inventory_safe(db, comprobante)
+        if sale_dispatch_service.active_dispatch_allocation_exists(db, comprobante.tenant_id, comprobante.id):
+            raise ValueError("La baja requiere resolver antes las reservas o cobertura GRE.")
     except ValueError as exc:
         _raise_non_retryable_validation(str(exc))
-
-    payload_snapshot = job.payload_snapshot or {}
     result = facturacion_service.anular_comprobante(
         comprobante,
         payload_snapshot.get("motivo") or "ANULACION EN COLA",
@@ -766,32 +852,66 @@ def _process_emit_guide_job(
         raise RuntimeError("No se encontró la guía a emitir.")
 
     try:
-        result = facturacion_service.emitir_guia_remision(guia, user)
-        crud.guardar_respuesta_sunat_gre(db, guia.id, result, tenant_id=job.tenant_id)
+        validation = sale_dispatch_service.validate_guide_for_emission(db, guia)
+        if not validation["valid"]:
+            messages = "; ".join(error["message"] for error in validation["errors"])
+            _raise_non_retryable_validation(messages)
+        if not guia.frozen_payload or not guia.frozen_xml:
+            _raise_non_retryable_validation("La guía no tiene payload/XML congelado antes del encolado.")
+        # End the short validation locks before the external HTTP call.
+        db.commit()
+        result = facturacion_service.emitir_guia_remision(
+            guia, user, prepared_payload=guia.frozen_payload, prepared_xml=guia.frozen_xml
+        )
+        sale_dispatch_service.lock_guide_result_scope(db, guia)
+        persisted = crud.guardar_respuesta_sunat_gre(
+            db, guia.id, result, tenant_id=job.tenant_id, commit=False
+        )
+        if result.get("success") and not result.get("pending"):
+            sale_dispatch_service.apply_guide_result(db, persisted, accepted=True)
+        elif not result.get("success"):
+            sale_dispatch_service.apply_guide_result(db, persisted, accepted=False, rejected=True)
+        db.commit()
         return result
+    except facturacion_service.FacturacionRejectedException as exc:
+        sale_dispatch_service.lock_guide_result_scope(db, guia)
+        guia.estado = "rechazada"
+        guia.sunat_error = str(exc)
+        guia.provider_response = exc.provider_response
+        guia.rejected_at = datetime.now()
+        sale_dispatch_service.apply_guide_result(db, guia, accepted=False, rejected=True)
+        db.commit()
+        raise
     except Exception as exc:
         crud.guardar_error_sunat_gre(db, guia.id, str(exc), tenant_id=job.tenant_id)
         raise
 
 
-def _persist_final_job_error_to_resource(
-    db: Session,
-    job: models.DocumentEmissionJob,
-    message: str,
-) -> None:
-    if job.resource_type == models.EMISSION_JOB_RESOURCE_COTIZACION:
-        crud.guardar_error_sunat(db, job.resource_id, message, tenant_id=job.tenant_id)
-        if job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL:
-            fiscal_document = _get_tenant_cotizacion(db, job.tenant_id, job.resource_id)
-            if fiscal_document:
-                inventory_service.release_document_holds(
-                    db,
-                    fiscal_document,
-                    reason=f"Emision fallida: {message}",
-                )
-                db.commit()
-    elif job.resource_type == models.EMISSION_JOB_RESOURCE_GUIA:
-        crud.guardar_error_sunat_gre(db, job.resource_id, message, tenant_id=job.tenant_id)
+def _process_consult_guide_job(db: Session, job: models.DocumentEmissionJob, user: models.User) -> dict:
+    """Reconcile an already submitted guide. This path never calls /despatch/send."""
+    guia = _get_tenant_guia(db, job.tenant_id, job.resource_id)
+    if not guia:
+        raise RuntimeError("No se encontró la guía a conciliar.")
+    db.commit()  # never keep an SQL transaction open during provider consultation
+    try:
+        result = facturacion_service.consultar_guia_remision(guia, user)
+    except facturacion_service.FacturacionRejectedException as exc:
+        sale_dispatch_service.lock_guide_result_scope(db, guia)
+        guia.estado = "rechazada"
+        guia.sunat_error = str(exc)
+        guia.provider_response = exc.provider_response
+        guia.rejected_at = datetime.now()
+        sale_dispatch_service.apply_guide_result(db, guia, accepted=False, rejected=True)
+        db.commit()
+        raise
+    sale_dispatch_service.lock_guide_result_scope(db, guia)
+    persisted = crud.guardar_respuesta_sunat_gre(
+        db, guia.id, result, tenant_id=job.tenant_id, commit=False
+    )
+    if result.get("success") and not result.get("pending"):
+        sale_dispatch_service.apply_guide_result(db, persisted, accepted=True)
+    db.commit()
+    return result
 
 
 def process_emission_job(job_id: int, *, db_session: Session | None = None) -> bool:
@@ -824,16 +944,27 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
             result = _process_void_fiscal_job(db, job, user)
         elif job.action == models.EMISSION_JOB_ACTION_EMIT_GUIDE:
             result = _process_emit_guide_job(db, job, user)
+        elif job.action == models.EMISSION_JOB_ACTION_CONSULT_GUIDE:
+            result = _process_consult_guide_job(db, job, user)
         else:
             raise RuntimeError(f"Acción de job no soportada: {job.action}")
 
         provider_ticket = result.get("ticket") or (result.get("sunat_response") or {}).get("ticket")
-        crud.mark_emission_job_succeeded(
-            db,
-            job.id,
-            result_snapshot=_build_job_result_snapshot(result),
-            provider_ticket=provider_ticket,
-        )
+        if result.get("pending"):
+            crud.mark_emission_job_pending_confirmation(
+                db, job.id,
+                error_message="Smart PSE/SUNAT mantiene la guía pendiente de resultado definitivo.",
+                error_classification=EMISSION_ERROR_AMBIGUOUS,
+                result_snapshot=_build_job_result_snapshot(result),
+                provider_ticket=provider_ticket,
+            )
+        else:
+            crud.mark_emission_job_succeeded(
+                db,
+                job.id,
+                result_snapshot=_build_job_result_snapshot(result),
+                provider_ticket=provider_ticket,
+            )
         logger.info(
             "emission_job_succeeded",
             extra={"event": "emission_job_succeeded", "context": f"job_id={job.id} action={job.action}"},
@@ -843,8 +974,12 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
         message = str(exc)
         job = crud.get_emission_job(db, job_id)
         if job:
-            crud.mark_emission_job_failed(db, job.id, error_message=message)
-            _persist_final_job_error_to_resource(db, job, message)
+            crud.mark_emission_job_failed(
+                db,
+                job.id,
+                error_message=message,
+                error_classification=EMISSION_ERROR_VALIDATION,
+            )
             logger.warning(
                 "emission_job_validation_failed",
                 extra={
@@ -857,13 +992,44 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
         message = str(exc)
         job = crud.get_emission_job(db, job_id)
         if job:
-            if (job.attempts or 0) < (job.max_attempts or settings.EMISSION_MAX_ATTEMPTS) and _is_retryable_error(message):
+            error_classification = _classify_emission_error(message)
+            if (
+                error_classification in {
+                    EMISSION_ERROR_AMBIGUOUS,
+                    EMISSION_ERROR_PROVIDER_POLICY,
+                }
+                or _must_hold_exhausted_consultation(job, error_classification)
+            ):
+                crud.mark_emission_job_pending_confirmation(
+                    db,
+                    job.id,
+                    error_message=message,
+                    error_classification=error_classification,
+                )
+                logger.warning(
+                    "emission_job_pending_confirmation job_id=%s action=%s classification=%s",
+                    job.id,
+                    job.action,
+                    error_classification,
+                    extra={
+                        "event": "emission_job_pending_confirmation",
+                        "context": (
+                            f"job_id={job.id} action={job.action} "
+                            f"classification={error_classification}"
+                        ),
+                    },
+                )
+            elif (
+                (job.attempts or 0) < (job.max_attempts or settings.EMISSION_MAX_ATTEMPTS)
+                and error_classification == EMISSION_ERROR_TRANSIENT
+            ):
                 retry_in = _retry_delay_seconds(job.attempts or 1)
                 crud.mark_emission_job_retry(
                     db,
                     job.id,
                     error_message=message,
                     retry_in_seconds=retry_in,
+                    error_classification=error_classification,
                 )
                 logger.warning(
                     "emission_job_retry_scheduled",
@@ -873,11 +1039,24 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
                     },
                 )
             else:
-                crud.mark_emission_job_failed(db, job.id, error_message=message)
-                _persist_final_job_error_to_resource(db, job, message)
+                crud.mark_emission_job_failed(
+                    db,
+                    job.id,
+                    error_message=message,
+                    error_classification=error_classification,
+                )
                 logger.error(
-                    "emission_job_failed",
-                    extra={"event": "emission_job_failed", "context": f"job_id={job.id}"},
+                    "emission_job_failed job_id=%s action=%s classification=%s",
+                    job.id,
+                    job.action,
+                    error_classification,
+                    extra={
+                        "event": "emission_job_failed",
+                        "context": (
+                            f"job_id={job.id} action={job.action} "
+                            f"classification={error_classification}"
+                        ),
+                    },
                 )
         return False
     finally:
@@ -904,6 +1083,28 @@ def process_next_available_job(*, db_session: Session | None = None) -> bool:
             db.close()
 
 
+def _recover_stale_jobs(db: Session) -> int:
+    stale_before = datetime.now() - timedelta(
+        seconds=max(settings.EMISSION_PROCESSING_TIMEOUT_SECONDS, 30)
+    )
+    return crud.recover_stale_processing_jobs(db, stale_before=stale_before)
+
+
+def _recover_stale_jobs_if_due(
+    db: Session,
+    *,
+    now_monotonic: float,
+    next_recovery_at: float,
+    recovery_interval_seconds: int,
+) -> float:
+    """Recover stale jobs on a separate cadence from normal queue polling."""
+    if now_monotonic < next_recovery_at:
+        return next_recovery_at
+
+    _recover_stale_jobs(db)
+    return now_monotonic + recovery_interval_seconds
+
+
 def _process_single_job(job_id: int) -> None:
     """Wrapper para ejecutar un job en un thread del pool."""
     try:
@@ -919,6 +1120,11 @@ def run_worker_loop() -> None:
     """Loop principal del worker con concurrencia configurable y graceful shutdown."""
     poll_seconds = max(settings.EMISSION_WORKER_POLL_SECONDS, 1)
     concurrency = max(settings.EMISSION_WORKER_CONCURRENCY, 1)
+    stale_recovery_interval_seconds = max(
+        settings.EMISSION_STALE_RECOVERY_INTERVAL_SECONDS,
+        1,
+    )
+    next_recovery_at = 0.0
 
     _install_signal_handlers()
 
@@ -926,20 +1132,25 @@ def run_worker_loop() -> None:
         "emission_worker_started",
         extra={
             "event": "emission_worker_started",
-            "context": f"poll={poll_seconds}s concurrency={concurrency} mode_default={settings.EMISSION_MODE_DEFAULT}",
+            "context": (
+                f"poll={poll_seconds}s stale_recovery_interval={stale_recovery_interval_seconds}s "
+                f"concurrency={concurrency} mode_default={settings.EMISSION_MODE_DEFAULT}"
+            ),
         },
     )
 
     with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="emission-worker") as executor:
         while not is_shutdown_requested():
-            # Recover stale jobs and claim next available ones
-            db = None
+            # Claim jobs at the normal cadence. Recover stale jobs separately
+            # so an idle worker does not duplicate that query on every poll.
+            db = SessionLocal()
             try:
-                db = SessionLocal()
-                stale_before = datetime.now() - timedelta(
-                    seconds=max(settings.EMISSION_PROCESSING_TIMEOUT_SECONDS, 30)
+                next_recovery_at = _recover_stale_jobs_if_due(
+                    db,
+                    now_monotonic=time.monotonic(),
+                    next_recovery_at=next_recovery_at,
+                    recovery_interval_seconds=stale_recovery_interval_seconds,
                 )
-                crud.recover_stale_processing_jobs(db, stale_before=stale_before)
 
                 # Claim up to `concurrency` jobs and submit them to the executor
                 submitted = 0
@@ -953,26 +1164,8 @@ def run_worker_loop() -> None:
                 if submitted == 0:
                     # No work available — sleep briefly and retry
                     _shutdown_requested.wait(timeout=poll_seconds)
-            except SQLAlchemyError:
-                if db is not None:
-                    try:
-                        db.rollback()
-                    except Exception:
-                        logger.exception(
-                            "emission_worker_db_rollback_failed",
-                            extra={"event": "emission_worker_db_rollback_failed"},
-                        )
-                logger.exception(
-                    "emission_worker_database_error",
-                    extra={
-                        "event": "emission_worker_database_error",
-                        "context": "retrying_after_database_error",
-                    },
-                )
-                _shutdown_requested.wait(timeout=poll_seconds)
             finally:
-                if db is not None:
-                    db.close()
+                db.close()
 
     logger.info(
         "emission_worker_stopped",

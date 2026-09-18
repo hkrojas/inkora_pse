@@ -1,3 +1,4 @@
+import os
 import time
 import uuid
 
@@ -14,8 +15,11 @@ from database import SessionLocal, engine
 from logging_utils import configure_logging, get_logger
 from routers import (
     access_requests,
+    public_receipts,
     auth,
     clientes,
+    catalog_admin,
+    catalog_public,
     cotizaciones,
     dashboard,
     facturacion,
@@ -26,7 +30,6 @@ from routers import (
     ops,
     pagos,
     productos,
-    public_receipts,
     reportes,
     superadmin,
     sunat,
@@ -97,10 +100,12 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(access_requests.router)
+    app.include_router(public_receipts.router)
     app.include_router(tenants.router)
     app.include_router(clientes.router)
+    app.include_router(catalog_admin.router)
+    app.include_router(catalog_public.router)
     app.include_router(productos.router)
-    app.include_router(public_receipts.router)
     app.include_router(cotizaciones.router)
     app.include_router(pagos.router)
     app.include_router(reportes.router)
@@ -119,7 +124,13 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["ops"])
     def health_check():
-        return {"status": "ok", "environment": settings.ENVIRONMENT}
+        from services.release_identity import release_identity
+        return {
+            "status": "ok",
+            "environment": settings.ENVIRONMENT,
+            "release": os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("INKORA_RELEASE_ID") or "local",
+            "delivery": release_identity(),
+        }
 
     @app.on_event("startup")
     def _startup_db_ping() -> None:

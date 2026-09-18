@@ -1077,8 +1077,11 @@
   display: grid;
   min-height: 32px;
   place-items: center;
+  border: 0;
   border-radius: 9px;
+  background: transparent;
   color: var(--color-text);
+  font-family: inherit;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -1099,6 +1102,15 @@
 .ink-date-day.is-selected {
   background: var(--color-primary);
   color: var(--color-primary-text);
+}
+
+.ink-date-day:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
+.ink-date-day:disabled:hover {
+  background: transparent;
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -24602,4 +24614,546 @@ body:has(.auth-expedition) {
   .auth-route-thread::after,
   .auth-sheet-scroll,
   .auth-request-step { animation: none; }
+}
+
+/* ================================================================
+   GUÍAS · FLUJO DE DESPACHO
+   Refinamiento scoped sobre el lenguaje visual operativo de Inkora.
+   ================================================================ */
+
+.guide-workflow {
+  --guide-accent: var(--color-primary);
+  --guide-soft: color-mix(in srgb, var(--color-primary-soft) 72%, var(--color-surface));
+}
+
+.guide-workflow__hero {
+  align-items: flex-end;
+  padding-bottom: 8px;
+}
+
+.guide-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  margin-bottom: 16px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 750;
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+
+.guide-back-link:hover {
+  color: var(--color-primary);
+  transform: translateX(-2px);
+}
+
+.guide-workflow__identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 9px;
+}
+
+.guide-workflow__identity span,
+.guide-origin-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, var(--color-border));
+  border-radius: 999px;
+  background: var(--guide-soft);
+  color: var(--color-primary);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.guide-workflow__assurance {
+  display: flex;
+  max-width: 300px;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--color-border));
+  border-radius: 12px;
+  background: var(--guide-soft);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.guide-workflow__form {
+  display: grid;
+  gap: 18px;
+}
+
+.guide-flow-section {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+}
+
+.guide-flow-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface-soft) 74%, var(--color-surface));
+}
+
+.guide-flow-section__heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.guide-flow-section__icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.guide-flow-section__heading h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -0.015em;
+}
+
+.guide-flow-section__heading p {
+  max-width: 680px;
+  margin: 3px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.guide-flow-section__body {
+  padding: 20px;
+}
+
+.guide-origin-grid,
+.guide-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.guide-origin-grid {
+  grid-template-columns: minmax(220px, 0.75fr) minmax(320px, 1.25fr);
+}
+
+.guide-load-more {
+  margin-top: 10px;
+}
+
+.guide-load-more span {
+  color: var(--color-text-soft);
+  font-size: 11px;
+}
+
+.guide-eligibility,
+.guide-reconciliation,
+.guide-public-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin-top: 16px;
+  padding: 13px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.guide-eligibility > svg,
+.guide-reconciliation > svg,
+.guide-public-notice > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.guide-eligibility strong,
+.guide-reconciliation strong,
+.guide-public-notice strong {
+  color: var(--color-text);
+  font-weight: 850;
+}
+
+.guide-eligibility p,
+.guide-reconciliation p,
+.guide-public-notice p {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.guide-eligibility.is-ready {
+  border-color: color-mix(in srgb, var(--color-success) 28%, var(--color-border));
+  background: color-mix(in srgb, var(--color-success) 8%, var(--color-surface));
+  color: var(--color-success);
+}
+
+.guide-eligibility.is-warning,
+.guide-reconciliation,
+.guide-public-notice {
+  border-color: color-mix(in srgb, var(--color-warning) 30%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning) 8%, var(--color-surface));
+  color: var(--color-warning);
+}
+
+.guide-reconciliation__content {
+  display: grid;
+  flex: 1;
+  gap: 14px;
+}
+
+.guide-quantity-table td,
+.guide-quantity-table th {
+  vertical-align: middle;
+}
+
+.guide-quantity-table th:not(:first-child),
+.guide-quantity-table td:not(:first-child) {
+  white-space: nowrap;
+}
+
+.guide-quantity-input {
+  width: 118px;
+  min-width: 100px;
+  text-align: right;
+}
+
+.guide-available-quantity {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.guide-line-warning {
+  width: fit-content;
+  margin-top: 6px;
+  color: var(--color-warning);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.guide-inline-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.guide-transport-stack {
+  display: grid;
+  gap: 22px;
+}
+
+.guide-route-block,
+.guide-scenario-block {
+  display: grid;
+  gap: 14px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border);
+}
+
+.guide-subsection-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.guide-subsection-title svg {
+  color: var(--color-primary);
+}
+
+.guide-weight-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 8px;
+}
+
+.guide-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.guide-mode-option {
+  display: flex;
+  min-height: 74px;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+
+.guide-mode-option:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border));
+  color: var(--color-text);
+  transform: translateY(-1px);
+}
+
+.guide-mode-option.is-active {
+  border-color: color-mix(in srgb, var(--color-primary) 56%, var(--color-border));
+  background: var(--guide-soft);
+  color: var(--color-primary);
+}
+
+.guide-mode-option:focus-visible,
+.guide-choice-card:has(input:focus-visible) {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 26%, transparent);
+}
+
+.guide-mode-option > svg {
+  flex: 0 0 auto;
+}
+
+.guide-mode-option span,
+.guide-choice-card span {
+  display: grid;
+  gap: 2px;
+}
+
+.guide-mode-option strong,
+.guide-choice-card strong {
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.guide-mode-option small,
+.guide-choice-card small {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.guide-choice-card {
+  display: flex;
+  min-height: 58px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.guide-choice-card:hover,
+.guide-choice-card.is-selected {
+  border-color: color-mix(in srgb, var(--color-primary) 48%, var(--color-border));
+  background: var(--guide-soft);
+}
+
+.guide-choice-card.is-compact {
+  min-height: 0;
+  padding: 10px 12px;
+  background: var(--color-surface);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.guide-choice-card input,
+.guide-inline-check input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  accent-color: var(--color-primary);
+}
+
+.guide-scenario-panel {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--color-surface-soft) 62%, var(--color-surface));
+  animation: guide-scenario-enter 220ms var(--ease-out) both;
+}
+
+@keyframes guide-scenario-enter {
+  from { opacity: 0; transform: translateY(5px); filter: blur(2px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+.guide-public-notice {
+  margin-top: 0;
+}
+
+.guide-public-notice p {
+  display: grid;
+  gap: 2px;
+}
+
+.guide-observations {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.guide-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 14px;
+  background: var(--color-surface);
+}
+
+.guide-form-actions > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.guide-form-actions strong {
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.guide-form-actions span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.guide-form-actions__buttons {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 9px;
+}
+
+/* Detalle: lectura rápida de los tres estados independientes. */
+.guide-detail-page .guide-detail-actions {
+  align-items: center;
+}
+
+.guide-status-rail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+}
+
+.guide-status-rail__item {
+  min-width: 0;
+  padding: 15px 16px;
+}
+
+.guide-status-rail__item + .guide-status-rail__item {
+  border-left: 1px solid var(--color-border);
+}
+
+.guide-status-rail__item p:last-child {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.guide-detail-section {
+  border-radius: 14px;
+}
+
+@media (max-width: 767px) {
+  .guide-workflow__hero {
+    align-items: stretch;
+  }
+
+  .guide-workflow__assurance {
+    max-width: none;
+  }
+
+  .guide-flow-section__header {
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .guide-flow-section__body {
+    padding: 16px;
+  }
+
+  .guide-origin-grid,
+  .guide-form-grid,
+  .guide-mode-grid,
+  .guide-status-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-flow-section__header {
+    flex-direction: column;
+  }
+
+  .guide-quantity-input {
+    width: min(150px, 100%);
+  }
+
+  .guide-form-actions {
+    position: static;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .guide-form-actions__buttons {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .guide-form-actions__buttons > * {
+    width: 100%;
+  }
+
+  .guide-status-rail__item + .guide-status-rail__item {
+    border-top: 1px solid var(--color-border);
+    border-left: 0;
+  }
+
+  .guide-detail-page .guide-detail-actions {
+    width: 100%;
+    align-items: stretch;
+  }
 }

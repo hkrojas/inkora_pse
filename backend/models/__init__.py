@@ -7,6 +7,7 @@ string-references en relationship("ClassName", ...).
 """
 
 from database import Base
+from models.access_requests import AccessRequest, ACCESS_REQUEST_PENDING, ACCESS_REQUEST_APPROVED, ACCESS_REQUEST_REJECTED
 
 from models.tenants import (
     Tenant,
@@ -44,6 +45,24 @@ from models.tenants import (
 from models.clientes import Cliente
 
 from models.productos import Producto
+from models.catalog import (
+    TenantProductEntitlement,
+    CatalogSite,
+    CatalogAsset,
+    CatalogCategory,
+    CatalogItem,
+    CatalogItemAsset,
+    CatalogCollection,
+    CatalogCollectionItem,
+    CATALOG_PRODUCT_CODE,
+    CATALOG_ENTITLEMENT_STATUSES,
+    CATALOG_SITE_STATUSES,
+    CATALOG_ITEM_KINDS,
+    CATALOG_PRICE_MODES,
+    CATALOG_PRICE_SOURCES,
+    CATALOG_AVAILABILITY_SOURCES,
+    CATALOG_AVAILABILITY_STATUSES,
+)
 from models.inventory import (
     Warehouse,
     InventoryBalance,
@@ -54,16 +73,28 @@ from models.inventory import (
     InventoryReturn,
     InventoryReturnItem,
 )
-from models.access_requests import (
-    AccessRequest,
-    ACCESS_REQUEST_PENDING,
-    ACCESS_REQUEST_APPROVED,
-    ACCESS_REQUEST_REJECTED,
-)
 
 from models.cotizaciones import Cotizacion, CotizacionItem
 
-from models.guias import GuiaRemision, GuiaRemisionItem
+from models.guias import (
+    GuiaRemision,
+    GuiaRemisionItem,
+    SaleDispatch,
+    SaleDispatchLine,
+    GuideExternalReference,
+    DISPATCH_STATUS_PROVISIONAL,
+    DISPATCH_STATUS_DRAFT,
+    DISPATCH_STATUS_GUIDE_PENDING,
+    DISPATCH_STATUS_GUIDE_ACCEPTED,
+    DISPATCH_STATUS_GUIDE_REJECTED,
+    DISPATCH_STATUS_DEPARTED,
+    DISPATCH_STATUS_CANCELLED,
+    DISPATCH_STATUS_BLOCKED,
+    DISPATCH_RESERVATION_PROVISIONAL,
+    DISPATCH_RESERVATION_ACTIVE,
+    DISPATCH_RESERVATION_COVERED,
+    DISPATCH_RESERVATION_RELEASED,
+)
 
 from models.pagos import Pago
 
@@ -102,20 +133,31 @@ from models.frozen import (
 )
 from models.emission_jobs import (
     DocumentEmissionJob,
+    DocumentEmissionAttempt,
     EMISSION_JOB_STATUS_QUEUED,
     EMISSION_JOB_STATUS_PROCESSING,
     EMISSION_JOB_STATUS_RETRY,
+    EMISSION_JOB_STATUS_PENDING_CONFIRMATION,
+    EMISSION_JOB_STATUS_CONTINGENCY_PENDING,
     EMISSION_JOB_STATUS_SUCCEEDED,
     EMISSION_JOB_STATUS_FAILED,
     EMISSION_JOB_ACTION_EMIT_FISCAL,
     EMISSION_JOB_ACTION_EMIT_NOTE,
     EMISSION_JOB_ACTION_VOID_FISCAL,
     EMISSION_JOB_ACTION_EMIT_GUIDE,
+    EMISSION_JOB_ACTION_CONSULT_GUIDE,
     EMISSION_JOB_RESOURCE_COTIZACION,
     EMISSION_JOB_RESOURCE_GUIA,
+    EMISSION_ATTEMPT_STATUS_PROCESSING,
+    EMISSION_ATTEMPT_STATUS_RETRY,
+    EMISSION_ATTEMPT_STATUS_PENDING_CONFIRMATION,
+    EMISSION_ATTEMPT_STATUS_SUCCEEDED,
+    EMISSION_ATTEMPT_STATUS_FAILED,
 )
 
 __all__ = [
+    "AccessRequest",
+    "ACCESS_REQUEST_PENDING", "ACCESS_REQUEST_APPROVED", "ACCESS_REQUEST_REJECTED",
     "Base",
     # tenants
     "Tenant",
@@ -152,6 +194,11 @@ __all__ = [
     "Cliente",
     # productos
     "Producto",
+    "TenantProductEntitlement", "CatalogSite", "CatalogAsset", "CatalogCategory",
+    "CatalogItem", "CatalogItemAsset", "CatalogCollection", "CatalogCollectionItem",
+    "CATALOG_PRODUCT_CODE", "CATALOG_ENTITLEMENT_STATUSES", "CATALOG_SITE_STATUSES",
+    "CATALOG_ITEM_KINDS", "CATALOG_PRICE_MODES", "CATALOG_PRICE_SOURCES",
+    "CATALOG_AVAILABILITY_SOURCES", "CATALOG_AVAILABILITY_STATUSES",
     "Warehouse",
     "InventoryBalance",
     "InventoryMovement",
@@ -160,16 +207,27 @@ __all__ = [
     "InventoryTransferItem",
     "InventoryReturn",
     "InventoryReturnItem",
-    "AccessRequest",
-    "ACCESS_REQUEST_PENDING",
-    "ACCESS_REQUEST_APPROVED",
-    "ACCESS_REQUEST_REJECTED",
     # cotizaciones
     "Cotizacion",
     "CotizacionItem",
     # guias
     "GuiaRemision",
     "GuiaRemisionItem",
+    "SaleDispatch",
+    "SaleDispatchLine",
+    "GuideExternalReference",
+    "DISPATCH_STATUS_PROVISIONAL",
+    "DISPATCH_STATUS_DRAFT",
+    "DISPATCH_STATUS_GUIDE_PENDING",
+    "DISPATCH_STATUS_GUIDE_ACCEPTED",
+    "DISPATCH_STATUS_GUIDE_REJECTED",
+    "DISPATCH_STATUS_DEPARTED",
+    "DISPATCH_STATUS_CANCELLED",
+    "DISPATCH_STATUS_BLOCKED",
+    "DISPATCH_RESERVATION_PROVISIONAL",
+    "DISPATCH_RESERVATION_ACTIVE",
+    "DISPATCH_RESERVATION_COVERED",
+    "DISPATCH_RESERVATION_RELEASED",
     # pagos
     "Pago",
     "ResumenDiario",
@@ -189,17 +247,26 @@ __all__ = [
     "PERCEPCION_STATUS_PENDING",
     "PERCEPCION_STATUS_REJECTED",
     "DocumentEmissionJob",
+    "DocumentEmissionAttempt",
     "EMISSION_JOB_STATUS_QUEUED",
     "EMISSION_JOB_STATUS_PROCESSING",
     "EMISSION_JOB_STATUS_RETRY",
+    "EMISSION_JOB_STATUS_PENDING_CONFIRMATION",
+    "EMISSION_JOB_STATUS_CONTINGENCY_PENDING",
     "EMISSION_JOB_STATUS_SUCCEEDED",
     "EMISSION_JOB_STATUS_FAILED",
     "EMISSION_JOB_ACTION_EMIT_FISCAL",
     "EMISSION_JOB_ACTION_EMIT_NOTE",
     "EMISSION_JOB_ACTION_VOID_FISCAL",
     "EMISSION_JOB_ACTION_EMIT_GUIDE",
+    "EMISSION_JOB_ACTION_CONSULT_GUIDE",
     "EMISSION_JOB_RESOURCE_COTIZACION",
     "EMISSION_JOB_RESOURCE_GUIA",
+    "EMISSION_ATTEMPT_STATUS_PROCESSING",
+    "EMISSION_ATTEMPT_STATUS_RETRY",
+    "EMISSION_ATTEMPT_STATUS_PENDING_CONFIRMATION",
+    "EMISSION_ATTEMPT_STATUS_SUCCEEDED",
+    "EMISSION_ATTEMPT_STATUS_FAILED",
     # frozen / MRP
     "Insumo",
     "RecetaBOM",

@@ -5,8 +5,6 @@ from decimal import Decimal, ROUND_HALF_UP
 import re
 from xml.etree import ElementTree as ET
 
-from services.fiscal_clock import now_in_peru
-
 
 NS = {
     "invoice": "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2",
@@ -69,14 +67,13 @@ def _date_time(value: str | None) -> tuple[str, str]:
         return date_part, time_part or "00:00:00"
     if len(text) >= 10:
         return text[:10], "00:00:00"
-    now = now_in_peru()
+    now = datetime.now()
     return now.date().isoformat(), now.time().replace(microsecond=0).isoformat()
 
 
 _BATCH_DOC_TYPES = {"RC", "RA", "RR"}
 _COMPACT_DATE_RE = re.compile(r"^\d{8}$")
 _DATE_PREFIXED_CORRELATIVO_RE = re.compile(r"^\d{8}-\d+(?:-\d+)?$")
-_SMARTPSE_DOCUMENT_CORRELATIVO_WIDTH = 8
 
 
 def _compact_date(value) -> str:
@@ -89,7 +86,7 @@ def _compact_date(value) -> str:
     if len(text) >= 10 and text[4] == "-" and text[7] == "-":
         return text[:10].replace("-", "")
 
-    return now_in_peru().strftime("%Y%m%d")
+    return datetime.now().strftime("%Y%m%d")
 
 
 def _strip_batch_prefix(value) -> str:
@@ -120,26 +117,12 @@ def normalize_batch_correlativo(payload: dict, tipo_doc: str) -> str:
     return f"{_compact_date(_batch_reference_date(payload, tipo_doc))}-{suffix}"
 
 
-def normalize_smartpse_document_correlativo(value) -> str:
-    """Format regular CPE correlatives for Smart PSE XML and ZIP names.
-
-    Smart PSE requires the document identifier to use an eight-digit numeric
-    correlative (for example, E001-00007245). The database keeps the numeric
-    value itself, so this formatting is intentionally limited to provider
-    payload generation.
-    """
-    normalized = str(value or "").strip()
-    if normalized.isdigit():
-        return normalized.zfill(_SMARTPSE_DOCUMENT_CORRELATIVO_WIDTH)
-    return normalized
-
-
 def _date_only(value: str | None) -> str:
     return _date_time(value)[0]
 
 
 def _document_id(payload: dict) -> str:
-    return f"{payload.get('serie')}-{normalize_smartpse_document_correlativo(payload.get('correlativo'))}"
+    return f"{payload.get('serie')}-{payload.get('correlativo')}"
 
 
 def _company(payload: dict) -> dict:
@@ -248,55 +231,6 @@ def _add_payment_terms(root: ET.Element, payload: dict) -> None:
             _add(cuota_node, "cbc", "PaymentDueDate", due_date)
 
 
-def _validated_detraction(payload: dict) -> dict | None:
-    if str(payload.get("tipoOperacion") or "0101").strip() != "1001":
-        return None
-
-    detraction = payload.get("detraccion")
-    if not isinstance(detraction, dict):
-        raise ValueError("La operación 1001 requiere datos de detracción")
-
-    normalized = {
-        "code": str(detraction.get("codBienDetraccion") or "").strip(),
-        "payment_method": str(detraction.get("codMedioPago") or "").strip(),
-        "account": str(detraction.get("ctaBanco") or "").strip(),
-        "percent": detraction.get("percent"),
-        "amount": detraction.get("mount", detraction.get("amount")),
-    }
-    missing = [key for key, value in normalized.items() if value in (None, "")]
-    if missing:
-        raise ValueError(
-            "La operación 1001 tiene datos de detracción incompletos: " + ", ".join(missing)
-        )
-    if len(normalized["code"]) != 3 or not normalized["code"].isdigit():
-        raise ValueError("El código de detracción debe pertenecer al catálogo 54 de SUNAT")
-    return normalized
-
-
-def _add_detraction_payment_means(root: ET.Element, detraction: dict) -> None:
-    payment_means = _add(root, "cac", "PaymentMeans")
-    _add(payment_means, "cbc", "ID", "Detraccion")
-    _add(payment_means, "cbc", "PaymentMeansCode", detraction["payment_method"])
-    account = _add(payment_means, "cac", "PayeeFinancialAccount")
-    _add(account, "cbc", "ID", detraction["account"])
-
-
-def _add_detraction_payment_terms(root: ET.Element, detraction: dict, currency: str) -> None:
-    payment_terms = _add(root, "cac", "PaymentTerms")
-    _add(
-        payment_terms,
-        "cbc",
-        "ID",
-        detraction["code"],
-        schemeID="Detraccion",
-        schemeName="SUNAT:Codigo de detraccion",
-        schemeAgencyName="PE:SUNAT",
-        schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo54",
-    )
-    _add(payment_terms, "cbc", "PaymentPercent", _money(detraction["percent"]))
-    _add(payment_terms, "cbc", "Amount", _money(detraction["amount"]), currencyID=currency)
-
-
 def _add_monetary_total(root: ET.Element, payload: dict, *, tag: str = "LegalMonetaryTotal") -> None:
     total = _add(root, "cac", tag)
     _add(total, "cbc", "LineExtensionAmount", _money(payload.get("valorVenta")), currencyID=payload.get("tipoMoneda") or "PEN")
@@ -387,11 +321,7 @@ def build_sale_document_xml(payload: dict) -> str:
             _add_detraction_payment_means(root, detraction)
         _add_payment_terms(root, payload)
         if detraction:
-            _add_detraction_payment_terms(
-                root,
-                detraction,
-                payload.get("tipoMoneda") or "PEN",
-            )
+            _add_detraction_payment_terms(root, detraction, payload.get("tipoMoneda") or "PEN")
     _add_tax_total(root, payload.get("valorVenta"), payload.get("mtoIGV") or payload.get("totalImpuestos"))
     total_tag = "RequestedMonetaryTotal" if tipo_doc == "08" else "LegalMonetaryTotal"
     _add_monetary_total(root, payload, tag=total_tag)
@@ -551,5 +481,53 @@ def build_smartpse_filename(payload: dict) -> str:
     if tipo_doc in _BATCH_DOC_TYPES:
         batch_correlativo = normalize_batch_correlativo(payload, tipo_doc)
         return f"{ruc}-{tipo_doc}-{batch_correlativo}"
-    correlativo = normalize_smartpse_document_correlativo(payload.get("correlativo"))
-    return f"{ruc}-{tipo_doc}-{payload.get('serie')}-{correlativo}"
+    return f"{ruc}-{tipo_doc}-{payload.get('serie')}-{payload.get('correlativo')}"
+
+
+def _validated_detraction(payload: dict) -> dict | None:
+    if str(payload.get("tipoOperacion") or "0101").strip() != "1001":
+        return None
+
+    detraction = payload.get("detraccion")
+    if not isinstance(detraction, dict):
+        raise ValueError("La operación 1001 requiere datos de detracción")
+
+    normalized = {
+        "code": str(detraction.get("codBienDetraccion") or "").strip(),
+        "payment_method": str(detraction.get("codMedioPago") or "").strip(),
+        "account": str(detraction.get("ctaBanco") or "").strip(),
+        "percent": detraction.get("percent"),
+        "amount": detraction.get("mount", detraction.get("amount")),
+    }
+    missing = [key for key, value in normalized.items() if value in (None, "")]
+    if missing:
+        raise ValueError(
+            "La operación 1001 tiene datos de detracción incompletos: " + ", ".join(missing)
+        )
+    if len(normalized["code"]) != 3 or not normalized["code"].isdigit():
+        raise ValueError("El código de detracción debe pertenecer al catálogo 54 de SUNAT")
+    return normalized
+
+
+def _add_detraction_payment_means(root: ET.Element, detraction: dict) -> None:
+    payment_means = _add(root, "cac", "PaymentMeans")
+    _add(payment_means, "cbc", "ID", "Detraccion")
+    _add(payment_means, "cbc", "PaymentMeansCode", detraction["payment_method"])
+    account = _add(payment_means, "cac", "PayeeFinancialAccount")
+    _add(account, "cbc", "ID", detraction["account"])
+
+
+def _add_detraction_payment_terms(root: ET.Element, detraction: dict, currency: str) -> None:
+    payment_terms = _add(root, "cac", "PaymentTerms")
+    _add(
+        payment_terms,
+        "cbc",
+        "ID",
+        detraction["code"],
+        schemeID="Detraccion",
+        schemeName="SUNAT:Codigo de detraccion",
+        schemeAgencyName="PE:SUNAT",
+        schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo54",
+    )
+    _add(payment_terms, "cbc", "PaymentPercent", _money(detraction["percent"]))
+    _add(payment_terms, "cbc", "Amount", _money(detraction["amount"]), currencyID=currency)

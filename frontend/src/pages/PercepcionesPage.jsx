@@ -19,7 +19,6 @@ import Drawer from '../components/ui/Drawer';
 import Spinner from '../components/ui/Spinner';
 import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
-import Pagination from '../components/ui/Pagination';
 
 const PER_PAGE = 15;
 
@@ -497,7 +496,7 @@ export default function PercepcionesPage() {
               description={
                 hasActiveFilters
                   ? 'Ajusta la busqueda o el rango de fechas.'
-                  : 'Emite la primera percepcion usando datos validados para el proveedor fiscal/SUNAT.'
+                  : 'Emite la primera percepcion usando datos validados para APISPeru/SUNAT.'
               }
               action={
                 hasActiveFilters ? (
@@ -585,10 +584,28 @@ export default function PercepcionesPage() {
 
             <div className="ink-table-footer">
               <span className="ink-table-count">
-                Página <strong>{page}</strong> de <strong>{totalPages}</strong>
+                Pag. <strong>{page}</strong> de <strong>{totalPages}</strong>
               </span>
-              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} ariaLabel="Paginación de percepciones" />
-              <span className="ink-table-count">{PER_PAGE} por página</span>
+              <div className="pagination">
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  &#8249;
+                </button>
+                <button type="button" className="page-btn active">{page}</button>
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                >
+                  &#8250;
+                </button>
+              </div>
+              <span className="ink-table-count">{PER_PAGE} por pagina</span>
             </div>
           </div>
         )}
@@ -597,12 +614,8 @@ export default function PercepcionesPage() {
       <Drawer
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        variant="fiscal"
-        eyebrow="Comprobante fiscal"
-        status="Percepción"
-        initialFocus="select, input, textarea"
         title="Nueva percepcion"
-        subtitle="Registra un comprobante tipo 40 con los campos exigidos por el proveedor fiscal y SUNAT."
+        subtitle="Registra un comprobante tipo 40 con los campos exigidos por APISPeru y SUNAT."
         icon={<Eye size={22} />}
         footer={(
           <>
@@ -643,7 +656,7 @@ export default function PercepcionesPage() {
               <p>Cliente sujeto a percepcion</p>
             </div>
             <p className="drawer-editor-section-intro">
-              El proveedor fiscal recibe este bloque en su contrato, pero representa al cliente percibido.
+              APISPeru recibe este bloque como proveedor en su contrato, pero representa al cliente percibido.
             </p>
             <div className="responsive-form-grid-120-1-2">
               <div>
@@ -697,7 +710,7 @@ export default function PercepcionesPage() {
               </button>
             </div>
             <p className="drawer-editor-section-intro">
-              El proveedor fiscal espera numDoc con formato SERIE-CORRELATIVO y al menos un cobro asociado.
+              APISPeru espera numDoc con formato SERIE-CORRELATIVO y al menos un cobro asociado.
             </p>
             <div className="drawer-editor-list">
               {form.detalles.map((detalle, index) => (

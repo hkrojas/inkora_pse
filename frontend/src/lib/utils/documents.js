@@ -3,11 +3,8 @@
 import {
   SUNAT_TAX_AFFECTATION_OPTIONS,
   SUNAT_UNIT_OPTIONS,
-} from './sunatCatalogs';
-import {
-  computeUblDocumentTotals,
-  computeUblLine,
-} from './ublCalculations';
+  isTaxedAffectation,
+} from './sunatCatalogs.js';
 
 export const IGV_FACTOR = 1.18;
 
@@ -98,6 +95,16 @@ export function fmt(value) {
   return Number(value || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 });
 }
 
+export function fmtPrice(value) {
+  const num = Number(value || 0);
+  // Show up to 4 decimals, but at least 2
+  const maxDecimals = Number.isInteger(num * 100) ? 2 : 4;
+  return num.toLocaleString('es-PE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: maxDecimals,
+  });
+}
+
 export function deriveSeries(tipoComprobante, modoEmision, tenant = null) {
   if (modoEmision === 'contingencia') return '0001';
   const configured = tipoComprobante === '01'
@@ -108,17 +115,45 @@ export function deriveSeries(tipoComprobante, modoEmision, tenant = null) {
 }
 
 export function computeLine(item, incluyeIgv) {
-  return computeUblLine(item, incluyeIgv);
+  const cantidad = Number(item.cantidad || 0);
+  const precioIngresado = Number(item.precio_unitario || 0);
+  const isGravado = isTaxedAffectation(item.tipo_afectacion_igv);
+  const unitBase  = isGravado && incluyeIgv ? precioIngresado / IGV_FACTOR : precioIngresado;
+  const unitFinal = isGravado && !incluyeIgv ? precioIngresado * IGV_FACTOR : precioIngresado;
+  const subtotal  = unitBase * cantidad;
+  const total     = unitFinal * cantidad;
+  const igv       = isGravado ? total - subtotal : 0;
+  return { cantidad, precioIngresado, unitBase, unitFinal, subtotal, igv, total };
 }
 
 export function computeDocumentTotals(items, incluyeIgv) {
-  return computeUblDocumentTotals(items, incluyeIgv);
+  return items.reduce(
+    (acc, item) => {
+      const line = computeLine(item, incluyeIgv);
+      acc.subtotal += line.subtotal;
+      acc.igv      += line.igv;
+      acc.total    += line.total;
+      return acc;
+    },
+    { subtotal: 0, igv: 0, total: 0 },
+  );
 }
 
 export function getSunatStatus(item) {
   if (item.estado === 'anulada')           return { label: 'ANULADO',   variant: 'danger',  kind: 'voided' };
   if (item.sunat_error)                    return { label: 'RECHAZADO', variant: 'danger',  kind: 'error', tooltip: item.sunat_error };
-  if (item.sunat_accepted || item.sunat_xml_url) return { label: 'ACEPTADO',  variant: 'success', kind: 'ok' };
+  if (item.provider_verification_status && item.provider_verification_status !== 'verified') {
+    return {
+      label: 'NO VERIFICADO',
+      variant: 'warning',
+      kind: 'pending',
+      tooltip: item.provider_verification_error || 'Smart PSE no confirmo este documento.',
+    };
+  }
+  if (
+    (item.sunat_accepted || item.sunat_xml_url)
+    && (!item.provider_verification_status || item.provider_verification_status === 'verified')
+  ) return { label: 'ACEPTADO',  variant: 'success', kind: 'ok' };
   if (item.document_kind !== 'quotation')  return { label: 'PENDIENTE', variant: 'warning', kind: 'pending' };
   return null;
 }

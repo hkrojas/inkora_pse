@@ -33,7 +33,7 @@ import { getSmartPseGreStatusMeta } from '../lib/utils/fiscalStatus';
 import { getPageCount } from '../lib/utils/queryParams';
 import { getLookupAddress, getLookupName } from '../lib/utils/documentLookup';
 
-const SUPERADMIN_PAGE_SIZE = 25;
+const SUPERADMIN_PAGE_SIZE = 15;
 const DEFAULT_TENANT_METRICS = {
   total: 0,
   active: 0,
@@ -155,7 +155,7 @@ function SmartPseCreateDrawer({
       open={open}
       onClose={onClose}
       title="Crear empresa Smart PSE"
-      subtitle="Alta remota CPE sin exponer credenciales ni activar SUNAT real."
+      subtitle="Administración remota de la empresa en Smart PSE. Esta acción no emite comprobantes."
       icon={<Building2 size={18} />}
       footer={(
         <>
@@ -2308,6 +2308,225 @@ function AccessRequestQueue() {
   );
 }
 
+function TenantFiscalContingencyModal({ tenant, onClose }) {
+  const toast = useToast();
+  const [status, setStatus] = useState(null);
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [confirmingRelease, setConfirmingRelease] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    svc.fiscalContingency(tenant.id)
+      .then((data) => {
+        if (!active) return;
+        setStatus(data);
+        setReason(data.reason || '');
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError.message || 'No se pudo consultar la contingencia fiscal.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [tenant.id]);
+
+  const activate = async () => {
+    const normalizedReason = reason.trim();
+    if (!normalizedReason) {
+      toast('Indica el motivo antes de activar la contingencia.', 'error');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      const updated = await svc.updateFiscalContingency(tenant.id, {
+        enabled: true,
+        reason: normalizedReason,
+      });
+      setStatus(updated);
+      setReason(updated.reason || normalizedReason);
+      toast(
+        `Contingencia activada. ${updated.held_jobs} comprobante${updated.held_jobs === 1 ? '' : 's'} retenido${updated.held_jobs === 1 ? '' : 's'}.`,
+        'warning',
+      );
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo activar la contingencia fiscal.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const release = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const updated = await svc.updateFiscalContingency(tenant.id, { enabled: false });
+      setStatus(updated);
+      setReason('');
+      setConfirmingRelease(false);
+      toast(
+        `Contingencia desactivada. ${updated.released_jobs} comprobante${updated.released_jobs === 1 ? '' : 's'} liberado${updated.released_jobs === 1 ? '' : 's'} gradualmente.`,
+        'success',
+      );
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo liberar la cola fiscal.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={true}
+      onClose={saving ? () => {} : onClose}
+      title={`Contingencia fiscal · ${tenant.business_name}`}
+      subtitle={`RUC ${tenant.business_ruc}`}
+      icon={ShieldOff}
+      size="lg"
+    >
+      {loading ? (
+        <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+      ) : error && !status ? (
+        <div className="space-y-4">
+          <div className="ink-inline-alert ink-inline-alert-error" role="alert">{error}</div>
+          <div className="flex justify-end"><button type="button" className="btn-secondary" onClick={onClose}>Cerrar</button></div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <section className="card-raw" data-label="estado fiscal">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="page-kicker">Estado operativo</p>
+                <h3 className="mt-1 text-lg font-bold text-[var(--text-primary)]">
+                  {status?.enabled ? 'En contingencia' : 'Operación fiscal normal'}
+                </h3>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--text-secondary)]">
+                  {status?.enabled
+                    ? 'Las nuevas facturas, boletas y notas quedan registradas, pero no se envían al proveedor fiscal hasta liberar la cola.'
+                    : 'Los comprobantes se envían normalmente mediante la cola fiscal configurada.'}
+                </p>
+              </div>
+              <Badge variant={status?.enabled ? 'warning' : 'success'}>
+                {status?.enabled ? 'activa' : 'inactiva'}
+              </Badge>
+            </div>
+
+            {status?.enabled ? (
+              <dl className="mt-5 grid gap-3 border-t border-[var(--border-subtle)] pt-4 text-sm sm:grid-cols-2">
+                <div><dt className="text-[var(--text-tertiary)]">Motivo</dt><dd className="mt-1 font-semibold text-[var(--text-primary)]">{status.reason}</dd></div>
+                <div><dt className="text-[var(--text-tertiary)]">Activa desde</dt><dd className="mt-1 font-semibold text-[var(--text-primary)]">{formatDateTime(status.started_at)}</dd></div>
+              </dl>
+            ) : null}
+          </section>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="ink-card p-4">
+              <p className="label">Retenidos</p>
+              <p className="mt-2 text-2xl font-bold text-[var(--color-warning)]">{status?.held_jobs || 0}</p>
+              <p className="mt-1 text-xs text-[var(--text-tertiary)]">Se liberarán gradualmente.</p>
+            </div>
+            <div className="ink-card p-4">
+              <p className="label">En procesamiento</p>
+              <p className="mt-2 text-2xl font-bold text-[var(--text-primary)]">{status?.processing_jobs || 0}</p>
+              <p className="mt-1 text-xs text-[var(--text-tertiary)]">No se interrumpen al activar.</p>
+            </div>
+            <div className="ink-card p-4">
+              <p className="label">Por confirmar</p>
+              <p className="mt-2 text-2xl font-bold text-[var(--color-warning)]">{status?.pending_confirmation_jobs || 0}</p>
+              <p className="mt-1 text-xs text-[var(--text-tertiary)]">No se reintentan automáticamente.</p>
+            </div>
+          </div>
+
+          {status?.processing_jobs > 0 ? (
+            <div className="ink-inline-alert ink-inline-alert-warning" role="status">
+              Hay {status.processing_jobs} envío{status.processing_jobs === 1 ? '' : 's'} en curso. Activar la contingencia no puede detener solicitudes que ya llegaron al proveedor.
+            </div>
+          ) : null}
+
+          {status?.pending_confirmation_jobs > 0 ? (
+            <div className="ink-inline-alert ink-inline-alert-warning" role="status">
+              Los documentos pendientes de confirmación permanecerán aislados al liberar la cola para evitar duplicados.
+            </div>
+          ) : null}
+
+          {error ? <div className="ink-inline-alert ink-inline-alert-error" role="alert">{error}</div> : null}
+
+          {!status?.enabled ? (
+            <section className="ink-card p-5">
+              <SectionHeader
+                kicker="Activación"
+                title="Retener temporalmente nuevos envíos"
+                copy="La operación comercial podrá continuar, pero ningún comprobante retenido debe presentarse como aceptado por SUNAT."
+              />
+              <label className="label" htmlFor={`contingency-reason-${tenant.id}`}>Motivo del incidente *</label>
+              <textarea
+                id={`contingency-reason-${tenant.id}`}
+                className="input min-h-24 resize-y"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                maxLength={500}
+                placeholder="Ej. Smart PSE devuelve error 0111 para este RUC"
+                disabled={saving}
+              />
+              <div className="mt-5 flex flex-wrap justify-end gap-2">
+                <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Cerrar</button>
+                <button type="button" className="btn-primary flex items-center gap-2" onClick={activate} disabled={saving || !reason.trim()}>
+                  {saving ? <Spinner size="sm" /> : <ShieldOff className="h-4 w-4" />}
+                  Activar contingencia
+                </button>
+              </div>
+            </section>
+          ) : (
+            <section className="ink-card p-5">
+              <SectionHeader
+                kicker="Reanudación"
+                title="Liberar la cola fiscal"
+                copy="Los comprobantes retenidos volverán a la cola en orden y con intervalos para no saturar al proveedor."
+              />
+              {confirmingRelease ? (
+                <div className="ink-inline-alert ink-inline-alert-warning">
+                  <p className="font-semibold">Confirma la liberación de {status.held_jobs} comprobante{status.held_jobs === 1 ? '' : 's'}.</p>
+                  <p className="mt-1 text-sm">Hazlo únicamente después de verificar que SUNAT o Smart PSE recuperó el servicio.</p>
+                </div>
+              ) : null}
+              <div className="mt-5 flex flex-wrap justify-end gap-2">
+                {confirmingRelease ? (
+                  <button type="button" className="btn-secondary" onClick={() => setConfirmingRelease(false)} disabled={saving}>Cancelar</button>
+                ) : (
+                  <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Cerrar</button>
+                )}
+                <button
+                  type="button"
+                  className={confirmingRelease ? 'btn-danger flex items-center gap-2' : 'btn-secondary flex items-center gap-2'}
+                  onClick={confirmingRelease ? release : () => setConfirmingRelease(true)}
+                  disabled={saving}
+                >
+                  {saving ? <Spinner size="sm" /> : <ShieldCheck className="h-4 w-4" />}
+                  {confirmingRelease ? 'Confirmar y reanudar' : 'Preparar liberación'}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {!status?.enabled && status?.released_jobs > 0 ? (
+            <div className="ink-inline-alert ink-inline-alert-success" role="status">
+              Se liberaron {status.released_jobs} comprobante{status.released_jobs === 1 ? '' : 's'} de forma escalonada.
+            </div>
+          ) : null}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 export default function SuperadminPage() {
   const { user } = useAuth();
   const toast = useToast();
@@ -2320,6 +2539,7 @@ export default function SuperadminPage() {
   const [viewingErrorsOf, setViewingErrorsOf] = useState(null);
   const [viewingLimitsOf, setViewingLimitsOf] = useState(null);
   const [viewingFiscalFlagsOf, setViewingFiscalFlagsOf] = useState(null);
+  const [viewingContingencyOf, setViewingContingencyOf] = useState(null);
   const [checkingSmartPseId, setCheckingSmartPseId] = useState(null);
   const [editingGreOf, setEditingGreOf] = useState(null);
   const [checkingGreId, setCheckingGreId] = useState(null);
@@ -3038,6 +3258,15 @@ export default function SuperadminPage() {
 
                         <button
                           type="button"
+                          onClick={() => setViewingContingencyOf(tenant)}
+                          className="superadmin-toolbar-btn superadmin-toolbar-btn--warning"
+                        >
+                          <ShieldOff className="h-3 w-3" />
+                          Contingencia
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => setEditingGreOf(tenant)}
                           title="Smart PSE GRE"
                           aria-label="GRE"
@@ -3160,6 +3389,13 @@ export default function SuperadminPage() {
         <TenantFiscalFlagsModal
           tenant={viewingFiscalFlagsOf}
           onClose={() => setViewingFiscalFlagsOf(null)}
+        />
+      ) : null}
+
+      {viewingContingencyOf ? (
+        <TenantFiscalContingencyModal
+          tenant={viewingContingencyOf}
+          onClose={() => setViewingContingencyOf(null)}
         />
       ) : null}
     </div>

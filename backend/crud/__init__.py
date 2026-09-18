@@ -75,12 +75,13 @@ from crud.productos import (
 
 from crud.cotizaciones import (
     get_cotizaciones,
+    get_cotizaciones_page,
+    update_cotizacion,
     get_cotizacion,
     get_cotizacion_by_uuid,
     create_cotizacion,
     duplicate_cotizacion,
     delete_cotizacion,
-    update_cotizacion,
     create_fiscal_document_from_quote,
     guardar_respuesta_sunat,
     guardar_error_sunat,
@@ -133,6 +134,10 @@ from crud.emission_jobs import (
     mark_emission_job_succeeded,
     mark_emission_job_retry,
     requeue_emission_job,
+    get_emission_attempts,
+    mark_emission_job_pending_confirmation,
+    set_tenant_fiscal_contingency,
+    get_tenant_fiscal_contingency_status,
     recover_stale_processing_jobs,
     mark_emission_job_failed,
 )

@@ -19,7 +19,6 @@ import Drawer from '../components/ui/Drawer';
 import Spinner from '../components/ui/Spinner';
 import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
-import Pagination from '../components/ui/Pagination';
 
 const TIPO_DOC_OPTS = [
   { value: '20', label: '20 - Retencion' },
@@ -518,10 +517,30 @@ export default function ReversionesPage() {
 
             <div className="ink-table-footer">
               <span className="ink-table-count">
-                Página <strong>{page}</strong> de <strong>{totalPages}</strong>
+                Pag. <strong>{page}</strong> de <strong>{totalPages}</strong>
               </span>
-              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} ariaLabel="Paginación de reversiones" />
-              <span className="ink-table-count">{PER_PAGE} por página</span>
+              <div className="pagination">
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  &#8249;
+                </button>
+                <button type="button" className="page-btn active">
+                  {page}
+                </button>
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                >
+                  &#8250;
+                </button>
+              </div>
+              <span className="ink-table-count">{PER_PAGE} por pagina</span>
             </div>
           </div>
         )}
@@ -530,11 +549,6 @@ export default function ReversionesPage() {
       <Drawer
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        variant="fiscal"
-        tone="warning"
-        eyebrow="Corrección fiscal"
-        status="Revisión requerida"
-        initialFocus="select, input, textarea"
         title="Nueva reversion"
         subtitle="Corrige retenciones o percepciones y envia la solicitud a SUNAT."
         icon={<RotateCcw size={22} />}
@@ -554,7 +568,7 @@ export default function ReversionesPage() {
               <p>Cabecera de envio</p>
             </div>
             <p className="drawer-editor-section-intro">
-              El proveedor fiscal espera correlativo numerico, fecha de generacion y fecha de comunicacion.
+              APISPeru espera correlativo numerico, fecha de generacion y fecha de comunicacion.
             </p>
             <div className="responsive-form-grid-1-1-2">
               <div>
@@ -569,7 +583,7 @@ export default function ReversionesPage() {
                 <label className="label">Correlativo <span style={{ color: 'var(--color-error)' }}>*</span></label>
                 <input className="input" value={form.correlativo} onChange={setInput('correlativo')} placeholder="00001" required />
                 <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                  Ingresa solo el numero. El proveedor fiscal arma el prefijo RR.
+                  Ingresa solo el numero. APISPeru arma el prefijo RR.
                 </p>
               </div>
             </div>

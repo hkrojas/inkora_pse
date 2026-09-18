@@ -1409,7 +1409,7 @@ export default function ConfiguracionPage() {
                 icon={BadgeCheck}
                 tone={hasSmartPseCpeCredentials ? 'ok' : 'missing'}
                 label="Smart PSE CPE"
-                value="Proveedor fiscal demo"
+                value={tenantData?.smartpse_environment === 'produccion' ? 'Proveedor fiscal · producción' : 'Proveedor fiscal · demo'}
               >
                 <StatusBadge ok={hasSmartPseCpeCredentials} labelOk="Configurado" labelNo="No configurado" />
               </FiscalStatusTile>

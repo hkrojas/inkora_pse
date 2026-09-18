@@ -1,7 +1,7 @@
 from typing import List, Optional
 from datetime import date, datetime, time, timedelta
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from sqlalchemy import String, cast, or_
@@ -216,19 +216,28 @@ async def preview_stock_import(file: UploadFile = File(...), db: Session = Depen
         max_size_bytes=2 * 1024 * 1024,
     )
     parsed, errors = await run_in_threadpool(parse_inventory_stock, ext, raw_bytes)
+    if len(parsed) + len(errors) > 500:
+        raise HTTPException(422, "La carga admite como máximo 500 filas.")
     products = db.query(models.Producto).filter(
         models.Producto.tenant_id == user.tenant_id,
         models.Producto.inventory_enabled.is_(True),
         models.Producto.item_type == "inventory",
     ).all()
-    by_code = {str(row.codigo_interno).strip().casefold(): row for row in products if row.codigo_interno}
+    by_code = {}
+    for row in products:
+        if row.codigo_interno:
+            by_code.setdefault(str(row.codigo_interno).strip().casefold(), []).append(row)
     by_name = {}
     for row in products:
         by_name.setdefault(row.nombre.strip().casefold(), []).append(row)
     resolved, seen = [], set()
     for item in parsed:
-        product = by_code.get(item["codigo_interno"].casefold()) if item["codigo_interno"] else None
-        if not product and item["nombre"]:
+        matches = by_code.get(item["codigo_interno"].casefold(), []) if item["codigo_interno"] else []
+        if len(matches) > 1:
+            errors.append({"fila": item["fila"], "campo": "producto", "mensaje": "El SKU coincide con varios productos; corrige el catálogo antes de cargar."})
+            continue
+        product = matches[0] if matches else None
+        if not item["codigo_interno"] and item["nombre"]:
             matches = by_name.get(item["nombre"].casefold(), [])
             if len(matches) == 1:
                 product = matches[0]

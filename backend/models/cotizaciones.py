@@ -1,11 +1,11 @@
 """models/cotizaciones.py — Cotizacion, CotizacionItem."""
 import uuid
+from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import backref, relationship
 
 from database import Base
-from services.fiscal_clock import now_in_peru_naive
 
 
 class Cotizacion(Base):
@@ -27,12 +27,14 @@ class Cotizacion(Base):
     id = Column(Integer, primary_key=True, index=True)
     serie = Column(String, default="COT")
     correlativo = Column(Integer)
-    fecha_emision = Column(DateTime, default=now_in_peru_naive)
+    fecha_emision = Column(DateTime, default=datetime.now)
     fecha_vencimiento = Column(DateTime, nullable=True)
     moneda = Column(String, default="PEN")
     estado = Column(String, default="pendiente")
     uuid_publico = Column(String, unique=True, index=True, default=lambda: str(uuid.uuid4()))
     document_kind = Column(String, default="quotation", nullable=False, index=True)
+    dispatch_reconciliation_status = Column(String, nullable=False, default="not_required", server_default="not_required")
+    dispatch_reconciliation_evidence = Column(JSON, nullable=True)
     internal_order_number = Column(String, nullable=True, index=True)
     source_quote_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True, index=True)
     warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=True, index=True)
@@ -74,12 +76,10 @@ class Cotizacion(Base):
     provider_response = Column(JSON, nullable=True)
     provider_endpoint = Column(String, nullable=True)
     provider_status_code = Column(Integer, nullable=True)
-    provider_document_name = Column(String, nullable=True)
+    provider_document_name = Column(String, nullable=True, index=True)
+    provider_verification_status = Column(String, nullable=True, index=True)
     provider_verified_at = Column(DateTime, nullable=True)
-    provider_verification_status = Column(String, nullable=True)
     provider_verification_error = Column(Text, nullable=True)
-    cdr_artifact_status = Column(String, nullable=True)
-    pdf_artifact_status = Column(String, nullable=True)
 
     tipo_de_cambio = Column(Numeric(10, 4), nullable=True)
     sujeta_detraccion = Column(Boolean, default=False)
@@ -121,8 +121,7 @@ class Cotizacion(Base):
 
     @property
     def sunat_accepted(self):
-        verification_status = (self.provider_verification_status or "").strip().lower()
-        if verification_status in {"failed", "pending"}:
+        if self.provider_verification_status and self.provider_verification_status != "verified":
             return False
         return bool((self.sunat_cdr_url or self.sunat_cdr_content) and not self.sunat_error)
 
@@ -200,9 +199,9 @@ class CotizacionItem(Base):
     codigo_producto = Column(String, nullable=True)
 
     descripcion = Column(String)
-    cantidad = Column(Numeric(18, 4))
-    precio_unitario = Column(Numeric(18, 4))
-    valor_unitario = Column(Numeric(18, 10))
+    cantidad = Column(Numeric(12, 4))
+    precio_unitario = Column(Numeric(12, 4))
+    valor_unitario = Column(Numeric(12, 4))
     total_base_igv = Column(Numeric(12, 2))
     total_igv = Column(Numeric(12, 2))
     total_item = Column(Numeric(12, 2))

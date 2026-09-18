@@ -1,7 +1,7 @@
 """models/tenants.py — Tenant, User, AuditLog, Subscription, SubscriptionPayment."""
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text, true
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text, false
 from sqlalchemy.orm import relationship
 
 APISPERU_TOKEN_STATUS_OK = "ok"
@@ -35,8 +35,11 @@ class Tenant(Base):
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=True)
-    inventory_enabled = Column(Boolean, nullable=False, default=False, server_default=true())
+    inventory_enabled = Column(Boolean, nullable=False, default=False, server_default=false())
     inventory_started_at = Column(DateTime, nullable=True)
+    fiscal_contingency_mode = Column(Boolean, nullable=False, default=False, server_default=false())
+    fiscal_contingency_reason = Column(Text, nullable=True)
+    fiscal_contingency_started_at = Column(DateTime, nullable=True)
 
     business_name = Column(String, nullable=False)
     business_ruc = Column(String, nullable=False, unique=True, index=True)
@@ -69,11 +72,11 @@ class Tenant(Base):
     smartpse_end_date = Column(DateTime, nullable=True)
     smartpse_firmas_usadas = Column(Integer, nullable=True)
 
-    # Series confirmadas contra el historial productivo del emisor.
-    # Solo superadmin puede cambiarlas porque determinan la identidad fiscal.
-    fiscal_invoice_series = Column(String, nullable=True)
+    # Identidad fiscal confirmada por empresa. Estos valores no son editables
+    # por usuarios tenant porque determinan serie y correlativo ante SUNAT.
+    fiscal_invoice_series = Column(String(4), nullable=True)
     fiscal_invoice_series_floor = Column(Integer, nullable=True)
-    fiscal_boleta_series = Column(String, nullable=True)
+    fiscal_boleta_series = Column(String(4), nullable=True)
     fiscal_boleta_series_floor = Column(Integer, nullable=True)
 
     sunat_gre_client_id = Column(String, nullable=True)
@@ -114,6 +117,8 @@ class Tenant(Base):
     reversiones_fiscales = relationship("ReversionFiscal", back_populates="tenant")
     retenciones_fiscales = relationship("RetencionFiscal", back_populates="tenant")
     percepciones_fiscales = relationship("PercepcionFiscal", back_populates="tenant")
+    product_entitlements = relationship("TenantProductEntitlement", back_populates="tenant")
+    catalog_site = relationship("CatalogSite", back_populates="tenant", uselist=False)
 
     @property
     def payment_qr_filename(self):

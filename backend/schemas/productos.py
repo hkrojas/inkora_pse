@@ -28,8 +28,8 @@ class ProductoBase(BaseModel):
     moneda: str = "PEN"
     unidad_medida: str = "NIU"
     tipo_afectacion_igv: str = "10"
-    item_type: str = "inventory"
-    inventory_enabled: bool = True
+    item_type: str = "unclassified"
+    inventory_enabled: bool = False
 
     @field_validator("item_type")
     @classmethod
@@ -81,8 +81,8 @@ class ProductoBase(BaseModel):
 
 class ProductoInventarioInicial(BaseModel):
     warehouse_id: Optional[int] = None
-    opening_stock: Decimal = Field(default=Decimal("0"), ge=0)
-    minimum_stock: Decimal = Field(default=Decimal("0"), ge=0)
+    opening_stock: Decimal = Field(default=Decimal('0'), ge=0, max_digits=18, decimal_places=4)
+    minimum_stock: Decimal = Field(default=Decimal('0'), ge=0, max_digits=18, decimal_places=4)
 
 
 class ProductoCreate(ProductoBase):

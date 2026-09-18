@@ -4,6 +4,8 @@ All mutations are short local transactions. Provider calls must happen before
 or after these functions, never while balance rows are locked.
 """
 from datetime import datetime
+import hashlib
+import json
 from decimal import Decimal
 from uuid import uuid4
 
@@ -61,21 +63,6 @@ def create_warehouse(db: Session, tenant_id: int, data):
     except Exception:
         db.rollback()
         raise HTTPException(409, "Ya existe un almacen con ese codigo.")
-    db.refresh(warehouse)
-    return warehouse
-
-
-def update_warehouse(db: Session, tenant_id: int, warehouse_id: int, data):
-    warehouse = get_warehouse(db, tenant_id, warehouse_id)
-    warehouse.name = data.name.strip()
-    warehouse.location = data.location.strip() if data.location and data.location.strip() else None
-    if data.is_default and not warehouse.is_default:
-        db.query(models.Warehouse).filter(
-            models.Warehouse.tenant_id == tenant_id,
-            models.Warehouse.id != warehouse.id,
-        ).update({models.Warehouse.is_default: False}, synchronize_session=False)
-        warehouse.is_default = True
-    db.commit()
     db.refresh(warehouse)
     return warehouse
 
@@ -303,15 +290,6 @@ def list_stock(db, tenant_id, *, warehouse_id=None, q=None):
     return result
 
 
-def list_stock_page(db, tenant_id, *, warehouse_id=None, q=None, status=None, skip=0, limit=15):
-    rows = list_stock(db, tenant_id, warehouse_id=warehouse_id, q=q)
-    if status and status != "all":
-        expected = "ok" if status == "available" else status
-        rows = [row for row in rows if row["status"] == expected]
-    total = len(rows)
-    return {"items": rows[skip:skip + min(limit, 100)], "total": total, "skip": skip, "limit": limit}
-
-
 def _movement_filters(query, *, product_id=None, warehouse_id=None, document_id=None,
                       date_from=None, date_to=None, movement_type=None, direction=None):
     if product_id:
@@ -388,80 +366,6 @@ def count_movements(db, tenant_id, *, product_id=None, warehouse_id=None, docume
     ).count()
 
 
-def bulk_adjust_stock(db, tenant_id, data, user_id):
-    warehouse = get_warehouse(db, tenant_id, data.warehouse_id)
-    product_ids = [item.product_id for item in data.items]
-    if len(product_ids) != len(set(product_ids)):
-        raise HTTPException(422, "No repitas productos dentro de una misma carga.")
-
-    keys = [f"bulk:{tenant_id}:{data.idempotency_key}:{product_id}" for product_id in product_ids]
-    existing = db.query(models.InventoryMovement).filter(
-        models.InventoryMovement.tenant_id == tenant_id,
-        models.InventoryMovement.idempotency_key.in_(keys),
-    ).all()
-    if existing:
-        existing_product_ids = {row.product_id for row in existing}
-        if not existing_product_ids.issubset(set(product_ids)):
-            raise HTTPException(409, "La clave de idempotencia ya pertenece a otra carga.")
-        requested_by_product = {item.product_id: _decimal(item.quantity) for item in data.items}
-        for movement in existing:
-            matches_payload = (
-                movement.movement_type == "bulk_entry"
-                and data.mode == "add"
-                and _decimal(movement.quantity) == requested_by_product[movement.product_id]
-            ) or (
-                movement.movement_type == "physical_count"
-                and data.mode == "set"
-                and _decimal(movement.balance_after) == requested_by_product[movement.product_id]
-            )
-            if not matches_payload:
-                raise HTTPException(409, "La clave de idempotencia ya pertenece a otra carga.")
-        if data.mode == "add" and len(existing) != len(product_ids):
-            raise HTTPException(409, "La carga ya fue procesada parcialmente con otra composicion.")
-        skipped_existing = 0
-        if data.mode == "set":
-            by_product = {item.product_id: item for item in data.items}
-            for product_id in set(product_ids) - existing_product_ids:
-                balance = _balance(db, tenant_id, warehouse.id, product_id, lock=False)
-                if _decimal(balance.on_hand) != _decimal(by_product[product_id].quantity):
-                    raise HTTPException(409, "La clave de idempotencia ya pertenece a otra carga.")
-                skipped_existing += 1
-        return {"movement_ids": [row.id for row in existing], "applied": len(existing), "skipped": skipped_existing}
-
-    by_product = {item.product_id: item for item in data.items}
-    movements = []
-    skipped = 0
-    try:
-        for product_id in sorted(product_ids):
-            item = by_product[product_id]
-            _get_product(db, tenant_id, product_id)
-            balance = _balance(db, tenant_id, warehouse.id, product_id)
-            requested = _decimal(item.quantity)
-            if data.mode == "add":
-                if requested <= ZERO:
-                    raise HTTPException(422, "Las entradas masivas deben ser mayores que cero.")
-                delta = requested
-                movement_type = "bulk_entry"
-            else:
-                if requested < _decimal(balance.committed):
-                    raise HTTPException(409, "El conteo final no puede ser menor que el stock comprometido.")
-                delta = requested - _decimal(balance.on_hand)
-                movement_type = "physical_count"
-                if delta == ZERO:
-                    skipped += 1
-                    continue
-            movement = _record_movement(
-                db, balance, delta, movement_type, "bulk_adjustment", None, None,
-                user_id, data.reason, f"bulk:{tenant_id}:{data.idempotency_key}:{product_id}",
-            )
-            movements.append(movement)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    return {"movement_ids": [row.id for row in movements], "applied": len(movements), "skipped": skipped}
-
-
 def check_availability(db, tenant_id, data):
     warehouse = get_warehouse(db, tenant_id, data.warehouse_id or getattr(get_default_warehouse(db, tenant_id), "id", 0))
     result = []
@@ -477,32 +381,50 @@ def check_availability(db, tenant_id, data):
 
 
 def check_document_availability(db: Session, tenant_id: int, document_id: int):
+    """Read-only stock projection for a tenant-owned commercial document."""
     document = db.query(models.Cotizacion).filter(
         models.Cotizacion.id == document_id,
         models.Cotizacion.tenant_id == tenant_id,
     ).first()
     if not document:
         raise HTTPException(404, "Documento no encontrado para la empresa autenticada.")
+
     tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
-    default_warehouse = get_default_warehouse(db, tenant_id)
-    if not tenant or not tenant.inventory_enabled or not default_warehouse:
+    if not tenant:
+        raise HTTPException(404, "Empresa no encontrada.")
+    if not tenant.inventory_enabled:
         return {
             "inventory_enabled": False,
+            "configuration_status": "disabled",
             "warehouse_id": None,
             "warehouse_name": None,
             "sufficient": True,
             "items": [],
         }
-    warehouse = get_warehouse(
-        db,
-        tenant_id,
-        document.warehouse_id or default_warehouse.id,
-    )
+
+    default_warehouse = get_default_warehouse(db, tenant_id)
+    warehouse_id = document.warehouse_id or getattr(default_warehouse, "id", None)
+    if not warehouse_id:
+        return {
+            "inventory_enabled": True,
+            "configuration_status": "warehouse_required",
+            "warehouse_id": None,
+            "warehouse_name": None,
+            "sufficient": False,
+            "items": [],
+        }
+    warehouse = get_warehouse(db, tenant_id, warehouse_id)
+
+    requested_by_product: dict[int, Decimal] = {}
+    for item in document.items or []:
+        if item.producto_id:
+            requested_by_product[item.producto_id] = (
+                requested_by_product.get(item.producto_id, ZERO) + _decimal(item.cantidad)
+            )
+
     lines = []
-    for item in document.items:
-        if not item.producto_id:
-            continue
-        product = _get_product(db, tenant_id, item.producto_id, inventory_required=False)
+    for product_id in sorted(requested_by_product):
+        product = _get_product(db, tenant_id, product_id, inventory_required=False)
         if not product.inventory_enabled or product.item_type != "inventory":
             continue
         balance = db.query(models.InventoryBalance).filter(
@@ -514,7 +436,7 @@ def check_document_availability(db: Session, tenant_id: int, document_id: int):
             _decimal(balance.on_hand) - _decimal(balance.committed)
             if balance else ZERO
         )
-        requested = _decimal(item.cantidad)
+        requested = requested_by_product[product_id]
         lines.append({
             "product_id": product.id,
             "product_name": product.nombre,
@@ -525,6 +447,7 @@ def check_document_availability(db: Session, tenant_id: int, document_id: int):
         })
     return {
         "inventory_enabled": True,
+        "configuration_status": "ready",
         "warehouse_id": warehouse.id,
         "warehouse_name": warehouse.name,
         "sufficient": all(line["sufficient"] for line in lines),
@@ -557,23 +480,8 @@ def create_document_holds(db, document, user_id, *, allow_negative=False, overri
             models.InventoryHold.tenant_id == document.tenant_id,
             models.InventoryHold.document_id == document.id,
             models.InventoryHold.document_item_id == item.id,
-        ).with_for_update().first()
+        ).first()
         if existing:
-            if existing.status == "released":
-                balance = _balance(db, document.tenant_id, warehouse_id, product.id)
-                quantity = _decimal(item.cantidad)
-                available = _decimal(balance.on_hand) - _decimal(balance.committed)
-                if available < quantity and not allow_negative:
-                    raise HTTPException(409, f"Stock insuficiente para '{product.nombre}'. Disponible: {available} {product.unidad_medida}.")
-                balance.committed = _decimal(balance.committed) + quantity
-                existing.quantity = quantity
-                existing.status = "active"
-                existing.negative_override = allow_negative
-                existing.override_reason = override_reason
-                existing.created_by_user_id = user_id
-                existing.resolved_at = None
-            elif existing.status not in {"active", "converted"}:
-                raise HTTPException(409, "La reserva de inventario tiene un estado no recuperable.")
             created.append(existing)
             continue
         balance = _balance(db, document.tenant_id, warehouse_id, product.id)
@@ -628,60 +536,6 @@ def release_document_holds(db, document, *, reason="Emision rechazada"):
         hold.override_reason = hold.override_reason or reason
         hold.resolved_at = datetime.now()
     return holds
-
-
-def reverse_document_inventory(db: Session, document, *, user_id=None, reason="Documento anulado"):
-    """Restore stock previously deducted by an accepted fiscal document.
-
-    Reversals are derived from immutable sale movements rather than from the
-    current document lines.  The movement idempotency key makes repeated void
-    confirmations harmless.
-    """
-    sales = db.query(models.InventoryMovement).filter(
-        models.InventoryMovement.tenant_id == document.tenant_id,
-        models.InventoryMovement.source_type == "fiscal_document",
-        models.InventoryMovement.source_id == document.id,
-        models.InventoryMovement.movement_type == "sale_out",
-    ).order_by(models.InventoryMovement.product_id, models.InventoryMovement.id).with_for_update().all()
-
-    reversals = []
-    for sale in sales:
-        balance = _balance(db, sale.tenant_id, sale.warehouse_id, sale.product_id)
-        reversal = _record_movement(
-            db,
-            balance,
-            abs(_decimal(sale.quantity)),
-            "sale_void_reversal",
-            "fiscal_void",
-            document.id,
-            sale.source_line_id,
-            user_id,
-            reason,
-            f"void:{document.id}:{sale.id}",
-        )
-        reversal.related_movement_id = sale.id
-        reversals.append(reversal)
-    return reversals
-
-
-def ensure_document_void_inventory_safe(db: Session, document):
-    """Block a void while an inventory-affecting credit note is active.
-
-    Voiding the original sale after stock was already returned by a credit note
-    would duplicate the physical entry. Pending notes are also blocked to avoid
-    a race between the fiscal workers.
-    """
-    conflicting_note = db.query(models.Cotizacion.id).filter(
-        models.Cotizacion.tenant_id == document.tenant_id,
-        models.Cotizacion.nota_referencia_id == document.id,
-        models.Cotizacion.document_kind == "credit_note",
-        models.Cotizacion.inventory_impact.in_(["undelivered", "physical_return"]),
-        models.Cotizacion.estado.in_(["pendiente", "facturada"]),
-    ).first()
-    if conflicting_note:
-        raise ValueError(
-            "No se puede anular el comprobante mientras tenga una nota de crédito activa con impacto de inventario."
-        )
 
 
 def apply_credit_note_inventory(db: Session, note):
@@ -787,3 +641,122 @@ def receive_return(db: Session, tenant_id: int, return_id: int, data, user_id: i
     db.commit()
     db.refresh(stock_return)
     return stock_return
+
+
+def update_warehouse(db: Session, tenant_id: int, warehouse_id: int, data):
+    db.query(models.Tenant).filter(models.Tenant.id == tenant_id).with_for_update().one()
+    warehouse = get_warehouse(db, tenant_id, warehouse_id)
+    warehouse.name = data.name.strip()
+    warehouse.location = data.location.strip() if data.location and data.location.strip() else None
+    if data.is_default and not warehouse.is_default:
+        db.query(models.Warehouse).filter(
+            models.Warehouse.tenant_id == tenant_id,
+            models.Warehouse.id != warehouse.id,
+        ).update({models.Warehouse.is_default: False}, synchronize_session=False)
+        warehouse.is_default = True
+    db.commit()
+    db.refresh(warehouse)
+    return warehouse
+
+
+def list_stock_page(db, tenant_id, *, warehouse_id=None, q=None, status=None, skip=0, limit=15):
+    rows = list_stock(db, tenant_id, warehouse_id=warehouse_id, q=q)
+    if status and status != "all":
+        expected = "ok" if status == "available" else status
+        rows = [row for row in rows if row["status"] == expected]
+    total = len(rows)
+    return {"items": rows[skip:skip + min(limit, 100)], "total": total, "skip": skip, "limit": limit}
+
+
+def bulk_adjust_stock(db, tenant_id, data, user_id):
+    # One tenant lock serializes batch receipts and warehouse selection. Never
+    # call a provider here. The audit receipt is committed with the movements,
+    # including zero-delta counts, and must be retained for idempotency.
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).with_for_update().first()
+    if not tenant or not tenant.is_active or not tenant.inventory_enabled:
+        raise HTTPException(409, "El inventario de la empresa no está habilitado.")
+    warehouse = get_warehouse(db, tenant_id, data.warehouse_id)
+    product_ids = [item.product_id for item in data.items]
+    if len(product_ids) != len(set(product_ids)):
+        raise HTTPException(422, "No repitas productos dentro de una misma carga.")
+
+    payload = {
+        "warehouse_id": warehouse.id, "mode": data.mode, "reason": data.reason,
+        "items": sorted((item.product_id, str(_decimal(item.quantity))) for item in data.items),
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    receipt_action = 'inventory_bulk:' + hashlib.sha256(data.idempotency_key.encode()).hexdigest()
+    receipt = db.query(models.AuditLog).filter(
+        models.AuditLog.entity_type == 'inventory_bulk',
+        models.AuditLog.entity_id == tenant_id,
+        models.AuditLog.action == receipt_action,
+    ).first()
+    if receipt:
+        previous = json.loads(receipt.details)
+        if previous['digest'] != digest:
+            raise HTTPException(409, "La clave de idempotencia ya pertenece a otra carga.")
+        return previous['result']
+    existing = db.query(models.InventoryMovement).filter(
+        models.InventoryMovement.tenant_id == tenant_id,
+        models.InventoryMovement.idempotency_key.startswith(f"bulk:{tenant_id}:{data.idempotency_key}:", autoescape=True),
+    ).first()
+    if existing:
+        raise HTTPException(409, "La clave de idempotencia corresponde a una carga histórica sin recibo completo; revise sus movimientos.")
+
+    by_product = {item.product_id: item for item in data.items}
+    movements = []
+    skipped = 0
+    try:
+        for product_id in sorted(product_ids):
+            item = by_product[product_id]
+            _get_product(db, tenant_id, product_id)
+            balance = _balance(db, tenant_id, warehouse.id, product_id)
+            requested = _decimal(item.quantity)
+            if data.mode == "add":
+                if requested <= ZERO:
+                    raise HTTPException(422, "Las entradas masivas deben ser mayores que cero.")
+                delta = requested
+                movement_type = "bulk_entry"
+            else:
+                if requested < _decimal(balance.committed):
+                    raise HTTPException(409, "El conteo final no puede ser menor que el stock comprometido.")
+                delta = requested - _decimal(balance.on_hand)
+                movement_type = "physical_count"
+                if delta == ZERO:
+                    skipped += 1
+                    continue
+            movement = _record_movement(
+                db, balance, delta, movement_type, "bulk_adjustment", None, None,
+                user_id, data.reason, f"bulk:{tenant_id}:{data.idempotency_key}:{product_id}",
+            )
+            movements.append(movement)
+        result = {"movement_ids": [row.id for row in movements], "applied": len(movements), "skipped": skipped}
+        db.add(models.AuditLog(
+            user_id=user_id, entity_type='inventory_bulk', entity_id=tenant_id,
+            action=receipt_action, details=json.dumps({'digest': digest, 'result': result}),
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return result
+
+
+def ensure_document_void_inventory_safe(db: Session, document):
+    """Block a void while an inventory-affecting credit note is active.
+
+    Voiding the original sale after stock was already returned by a credit note
+    would duplicate the physical entry. Pending notes are also blocked to avoid
+    a race between the fiscal workers.
+    """
+    conflicting_note = db.query(models.Cotizacion.id).filter(
+        models.Cotizacion.tenant_id == document.tenant_id,
+        models.Cotizacion.nota_referencia_id == document.id,
+        models.Cotizacion.document_kind == "credit_note",
+        models.Cotizacion.inventory_impact.in_(["undelivered", "physical_return"]),
+        models.Cotizacion.estado.in_(["pendiente", "facturada"]),
+    ).first()
+    if conflicting_note:
+        raise ValueError(
+            "No se puede anular el comprobante mientras tenga una nota de crédito activa con impacto de inventario."
+        )

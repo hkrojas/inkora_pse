@@ -120,6 +120,22 @@ def _returned_quantity(db: Session, tenant_id: int, source_item_id: int, exclude
     return Decimal(str(value or 0))
 
 
+def _dispatch_allocated_quantity(db: Session, tenant_id: int, source_item_id: int) -> Decimal:
+    value = db.query(func.sum(models.SaleDispatchLine.quantity)).join(
+        models.SaleDispatch,
+        models.SaleDispatch.id == models.SaleDispatchLine.dispatch_id,
+    ).filter(
+        models.SaleDispatch.tenant_id == tenant_id,
+        models.SaleDispatchLine.fiscal_document_item_id == source_item_id,
+        models.SaleDispatchLine.reservation_status.in_([
+            models.DISPATCH_RESERVATION_ACTIVE,
+            models.DISPATCH_RESERVATION_COVERED,
+        ]),
+        models.SaleDispatch.status != models.DISPATCH_STATUS_CANCELLED,
+    ).scalar()
+    return Decimal(str(value or 0))
+
+
 def get_note_context(db: Session, tenant_id: int, document_id: int):
     document = _source_document(db, tenant_id, document_id)
     balance = get_fiscal_document_balance(db, tenant_id, document_id)
@@ -274,6 +290,8 @@ def calculate_adjustment(db: Session, tenant_id: int, payload: FiscalNoteDraftCr
                 max_qty = Decimal(str(source.cantidad or 0))
                 if payload.inventory_impact != "none":
                     max_qty -= _returned_quantity(db, tenant_id, source.id, exclude_note_id)
+                if payload.inventory_impact == "undelivered":
+                    max_qty -= _dispatch_allocated_quantity(db, tenant_id, source.id)
                 if qty <= 0 or qty > max_qty:
                     raise ValueError(f"La cantidad de {source.descripcion} excede el maximo devolvible.")
                 append(source, qty, source.precio_unitario)

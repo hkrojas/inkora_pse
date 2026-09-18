@@ -1,7 +1,7 @@
 """models/emission_jobs.py — Cola durable de emisión fiscal."""
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -9,13 +9,22 @@ from database import Base
 EMISSION_JOB_STATUS_QUEUED = "queued"
 EMISSION_JOB_STATUS_PROCESSING = "processing"
 EMISSION_JOB_STATUS_RETRY = "retry"
+EMISSION_JOB_STATUS_PENDING_CONFIRMATION = "pending_confirmation"
+EMISSION_JOB_STATUS_CONTINGENCY_PENDING = "contingency_pending"
 EMISSION_JOB_STATUS_SUCCEEDED = "succeeded"
 EMISSION_JOB_STATUS_FAILED = "failed"
+
+EMISSION_ATTEMPT_STATUS_PROCESSING = "processing"
+EMISSION_ATTEMPT_STATUS_RETRY = "retry"
+EMISSION_ATTEMPT_STATUS_PENDING_CONFIRMATION = "pending_confirmation"
+EMISSION_ATTEMPT_STATUS_SUCCEEDED = "succeeded"
+EMISSION_ATTEMPT_STATUS_FAILED = "failed"
 
 EMISSION_JOB_ACTION_EMIT_FISCAL = "emit_fiscal_document"
 EMISSION_JOB_ACTION_EMIT_NOTE = "emit_note"
 EMISSION_JOB_ACTION_VOID_FISCAL = "void_fiscal_document"
 EMISSION_JOB_ACTION_EMIT_GUIDE = "emit_guide"
+EMISSION_JOB_ACTION_CONSULT_GUIDE = "consult_guide"
 
 EMISSION_JOB_RESOURCE_COTIZACION = "cotizacion"
 EMISSION_JOB_RESOURCE_GUIA = "guia_remision"
@@ -54,3 +63,29 @@ class DocumentEmissionJob(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.now)
     updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
 
+
+class DocumentEmissionAttempt(Base):
+    """Registro append-only de cada ejecución real del worker."""
+
+    __tablename__ = "document_emission_attempts"
+    __table_args__ = (
+        UniqueConstraint("job_id", "attempt_number", name="uq_emission_attempt_job_number"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(
+        Integer,
+        ForeignKey("document_emission_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    attempt_number = Column(Integer, nullable=False)
+    status = Column(String, nullable=False, default=EMISSION_ATTEMPT_STATUS_PROCESSING, index=True)
+    error_classification = Column(String, nullable=True, index=True)
+    error_message = Column(Text, nullable=True)
+    provider_endpoint = Column(String, nullable=True)
+    provider_status_code = Column(Integer, nullable=True)
+    result_snapshot = Column(JSON, nullable=True)
+    started_at = Column(DateTime, nullable=False, default=datetime.now)
+    finished_at = Column(DateTime, nullable=True)

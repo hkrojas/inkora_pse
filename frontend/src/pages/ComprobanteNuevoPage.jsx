@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -15,14 +15,13 @@ import { clientes as clientesSvc } from '../services/clientes';
 import { productos as productosSvc } from '../services/productos';
 import { cotizaciones as cotizacionesSvc } from '../services/cotizaciones';
 import { tenant as tenantSvc } from '../services/tenant';
-import { inventory } from '../services/inventory';
+import { inventory as inventorySvc } from '../services/inventory';
 import FiscalDocPreview from '../components/documents/FiscalDocPreview';
 import ClientCombobox from '../components/ui/ClientCombobox';
 import ProductLineCell from '../components/ui/ProductLineCell';
-import InventoryInitialFields from '../components/inventory/InventoryInitialFields';
-import { hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
-import { clienteSnapshotFromForm, syncCatalogProductos, upsertCliente, upsertProductos } from '../lib/utils/upsert';
 import SectionNavigation from '../components/ui/SectionNavigation';
+import { getCatalogProductOverrides, hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
+import { syncCatalogProductos, upsertCliente, upsertProductos } from '../lib/utils/upsert';
 import Spinner from '../components/ui/Spinner';
 import { PageError } from '../components/ui/PageState';
 import Modal from '../components/ui/Modal';
@@ -32,7 +31,9 @@ import { FieldError } from '../components/ui/FieldError';
 import { DocumentTypeSwitcher } from '../components/documents/DocumentType';
 import ConfirmEmitDialog from '../components/documents/ConfirmEmitDialog';
 import { useToast } from '../components/ui/Toast';
+import { getEmissionOutcome } from '../lib/utils/emissionJobs';
 import {
+  IGV_FACTOR,
   PAYMENT_OPTIONS,
   MEDIO_PAGO_OPTIONS,
   OPERATION_OPTIONS,
@@ -47,24 +48,12 @@ import {
   computeDocumentTotals,
 } from '../lib/utils/documents';
 import {
-  isPositiveDecimal,
-  isSameMoney,
-  money,
-  moneyDifference,
-  normalizeQuantity,
-  normalizeUnitPrice,
-  priceWithIgv,
-  priceWithoutIgv,
-  sumMoney,
-} from '../lib/utils/ublCalculations';
-import {
   PRODUCT_INTERNAL_CODE_MAX_LENGTH,
   isValidInternalProductCode,
   isValidSunatUnitCode,
   isValidTaxAffectationCode,
   normalizeInternalProductCode,
 } from '../lib/utils/sunatCatalogs';
-import { normalizeFiscalClientForm } from '../lib/utils/fiscalClientValidation';
 import { useFieldValidation, rules } from '../lib/utils/useFieldValidation';
 
 const EMPTY_ITEM = () => ({
@@ -78,27 +67,7 @@ const EMPTY_ITEM = () => ({
   tipo_afectacion_igv: '10',
   _isNew: false,
   _catalogSnapshot: null,
-  inventario_inicial: null,
-  _syncCatalogChanges: false,
 });
-
-const RUC_ONLY_DOCUMENT_TYPES = ['6'];
-const DNI_ONLY_DOCUMENT_TYPES = ['1'];
-
-function getRequiredClientDocType(tipoComprobante) {
-  return tipoComprobante === '03' ? '1' : '6';
-}
-
-function createEmptyClient(tipoComprobante) {
-  return {
-    tipo_documento: getRequiredClientDocType(tipoComprobante),
-    numero_documento: '',
-    razon_social: '',
-    direccion: '',
-    email: '',
-    telefono: '',
-  };
-}
 
 function createInitialForm(initialType) {
   const tipo = initialType === '03' ? '03' : '01';
@@ -109,15 +78,22 @@ function createInitialForm(initialType) {
     tipo_operacion: '0101',
     condicion_pago: 'contado',
     medio_pago: 'Efectivo',
-    warehouse_id: '',
     fecha_emision: inputDateToday(),
     fecha_vencimiento: '',
     cuotas_pago: [],
     observaciones: '',
     incluye_igv: true,
     enviar_correo: false,
+    warehouse_id: '',
     cliente_id: '',
-    cliente: createEmptyClient(tipo),
+    cliente: {
+      tipo_documento: '6',
+      numero_documento: '',
+      razon_social: '',
+      direccion: '',
+      email: '',
+      telefono: '',
+    },
     items: [EMPTY_ITEM()],
   };
 }
@@ -139,8 +115,12 @@ function isCreditCondition(value) {
   return Boolean(value && value !== 'contado');
 }
 
+function roundMoney(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
 function moneyInput(value) {
-  return money(value);
+  return roundMoney(value).toFixed(2);
 }
 
 function createCuotaPago(fechaPago, monto) {
@@ -158,7 +138,7 @@ function buildDefaultCuotas(fechaEmision, condicionPago, total) {
 }
 
 function cuotasTotal(cuotas) {
-  return sumMoney((cuotas || []).map((cuota) => cuota.monto));
+  return roundMoney((cuotas || []).reduce((sum, cuota) => sum + Number(cuota.monto || 0), 0));
 }
 
 function lastCuotaDate(cuotas) {
@@ -176,13 +156,9 @@ function buildValidationRules(form) {
       const s = String(v || '').trim();
       if (!s) return 'Número de documento es obligatorio';
       if (form.tipo_comprobante === '01') {
-        if (form.cliente.tipo_documento !== '6' || !/^\d{11}$/.test(s)) {
-          return 'Factura requiere cliente con RUC (11 dígitos)';
-        }
-      } else if (form.tipo_comprobante === '03') {
-        if (form.cliente.tipo_documento !== '1' || !/^\d{8}$/.test(s)) {
-          return 'Boleta requiere cliente con DNI (8 dígitos) en beta';
-        }
+        if (!/^\d{11}$/.test(s)) return 'Factura requiere RUC (11 dígitos)';
+      } else if (form.cliente.tipo_documento === '1' && s.length !== 8) {
+        return 'DNI debe tener 8 dígitos';
       }
       return null;
     },
@@ -206,21 +182,21 @@ function buildValidationRules(form) {
         if (fechaEmision && parseInputDate(cuota.fecha_pago) <= fechaEmision) {
           return `La cuota ${index + 1} debe vencer despues de la fecha de emision`;
         }
-        if (!isPositiveDecimal(cuota.monto)) {
+        if (Number(cuota.monto || 0) <= 0) {
           return `La cuota ${index + 1} debe tener monto mayor a cero`;
         }
       }
 
-      const total = computeDocumentTotals(form.items, form.incluye_igv).total;
+      const total = roundMoney(computeDocumentTotals(form.items, form.incluye_igv).total);
       const sumaCuotas = cuotasTotal(cuotas);
-      if (!isSameMoney(sumaCuotas, total)) {
+      if (sumaCuotas !== total) {
         return `La suma de cuotas (${formatCurrency(sumaCuotas, form.moneda)}) debe coincidir con el total (${formatCurrency(total, form.moneda)})`;
       }
       return null;
     },
     items: () => {
       const candidateItems = (form.items || []).filter(
-        (it) => it.descripcion.trim() && isPositiveDecimal(it.cantidad) && isPositiveDecimal(it.precio_unitario),
+        (it) => it.descripcion.trim() && Number(it.cantidad) > 0 && Number(it.precio_unitario) > 0,
       );
       if (candidateItems.length === 0) {
         return 'Agrega al menos una linea con descripcion, cantidad y precio';
@@ -307,7 +283,7 @@ function PreviewModal({ open, onClose, form, totals, tenantData }) {
   };
 
   const fiscalItems = form.items
-    .filter((it) => it.descripcion.trim() && isPositiveDecimal(it.cantidad) && isPositiveDecimal(it.precio_unitario))
+    .filter((it) => it.descripcion.trim() && Number(it.cantidad) > 0 && Number(it.precio_unitario) > 0)
     .map((it) => {
       const line = computeLine(it, form.incluye_igv);
       return {
@@ -319,7 +295,6 @@ function PreviewModal({ open, onClose, form, totals, tenantData }) {
         precioUnitario: line.unitFinal,
         descuento: 0,
         valorVenta: line.subtotal,
-        total: line.total,
       };
     });
 
@@ -329,7 +304,6 @@ function PreviewModal({ open, onClose, form, totals, tenantData }) {
     address: tenantData?.business_address || '—',
     phone: tenantData?.business_phone || '',
     email: tenantData?.business_email || '',
-    logoUrl: tenantData?.logo_filename || '',
   };
 
   return (
@@ -380,6 +354,7 @@ function LineRow({
   const priceRef = useRef(null);
   const line = computeLine(item, incluyeIgv);
   const sym = moneda === 'USD' ? '$' : 'S/';
+  const hasCatalogOverride = hasCatalogProductOverrides(item);
 
   const handlePriceKeyDown = (e) => {
     if (e.key === 'Tab' && !e.shiftKey && isLast) {
@@ -400,8 +375,9 @@ function LineRow({
   return (
     <div
       className={`line-row line-row--comprobante${animateIn ? ' line-row--entering' : ''}`}
+      style={{ gridTemplateColumns: 'minmax(240px, 1fr) 92px 80px 110px 110px 44px' }}
     >
-      <div className="product-input line-row-cell line-row-cell--product" data-mobile-label="Producto">
+      <div className="product-input">
         <ProductLineCell
           value={item}
           onChange={(next) => onItemChange(index, next)}
@@ -412,7 +388,7 @@ function LineRow({
         />
       </div>
 
-      <div className="line-row-cell line-row-cell--unit" data-mobile-label="Unidad">
+      <div>
         <CustomSelect
           value={item.unidad_medida}
           onChange={(v) => onFieldChange(index, 'unidad_medida', v)}
@@ -421,9 +397,8 @@ function LineRow({
         />
       </div>
 
-      <div className="line-row-cell line-row-cell--qty" data-mobile-label="Cantidad">
+      <div>
         <input
-          className="line-edit-input"
           type="text"
           inputMode="decimal"
           value={item.cantidad}
@@ -433,9 +408,8 @@ function LineRow({
         />
       </div>
 
-      <div className="line-row-cell line-row-cell--price" data-mobile-label="Precio unitario">
+      <div className="line-cell-stack">
         <input
-          className="line-edit-input"
           ref={priceRef}
           type="text"
           inputMode="decimal"
@@ -446,17 +420,19 @@ function LineRow({
           style={{ MozAppearance: 'textfield', WebkitAppearance: 'none', appearance: 'none' }}
           required
         />
+        {hasCatalogOverride && (
+          <span className="line-meta-note">Cambio local. Solo afecta este documento.</span>
+        )}
       </div>
 
-      <div className="line-row-cell line-row-cell--total" data-mobile-label="Total">
+      <div>
         <input
-          className="line-static-input"
           readOnly
           value={`${sym} ${Number(line.total).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`}
         />
       </div>
 
-      <div className="line-row-cell line-row-cell--actions">
+      <div>
         <button type="button" className="trash-btn" onClick={() => onRemove(index)}>
           <Trash2 size={14} />
         </button>
@@ -501,9 +477,7 @@ export default function ComprobanteNuevoPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [igvConfirmOpen, setIgvConfirmOpen] = useState(false);
   const [pendingIgv, setPendingIgv] = useState(null);
-  const [stockRepair, setStockRepair] = useState(null);
   const [clienteState, setClienteState] = useState({ isDirty: false, isNew: false });
-  const [updateExistingClient, setUpdateExistingClient] = useState(true);
   const [recentItemKey, setRecentItemKey] = useState(null);
   const fileRef = useRef(null);
 
@@ -512,7 +486,6 @@ export default function ComprobanteNuevoPage() {
   useEffect(() => {
     setForm(createInitialForm(initialType));
     setClienteState({ isDirty: false, isNew: false });
-    setUpdateExistingClient(true);
     setRecentItemKey(null);
   }, [initialType]);
 
@@ -525,14 +498,14 @@ export default function ComprobanteNuevoPage() {
   const loadBaseData = useCallback(() => {
     setLoadingData(true);
     setLoadError(null);
-    Promise.all([clientesSvc.page('?limit=15'), productosSvc.page('?limit=15'), tenantSvc.get(), inventory.warehouses()])
+    Promise.all([clientesSvc.page('?limit=15'), productosSvc.page('?limit=15'), tenantSvc.get(), inventorySvc.warehouses().catch(() => [])])
       .then(([c, p, t, w]) => {
         setClientes(Array.isArray(c) ? c : c?.items || []);
         setProductos(Array.isArray(p) ? p : p?.items || []);
         setTenantData(t || null);
         setWarehouses(w || []);
-        const preferred = w?.find((warehouse) => warehouse.is_default);
-        if (preferred) setForm((current) => ({ ...current, warehouse_id: current.warehouse_id || String(preferred.id) }));
+        const mainWarehouse = (w || []).find((item) => item.is_default) || (w || [])[0];
+        if (mainWarehouse) setForm((current) => ({ ...current, warehouse_id: current.warehouse_id || String(mainWarehouse.id) }));
       })
       .catch((err) => {
         setLoadError(err);
@@ -549,15 +522,8 @@ export default function ComprobanteNuevoPage() {
   const totals = computeDocumentTotals(form.items, form.incluye_igv);
   const isCreditPayment = isCreditCondition(form.condicion_pago);
   const cuotasMontoTotal = cuotasTotal(form.cuotas_pago);
-  const cuotasDiferencia = moneyDifference(totals.total, cuotasMontoTotal);
+  const cuotasDiferencia = roundMoney(totals.total - cuotasMontoTotal);
   const tipoLabel = form.tipo_comprobante === '01' ? 'Factura' : 'Boleta de venta';
-  const requiredClientDocType = getRequiredClientDocType(form.tipo_comprobante);
-  const allowedClientDocumentTypes = form.tipo_comprobante === '03'
-    ? DNI_ONLY_DOCUMENT_TYPES
-    : RUC_ONLY_DOCUMENT_TYPES;
-  const clientDocRuleCopy = form.tipo_comprobante === '01'
-    ? 'Factura: solo cliente con RUC de 11 dígitos.'
-    : 'Boleta: solo cliente con DNI de 8 dígitos en esta beta.';
   const emissionValidationValues = {
     razon_social: form.cliente.razon_social,
     numero_documento: form.cliente.numero_documento,
@@ -573,9 +539,6 @@ export default function ComprobanteNuevoPage() {
   const canEmit = emissionBlockers.length === 0;
 
   const setRootField = useCallback((key, value) => {
-    if (key === 'cliente_id' || key === 'tipo_comprobante') {
-      setUpdateExistingClient(true);
-    }
     setForm((current) => {
       if (key === 'condicion_pago') {
         const days = paymentDays(value);
@@ -623,14 +586,10 @@ export default function ComprobanteNuevoPage() {
       }
 
       if (key === 'tipo_comprobante') {
-        const nextClientDocType = getRequiredClientDocType(value);
-        const keepClient = current.cliente.tipo_documento === nextClientDocType;
         return {
           ...current,
           tipo_comprobante: value,
           tipo_operacion: '0101',
-          cliente_id: keepClient ? current.cliente_id : '',
-          cliente: keepClient ? current.cliente : createEmptyClient(value),
         };
       }
 
@@ -644,14 +603,6 @@ export default function ComprobanteNuevoPage() {
     clearField('razon_social');
     clearField('numero_documento');
   }, [clearField]);
-
-  const mergeClienteIntoCatalog = useCallback((client) => {
-    if (!client?.id) return;
-    setClientes((current) => {
-      const next = current.filter((item) => String(item.id) !== String(client.id));
-      return [client, ...next];
-    });
-  }, []);
 
   const setItemField = useCallback((index, key, value) => {
     setForm((current) => ({
@@ -669,30 +620,6 @@ export default function ComprobanteNuevoPage() {
         itemIndex === index ? { ...item, ...next } : item
       )),
     }));
-  }, []);
-
-  const catalogSyncEligibleCount = useMemo(
-    () => form.items.filter((item) => hasCatalogProductOverrides(item)).length,
-    [form.items],
-  );
-  const catalogSyncSelectedCount = useMemo(
-    () => form.items.filter((item) => hasCatalogProductOverrides(item) && item._syncCatalogChanges).length,
-    [form.items],
-  );
-  const syncCatalogOnSave = catalogSyncEligibleCount > 0 && catalogSyncSelectedCount === catalogSyncEligibleCount;
-  const toggleCatalogSyncForEligible = useCallback(() => {
-    setForm((current) => {
-      const eligible = current.items.filter((item) => hasCatalogProductOverrides(item));
-      const nextValue = !(eligible.length > 0 && eligible.every((item) => item._syncCatalogChanges));
-      return {
-        ...current,
-        items: current.items.map((item) => (
-          hasCatalogProductOverrides(item)
-            ? { ...item, _syncCatalogChanges: nextValue }
-            : item
-        )),
-      };
-    });
   }, []);
 
   const addItem = useCallback(() => {
@@ -723,10 +650,9 @@ export default function ComprobanteNuevoPage() {
 
   const addCuotaPago = useCallback(() => {
     setForm((current) => {
-      const total = computeDocumentTotals(current.items, current.incluye_igv).total;
+      const total = roundMoney(computeDocumentTotals(current.items, current.incluye_igv).total);
       const sumaActual = cuotasTotal(current.cuotas_pago);
-      const diferencia = moneyDifference(total, sumaActual);
-      const restante = isPositiveDecimal(diferencia) ? diferencia : '0.00';
+      const restante = Math.max(roundMoney(total - sumaActual), 0);
       const ultimaFecha = lastCuotaDate(current.cuotas_pago) || current.fecha_emision;
       const fechaPago = addDays(ultimaFecha, 15);
       const cuotas = [
@@ -769,10 +695,10 @@ export default function ComprobanteNuevoPage() {
       ...current,
       incluye_igv: newVal,
       items: current.items.map((item) => {
-        if (!isPositiveDecimal(item.precio_unitario)) return item;
-        const nextPrice = newVal
-          ? priceWithIgv(item, false)
-          : priceWithoutIgv(item, true);
+        const amount = Number(item.precio_unitario || 0);
+        if (!amount) return item;
+        const converted = newVal ? amount * IGV_FACTOR : amount / IGV_FACTOR;
+        const nextPrice = converted;
         const shouldRefreshSnapshot = item.producto_id && item._catalogSnapshot && !hasCatalogProductOverrides(item);
         return {
           ...item,
@@ -786,7 +712,7 @@ export default function ComprobanteNuevoPage() {
   };
 
   const handleIgvToggle = (newVal) => {
-    const hasPrices = form.items.some((item) => isPositiveDecimal(item.precio_unitario));
+    const hasPrices = form.items.some((item) => Number(item.precio_unitario) > 0);
     if (hasPrices) {
       setPendingIgv(newVal);
       setIgvConfirmOpen(true);
@@ -860,8 +786,6 @@ export default function ComprobanteNuevoPage() {
     const srcItems = resolvedItems || form.items;
     return {
       cliente_id: Number(clienteId),
-      warehouse_id: form.warehouse_id ? Number(form.warehouse_id) : null,
-      cliente_snapshot: clienteSnapshotFromForm(form.cliente),
       fecha_emision: toApiDate(form.fecha_emision),
       fecha_vencimiento: form.condicion_pago === 'contado'
         ? null
@@ -870,20 +794,23 @@ export default function ComprobanteNuevoPage() {
       tipo_comprobante: form.tipo_comprobante,
       observaciones: form.observaciones || null,
       condicion_pago: form.condicion_pago,
+      warehouse_id: form.warehouse_id ? Number(form.warehouse_id) : null,
       cuotas_pago: form.condicion_pago === 'contado'
         ? []
         : (form.cuotas_pago || []).map((cuota) => ({
             fecha_pago: toApiDate(cuota.fecha_pago),
-            monto: money(cuota.monto),
+            monto: Number(Number(cuota.monto || 0).toFixed(2)),
           })),
       items: srcItems
-        .filter((item) => item.descripcion.trim() && isPositiveDecimal(item.cantidad) && isPositiveDecimal(item.precio_unitario))
+        .filter((item) => item.descripcion.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0)
         .map((item) => ({
           producto_id: item.producto_id ? Number(item.producto_id) : null,
           codigo_producto: normalizeInternalProductCode(item.codigo) || null,
           descripcion: item.descripcion.trim(),
-          cantidad: normalizeQuantity(item.cantidad),
-          precio_unitario: priceWithIgv(item, form.incluye_igv),
+          cantidad: Number(item.cantidad),
+          precio_unitario: form.incluye_igv
+            ? Number(item.precio_unitario)
+            : Number(item.precio_unitario) * IGV_FACTOR,
           unidad_medida: item.unidad_medida || 'NIU',
           tipo_afectacion_igv: item.tipo_afectacion_igv || '10',
         })),
@@ -893,31 +820,26 @@ export default function ComprobanteNuevoPage() {
   const handleEmitConfirmed = async () => {
     setSaving(true);
     try {
+      const catalogOverrides = getCatalogProductOverrides(form.items);
+      const shouldSyncCatalog = catalogOverrides.length > 0
+        ? window.confirm(
+            `Modificaste ${catalogOverrides.length} producto${catalogOverrides.length === 1 ? '' : 's'} del catalogo en este comprobante. `
+            + 'Por defecto esos cambios solo afectan este documento. '
+            + '¿Deseas actualizar tambien el catalogo de productos?',
+          )
+        : false;
 
-      const {
-        id: clienteId,
-        client: persistedClient,
-      } = await upsertCliente({
+      const clienteId = await upsertCliente({
         id: form.cliente_id,
         isNew: clienteState.isNew,
         isDirty: clienteState.isDirty,
         form: form.cliente,
-        updateExisting: updateExistingClient,
       });
 
-      if (persistedClient) {
-        const normalizedClient = normalizeFiscalClientForm(persistedClient);
-        mergeClienteIntoCatalog({ ...persistedClient, ...normalizedClient, id: persistedClient.id });
-        setClienteState({ isDirty: false, isNew: false });
-        setForm((current) => ({
-          ...current,
-          cliente_id: String(persistedClient.id),
-          cliente: normalizedClient,
-        }));
-      }
-
       const createdItems = await upsertProductos(form.items, { priceIncludesIgv: form.incluye_igv });
-      const resolvedItems = await syncCatalogProductos(createdItems, { priceIncludesIgv: form.incluye_igv });
+      const resolvedItems = shouldSyncCatalog
+        ? await syncCatalogProductos(createdItems, { priceIncludesIgv: form.incluye_igv })
+        : createdItems;
       setForm((current) => ({
         ...current,
         cliente_id: String(clienteId),
@@ -925,35 +847,24 @@ export default function ComprobanteNuevoPage() {
       }));
 
       const quote = await cotizacionesSvc.create(buildQuotePayload(clienteId, resolvedItems));
-      const availability = await inventory.documentAvailability(quote.id);
-      if (availability?.inventory_enabled && !availability.sufficient) {
-        const missing = availability.items.filter((item) => !item.sufficient);
-        const first = missing[0];
-        setConfirmOpen(false);
-        setStockRepair({
-          quoteId: quote.id,
-          warehouseId: availability.warehouse_id,
-          warehouseName: availability.warehouse_name,
-          items: missing,
-          productId: String(first.product_id),
-          quantity: String(Math.max(0, Number(first.requested) - Number(first.available))),
-          reason: 'Ingreso para completar emisión',
-        });
-        return;
-      }
-      await cotizacionesSvc.facturar(quote.id, {
+      const emissionResponse = await cotizacionesSvc.facturar(quote.id, {
         tipo_comprobante: form.tipo_comprobante,
         tipo_operacion: form.tipo_operacion,
+        serie_override: seriesPreview,
+        warehouse_id: form.warehouse_id ? Number(form.warehouse_id) : null,
       });
+      const outcome = getEmissionOutcome(emissionResponse, tipoLabel);
 
-      if (form.enviar_correo) {
+      if (form.enviar_correo && outcome.canShare) {
         const share = await cotizacionesSvc.share(quote.id);
         if (share.mailto_link) {
           window.open(share.mailto_link, '_blank', 'noopener,noreferrer');
         }
+      } else if (form.enviar_correo) {
+        toast('El correo no se abrió porque el comprobante todavía no tiene confirmación fiscal.', 'warning');
       }
 
-      toast(`${tipoLabel} emitida correctamente`);
+      toast(outcome.message, outcome.toastType);
       navigate(`/cotizaciones/${quote.id}`);
     } catch (err) {
       toast(err.message || 'No se pudo emitir el comprobante', 'error');
@@ -963,49 +874,11 @@ export default function ComprobanteNuevoPage() {
     }
   };
 
-  const handleStockRepair = async (event) => {
-    event.preventDefault();
-    if (!stockRepair) return;
-    setSaving(true);
-    try {
-      await inventory.adjust({
-        warehouse_id: Number(stockRepair.warehouseId),
-        product_id: Number(stockRepair.productId),
-        quantity: stockRepair.quantity,
-        reason: stockRepair.reason,
-      });
-      const availability = await inventory.documentAvailability(stockRepair.quoteId);
-      if (availability?.inventory_enabled && !availability.sufficient) {
-        const next = availability.items.find((item) => !item.sufficient);
-        setStockRepair((current) => ({
-          ...current,
-          items: availability.items.filter((item) => !item.sufficient),
-          productId: String(next.product_id),
-          quantity: String(Math.max(0, Number(next.requested) - Number(next.available))),
-        }));
-        toast('El ingreso se registró. Aún falta stock en otra línea.', 'error');
-        return;
-      }
-      await cotizacionesSvc.facturar(stockRepair.quoteId, {
-        tipo_comprobante: form.tipo_comprobante,
-        tipo_operacion: form.tipo_operacion,
-        warehouse_id: Number(stockRepair.warehouseId),
-      });
-      setStockRepair(null);
-      toast(`${tipoLabel} emitida correctamente`);
-      navigate('/facturas');
-    } catch (error) {
-      toast(error.message || 'No se pudo registrar el ingreso de stock.', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const hasValidationErrors = Object.keys(errors).length > 0;
   const paymentLabel = PAYMENT_OPTIONS.find((option) => option.value === form.condicion_pago)?.label || 'Contado';
   const modeLabel = form.modo_emision === 'contingencia' ? 'Contingencia activada' : 'Emisión estándar';
   const readyLines = form.items.filter(
-    (item) => item.descripcion.trim() && isPositiveDecimal(item.cantidad) && isPositiveDecimal(item.precio_unitario),
+    (item) => item.descripcion.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0,
   ).length;
   const clientName = form.cliente.razon_social?.trim() || 'Sin cliente seleccionado';
   const clientDoc = form.cliente.numero_documento?.trim()
@@ -1173,7 +1046,23 @@ export default function ComprobanteNuevoPage() {
                     />
                   </div>
 
-                  {warehouses.length > 0 && <div className="field span-4"><label>Almacén de salida</label><CustomSelect value={form.warehouse_id} onChange={(value) => setRootField('warehouse_id', String(value || ''))} options={warehouses.map((warehouse) => ({ value: String(warehouse.id), label: `${warehouse.name}${warehouse.is_default ? ' · Principal' : ''}` }))} /></div>}
+                  {warehouses.length > 0 && (
+                    <div className="field span-4">
+                      <label>Almacén de salida</label>
+                      <select
+                        className="input"
+                        value={form.warehouse_id}
+                        onChange={(event) => setRootField('warehouse_id', event.target.value)}
+                      >
+                        {warehouses.map((warehouse) => (
+                          <option key={warehouse.id} value={warehouse.id}>
+                            {warehouse.name}{warehouse.is_default ? ' · Principal' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="tx-meta">El stock se compromete al enviar y se descuenta solo tras aceptación SUNAT.</span>
+                    </div>
+                  )}
 
                   <div className="field span-4">
                     <label>Fecha de emisión</label>
@@ -1250,7 +1139,7 @@ export default function ComprobanteNuevoPage() {
                           <span className="tx-meta">
                             Suma de cuotas: <strong>{formatCurrency(cuotasMontoTotal, form.moneda)}</strong>
                           </span>
-                          <span className={cuotasDiferencia === '0.00' ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}>
+                          <span className={cuotasDiferencia === 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}>
                             Diferencia: {formatCurrency(cuotasDiferencia, form.moneda)}
                           </span>
                         </div>
@@ -1298,15 +1187,11 @@ export default function ComprobanteNuevoPage() {
                 <div className="field full">
                   <label>Cliente</label>
                   <ClientCombobox
-                    key={form.tipo_comprobante}
                     clients={clientes}
                     value={form.cliente_id}
                     onChange={(id) => setRootField('cliente_id', id)}
                     onFormChange={handleClientFormChange}
-                    defaultDocumentType={requiredClientDocType}
-                    allowedDocumentTypes={allowedClientDocumentTypes}
                   />
-                  <p className="tx-meta mt-2">{clientDocRuleCopy}</p>
                   <FieldError message={errors.numero_documento} />
                   <FieldError message={errors.razon_social} />
                 </div>
@@ -1325,18 +1210,6 @@ export default function ComprobanteNuevoPage() {
                       {form.enviar_correo ? 'Correo listo' : 'Revisar entrega'}
                     </span>
                   </div>
-                )}
-                {form.cliente_id && clienteState.isDirty && !clienteState.isNew && (
-                  <button
-                    type="button"
-                    className="toggle-chip"
-                    aria-pressed={updateExistingClient}
-                    onClick={() => setUpdateExistingClient((current) => !current)}
-                    style={{ marginTop: '12px' }}
-                  >
-                    <span className={`switch ${updateExistingClient ? 'on' : ''}`} />
-                    Actualizar ficha del cliente
-                  </button>
                 )}
 
                 <div className="document-client-status-grid">
@@ -1372,37 +1245,17 @@ export default function ComprobanteNuevoPage() {
                 </div>
                 <div className="document-lines-actions">
                   <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleImportCsv} />
-                  {catalogSyncEligibleCount > 0 && (
-                    <button
-                      type="button"
-                      className={`toggle-chip line-sync-chip${syncCatalogOnSave ? ' is-active' : ''}`}
-                      aria-pressed={syncCatalogOnSave}
-                      onClick={toggleCatalogSyncForEligible}
-                    >
-                      <span className={`switch ${syncCatalogOnSave ? 'on' : ''}`} />
-                      {syncCatalogOnSave ? 'Actualizar catalogo al guardar' : 'Aplicar cambios al catalogo'}
-                    </button>
-                  )}
                   <button type="button" className="mini-action document-lines-upload" onClick={() => fileRef.current?.click()}>
                     <FileUp size={14} /> Subir CSV
                   </button>
                 </div>
               </div>
               <div className="panel-body">
-                {catalogSyncEligibleCount > 0 && (
-                  <div className={`line-sync-banner${syncCatalogOnSave ? ' is-active' : ''}`}>
-                    <strong>
-                      {catalogSyncEligibleCount} producto{catalogSyncEligibleCount !== 1 ? 's' : ''} con cambios de catalogo
-                    </strong>
-                    <span>
-                      {syncCatalogOnSave
-                        ? 'Se actualizaran en la base al guardar este comprobante.'
-                        : 'Los cambios quedaran solo en este comprobante hasta que actives el guardado global.'}
-                    </span>
-                  </div>
-                )}
                 <div className="line-table line-table--comprobante">
-                  <div className="line-head">
+                  <div
+                    className="line-head"
+                    style={{ gridTemplateColumns: 'minmax(240px, 1fr) 92px 80px 110px 110px 44px' }}
+                  >
                     <div>Código / Producto</div>
                     <div>Unidad</div>
                     <div>Cant.</div>
@@ -1411,7 +1264,7 @@ export default function ComprobanteNuevoPage() {
                     <div />
                   </div>
 
-                {form.items.map((item, index) => (
+                  {form.items.map((item, index) => (
                     <LineRow
                       key={item.key}
                       item={item}
@@ -1424,22 +1277,10 @@ export default function ComprobanteNuevoPage() {
                     onItemChange={handleItemChange}
                     onFieldChange={setItemField}
                     onRemove={removeItem}
-                    onAddNext={addItem}
+                      onAddNext={addItem}
                     />
-                ))}
+                  ))}
                 </div>
-
-                {form.items.map((item, index) => ({ item, index })).filter(({ item }) => item._isNew && item.unidad_medida !== 'ZZ').map(({ item, index }) => (
-                  <div className="mt-3" key={`inventory-${item.key}`}>
-                    <p className="mb-2 text-sm font-bold">Inventario para {item.descripcion || `producto nuevo ${index + 1}`}</p>
-                    <InventoryInitialFields
-                      compact
-                      value={item.inventario_inicial}
-                      warehouses={warehouses}
-                      onChange={(inventario_inicial) => handleItemChange(index, { ...item, inventario_inicial })}
-                    />
-                  </div>
-                ))}
 
                 {errors.items && (
                   <div style={{ marginTop: '10px' }}>
@@ -1554,8 +1395,8 @@ export default function ComprobanteNuevoPage() {
         <div className="space-y-4">
           <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', lineHeight: 1.6 }}>
             Cambiar el modo de IGV va a <strong>recalcular los precios</strong> de todas las líneas ya ingresadas (
-            {form.items.filter((item) => isPositiveDecimal(item.precio_unitario)).length} línea
-            {form.items.filter((item) => isPositiveDecimal(item.precio_unitario)).length !== 1 ? 's' : ''}). ¿Sí, cambiar?
+            {form.items.filter((item) => Number(item.precio_unitario) > 0).length} línea
+            {form.items.filter((item) => Number(item.precio_unitario) > 0).length !== 1 ? 's' : ''}). ¿Sí, cambiar?
           </p>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
             <button className="btn-secondary" onClick={() => setIgvConfirmOpen(false)}>Cancelar</button>
@@ -1571,25 +1412,6 @@ export default function ComprobanteNuevoPage() {
           </div>
         </div>
       </Modal>
-
-      <Modal open={Boolean(stockRepair)} onClose={() => !saving && setStockRepair(null)} title="Agregar stock para emitir" size="sm">
-        {stockRepair && <form className="space-y-4" onSubmit={handleStockRepair}>
-          <p className="text-sm text-[var(--color-text-muted)]">Registra un ingreso trazable en {stockRepair.warehouseName}; al completarlo se reintentará la emisión.</p>
-          <label className="block text-sm font-bold">Producto
-            <select className="input mt-1" value={stockRepair.productId} onChange={(event) => setStockRepair((current) => ({ ...current, productId: event.target.value }))}>
-              {stockRepair.items.map((item) => <option key={item.product_id} value={item.product_id}>{item.product_name} · faltan {Math.max(0, Number(item.requested) - Number(item.available))} {item.unit}</option>)}
-            </select>
-          </label>
-          <label className="block text-sm font-bold">Cantidad de ingreso
-            <input className="input mt-1" required type="number" min="0.0001" step="0.0001" value={stockRepair.quantity} onChange={(event) => setStockRepair((current) => ({ ...current, quantity: event.target.value }))} />
-          </label>
-          <label className="block text-sm font-bold">Motivo
-            <input className="input mt-1" required minLength="3" value={stockRepair.reason} onChange={(event) => setStockRepair((current) => ({ ...current, reason: event.target.value }))} />
-          </label>
-          <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setStockRepair(null)} disabled={saving}>Cancelar</button><button className="btn-primary" disabled={saving}>{saving ? 'Registrando…' : 'Registrar ingreso y emitir'}</button></div>
-        </form>}
-      </Modal>
     </>
   );
 }
-
