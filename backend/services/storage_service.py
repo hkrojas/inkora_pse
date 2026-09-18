@@ -162,10 +162,66 @@ def upload_to_storage(
 
 def check_storage_ready() -> dict:
     if not settings.has_supabase_storage:
-        return {"configured": False, "bucket": settings.SUPABASE_STORAGE_BUCKET}
-    get_supabase_client()
+        return {
+            "ok": False,
+            "configured": False,
+            "bucket": settings.SUPABASE_STORAGE_BUCKET,
+            "public_assets_bucket": settings.SUPABASE_PUBLIC_ASSETS_BUCKET,
+            "uses_server_key": False,
+            "bucket_accessible": False,
+            "objects_listable": False,
+            "bucket_error": "StorageNotConfigured",
+            "list_error": "StorageNotConfigured",
+            "public_assets_bucket_accessible": False,
+            "public_assets_objects_listable": False,
+            "public_assets_bucket_error": "StorageNotConfigured",
+            "public_assets_list_error": "StorageNotConfigured",
+        }
+
+    client = get_supabase_client()
+
+    def check_bucket(bucket: str) -> dict:
+        result = {
+            "bucket_accessible": False,
+            "objects_listable": False,
+            "bucket_error": None,
+            "list_error": None,
+        }
+        try:
+            client.storage.get_bucket(bucket)
+            result["bucket_accessible"] = True
+        except Exception as exc:
+            result["bucket_error"] = type(exc).__name__
+
+        try:
+            client.storage.from_(bucket).list(path="", options={"limit": 1})
+            result["objects_listable"] = True
+        except Exception as exc:
+            result["list_error"] = type(exc).__name__
+        return result
+
+    private_bucket = settings.SUPABASE_STORAGE_BUCKET.strip()
+    public_assets_bucket = settings.SUPABASE_PUBLIC_ASSETS_BUCKET.strip()
+    private_status = check_bucket(private_bucket)
+    public_status = check_bucket(public_assets_bucket)
+    ok = all(
+        (
+            private_status["bucket_accessible"],
+            private_status["objects_listable"],
+            public_status["bucket_accessible"],
+            public_status["objects_listable"],
+        )
+    )
+
     return {
+        "ok": ok,
         "configured": True,
-        "bucket": settings.SUPABASE_STORAGE_BUCKET,
+        "bucket": private_bucket,
+        "public_assets_bucket": public_assets_bucket,
         "uses_server_key": bool(settings.SUPABASE_SERVICE_ROLE_KEY.strip()),
+        **private_status,
+        "public_assets_bucket_accessible": public_status["bucket_accessible"],
+        "public_assets_objects_listable": public_status["objects_listable"],
+        "public_assets_bucket_error": public_status["bucket_error"],
+        "public_assets_list_error": public_status["list_error"],
     }
