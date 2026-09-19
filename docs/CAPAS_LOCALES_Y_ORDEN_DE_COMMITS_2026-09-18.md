@@ -102,3 +102,20 @@ Cada commit debe repetir sus pruebas focalizadas y comprobar que el siguiente co
 ## Estado final de las capas
 
 Las cinco capas quedan confirmadas localmente y separadas. La validación final de soporte comprende 673 pruebas backend, 47 pruebas frontend, lint, build y guard canónico. No hubo push, merge o despliegue.
+
+## Capa 5 preparada — CI y rollback verificable
+
+Estado: **validada y preparada sin commit**.
+
+Archivos exclusivos:
+
+- `.github/workflows/release-gate.yml`
+- `scripts/release_guard.py`
+- `scripts/project_worker_release.py`
+- `backend/test_release_guard.py`
+- `docs/RELEASE_CANONICO.md`
+- `docs/CAPAS_LOCALES_Y_ORDEN_DE_COMMITS_2026-09-18.md`
+
+Alcance: puerta CI reproducible, regresión backend/frontend, proyección del worker con el mismo modo de hash y verificación de paquetes históricos `raw-v1` sin imponerles marcadores funcionales posteriores. La capa no cambia archivos de runtime empaquetados ni producción.
+
+Validación: 676 pruebas backend, 47 pruebas frontend, lint, build, 13 pruebas focalizadas del guard, paquete canónico nuevo y verificación del paquete productivo histórico. Las pruebas PostgreSQL continúan como puerta separada con bases desechables.

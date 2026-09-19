@@ -121,6 +121,7 @@ def manifest(root):
 def verify(package):
     data = json.loads((package / 'release-manifest.json').read_text(encoding='utf-8'))
     files = data['files']
+    legacy_manifest = 'hash_mode' not in data
     hash_mode = data.get('hash_mode', HASH_MODE_RAW_V1)
     if hash_mode not in SUPPORTED_HASH_MODES:
         raise ValueError(f'Modo de huella no soportado: {hash_mode}')
@@ -142,7 +143,11 @@ def verify(package):
         meta = json.loads((package / rel).read_text(encoding='utf-8'))
         if meta != {key: data[key] for key in ('base_revision', 'content_sha256')}:
             raise ValueError('Backend y frontend no pertenecen a la misma entrega')
-    validate_features(package, hash_mode=hash_mode)
+    # Historical packages are verified against their immutable manifest for
+    # rollback. Applying today's feature markers retroactively would reject an
+    # intact older release merely because the product evolved afterwards.
+    if not legacy_manifest:
+        validate_features(package, hash_mode=hash_mode)
     return data
 
 

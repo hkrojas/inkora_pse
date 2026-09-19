@@ -1,0 +1,79 @@
+name: Inkora release gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ENVIRONMENT: test
+      DATABASE_URL: sqlite:///./inkora_ci.db
+      SECRET_KEY: inkora-ci-not-for-production
+      FISCAL_ENV: beta
+
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Verify operational and release contracts
+        working-directory: backend
+        run: python -m pytest test_release_guard.py test_operational_frontend_contracts.py -q
+
+      - name: Test backend regression without external PostgreSQL
+        working-directory: backend
+        run: >-
+          python -m pytest -q
+          --ignore=test_sale_dispatch_postgres.py
+          --ignore=test_cotizaciones_postgres.py
+          --ignore=test_inventory_recovery_postgres.py
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Test frontend
+        working-directory: frontend
+        run: npm test
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Calculate canonical release identity
+        run: python scripts/release_guard.py check

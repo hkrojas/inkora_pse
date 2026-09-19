@@ -18,6 +18,7 @@ def main():
     args = parser.parse_args()
     source, destination = args.source.resolve(), args.destination.resolve()
     delivery = verify(source)
+    hash_mode = delivery.get('hash_mode', 'raw-v1')
     if destination.exists() or not destination.is_relative_to(ROOT / 'tmp'):
         parser.error('El destino debe ser NUEVO dentro de tmp')
     destination.mkdir(parents=True)
@@ -26,12 +27,12 @@ def main():
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source / relative, target)
-        if digest(target) != checksum:
+        if digest(target, hash_mode=hash_mode) != checksum:
             raise ValueError(f'Proyección divergente: {relative}')
     shutil.copy2(source / 'backend/release.json', destination / 'backend/release.json')
     (destination / 'worker-projection.json').write_text(json.dumps({
         'content_sha256': delivery['content_sha256'], 'files': backend,
-        'source_manifest_sha256': digest(source / 'release-manifest.json'),
+        'source_manifest_sha256': digest(source / 'release-manifest.json', hash_mode=hash_mode),
         'railway_root_directory': 'backend', 'builder': 'RAILPACK',
     }, indent=2), encoding='utf-8')
     print(f'Worker: {len(backend)} archivos idénticos; entrega {delivery["content_sha256"]}')
