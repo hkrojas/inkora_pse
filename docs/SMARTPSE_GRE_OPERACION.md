@@ -32,7 +32,7 @@ cd C:\Users\HP\Desktop\inkora_smartpse\backend
 alembic upgrade head
 ```
 
-La revisión esperada para esta entrega es `0022_gre_sales_documents`. Además de
+La revisión esperada para la entrega de traslados internos es `0024_internal_transfer_gre`. Además de
 las columnas GRE incorporadas previamente, deben existir los campos de origen
 01/03, evidencia de aceptación, observaciones y acuerdo de transporte.
 
@@ -119,8 +119,10 @@ No debe marcarse como `emitida` sin CDR o aceptacion final.
 
 ## Consulta de Ticket
 
-La documentacion vigente de Smart PSE indica que una GRE queda pendiente al
-enviarse y debe conciliarse mediante:
+Contrato publico revisado el **20/09/2026** en la
+[documentacion de Smart PSE](https://smartpse.pe/documentacion): las GRE 09 y
+31 usan `POST /api/cpe/procesar` (o su variante demo). Una GRE pendiente debe
+conciliarse mediante:
 
 ```http
 GET /api/cpe/consultar/{nombre_archivo}
@@ -147,21 +149,58 @@ omite solo si el tenant esta configurado expresamente en `demo`; en produccion
 siguen siendo obligatorios. Un ticket, HTTP 200 o XML firmado no equivalen a
 aceptacion: solo el CDR definitivo permite marcar la guia como aceptada.
 
-### Preflight histórico Papeleria Grafica - 15/09/2026
+## Contrato SUNAT para traslado interno
+
+La implementacion del motivo `04` se contrasto el **20/09/2026** contra las
+[reglas de validacion GRE publicadas por SUNAT](https://cpe.sunat.gob.pe/node/116),
+revision del 20/06/2026. La copia analizada tuvo SHA-256
+`2464F1239409C352F2E2768198F186F4C5985ADD117484FD7033418B8891A4FA`.
+
+Las pruebas automatizadas fijan como contrato:
+
+- `HandlingCode = 04`;
+- remitente y destinatario con el mismo RUC de la empresa;
+- `AddressTypeCode` obligatorio en partida y llegada;
+- atributo `listID` de ambos codigos igual al RUC emisor;
+- ausencia de una factura ficticia como documento relacionado.
+
+SUNAT tambien indica que no corresponde GRE cuando el movimiento ocurre dentro
+del mismo establecimiento y direccion. Inkora mantiene ese caso como movimiento
+interno sin GRE. SUNAT no ofrece un ambiente oficial de pruebas GRE; por eso una
+respuesta habitual de error en Smart PSE demo no acredita aceptacion fiscal.
+
+## Puerta de habilitacion
+
+`internal_transfers` permanece desactivado por defecto. No debe habilitarse para
+ninguna empresa hasta que, en staging aislado, se complete todo lo siguiente:
+
+1. migracion `0024` y recuperacion verificadas en PostgreSQL;
+2. pruebas concurrentes obligatorias sin omisiones;
+3. validacion XML contra los artefactos SUNAT vigentes;
+4. consulta real de un ticket Smart PSE demo, confirmando como transporta las
+   cuatro credenciales en `GET /consultar/{nombre_archivo}`;
+5. evidencia documentada del resultado demo, sin presentarlo como aceptacion
+   SUNAT si el proveedor no devuelve un CDR valido.
+
+El preflight debe bloquear la homologacion si la empresa esta configurada en
+produccion. Nunca se cambia temporalmente el ambiente productivo para superar
+esta puerta.
+
+### Preflight Papeleria Grafica - 20/09/2026
 
 La comprobacion de solo lectura contra la base configurada encontro:
 
 - tenant presente, pero `smartpse_environment = produccion`;
 - credenciales CPE presentes;
-- las cuatro credenciales GRE ausentes;
+- las cuatro credenciales GRE presentes;
 - `SMARTPSE_API_TOKEN` de gestion ausente en el runtime local;
-- base remota en Alembic `0018_access_requests`, sin las tablas de despacho de
-  `0021_sale_dispatch_guides`.
+- base remota en Alembic `0023_tenant_gre_series`, aun sin la migracion local
+  `0024_internal_transfer_gre`.
 
 Resultado: **no se realizo ninguna emision ni consulta externa**. Para probar
-Papeleria Grafica sin riesgo se requiere una empresa Smart PSE configurada en
-`demo`, credenciales CPE demo almacenadas y una base aislada migrada hasta
-`0021`. No debe cambiarse a demo la empresa productiva existente como atajo.
+Papeleria Grafica sin riesgo se requiere una empresa Smart PSE separada y
+configurada en `demo`, y una base aislada migrada hasta `0024`. No debe cambiarse
+a demo la empresa productiva existente como atajo.
 
 Este resultado es una evidencia histórica y no describe necesariamente el
 estado actual del despliegue. El preflight queda disponible como comando
