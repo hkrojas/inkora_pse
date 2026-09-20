@@ -15,7 +15,10 @@ def _declared_requirements(path):
         line = raw_line.strip()
         if not line or line.startswith(("#", "-r ")):
             continue
-        yield Requirement(line)
+        requirement = Requirement(line)
+        if requirement.marker and not requirement.marker.evaluate(default_environment()):
+            continue
+        yield requirement
 
 
 def test_dependency_locks_pin_the_complete_installed_runtime_and_test_closure():
