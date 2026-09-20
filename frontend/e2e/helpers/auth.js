@@ -58,7 +58,9 @@ export function requireTenantCredentials() {
 export async function loginTenantByUi(page) {
   const { email, password } = requireTenantCredentials();
   await page.goto('/login');
-  await expect(page.getByRole('heading', { name: /bienvenido de vuelta/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /bienvenido de vuelta/i })).toBeVisible({
+    timeout: AUTH_TIMEOUT_MS,
+  });
   await page.getByLabel(/correo|usuario/i).fill(email);
   await page.locator('input[autocomplete="current-password"]').fill(password);
   const rememberDevice = page.getByRole('checkbox', {

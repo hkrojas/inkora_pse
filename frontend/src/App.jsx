@@ -49,7 +49,7 @@ export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BrowserRouter>
           <Routes>
             <Route path="/" element={<LazyRoute><LandingPage /></LazyRoute>} />
             <Route path="/presentacion" element={<LazyRoute><LandingPage /></LazyRoute>} />
