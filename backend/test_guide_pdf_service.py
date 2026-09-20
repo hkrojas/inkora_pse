@@ -150,10 +150,49 @@ def test_pdf_guia_aceptada_mantiene_qr_en_primera_hoja_hasta_cinco_productos():
     )
 
     five_item_pdf = guide_pdf_service.build_guide_pdf(five_items, _tenant())
-    six_item_pdf = guide_pdf_service.build_guide_pdf(six_items, _tenant())
+    with patch("services.guide_pdf_service._build_items", wraps=guide_pdf_service._build_items) as build_items:
+        six_item_pdf = guide_pdf_service.build_guide_pdf(six_items, _tenant())
 
     assert len(re.findall(rb"/Type\s*/Page\b", five_item_pdf)) == 1
     assert len(re.findall(rb"/Type\s*/Page\b", six_item_pdf)) == 2
+    assert [len(call.args[0]) for call in build_items.call_args_list] == [5, 1]
+
+
+def test_pdf_guia_multipagina_coloca_qr_antes_del_primer_salto_y_balancea_solo_continuaciones():
+    captured = {}
+    footer_marker = object()
+
+    class FakeDocument:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, elements, **kwargs):
+            captured["elements"] = elements
+
+    guide = _guide(
+        estado="emitida",
+        provider_response={"cdr": CDR_XML, "qr_content": "QR-OFICIAL-SMARTPSE"},
+        items=[_item(index) for index in range(1, 26)],
+    )
+
+    with (
+        patch("services.guide_pdf_service.SimpleDocTemplate", FakeDocument),
+        patch("services.guide_pdf_service._build_footer", return_value=footer_marker),
+        patch("services.guide_pdf_service._build_items", wraps=guide_pdf_service._build_items) as build_items,
+    ):
+        guide_pdf_service.build_guide_pdf(guide, _tenant())
+
+    chunks = [list(call.args[0]) for call in build_items.call_args_list]
+    elements = captured["elements"]
+    first_page_break = next(
+        index
+        for index, element in enumerate(elements)
+        if isinstance(element, guide_pdf_service.PageBreak)
+    )
+
+    assert [len(chunk) for chunk in chunks] == [5, 10, 10]
+    assert sum(len(chunk) for chunk in chunks) == 25
+    assert elements.index(footer_marker) < first_page_break
 
 
 def test_pdf_guia_no_inventa_qr_cuando_proveedor_no_entrega_payload():
