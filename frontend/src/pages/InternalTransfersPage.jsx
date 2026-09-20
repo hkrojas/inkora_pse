@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeftRight, Building2, Eye, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeftRight, Eye, Plus, RefreshCw, Warehouse } from "lucide-react";
 import EmptyState from "../components/ui/EmptyState";
 import Pagination from "../components/ui/Pagination";
 import Spinner from "../components/ui/Spinner";
@@ -59,9 +59,9 @@ export default function InternalTransfersPage() {
             <RefreshCw size={15} />
             Actualizar
           </button>
-          <Link className="btn" to="/inventario/establecimientos">
-            <Building2 size={15} />
-            Establecimientos
+          <Link className="btn" to="/inventario?tab=warehouses">
+            <Warehouse size={15} />
+            Almacenes
           </Link>
           <Link className="btn-primary" to="/traslados-internos/nuevo">
             <Plus size={15} />

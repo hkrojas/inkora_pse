@@ -2,14 +2,45 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-class WarehouseCreate(BaseModel):
+class WarehouseFiscalLocation(BaseModel):
+    id: int
+    sunat_code: str
+    name: str
+    ubigeo: str
+    address: str
+    is_main: bool
+    is_active: bool
+    verified_at: Optional[datetime] = None
+    verification_note: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WarehouseFiscalFields(BaseModel):
+    """SUNAT location managed together with its operational warehouse."""
+
+    sunat_code: Optional[str] = Field(default=None, pattern=r"^\d{4}$")
+    ubigeo: Optional[str] = Field(default=None, pattern=r"^\d{6}$")
+    is_sunat_main: bool = False
+
+    @model_validator(mode="after")
+    def validate_fiscal_pair(self):
+        if bool(self.sunat_code) != bool(self.ubigeo):
+            raise ValueError("Completa juntos el código SUNAT y el ubigeo")
+        if self.sunat_code and not (getattr(self, "location", None) or "").strip():
+            raise ValueError("Registra la dirección completa del almacén")
+        return self
+
+
+class WarehouseCreate(WarehouseFiscalFields):
     code: str = Field(..., min_length=1, max_length=30)
     name: str = Field(..., min_length=2, max_length=120)
     location: Optional[str] = Field(default=None, max_length=500)
     is_default: bool = False
+    # Compatibility adapter for clients deployed before warehouses absorbed
+    # the fiscal-location form. New UI code does not expose this field.
     establishment_id: Optional[int] = None
 
     @field_validator("code")
@@ -18,17 +49,27 @@ class WarehouseCreate(BaseModel):
         return value.strip().upper()
 
 
-class WarehouseResponse(WarehouseCreate):
+class WarehouseResponse(BaseModel):
     id: int
+    code: str
+    name: str
+    location: Optional[str] = None
+    is_default: bool
     is_active: bool
+    establishment_id: Optional[int] = None
+    establishment: Optional[WarehouseFiscalLocation] = None
     model_config = ConfigDict(from_attributes=True)
 
 
-class WarehouseUpdate(BaseModel):
+class WarehouseUpdate(WarehouseFiscalFields):
     name: str = Field(..., min_length=2, max_length=120)
     location: Optional[str] = Field(default=None, max_length=500)
     is_default: bool = False
     establishment_id: Optional[int] = None
+
+
+class WarehouseFiscalVerify(BaseModel):
+    note: str = Field(..., min_length=10, max_length=500)
 
 
 class InventoryActivation(BaseModel):

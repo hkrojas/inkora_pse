@@ -4,6 +4,7 @@ export const inventory = {
   warehouses: () => api.get('/inventario/almacenes'),
   createWarehouse: (data) => api.post('/inventario/almacenes', data),
   updateWarehouse: (id, data) => api.patch(`/inventario/almacenes/${id}`, data),
+  verifyWarehouseFiscalLocation: (id, note) => api.post(`/inventario/almacenes/${id}/verificar-datos-fiscales`, { note }),
   activate: (data = {}) => api.post('/inventario/activar', data),
   stock: () => api.get('/inventario/existencias'),
   stockPage: (params = '?skip=0&limit=15') => api.get(`/inventario/existencias/page${params}`),

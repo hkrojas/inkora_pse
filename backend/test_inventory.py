@@ -7,7 +7,14 @@ from fastapi import HTTPException
 import models
 from conftest import make_cliente, make_producto, make_tenant, make_user
 from schemas.inventory import InventoryActivation, InventoryAdjustmentCreate, ProductInventoryConfig, TransferCreate, TransferLine
-from schemas.inventory import WarehouseUpdate, BulkInventoryAdjustmentCreate, BulkInventoryLine
+from schemas.inventory import (
+    BulkInventoryAdjustmentCreate,
+    BulkInventoryLine,
+    WarehouseCreate,
+    WarehouseFiscalVerify,
+    WarehouseResponse,
+    WarehouseUpdate,
+)
 from services import inventory_service
 
 
@@ -24,6 +31,98 @@ def _inventory_product(db, tenant, product, warehouse, user, stock="10"):
         ), user.id,
     )
     db.refresh(product)
+
+
+def test_warehouse_manages_its_sunat_location_atomically(db_session):
+    tenant = make_tenant(db_session, "700A")
+    user = make_user(db_session, tenant, email="warehouse700a@test.pe")
+
+    warehouse = inventory_service.create_warehouse(
+        db_session,
+        tenant.id,
+        WarehouseCreate(
+            code="principal",
+            name="Almacén principal",
+            location="Av. Lima 100",
+            is_default=True,
+            sunat_code="0000",
+            ubigeo="150101",
+            is_sunat_main=True,
+        ),
+    )
+
+    assert warehouse.establishment_id is not None
+    assert warehouse.establishment.sunat_code == "0000"
+    assert warehouse.establishment.ubigeo == "150101"
+    assert warehouse.establishment.address == "Av. Lima 100"
+    assert warehouse.establishment.verified_at is None
+    serialized = WarehouseResponse.model_validate(warehouse)
+    assert serialized.establishment.sunat_code == "0000"
+
+    inventory_service.verify_warehouse_fiscal_location(
+        db_session,
+        tenant.id,
+        warehouse.id,
+        user.id,
+        WarehouseFiscalVerify(note="Contrastado con la ficha RUC de SUNAT."),
+    )
+    assert warehouse.establishment.verified_at is not None
+
+    inventory_service.update_warehouse(
+        db_session,
+        tenant.id,
+        warehouse.id,
+        WarehouseUpdate(
+            name="Almacén principal",
+            location="Av. Lima 200",
+            is_default=True,
+            sunat_code="0000",
+            ubigeo="150101",
+            is_sunat_main=True,
+        ),
+    )
+    assert warehouse.establishment.address == "Av. Lima 200"
+    assert warehouse.establishment.verified_at is None
+
+
+def test_warehouse_sunat_code_is_unique_and_tenant_scoped(db_session):
+    owner = make_tenant(db_session, "700B")
+    other = make_tenant(db_session, "700C")
+    first = inventory_service.create_warehouse(
+        db_session,
+        owner.id,
+        WarehouseCreate(
+            code="A",
+            name="Sede A",
+            location="Av. A 100",
+            sunat_code="0001",
+            ubigeo="150101",
+        ),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        inventory_service.create_warehouse(
+            db_session,
+            owner.id,
+            WarehouseCreate(
+                code="B",
+                name="Sede B",
+                location="Av. B 200",
+                sunat_code="0001",
+                ubigeo="150102",
+            ),
+        )
+    assert exc.value.status_code == 409
+
+    with pytest.raises(HTTPException) as exc:
+        inventory_service.verify_warehouse_fiscal_location(
+            db_session,
+            other.id,
+            first.id,
+            999,
+            WarehouseFiscalVerify(note="Intento desde otra empresa autenticada."),
+        )
+    assert exc.value.status_code == 404
 
 
 def test_inventory_is_tenant_scoped(db_session):

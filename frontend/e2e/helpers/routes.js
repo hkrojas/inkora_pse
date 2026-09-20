@@ -5,6 +5,7 @@ export const MAIN_ROUTES = [
   { path: '/cotizaciones', label: 'Cotizaciones' },
   { path: '/comprobantes/nuevo', label: 'Crear comprobante' },
   { path: '/guias', label: 'Guias de remision' },
+  { path: '/inventario', label: 'Inventario' },
   { path: '/cobranza', label: 'Cobranza' },
   { path: '/configuracion', label: 'Configuracion' },
 ];
