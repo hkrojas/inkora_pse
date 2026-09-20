@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -11,6 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('release_guard', ROOT / 'scripts/release_guard.py')
 guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guard)
+sys.modules.setdefault('release_guard', guard)
+worker_spec = importlib.util.spec_from_file_location(
+    'project_worker_release',
+    ROOT / 'scripts/project_worker_release.py',
+)
+worker_release = importlib.util.module_from_spec(worker_spec)
+worker_spec.loader.exec_module(worker_release)
 
 
 def missing_contracts(operations):
@@ -41,6 +49,8 @@ def test_packager_excludes_secrets_auxiliary_versions_and_fixtures():
     assert 'backend/debug_emit.py' not in files
     assert 'backend/requirements-lock.txt' in files
     assert 'backend/requirements.in' in files
+    assert 'backend/Dockerfile' in files
+    assert 'backend/.dockerignore' in files
 
 
 def test_packager_keeps_every_launch_migration_but_no_root_test_or_admin_tool():
@@ -198,6 +208,8 @@ def test_release_gate_workflow_cannot_silently_drop_critical_checks():
         'playwright install --with-deps chromium',
         'python scripts/run_e2e_local.py',
         'release_guard.py check',
+        'Build worker container from canonical projection',
+        'project_worker_release.py',
     ):
         assert marker in workflow
 
@@ -208,6 +220,74 @@ def test_production_images_install_the_pinned_runtime_lock():
         assert 'requirements-lock.txt' in dockerfile
         assert 'pip install --no-cache-dir --upgrade -r /code/requirements-lock.txt' in dockerfile
     assert (ROOT / 'backend/requirements.txt').read_text(encoding='utf-8').strip() == '-r requirements-lock.txt'
+
+
+def test_worker_projection_uses_verified_backend_docker_adapter(tmp_path, monkeypatch):
+    source = tmp_path / 'package'
+    (source / 'backend').mkdir(parents=True)
+    backend_dockerfile = 'FROM python:3.11-slim\nCOPY ./requirements-lock.txt /code/requirements-lock.txt\n'
+    railway_config = json.dumps({'build': {'builder': 'DOCKERFILE', 'dockerfilePath': 'Dockerfile'}})
+    payloads = {
+        'backend/Dockerfile': backend_dockerfile,
+        'backend/.dockerignore': '*.log\n',
+        'backend/main.py': 'app = object()\n',
+        'railway.json': railway_config,
+    }
+    for relative, content in payloads.items():
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding='utf-8')
+
+    delivery = {
+        'base_revision': 'worker-test',
+        'hash_mode': guard.CURRENT_HASH_MODE,
+        'content_sha256': 'canonical-worker-sha',
+        'files': {
+            relative: guard.digest(source / relative)
+            for relative in payloads
+        },
+    }
+    (source / 'release-manifest.json').write_text(
+        json.dumps(delivery),
+        encoding='utf-8',
+    )
+    (source / 'backend/release.json').write_text(
+        json.dumps({
+            'base_revision': delivery['base_revision'],
+            'content_sha256': delivery['content_sha256'],
+        }),
+        encoding='utf-8',
+    )
+
+    monkeypatch.setattr(worker_release, 'ROOT', tmp_path)
+    monkeypatch.setattr(worker_release, 'verify', lambda package: delivery)
+    destination = tmp_path / 'tmp' / 'worker'
+
+    projection = worker_release.project_worker_release(source, destination)
+
+    assert (destination / 'Dockerfile').read_text(encoding='utf-8') == backend_dockerfile
+    assert json.loads((destination / 'railway.json').read_text(encoding='utf-8')) == json.loads(railway_config)
+    assert (destination / 'backend/main.py').read_text(encoding='utf-8') == payloads['backend/main.py']
+    assert projection['builder'] == 'DOCKERFILE'
+    assert projection['railway_root_directory'] == 'backend'
+    assert projection['dockerfile_source'] == 'backend/Dockerfile'
+    assert projection['adapter_hashes']['Dockerfile'] == delivery['files']['backend/Dockerfile']
+    assert projection['adapter_hashes']['railway.json'] == delivery['files']['railway.json']
+
+
+def test_worker_projection_rejects_package_without_verified_dockerfile(tmp_path, monkeypatch):
+    source = tmp_path / 'package'
+    source.mkdir()
+    delivery = {
+        'hash_mode': guard.CURRENT_HASH_MODE,
+        'content_sha256': 'missing-adapter',
+        'files': {'railway.json': 'irrelevant'},
+    }
+    monkeypatch.setattr(worker_release, 'ROOT', tmp_path)
+    monkeypatch.setattr(worker_release, 'verify', lambda package: delivery)
+
+    with pytest.raises(ValueError, match='adaptadores worker verificados'):
+        worker_release.project_worker_release(source, tmp_path / 'tmp' / 'worker')
 
 
 def test_playwright_configuration_has_no_remote_execution_bypass():

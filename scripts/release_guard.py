@@ -16,7 +16,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 EXCLUDED = {'venv', 'node_modules', '__pycache__', '.git', '.pytest_cache', 'dist', 'output', 'logos', 'pruebas', 'pruebas qwen', 'e2e'}
 BACKEND_DIRS = {'crud', 'models', 'routers', 'schemas', 'services', 'alembic'}
-CONFIG_FILES = ('Dockerfile', '.dockerignore', 'railway.json', 'frontend/package.json',
+CONFIG_FILES = ('Dockerfile', '.dockerignore', 'railway.json',
+                'backend/Dockerfile', 'backend/.dockerignore',
+                'frontend/package.json',
                 'frontend/package-lock.json', 'frontend/index.html', 'frontend/vite.config.js',
                 'frontend/tailwind.config.js', 'frontend/postcss.config.js', 'frontend/vercel.json',
                 'backend/requirements.in', 'backend/requirements.txt',
