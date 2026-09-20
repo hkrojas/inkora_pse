@@ -46,6 +46,7 @@ def test_sensitive_fiscal_features_default_to_blocked():
     assert all(enabled is False for enabled in flags.values())
     assert flags[beta_feature_flags.FISCAL_FEATURE_CREDIT_NOTES] is False
     assert flags[beta_feature_flags.FISCAL_FEATURE_DIRECT_SUNAT] is False
+    assert flags[beta_feature_flags.FISCAL_FEATURE_INTERNAL_TRANSFERS] is False
 
 
 def test_superadmin_actualiza_flags_fiscales_y_audita(db_session):

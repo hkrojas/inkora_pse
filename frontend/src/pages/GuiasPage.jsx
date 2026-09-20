@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, Plus, PlusCircle, Trash2, Truck, MapPin, ChevronDown, AlertCircle, Search, Download, Package, CheckCircle2, FileX, ArrowRight, Clock3 } from 'lucide-react';
+import { Eye, Plus, PlusCircle, Trash2, Truck, MapPin, ChevronDown, AlertCircle, Search, Download, Package, CheckCircle2, FileX, ArrowRight, Clock3, ArrowLeftRight } from 'lucide-react';
 import { guias as svc } from '../services/guias';
 import { cotizaciones as cotSvc } from '../services/cotizaciones';
 import { clientes as cliSvc } from '../services/clientes';
@@ -16,6 +16,7 @@ import { useToast } from '../components/ui/Toast';
 import { getGuideStatusMeta } from '../lib/utils/fiscalStatus';
 import { getPageCount } from '../lib/utils/queryParams';
 import { SUNAT_UNIT_OPTIONS } from '../lib/utils/sunatCatalogs';
+import { useFiscalFeatures } from '../hooks/useFiscalFeatures';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -425,6 +426,8 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 }
 
 export default function GuiasPage() {
+  const { isEnabled: isFiscalFeatureEnabled } = useFiscalFeatures();
+  const internalTransfersEnabled = isFiscalFeatureEnabled('internal_transfers');
   const toast = useToast();
   const navigate = useNavigate();
   const [list, setList] = useState([]);
@@ -678,8 +681,13 @@ export default function GuiasPage() {
           </button>
           <Link className="btn-primary flex items-center gap-2" to="/guias/nueva">
             <Plus className="h-4 w-4" />
-            Nueva guía
+            Guía desde venta
           </Link>
+          {internalTransfersEnabled && (
+            <Link className="btn-secondary flex items-center gap-2" to="/traslados-internos/nuevo">
+              <ArrowLeftRight className="h-4 w-4" />Traslado interno
+            </Link>
+          )}
           <Link className="btn-secondary flex items-center gap-2" to="/guias/nueva-transportista">
             <Truck className="h-4 w-4" />GRE transportista
           </Link>

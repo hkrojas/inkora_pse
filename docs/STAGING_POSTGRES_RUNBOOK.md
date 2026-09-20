@@ -46,7 +46,7 @@ Criterios para continuar:
 - La cadena launch no tiene scripts faltantes.
 - Integridad no reporta bloqueantes.
 - `alembic heads` devuelve una sola cabeza.
-- La cabeza esperada para esta entrega es `0022_gre_sales_documents`.
+- La cabeza esperada para la entrega de traslados internos es `0024_internal_transfer_gre`.
 
 ## 4. Bootstrap Alembic excepcional
 
@@ -77,14 +77,14 @@ python -m alembic -c alembic.ini current
 python -m alembic -c alembic.ini heads
 ```
 
-Antes de aplicar `0022_gre_sales_documents` en el staging compartido, ejecutar
+Antes de aplicar `0024_internal_transfer_gre` en el staging compartido, ejecutar
 la homologación PostgreSQL en una base aislada cuyo nombre empiece con
 `inkora_gre_`:
 
 ```bash
 export INKORA_TEST_POSTGRES_URL=postgresql://<usuario>:<clave>@<host>:<puerto>/inkora_gre_test
 export INKORA_REQUIRE_POSTGRES_TESTS=1
-python -m pytest test_sale_dispatch_postgres.py -q
+python -m pytest test_sale_dispatch_postgres.py test_internal_transfer_postgres.py test_internal_transfer_migration.py -q
 ```
 
 La suite se niega a destruir datos si el host no es local o si el nombre de la
@@ -113,6 +113,16 @@ Verificar además:
 - La tabla `document_emission_attempts` existe.
 - Las tablas `sale_dispatches`, `sale_dispatch_lines` y
   `guide_external_references` existen.
+- Las tablas `tenant_establishments`, `internal_transfer_orders`,
+  `internal_transfer_dispatches` e `internal_transfer_receipts` existen.
+- Existe como máximo un establecimiento principal por empresa y PostgreSQL lo
+  protege mediante `uq_tenant_establishments_main`.
+- `internal_transfer_dispatches.departure_idempotency_key` existe y su
+  restricción por empresa impide confirmar dos salidas con la misma clave.
+- `inventory_transfers.lifecycle_mode='legacy_immediate'` identifica los
+  movimientos históricos y ninguna fila histórica volvió a mover stock.
+- Los almacenes vinculados a un establecimiento pertenecen al mismo tenant y
+  las guías internas conservan los códigos locales SUNAT de partida y llegada.
 - `sale_dispatches` conserva tipo de origen `01/03`, resumen diario y evidencia
   de aceptación; las guías conservan observaciones y auditoría del acuerdo de
   transporte.
@@ -147,7 +157,7 @@ Verificar además:
 5. Volver a desplegar la versión anterior del backend y frontend.
 6. Ejecutar pruebas de lectura y mantener la emisión fiscal deshabilitada hasta confirmar consistencia.
 
-Las revisiones `0019`, `0020`, `0021` y `0022` crean estructuras nuevas; el rollback
+Las revisiones `0019`, `0020`, `0021`, `0022`, `0023` y `0024` crean estructuras nuevas; el rollback
 recomendado es restaurar snapshot y código anterior, no borrar columnas,
 reservas ni historial de intentos manualmente. Restaurar la base no revierte
 documentos que ya hayan sido aceptados por Smart PSE/SUNAT; esos documentos se

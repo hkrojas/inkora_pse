@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Download, MapPin, Package, Pencil, RefreshCw, ShieldCheck, Truck, XCircle } from 'lucide-react';
 import { guias as svc } from '../services/guias';
+import { internalTransfers } from '../services/internalTransfers';
 import Spinner from '../components/ui/Spinner';
 import Badge from '../components/ui/Badge';
 import { useToast } from '../components/ui/Toast';
@@ -122,7 +123,9 @@ export default function GuiaDetalle() {
     if (!window.confirm('¿Confirmas que los bienes salieron físicamente? Esta acción es operativa e idempotente.')) return;
     await runAction(
       'departure',
-      () => svc.confirmDeparture(guia.dispatch_id, `departure-${guia.dispatch_id}`),
+      () => guia.internal_transfer_dispatch_id
+        ? internalTransfers.confirmDeparture(guia.internal_transfer_dispatch_id, `internal-departure-${guia.internal_transfer_dispatch_id}`)
+        : svc.confirmDeparture(guia.dispatch_id, `departure-${guia.dispatch_id}`),
       'Salida física confirmada.',
     );
   };
@@ -426,8 +429,8 @@ export default function GuiaDetalle() {
             </div>
             {guia.internal_order_number && (
               <div>
-                <p className="label">Orden</p>
-                <Link to={`/cotizaciones/${guia.cotizacion_id}`} className="text-sm text-[var(--text-brand)] underline">
+                <p className="label">{guia.internal_transfer_id ? 'Traslado interno' : 'Orden'}</p>
+                <Link to={guia.internal_transfer_id ? `/traslados-internos/${guia.internal_transfer_id}` : `/cotizaciones/${guia.cotizacion_id}`} className="text-sm text-[var(--text-brand)] underline">
                   {guia.internal_order_number}
                 </Link>
               </div>

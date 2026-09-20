@@ -13,6 +13,7 @@ import models
 FISCAL_FEATURE_CREDIT_NOTES = "credit_notes"
 FISCAL_FEATURE_DEBIT_NOTES = "debit_notes"
 FISCAL_FEATURE_GUIDES = "guides"
+FISCAL_FEATURE_INTERNAL_TRANSFERS = "internal_transfers"
 FISCAL_FEATURE_DAILY_SUMMARY = "daily_summary"
 FISCAL_FEATURE_VOIDING = "voiding"
 FISCAL_FEATURE_REVERSIONS = "reversions"
@@ -51,6 +52,13 @@ FISCAL_FEATURE_DEFINITIONS: tuple[FiscalFeatureDefinition, ...] = (
         category="guias",
         default_enabled=False,
         control="Feature flag por tenant + datos logisticos completos",
+    ),
+    FiscalFeatureDefinition(
+        key=FISCAL_FEATURE_INTERNAL_TRANSFERS,
+        label="Traslados internos",
+        category="guias",
+        default_enabled=False,
+        control="Feature flag por empresa + establecimientos SUNAT verificados",
     ),
     FiscalFeatureDefinition(
         key=FISCAL_FEATURE_DAILY_SUMMARY,

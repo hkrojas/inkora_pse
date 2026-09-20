@@ -11,7 +11,7 @@ if (-not (Test-Path -LiteralPath $PythonPath)) {
 }
 Push-Location (Join-Path $repoRoot 'backend')
 try {
-  & $PythonPath -m pytest -q --ignore=test_sale_dispatch_postgres.py --ignore=test_cotizaciones_postgres.py --ignore=test_inventory_recovery_postgres.py
+  & $PythonPath -m pytest -q --ignore=test_sale_dispatch_postgres.py --ignore=test_internal_transfer_postgres.py --ignore=test_internal_transfer_migration.py --ignore=test_cotizaciones_postgres.py --ignore=test_inventory_recovery_postgres.py
   if ($LASTEXITCODE -ne 0) { throw 'Regresión backend falló: publicación bloqueada.' }
   if ($RequirePostgres) {
     if (-not $env:INKORA_GRE_POSTGRES_URL -or -not $env:INKORA_QUOTE_POSTGRES_URL) { throw 'Se requieren dos bases PostgreSQL locales desechables, GRE y cotizaciones.' }
@@ -20,8 +20,8 @@ try {
     try {
       $env:INKORA_REQUIRE_POSTGRES_TESTS = '1'
       $env:INKORA_TEST_POSTGRES_URL = $env:INKORA_GRE_POSTGRES_URL
-      & $PythonPath -m pytest test_sale_dispatch_postgres.py -q
-      if ($LASTEXITCODE -ne 0) { throw 'Concurrencia GRE falló.' }
+      & $PythonPath -m pytest test_sale_dispatch_postgres.py test_internal_transfer_postgres.py test_internal_transfer_migration.py -q
+      if ($LASTEXITCODE -ne 0) { throw 'Concurrencia o migración GRE falló.' }
       $env:INKORA_TEST_POSTGRES_URL = $env:INKORA_QUOTE_POSTGRES_URL
       & $PythonPath -m pytest test_cotizaciones_postgres.py test_inventory_recovery_postgres.py -q
       if ($LASTEXITCODE -ne 0) { throw 'Concurrencia cotizaciones falló.' }

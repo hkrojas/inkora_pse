@@ -700,7 +700,11 @@ def build_guide_pdf(guide, tenant) -> bytes:
     recipient_name, recipient_document, recipient_address = _recipient(guide)
     gre_reference = _gre_reference(guide)
     modality = "Transporte público" if guide.modalidad_traslado == "01" else "Transporte privado"
-    motive = "Venta" if guide.motivo_traslado == "01" else (guide.descripcion_motivo or guide.motivo_traslado or "-")
+    motive_labels = {
+        "01": "Venta",
+        "04": "Traslado entre establecimientos de la misma empresa",
+    }
+    motive = motive_labels.get(guide.motivo_traslado) or guide.descripcion_motivo or guide.motivo_traslado or "-"
     issue_date = fiscal_identity.get("issue_date") or guide.fecha_emision
     issue_time = fiscal_identity.get("issue_time") or guide.fecha_emision
 
@@ -744,8 +748,11 @@ def build_guide_pdf(guide, tenant) -> bytes:
         _label_value("Razón social", recipient_name, styles),
         _label_value("Documento", recipient_document, styles),
         _label_value("Dirección", recipient_address, styles),
-        _label_value(_source_document_label(guide), _invoice_reference(guide), styles),
     ]
+    if guide.motivo_traslado == "04":
+        recipient_rows.append(_label_value("Transferencia interna", getattr(guide, "internal_order_number", None) or "-", styles))
+    else:
+        recipient_rows.append(_label_value(_source_document_label(guide), _invoice_reference(guide), styles))
     if gre_reference:
         recipient_rows.append(_label_value("GRE remitente relacionada", gre_reference, styles))
 
@@ -761,8 +768,16 @@ def build_guide_pdf(guide, tenant) -> bytes:
     if getattr(guide, "observaciones", None):
         transfer_rows.append(_label_value("Observaciones", guide.observaciones, styles))
     route_rows = [
-        _label_value("Punto de partida", f"{guide.partida_ubigeo or ''} {guide.partida_direccion or ''}".strip(), styles),
-        _label_value("Punto de llegada", f"{guide.llegada_ubigeo or ''} {guide.llegada_direccion or ''}".strip(), styles),
+        _label_value(
+            "Punto de partida",
+            f"{getattr(guide, 'partida_codigo_local', None) or ''} · {guide.partida_ubigeo or ''} {guide.partida_direccion or ''}".strip(" ·"),
+            styles,
+        ),
+        _label_value(
+            "Punto de llegada",
+            f"{getattr(guide, 'llegada_codigo_local', None) or ''} · {guide.llegada_ubigeo or ''} {guide.llegada_direccion or ''}".strip(" ·"),
+            styles,
+        ),
     ]
     if getattr(guide, "num_contenedor", None):
         route_rows.append(_label_value("Contenedor", guide.num_contenedor, styles))

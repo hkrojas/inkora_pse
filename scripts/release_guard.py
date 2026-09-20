@@ -52,9 +52,15 @@ FEATURES = {
     'frontend/src/pages/ConfiguracionPage.jsx': ['PaymentQrCropper', 'communicationTemplates'],
     'frontend/src/pages/SuperadminPage.jsx': ['viewingContingencyOf', 'accessRequests'],
     'frontend/src/pages/InventarioPage.jsx': ['submitBulk', 'openWarehouseEdit'],
+    'frontend/src/pages/InternalTransfersPage.jsx': ['Nuevo traslado', 'Establecimientos'],
+    'frontend/src/pages/InternalTransferNewPage.jsx': ['Nuevo traslado interno', 'manual_goods_confirmed'],
+    'frontend/src/pages/InternalTransferDetailPage.jsx': ['Preparar despacho', 'Registrar recepción', 'Crear borrador GRE'],
+    'frontend/src/pages/EstablishmentsPage.jsx': ['Código SUNAT', 'Verificar datos fiscales', 'Vincular almacén'],
     'frontend/src/App.jsx': ['GuiaNuevaPage', 'AccessRequestPage', 'LandingPage'],
     'frontend/src/lib/utils/documents.js': ['tenant?.fiscal_invoice_series', 'tenant?.fiscal_boleta_series'],
     'backend/services/document_actions_service.py': ['pending_confirmation', '1033'],
+    'backend/services/internal_transfer_service.py': ['create_dispatch', 'confirm_departure', 'receive_dispatch', 'motivo_traslado="04"'],
+    'backend/routers/internal_transfers.py': ['/traslados-internos', '/establecimientos'],
 }
 HASH_MODE_RAW_V1 = 'raw-v1'
 HASH_MODE_CANONICAL_TEXT_V1 = 'canonical-text-v1'

@@ -234,6 +234,7 @@ class GuiaRemisionItemResponse(BaseModel):
     codigo_producto: Optional[str] = None
     peso_item: Optional[Decimal] = None
     dispatch_line_id: Optional[int] = None
+    internal_transfer_dispatch_line_id: Optional[int] = None
     fiscal_document_item_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
 
@@ -270,6 +271,7 @@ class GuiaRemisionResponse(BaseModel):
     source_quote_id: Optional[int] = None
     fiscal_document_id: Optional[int] = None
     dispatch_id: Optional[int] = None
+    internal_transfer_dispatch_id: Optional[int] = None
     related_guide_id: Optional[int] = None
     external_gre_reference_id: Optional[int] = None
     goods_invoice_reference_id: Optional[int] = None
@@ -281,6 +283,12 @@ class GuiaRemisionResponse(BaseModel):
     peso_bruto_total: Decimal
     unidad_medida_peso: str
     modalidad_traslado: str
+    fecha_entrega_transportista: Optional[datetime] = None
+    indicador_m1_l: bool = False
+    registrar_vehiculo_transportista: bool = False
+    transportista_acuerdo_confirmado_at: Optional[datetime] = None
+    transportista_acuerdo_confirmado_by_user_id: Optional[int] = None
+    observaciones: Optional[str] = None
     sustento_peso: Optional[str] = None
     ind_transbordo: Optional[bool] = None
     num_contenedor: Optional[str] = None
@@ -288,6 +296,7 @@ class GuiaRemisionResponse(BaseModel):
     transportista_ruc: Optional[str] = None
     transportista_razon_social: Optional[str] = None
     transportista_nro_mtc: Optional[str] = None
+    conductor_tipo_doc: Optional[str] = None
     conductor_nro_doc: Optional[str] = None
     conductor_nombres: Optional[str] = None
     conductor_apellidos: Optional[str] = None
@@ -298,8 +307,10 @@ class GuiaRemisionResponse(BaseModel):
     vehiculo_nro_autorizacion: Optional[str] = None
     partida_ubigeo: Optional[str] = None
     partida_direccion: Optional[str] = None
+    partida_codigo_local: Optional[str] = None
     llegada_ubigeo: Optional[str] = None
     llegada_direccion: Optional[str] = None
+    llegada_codigo_local: Optional[str] = None
     cliente_nombre: Optional[str] = None
     cliente_documento: Optional[str] = None
     sunat_xml_url: Optional[str] = None
@@ -330,6 +341,7 @@ class GuiaRemisionListResponse(BaseModel):
     source_quote_id: Optional[int] = None
     fiscal_document_id: Optional[int] = None
     dispatch_id: Optional[int] = None
+    internal_transfer_dispatch_id: Optional[int] = None
     related_guide_id: Optional[int] = None
     external_gre_reference_id: Optional[int] = None
     goods_invoice_reference_id: Optional[int] = None
@@ -348,9 +360,6 @@ class GuiaRemisionListResponse(BaseModel):
     transportista_acuerdo_confirmado_at: Optional[datetime] = None
     transportista_acuerdo_confirmado_by_user_id: Optional[int] = None
     observaciones: Optional[str] = None
-    fecha_entrega_transportista: Optional[datetime] = None
-    indicador_m1_l: bool = False
-    registrar_vehiculo_transportista: bool = False
     transportista_ruc: Optional[str] = None
     transportista_razon_social: Optional[str] = None
     conductor_tipo_doc: Optional[str] = None
@@ -359,8 +368,10 @@ class GuiaRemisionListResponse(BaseModel):
     vehiculo_placa: Optional[str] = None
     partida_ubigeo: Optional[str] = None
     partida_direccion: Optional[str] = None
+    partida_codigo_local: Optional[str] = None
     llegada_ubigeo: Optional[str] = None
     llegada_direccion: Optional[str] = None
+    llegada_codigo_local: Optional[str] = None
     cliente_nombre: Optional[str] = None
     cliente_documento: Optional[str] = None
     sunat_hash: Optional[str] = None
@@ -395,6 +406,7 @@ class GuideEmissionJobSummary(BaseModel):
 
 
 class GuiaRemisionDetailResponse(GuiaRemisionResponse):
+    internal_transfer_id: Optional[int] = None
     dispatch_status: Optional[str] = None
     reservation_status: Optional[str] = None
     departure_confirmed_at: Optional[datetime] = None

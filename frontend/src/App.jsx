@@ -19,6 +19,10 @@ const GuiasPage = lazy(() => import('./pages/GuiasPage'));
 const GuiaDetalle = lazy(() => import('./pages/GuiaDetalle'));
 const GuiaNuevaPage = lazy(() => import('./pages/GuiaNuevaPage'));
 const GuiaTransportistaNuevaPage = lazy(() => import('./pages/GuiaTransportistaNuevaPage'));
+const InternalTransfersPage = lazy(() => import('./pages/InternalTransfersPage'));
+const InternalTransferNewPage = lazy(() => import('./pages/InternalTransferNewPage'));
+const InternalTransferDetailPage = lazy(() => import('./pages/InternalTransferDetailPage'));
+const EstablishmentsPage = lazy(() => import('./pages/EstablishmentsPage'));
 const ConfiguracionPage = lazy(() => import('./pages/ConfiguracionPage'));
 const PdfDesignerPage = lazy(() => import('./pages/PdfDesignerPage'));
 const SuperadminPage = lazy(() => import('./pages/SuperadminPage'));
@@ -69,6 +73,10 @@ export default function App() {
               <Route path="/guias/nueva-transportista" element={<LazyRoute><GuiaTransportistaNuevaPage /></LazyRoute>} />
               <Route path="/guias/:id/editar" element={<LazyRoute><GuiaNuevaPage /></LazyRoute>} />
               <Route path="/guias/:id" element={<LazyRoute><GuiaDetalle /></LazyRoute>} />
+              <Route path="/traslados-internos" element={<LazyRoute><InternalTransfersPage /></LazyRoute>} />
+              <Route path="/traslados-internos/nuevo" element={<LazyRoute><InternalTransferNewPage /></LazyRoute>} />
+              <Route path="/traslados-internos/:id" element={<LazyRoute><InternalTransferDetailPage /></LazyRoute>} />
+              <Route path="/inventario/establecimientos" element={<LazyRoute><EstablishmentsPage /></LazyRoute>} />
               <Route path="/configuracion" element={<LazyRoute><ConfiguracionPage /></LazyRoute>} />
               <Route path="/cambiar-password" element={<Navigate to="/configuracion?tab=seguridad" replace />} />
               <Route path="/diseno-pdf" element={<LazyRoute><PdfDesignerPage /></LazyRoute>} />

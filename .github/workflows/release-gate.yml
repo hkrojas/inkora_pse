@@ -60,6 +60,8 @@ jobs:
         run: >-
           python -m pytest -q
           --ignore=test_sale_dispatch_postgres.py
+          --ignore=test_internal_transfer_postgres.py
+          --ignore=test_internal_transfer_migration.py
           --ignore=test_cotizaciones_postgres.py
           --ignore=test_inventory_recovery_postgres.py
 

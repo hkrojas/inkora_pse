@@ -10,6 +10,7 @@ class WarehouseCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=120)
     location: Optional[str] = Field(default=None, max_length=500)
     is_default: bool = False
+    establishment_id: Optional[int] = None
 
     @field_validator("code")
     @classmethod
@@ -27,6 +28,7 @@ class WarehouseUpdate(BaseModel):
     name: str = Field(..., min_length=2, max_length=120)
     location: Optional[str] = Field(default=None, max_length=500)
     is_default: bool = False
+    establishment_id: Optional[int] = None
 
 
 class InventoryActivation(BaseModel):

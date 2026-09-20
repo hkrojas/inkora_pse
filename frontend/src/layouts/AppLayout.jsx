@@ -78,6 +78,8 @@ const ROUTE_META = {
   '/cotizaciones': { title: 'Cotizaciones', sub: 'Motor comercial' },
   '/cobranza': { title: 'Cobranza', sub: 'Seguimiento de pagos' },
   '/guias': { title: 'Guías de remisión', sub: 'Despacho fiscal' },
+  '/traslados-internos': { title: 'Traslados internos', sub: 'Entre establecimientos' },
+  '/inventario/establecimientos': { title: 'Establecimientos', sub: 'Ubicaciones declaradas' },
   '/facturas': { title: 'Facturas', sub: 'Comprobantes tipo 01' },
   '/comprobantes/nuevo': { title: 'Crear comprobante', sub: 'Emisión central' },
   '/boletas': { title: 'Boletas', sub: 'Comprobantes tipo 03' },
@@ -125,6 +127,12 @@ function buildRoute(path, params = {}) {
 }
 
 function getRouteMeta(pathname) {
+  if (pathname === '/traslados-internos/nuevo') {
+    return { title: 'Nuevo traslado interno', sub: 'Solicitud entre establecimientos' };
+  }
+  if (/^\/traslados-internos\/[^/]+$/.test(pathname)) {
+    return { title: 'Detalle del traslado', sub: 'Despachos, salida y recepción' };
+  }
   if (pathname === '/guias/nueva') {
     return { title: 'Nueva guía', sub: 'Remitente · despacho de venta' };
   }

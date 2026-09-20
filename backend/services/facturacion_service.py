@@ -1477,7 +1477,7 @@ def _resolve_guide_recipient(guia, user=None) -> dict:
     }
 
 
-def _build_company_payload_gre(user) -> dict:
+def _build_company_payload_gre(user, *, establishment_code: str | None = None, address_override: str | None = None, ubigeo_override: str | None = None) -> dict:
     """Company payload para GRE: incluye codLocal requerido por SUNAT Nueva GRE."""
     company_ruc = _get_company_ruc(user)
     company_name = _get_company_name(user)
@@ -1488,8 +1488,10 @@ def _build_company_payload_gre(user) -> dict:
     if not company_name:
         raise FacturacionException("Emisor sin razon social configurada.")
 
-    address = _build_address_payload(company_address)
-    address["codLocal"] = "0000"
+    address = _build_address_payload(address_override or company_address)
+    if ubigeo_override:
+        address["ubigueo"] = ubigeo_override
+    address["codLocal"] = establishment_code or "0000"
 
     return {
         "ruc": company_ruc,
@@ -1510,8 +1512,12 @@ def _base_payload_gre(guia, user):
     }
     if destinatario_ruc:
         llegada["ruc"] = destinatario_ruc
-    if guia.motivo_traslado == "04" or (destinatario_ruc and destinatario_ruc == company_ruc):
+    if getattr(guia, "llegada_codigo_local", None):
+        llegada["codLocal"] = guia.llegada_codigo_local
+    elif guia.motivo_traslado == "04" or (destinatario_ruc and destinatario_ruc == company_ruc):
         llegada["codLocal"] = "0000"
+    if guia.motivo_traslado == "04":
+        llegada["ruc"] = company_ruc
 
     tipo_documento = str(getattr(guia, "tipo_documento", None) or "09")
     if not getattr(guia, "serie", None):
@@ -1523,7 +1529,12 @@ def _base_payload_gre(guia, user):
         "correlativo": str(guia.correlativo).zfill(6),
         "fechaEmision": _gre_datetime(getattr(guia, "fecha_emision", None)),
         "observacion": guia.descripcion_motivo or "GUIA DE REMISION",
-        "company": _build_company_payload_gre(user),
+        "company": _build_company_payload_gre(
+            user,
+            establishment_code=getattr(guia, "partida_codigo_local", None),
+            address_override=guia.partida_direccion if guia.motivo_traslado == "04" else None,
+            ubigeo_override=guia.partida_ubigeo if guia.motivo_traslado == "04" else None,
+        ),
         "destinatario": _resolve_guide_recipient(guia, user),
         "envio": {
             "codTraslado": guia.motivo_traslado,
@@ -1536,7 +1547,7 @@ def _base_payload_gre(guia, user):
             "partida": {
                 "ubigueo": guia.partida_ubigeo or DEFAULT_UBIGEO,
                 "direccion": guia.partida_direccion,
-                "codLocal": "0000",
+                "codLocal": getattr(guia, "partida_codigo_local", None) or "0000",
                 "ruc": company_ruc,
             },
         },
