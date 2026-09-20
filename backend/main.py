@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,7 +51,25 @@ def create_app() -> FastAPI:
         )
         models.Base.metadata.create_all(bind=engine)
 
-    app = FastAPI(title="Sistema Cotizaciones SUNAT")
+    def _startup_db_ping() -> None:
+        """Falla rápido si la base de datos no es alcanzable al arrancar."""
+        try:
+            with SessionLocal() as db:
+                db.execute(text("SELECT 1"))
+            logger.info("db_ping_ok", extra={"event": "db_ping_ok"})
+        except Exception as exc:
+            logger.error(
+                "db_ping_failed",
+                extra={"event": "db_ping_failed", "error": str(exc)},
+            )
+            raise RuntimeError(f"No se pudo conectar a la base de datos: {exc}") from exc
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        _startup_db_ping()
+        yield
+
+    app = FastAPI(title="Sistema Cotizaciones SUNAT", lifespan=lifespan)
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -131,20 +150,6 @@ def create_app() -> FastAPI:
             "release": os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("INKORA_RELEASE_ID") or "local",
             "delivery": release_identity(),
         }
-
-    @app.on_event("startup")
-    def _startup_db_ping() -> None:
-        """Falla rápido si la base de datos no es alcanzable al arrancar."""
-        try:
-            with SessionLocal() as db:
-                db.execute(text("SELECT 1"))
-            logger.info("db_ping_ok", extra={"event": "db_ping_ok"})
-        except Exception as exc:
-            logger.error(
-                "db_ping_failed",
-                extra={"event": "db_ping_failed", "error": str(exc)},
-            )
-            raise RuntimeError(f"No se pudo conectar a la base de datos: {exc}") from exc
 
     return app
 
