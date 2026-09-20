@@ -4,6 +4,7 @@ import {
   Download, MapPin, PackageCheck, PackageMinus, Pencil, Plus, RefreshCw, RotateCcw,
   Search, Upload, Warehouse, X,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import Button from '../components/ui/Button';
 import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
@@ -17,6 +18,7 @@ import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { inventory } from '../services/inventory';
 import { productos } from '../services/productos';
+import { useFiscalFeatures } from '../hooks/useFiscalFeatures';
 
 const PAGE_SIZE = 15;
 const tabs = [
@@ -118,6 +120,8 @@ function MovementDate({ value }) {
 
 export default function InventarioPage() {
   const { user } = useAuth();
+  const { isEnabled: isFiscalFeatureEnabled } = useFiscalFeatures();
+  const internalTransfersEnabled = isFiscalFeatureEnabled('internal_transfers');
   const toast = useToast();
   const isAdmin = user?.is_superadmin || user?.rol === 'admin';
   const canOperate = isAdmin || user?.rol === 'operador';
@@ -358,6 +362,7 @@ export default function InventarioPage() {
         name: warehouseForm.name,
         location: warehouseForm.location || null,
         is_default: warehouseForm.is_default,
+        establishment_id: editingWarehouse.establishment_id || null,
       }),
       'Almacén actualizado.',
     );
@@ -608,7 +613,7 @@ export default function InventarioPage() {
 
       {tab === 'warehouses' && <section className="inventory-panel"><PanelHeading eyebrow="Ubicaciones" title="Almacenes activos" description="Organiza el stock por sede y prepara transferencias entre ubicaciones." meta={`${warehouses.length} almacenes`} /><div className="inventory-warehouse-grid">{warehouses.length === 0 ? <EmptyState icon={<Warehouse size={22} />} title="Configura el almacén principal" description="El inventario seguirá desactivado hasta completar este paso." actionLabel={isAdmin ? 'Activar inventario' : undefined} onAction={activate} /> : <>{warehouses.map((row) => <article key={row.id} className={`inventory-warehouse-card ${row.is_default ? 'is-primary' : ''}`}><div className="inventory-warehouse-card__top"><span className="inventory-warehouse-card__icon"><Warehouse size={18} /></span>{row.is_default ? <span className="inventory-warehouse-card__badge">Almacén principal</span> : <span className="inventory-warehouse-card__badge inventory-warehouse-card__badge--secondary">Sede adicional</span>}</div><div className="inventory-warehouse-card__identity"><span>{row.code}</span><h3>{row.name}</h3></div><div className="inventory-warehouse-card__location"><MapPin size={14} /><span>{row.location || 'Ubicación pendiente de registrar'}</span></div><div className="inventory-warehouse-card__foot"><span><span aria-hidden="true" />Disponible para movimientos</span>{isAdmin ? <button type="button" onClick={() => openWarehouseEdit(row)} className="inventory-warehouse-edit"><Pencil size={12} />Editar</button> : <small>ID {row.id}</small>}</div></article>)}{isAdmin && <button type="button" onClick={() => setModal('warehouse')} className="inventory-add-warehouse"><span className="inventory-add-warehouse__icon"><Plus size={18} /></span><strong>Añadir almacén</strong><small>Crea otra ubicación para distribuir existencias.</small></button>}</>}</div></section>}
 
-      {tab === 'transfers' && <section className="inventory-panel"><PanelHeading eyebrow="Movimiento interno" title="Transferencias entre almacenes" description="Mueve existencias sin perder la trazabilidad del almacén de origen y destino." /><div className="inventory-transfer-empty"><div className="inventory-transfer-route" aria-hidden="true"><span><Warehouse size={18} /></span><i /><span><ArrowLeftRight size={18} /></span><i /><span><Warehouse size={18} /></span></div><EmptyState icon={<ArrowLeftRight size={22} />} title="Mueve stock entre almacenes" description="Cada transferencia genera una salida y una entrada enlazadas en el kardex." actionLabel={canOperate && warehouses.length > 1 && stock.length ? 'Nueva transferencia' : undefined} onAction={() => setModal('transfer')} />{warehouses.length < 2 && <p>Necesitas al menos dos almacenes activos.</p>}</div></section>}
+      {tab === 'transfers' && <section className="inventory-panel"><PanelHeading eyebrow="Movimiento interno" title="Traslados entre establecimientos" description="Prepara despachos, emite la GRE cuando corresponde y registra la recepción física sin adelantar el ingreso al destino." /><div className="inventory-transfer-empty"><div className="inventory-transfer-route" aria-hidden="true"><span><Warehouse size={18} /></span><i /><span><ArrowLeftRight size={18} /></span><i /><span><Warehouse size={18} /></span></div>{internalTransfersEnabled ? <EmptyState icon={<ArrowLeftRight size={22} />} title="Gestiona el traslado completo" description="La salida y la recepción se registran en momentos distintos. Los movimientos históricos inmediatos se conservan solo para consulta." action={<div className="flex flex-wrap justify-center gap-2"><Link className="btn-primary" to="/traslados-internos/nuevo">Nuevo traslado</Link><Link className="btn-secondary" to="/traslados-internos">Ver traslados</Link><Link className="btn" to="/inventario/establecimientos">Establecimientos</Link></div>} /> : <EmptyState icon={<ArrowLeftRight size={22} />} title="Traslados internos no habilitados" description="Solicita al administrador habilitar esta función para tu empresa. El inventario actual no se modifica." />}</div></section>}
 
       {tab === 'returns' && <section className="inventory-panel"><PanelHeading eyebrow="Ingreso por devolución" title="Recepciones pendientes" description="Confirma únicamente las unidades que regresaron físicamente al almacén." meta={`${returns.length} pendientes`} /><div className="inventory-return-list">{returns.length === 0 ? <div className="p-4"><EmptyState icon={<RotateCcw size={22} />} title="No hay devoluciones pendientes" description="Las notas de crédito con devolución física aparecerán aquí después de ser aceptadas." /></div> : returns.map((row) => <article key={row.id} className="inventory-return-card"><div className="inventory-return-card__head"><div><p className="inventory-panel__eyebrow">Nota de crédito</p><h3>{row.credit_note_number || `Documento #${row.credit_note_id}`}</h3><span>{row.items.length} {row.items.length === 1 ? 'producto autorizado' : 'productos autorizados'}</span></div><div className="inventory-return-card__actions"><span className="inventory-return-status"><span aria-hidden="true" />{row.status === 'received' ? 'Recibida' : 'Pendiente de recepción'}</span>{canOperate && row.status !== 'received' && <Button onClick={() => openReceipt(row)}>Confirmar recepción</Button>}</div></div><div className="inventory-return-items">{row.items.map((item) => { const authorized = Number(item.authorized_quantity || 0); const received = Number(item.received_quantity || 0); const progress = authorized > 0 ? Math.min(100, (received / authorized) * 100) : 0; return <div key={item.id} className="inventory-return-item"><div><span className="inventory-return-item__icon" aria-hidden="true"><Boxes size={14} /></span><div><strong>{item.product_name || `Producto #${item.product_id}`}</strong><small>Recibido {qty(received)} de {qty(authorized)}</small></div></div><div className="inventory-return-progress" aria-label={`${Math.round(progress)}% recibido`}><span style={{ width: `${progress}%` }} /></div><b>{qty(Math.max(authorized - received, 0))} pendiente</b></div>; })}</div></article>)}</div></section>}
 
