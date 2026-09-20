@@ -102,3 +102,19 @@ jobs:
 
       - name: Calculate canonical release identity
         run: python scripts/release_guard.py check
+
+      - name: Build worker container from canonical projection
+        shell: bash
+        run: |
+          identity="$(python scripts/release_guard.py check)"
+          content_sha="$(python -c 'import json, sys; print(json.load(sys.stdin)["content_sha256"])' <<<"$identity")"
+          python scripts/release_guard.py package \
+            --approved-sha256 "$content_sha" \
+            --destination tmp/ci-release-package
+          python scripts/project_worker_release.py \
+            tmp/ci-release-package \
+            tmp/ci-worker-projection
+          docker build \
+            --file tmp/ci-worker-projection/Dockerfile \
+            --tag "inkora-worker-ci:${GITHUB_SHA}" \
+            tmp/ci-worker-projection/backend
