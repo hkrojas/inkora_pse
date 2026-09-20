@@ -15,7 +15,12 @@ from access_control import (
 import models
 import security
 from config import settings
-from database import apply_tenant_context, get_db, reset_tenant_context
+from database import (
+    apply_tenant_context,
+    current_tenant_id,
+    get_db,
+    reset_tenant_context,
+)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 EMISSION_ALLOWED_SUBSCRIPTION_STATUSES = {"active", "trial", "grace"}
@@ -43,15 +48,17 @@ def get_db_tenant(
     if not current_user.tenant_id:
         raise HTTPException(403, "El usuario autenticado no tiene tenant asociado.")
 
-    apply_tenant_context(db, current_user.tenant_id)
+    tenant_token = apply_tenant_context(db, current_user.tenant_id)
     try:
         yield db
     finally:
-        # No llamamos reset_tenant_context(token) porque el token fue creado
-        # en un contexto async distinto (anyio threadpool) y reset() lanzaría
-        # ValueError. Simplemente limpiamos el ContextVar directamente.
-        from database import current_tenant_id
-        current_tenant_id.set(None)
+        try:
+            reset_tenant_context(tenant_token)
+        except ValueError:
+            # FastAPI puede cerrar una dependencia sync desde otro contexto
+            # AnyIO. En ese caso el token no es reutilizable: se limpia solo
+            # el contexto actual para impedir que el tenant quede retenido.
+            current_tenant_id.set(None)
 
 
 def require_admin(current_user: models.User = Depends(get_current_user)):

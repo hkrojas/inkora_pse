@@ -13,6 +13,11 @@ from sqlalchemy import text
 import models
 from config import settings
 from database import SessionLocal, engine
+from http_security import (
+    CORS_ALLOWED_HEADERS,
+    CORS_EXPOSE_HEADERS,
+    apply_security_headers,
+)
 from logging_utils import configure_logging, get_logger
 from routers import (
     access_requests,
@@ -79,7 +84,8 @@ def create_app() -> FastAPI:
         allow_origins=settings.cors_allow_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
+        allow_headers=CORS_ALLOWED_HEADERS,
+        expose_headers=CORS_EXPOSE_HEADERS,
     )
 
     @app.middleware("http")
@@ -115,6 +121,10 @@ def create_app() -> FastAPI:
             },
         )
         response.headers.setdefault("X-Request-Id", request_id)
+        apply_security_headers(
+            response.headers,
+            include_hsts=settings.is_non_local,
+        )
         return response
 
     app.include_router(auth.router)
