@@ -15,7 +15,8 @@ from schemas.inventory import (
     AvailabilityLine, AvailabilityRequest, InventoryActivation,
     BulkInventoryAdjustmentCreate, BulkInventoryAdjustmentResponse,
     InventoryAdjustmentCreate, MovementPageResponse, MovementResponse, ProductInventoryConfig,
-    StockPageResponse, StockResponse, TransferCreate, WarehouseCreate, WarehouseResponse, WarehouseUpdate,
+    StockPageResponse, StockResponse, TransferCreate, WarehouseCreate, WarehouseFiscalVerify,
+    WarehouseResponse, WarehouseUpdate,
     ReturnReceiptCreate,
 )
 from services import inventory_service
@@ -48,6 +49,18 @@ def add_warehouse(data: WarehouseCreate, db: Session = Depends(get_db_tenant), u
 def edit_warehouse(warehouse_id: int, data: WarehouseUpdate,
                    db: Session = Depends(get_db_tenant), user: models.User = Depends(require_admin)):
     return inventory_service.update_warehouse(db, user.tenant_id, warehouse_id, data)
+
+
+@router.post("/almacenes/{warehouse_id}/verificar-datos-fiscales", response_model=WarehouseResponse)
+def verify_warehouse_fiscal_location(
+    warehouse_id: int,
+    data: WarehouseFiscalVerify,
+    db: Session = Depends(get_db_tenant),
+    user: models.User = Depends(require_admin),
+):
+    return inventory_service.verify_warehouse_fiscal_location(
+        db, user.tenant_id, warehouse_id, user.id, data,
+    )
 
 
 @router.post("/activar", response_model=WarehouseResponse)

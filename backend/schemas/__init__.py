@@ -170,6 +170,8 @@ from schemas.guias import (
 from schemas.inventory import (
     WarehouseCreate,
     WarehouseResponse,
+    WarehouseUpdate,
+    WarehouseFiscalVerify,
     InventoryActivation,
     StockResponse,
     InventoryAdjustmentCreate,

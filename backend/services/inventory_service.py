@@ -43,6 +43,99 @@ def get_warehouse(db: Session, tenant_id: int, warehouse_id: int, *, active=True
     return warehouse
 
 
+def _apply_warehouse_fiscal_location(db: Session, tenant_id: int, warehouse, data):
+    """Create or maintain the SUNAT location behind a warehouse.
+
+    The normalized establishment table remains the fiscal source of truth, but
+    callers manage it only through the warehouse contract.  Older clients that
+    do not send SUNAT fields keep the current fiscal link intact.
+    """
+    sunat_code = getattr(data, "sunat_code", None)
+    ubigeo = getattr(data, "ubigeo", None)
+    has_fiscal_payload = bool(sunat_code or ubigeo)
+    establishment = warehouse.establishment if warehouse.establishment_id else None
+    requested_establishment_id = getattr(data, "establishment_id", None)
+
+    if requested_establishment_id and requested_establishment_id != warehouse.establishment_id:
+        establishment = db.query(models.TenantEstablishment).filter(
+            models.TenantEstablishment.id == requested_establishment_id,
+            models.TenantEstablishment.tenant_id == tenant_id,
+            models.TenantEstablishment.is_active.is_(True),
+        ).first()
+        if not establishment:
+            raise HTTPException(404, "Establecimiento no encontrado para la empresa autenticada.")
+        warehouse.establishment_id = establishment.id
+
+    if not has_fiscal_payload and not establishment:
+        return None
+
+    address = (getattr(data, "location", None) or "").strip()
+    if establishment is not None and not has_fiscal_payload:
+        establishment.name = warehouse.name
+        if address and establishment.address != address:
+            establishment.address = address
+            establishment.verified_at = None
+            establishment.verified_by_user_id = None
+            establishment.verification_note = None
+        return establishment
+
+    if not address:
+        raise HTTPException(422, "Registra la dirección completa del almacén.")
+
+    if establishment is None:
+        conflict = db.query(models.TenantEstablishment.id).filter(
+            models.TenantEstablishment.tenant_id == tenant_id,
+            models.TenantEstablishment.sunat_code == sunat_code,
+        ).first()
+        if conflict:
+            raise HTTPException(409, "El código SUNAT ya pertenece a otro almacén.")
+        is_main = bool(getattr(data, "is_sunat_main", False))
+        if is_main:
+            db.query(models.TenantEstablishment).filter(
+                models.TenantEstablishment.tenant_id == tenant_id,
+            ).update({models.TenantEstablishment.is_main: False}, synchronize_session=False)
+        establishment = models.TenantEstablishment(
+            tenant_id=tenant_id,
+            sunat_code=sunat_code,
+            name=warehouse.name,
+            ubigeo=ubigeo,
+            address=address,
+            is_main=is_main,
+            is_active=True,
+        )
+        db.add(establishment)
+        db.flush()
+        warehouse.establishment_id = establishment.id
+        return establishment
+
+    identity_changed = establishment.address != address
+    establishment.name = warehouse.name
+    establishment.address = address
+    if has_fiscal_payload:
+        conflict = db.query(models.TenantEstablishment.id).filter(
+            models.TenantEstablishment.tenant_id == tenant_id,
+            models.TenantEstablishment.sunat_code == sunat_code,
+            models.TenantEstablishment.id != establishment.id,
+        ).first()
+        if conflict:
+            raise HTTPException(409, "El código SUNAT ya pertenece a otro almacén.")
+        identity_changed = identity_changed or establishment.sunat_code != sunat_code or establishment.ubigeo != ubigeo
+        establishment.sunat_code = sunat_code
+        establishment.ubigeo = ubigeo
+        is_main = bool(getattr(data, "is_sunat_main", False))
+        if is_main:
+            db.query(models.TenantEstablishment).filter(
+                models.TenantEstablishment.tenant_id == tenant_id,
+                models.TenantEstablishment.id != establishment.id,
+            ).update({models.TenantEstablishment.is_main: False}, synchronize_session=False)
+        establishment.is_main = is_main
+    if identity_changed:
+        establishment.verified_at = None
+        establishment.verified_by_user_id = None
+        establishment.verification_note = None
+    return establishment
+
+
 def create_warehouse(db: Session, tenant_id: int, data):
     tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).with_for_update().first()
     if not tenant:
@@ -53,23 +146,19 @@ def create_warehouse(db: Session, tenant_id: int, data):
         db.query(models.Warehouse).filter(models.Warehouse.tenant_id == tenant_id).update(
             {models.Warehouse.is_default: False}, synchronize_session=False
         )
-    establishment_id = getattr(data, "establishment_id", None)
-    if establishment_id is not None:
-        establishment = db.query(models.TenantEstablishment.id).filter(
-            models.TenantEstablishment.id == establishment_id,
-            models.TenantEstablishment.tenant_id == tenant_id,
-            models.TenantEstablishment.is_active.is_(True),
-        ).first()
-        if not establishment:
-            raise HTTPException(404, "Establecimiento no encontrado para la empresa autenticada.")
     warehouse = models.Warehouse(
-        tenant_id=tenant_id, code=data.code, name=data.name,
-        location=data.location, is_default=make_default,
-        establishment_id=establishment_id,
+        tenant_id=tenant_id, code=data.code, name=data.name.strip(),
+        location=data.location.strip() if data.location and data.location.strip() else None,
+        is_default=make_default,
     )
     db.add(warehouse)
     try:
+        db.flush()
+        _apply_warehouse_fiscal_location(db, tenant_id, warehouse, data)
         db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception:
         db.rollback()
         raise HTTPException(409, "Ya existe un almacen con ese codigo.")
@@ -656,15 +745,6 @@ def receive_return(db: Session, tenant_id: int, return_id: int, data, user_id: i
 def update_warehouse(db: Session, tenant_id: int, warehouse_id: int, data):
     db.query(models.Tenant).filter(models.Tenant.id == tenant_id).with_for_update().one()
     warehouse = get_warehouse(db, tenant_id, warehouse_id)
-    establishment_id = getattr(data, "establishment_id", None)
-    if establishment_id is not None:
-        establishment = db.query(models.TenantEstablishment.id).filter(
-            models.TenantEstablishment.id == establishment_id,
-            models.TenantEstablishment.tenant_id == tenant_id,
-            models.TenantEstablishment.is_active.is_(True),
-        ).first()
-        if not establishment:
-            raise HTTPException(404, "Establecimiento no encontrado para la empresa autenticada.")
     warehouse.name = data.name.strip()
     warehouse.location = data.location.strip() if data.location and data.location.strip() else None
     if data.is_default and not warehouse.is_default:
@@ -673,8 +753,34 @@ def update_warehouse(db: Session, tenant_id: int, warehouse_id: int, data):
             models.Warehouse.id != warehouse.id,
         ).update({models.Warehouse.is_default: False}, synchronize_session=False)
         warehouse.is_default = True
-    if hasattr(data, "establishment_id"):
-        warehouse.establishment_id = establishment_id
+    try:
+        _apply_warehouse_fiscal_location(db, tenant_id, warehouse, data)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(409, "No se pudo actualizar el almacén con esos datos.") from exc
+    db.refresh(warehouse)
+    return warehouse
+
+
+def verify_warehouse_fiscal_location(db: Session, tenant_id: int, warehouse_id: int, user_id: int, data):
+    db.query(models.Tenant).filter(models.Tenant.id == tenant_id).with_for_update().one()
+    warehouse = db.query(models.Warehouse).filter(
+        models.Warehouse.id == warehouse_id,
+        models.Warehouse.tenant_id == tenant_id,
+        models.Warehouse.is_active.is_(True),
+    ).with_for_update().first()
+    if not warehouse:
+        raise HTTPException(404, "Almacén no encontrado para la empresa autenticada.")
+    establishment = warehouse.establishment
+    if not establishment or not all((establishment.sunat_code, establishment.ubigeo, establishment.address)):
+        raise HTTPException(409, "Completa los datos SUNAT del almacén antes de verificarlos.")
+    establishment.verified_at = datetime.now()
+    establishment.verified_by_user_id = user_id
+    establishment.verification_note = data.note.strip()
     db.commit()
     db.refresh(warehouse)
     return warehouse
