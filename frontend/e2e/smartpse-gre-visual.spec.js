@@ -179,14 +179,15 @@ test.describe('Smart PSE GRE QA visual', () => {
 
     try {
       await page.goto('/superadmin');
-      await expect(page.getByRole('heading', { level: 2, name: /^superadmin operativo$/i })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 2, name: /^Panel de empresas$/i })).toBeVisible();
 
-      const firstGreButton = page.getByRole('button', { name: /^GRE$/ }).first();
-      await expect(firstGreButton).toBeVisible();
-      await firstGreButton.click();
+      await page.getByRole('button', { name: /Más opciones para/i }).click();
+      const credentialsButton = page.getByRole('button', { name: /^Credenciales de guías$/i });
+      await expect(credentialsButton).toBeVisible();
+      await credentialsButton.click();
 
-      await expect(page.getByRole('heading', { name: /^Smart PSE GRE$/i })).toBeVisible();
-      await expect(page.getByText(/credenciales SUNAT para guias/i)).toBeVisible();
+      await expect(page.getByRole('heading', { name: /^Credenciales de guías$/i })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /^Conexión para emitir guías$/i })).toBeVisible();
       await expect(page.getByText(/los campos no se precargan/i)).toBeVisible();
 
       await expect(page.getByLabel(/usuario sol corto/i)).toHaveValue('');
@@ -278,9 +279,10 @@ test.describe('Smart PSE GRE QA visual', () => {
     const superadmin = await createVisualContext(browser, baseURL, 'superadmin', { viewport });
     try {
       await superadmin.page.goto('/superadmin');
-      await expect(superadmin.page.getByRole('heading', { level: 2, name: /^superadmin operativo$/i })).toBeVisible();
-      await superadmin.page.getByRole('button', { name: /^GRE$/ }).first().click();
-      await expect(superadmin.page.getByRole('heading', { name: /^Smart PSE GRE$/i })).toBeVisible();
+      await expect(superadmin.page.getByRole('heading', { level: 2, name: /^Panel de empresas$/i })).toBeVisible();
+      await superadmin.page.getByRole('button', { name: /Más opciones para/i }).click();
+      await superadmin.page.getByRole('button', { name: /^Credenciales de guías$/i }).click();
+      await expect(superadmin.page.getByRole('heading', { name: /^Credenciales de guías$/i })).toBeVisible();
       await expectPageWithoutHorizontalOverflow(superadmin.page);
     } finally {
       await superadmin.context.close();

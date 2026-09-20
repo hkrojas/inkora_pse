@@ -189,7 +189,7 @@ def test_emitir_guia_con_ticket_sin_cdr_permanece_pendiente(db_session):
 
 def test_emitir_guia_smartpse_acepta_cdr_y_persiste_evidencia(db_session):
     tenant, user, guia = _make_gre_user_and_guia(db_session, "GRC03CDR")
-    cdr_xml = """<ApplicationResponse xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"><cac:DocumentResponse><cac:Response><cbc:ResponseCode>0</cbc:ResponseCode><cbc:Description>Aceptada</cbc:Description></cac:Response><cac:DocumentReference><cbc:ID>T001-1</cbc:ID></cac:DocumentReference></cac:DocumentResponse></ApplicationResponse>"""
+    cdr_xml = f"""<ApplicationResponse xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"><cac:DocumentResponse><cac:Response><cbc:ResponseCode>0</cbc:ResponseCode><cbc:Description>Aceptada</cbc:Description></cac:Response><cac:DocumentReference><cbc:ID>{guia.serie}-{guia.correlativo}</cbc:ID></cac:DocumentReference></cac:DocumentResponse></ApplicationResponse>"""
     fake_client = MagicMock()
     fake_client.process_xml.return_value = {
         "estado": 200,

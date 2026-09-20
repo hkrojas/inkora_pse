@@ -545,12 +545,26 @@ def update_tenant_saas_endpoint(
     if not current_tenant:
         raise HTTPException(status_code=404, detail="Tenant no encontrado.")
 
+    protected_series_fields = {
+        "fiscal_invoice_series",
+        "fiscal_invoice_series_floor",
+        "fiscal_boleta_series",
+        "fiscal_boleta_series_floor",
+    }
+    if protected_series_fields.intersection(updates.model_fields_set):
+        raise HTTPException(
+            status_code=409,
+            detail="Usa la opción Series y numeración para modificar estos datos fiscales.",
+        )
+
     target_ruc = updates.business_ruc or current_tenant.business_ruc
     target_url = (
         updates.apisperu_url.strip()
         if updates.apisperu_url is not None and updates.apisperu_url.strip()
         else current_tenant.apisperu_url
     )
+
+
     token_was_provided = updates.apisperu_token is not None
     target_token = (
         updates.apisperu_token.strip()
@@ -589,6 +603,80 @@ def update_tenant_saas_endpoint(
         details=f"fields={','.join(sorted(updates.model_dump(exclude_unset=True).keys()))}",
     )
     return updated_tenant
+
+
+@router.put(
+    "/superadmin/tenants/{tenant_id}/fiscal-series",
+    response_model=schemas.SuperadminTenantResponse,
+    summary="Configurar series y numeración fiscal de una empresa",
+)
+def update_tenant_fiscal_series_endpoint(
+    tenant_id: int,
+    updates: schemas.TenantFiscalSeriesUpdate,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    tenant = (
+        db.query(models.Tenant)
+        .filter(models.Tenant.id == tenant_id)
+        .with_for_update()
+        .first()
+    )
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada.")
+
+    values = updates.model_dump(exclude={"confirmed"})
+    pairs = (
+        ("fiscal_invoice_series", "fiscal_invoice_series_floor"),
+        ("fiscal_boleta_series", "fiscal_boleta_series_floor"),
+        ("fiscal_gre_remitente_series", "fiscal_gre_remitente_series_floor"),
+        ("fiscal_gre_transportista_series", "fiscal_gre_transportista_series_floor"),
+    )
+    for series_field, floor_field in pairs:
+        current_series = getattr(tenant, series_field, None)
+        current_floor = int(getattr(tenant, floor_field, 0) or 0)
+        if current_series == values[series_field] and values[floor_field] < current_floor:
+            raise HTTPException(
+                status_code=409,
+                detail="El último número confirmado no puede disminuir para una serie vigente.",
+            )
+
+    guide_changes = []
+    for document_type, series_field in (
+        ("09", "fiscal_gre_remitente_series"),
+        ("31", "fiscal_gre_transportista_series"),
+    ):
+        if getattr(tenant, series_field, None) != values[series_field]:
+            guide_changes.append(document_type)
+    if guide_changes:
+        pending_guide = db.query(models.GuiaRemision.id).filter(
+            models.GuiaRemision.tenant_id == tenant_id,
+            models.GuiaRemision.tipo_documento.in_(guide_changes),
+            models.GuiaRemision.emission_environment == "production",
+            models.GuiaRemision.estado.notin_(("emitida", "rechazada", "cancelled")),
+        ).first()
+        if pending_guide:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Hay una guía productiva pendiente. Concíliala o cancela su borrador "
+                    "antes de cambiar la serie."
+                ),
+            )
+
+    for field_name, value in values.items():
+        setattr(tenant, field_name, value)
+    db.commit()
+    db.refresh(tenant)
+    _log_superadmin_action(
+        db,
+        admin,
+        "superadmin.tenant.fiscal_series_updated",
+        entity_type="tenant",
+        entity_id=tenant_id,
+        details=f"fields={','.join(sorted(values.keys()))}",
+    )
+    return tenant
 
 
 def _build_fiscal_contingency_response(

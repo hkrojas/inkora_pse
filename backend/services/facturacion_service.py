@@ -1514,10 +1514,12 @@ def _base_payload_gre(guia, user):
         llegada["codLocal"] = "0000"
 
     tipo_documento = str(getattr(guia, "tipo_documento", None) or "09")
+    if not getattr(guia, "serie", None):
+        raise ValueError("La guía no tiene una serie fiscal asignada.")
     payload = {
         "version": 2022,
         "tipoDoc": tipo_documento,
-        "serie": guia.serie or ("V001" if tipo_documento == "31" else "T001"),
+        "serie": guia.serie,
         "correlativo": str(guia.correlativo).zfill(6),
         "fechaEmision": _gre_datetime(getattr(guia, "fecha_emision", None)),
         "observacion": guia.descripcion_motivo or "GUIA DE REMISION",

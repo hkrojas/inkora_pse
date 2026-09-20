@@ -4,6 +4,7 @@ import {
   Building2,
   CheckCircle2,
   Gauge,
+  Hash,
   KeyRound,
   PencilLine,
   Plus,
@@ -28,6 +29,8 @@ import EmptyState from '../components/ui/EmptyState';
 import { useToast } from '../components/ui/Toast';
 import CustomSelect from '../components/ui/CustomSelect';
 import Pagination from '../components/ui/Pagination';
+import ActionMenu from '../components/ui/ActionMenu';
+import TenantFiscalSeriesDrawer from '../components/superadmin/TenantFiscalSeriesDrawer';
 import { useAuth } from '../context/AuthContext';
 import { getSmartPseGreStatusMeta } from '../lib/utils/fiscalStatus';
 import { getPageCount } from '../lib/utils/queryParams';
@@ -42,11 +45,11 @@ const DEFAULT_TENANT_METRICS = {
 };
 const TENANT_GRE_FILTER_OPTIONS = [
   { value: 'all', label: 'Todos' },
-  { value: 'configured', label: 'GRE configurado' },
-  { value: 'missing', label: 'GRE pendiente' },
-  { value: 'ok', label: 'GRE ok' },
-  { value: 'invalid', label: 'GRE invalido' },
-  { value: 'unchecked', label: 'GRE sin verificar' },
+  { value: 'configured', label: 'Guías configuradas' },
+  { value: 'missing', label: 'Guías pendientes' },
+  { value: 'ok', label: 'Credenciales válidas' },
+  { value: 'invalid', label: 'Credenciales con error' },
+  { value: 'unchecked', label: 'Sin verificar' },
 ];
 const TENANT_ACTIVE_FILTER_OPTIONS = [
   { value: 'all', label: 'Todos' },
@@ -69,7 +72,7 @@ function StatusDot({ ok }) {
   return (
     <span className={`badge status-dot ${ok ? 'badge--success' : 'badge--neutral'}`}>
       <span className={ok ? 'status-dot-indicator' : 'status-dot-indicator text-[var(--text-tertiary)]'} />
-      {ok ? 'configurado' : 'no configurado'}
+      {ok ? 'Configurado' : 'No configurado'}
     </span>
   );
 }
@@ -81,33 +84,46 @@ function getSmartPseCpeStatusMeta(tenant) {
   if (!hasCredentials) {
     return {
       badgeVariant: 'default',
-      label: 'pendiente',
-      description: 'Pendiente de aprovisionamiento CPE en Smart PSE.',
+      label: 'Pendiente',
+      description: 'Falta completar la conexión de facturación electrónica.',
       canCheck: false,
     };
   }
   if (status === 'ok') {
     return {
       badgeVariant: 'success',
-      label: 'ok',
-      description: 'Credenciales CPE activas para emitir por Smart PSE.',
+      label: 'Operativo',
+      description: 'La facturación electrónica está conectada.',
       canCheck: true,
     };
   }
   if (status === 'invalid') {
     return {
       badgeVariant: 'danger',
-      label: 'invalido',
-      description: 'Credenciales CPE rechazadas por Smart PSE.',
+      label: 'Revisar',
+      description: 'Smart PSE rechazó las credenciales de facturación.',
       canCheck: true,
     };
   }
   return {
     badgeVariant: 'default',
-    label: 'sin verificar',
-    description: 'Credenciales CPE guardadas, pendientes de verificacion.',
+    label: 'Sin verificar',
+    description: 'Las credenciales están guardadas y todavía no se han comprobado.',
     canCheck: true,
   };
+}
+
+function getTenantFiscalOverviewMeta(cpeMeta, greMeta) {
+  if (cpeMeta.label === 'Revisar' || greMeta.label === 'Revisar') {
+    return { label: 'Requiere revisión', badgeVariant: 'danger' };
+  }
+  if (cpeMeta.label === 'Operativo' && greMeta.label === 'Operativo') {
+    return { label: 'Todo listo', badgeVariant: 'success' };
+  }
+  if (cpeMeta.label === 'Sin verificar' || greMeta.label === 'Sin verificar') {
+    return { label: 'Falta verificar', badgeVariant: 'warning' };
+  }
+  return { label: 'Por completar', badgeVariant: 'default' };
 }
 
 function ValidationNotice({ result }) {
@@ -558,7 +574,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
 
   const handleDelete = async () => {
     const confirmed = window.confirm(
-      `Se eliminara el tenant "${tenant.business_name}". Esta accion no se puede deshacer.`,
+      `Se eliminará la empresa "${tenant.business_name}". Esta acción no se puede deshacer.`,
     );
 
     if (!confirmed) return;
@@ -566,7 +582,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
     setDeleting(true);
     try {
       await svc.deleteTenant(tenant.id);
-      toast('Tenant eliminado');
+      toast('Empresa eliminada');
       onDeleted(tenant.id);
       onClose();
     } catch (error) {
@@ -580,7 +596,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
     <Drawer
       open={Boolean(tenant)}
       onClose={onClose}
-      title="Editar tenant"
+      title="Editar empresa"
       subtitle={tenant.business_name}
       icon={<PencilLine size={18} />}
     >
@@ -588,8 +604,8 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
         <section className="card-raw" data-label="empresa">
           <SectionHeader
             kicker="Identidad"
-            title="Base fiscal del tenant"
-            copy="Manten la razon social, RUC y direccion alineados con la identidad tributaria activa."
+            title="Datos fiscales de la empresa"
+            copy="Mantén la razón social, el RUC y la dirección iguales a los registrados ante SUNAT."
           />
 
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
@@ -607,7 +623,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               />
               <span className="block">
                 <span className="label mb-1">Estado</span>
-                <span className="text-sm text-[var(--text-primary)]">Tenant activo</span>
+                <span className="text-sm text-[var(--text-primary)]">Empresa activa</span>
               </span>
             </label>
           </div>
@@ -643,9 +659,9 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
 
         <section className="ink-card p-6">
           <SectionHeader
-            kicker="Smart PSE CPE"
-            title="Empresa Smart PSE"
-            copy="Gestiona estado remoto, ambiente y vigencia CPE. Las credenciales no se muestran ni se editan desde Inkora."
+            kicker="Facturación electrónica"
+            title="Conexión con Smart PSE"
+            copy="Revisa el entorno, la vigencia y el estado de la conexión. Inkora nunca muestra las claves guardadas."
           />
 
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
@@ -653,10 +669,10 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               <p className="text-sm font-semibold text-[var(--text-primary)]">Estado actual</p>
               <p className="mt-1 text-sm text-[var(--text-secondary)]">{smartPseMeta.description}</p>
               <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-                Ambiente: {tenant.smartpse_environment || 'demo'} - Ultima verificacion: {formatDateTime(tenant.smartpse_checked_at)}
+                Entorno: {tenant.smartpse_environment === 'produccion' ? 'Producción' : 'Demo'} · Última verificación: {formatDateTime(tenant.smartpse_checked_at)}
               </p>
               <p className="mt-1 text-xs text-[var(--text-tertiary)]">
-                Empresa: {tenant.smartpse_company_id || smartPseCompany?.id || 'Sin asociar'} - Sync: {formatDateTime(tenant.smartpse_remote_synced_at || smartPseCompany?.synced_at)}
+                Identificador: {tenant.smartpse_company_id || smartPseCompany?.id || 'Sin asociar'} · Última actualización: {formatDateTime(tenant.smartpse_remote_synced_at || smartPseCompany?.synced_at)}
               </p>
             </div>
 
@@ -664,14 +680,14 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               <StatusDot ok={tenant.has_smartpse_credentials} />
               <Badge variant={smartPseMeta.badgeVariant}>{smartPseMeta.label}</Badge>
               <Badge variant={smartPseRemoteActive ? 'success' : 'warning'}>
-                {smartPseRemoteActive ? 'Activo remoto' : 'Inactivo remoto'}
+                {smartPseRemoteActive ? 'Activa en Smart PSE' : 'Inactiva en Smart PSE'}
               </Badge>
             </div>
           </div>
 
           <div className="mt-4 grid gap-3 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-4 md:grid-cols-4">
             <div>
-              <span className="label">Estado remoto</span>
+              <span className="label">Estado en Smart PSE</span>
               <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
                 {tenant.smartpse_remote_estado || smartPseCompany?.estado || 'Sin sincronizar'}
               </p>
@@ -679,7 +695,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
             <div>
               <span className="label">Ambiente</span>
               <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
-                {tenant.smartpse_environment === 'produccion' ? 'Produccion preparada' : 'Demo'}
+                {tenant.smartpse_environment === 'produccion' ? 'Producción' : 'Demo'}
               </p>
             </div>
             <div>
@@ -700,7 +716,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <div>
-              <label className="label">Razon social remota</label>
+              <label className="label">Razón social en Smart PSE</label>
               <input
                 className="input"
                 value={smartPseForm.razon_social}
@@ -708,13 +724,13 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               />
             </div>
             <div>
-              <label className="label">Ambiente CPE</label>
+              <label className="label">Entorno de facturación</label>
               <CustomSelect
                 value={smartPseForm.environment}
                 onChange={setSmartPseField('environment')}
                 options={[
                   { value: 'demo', label: 'Demo' },
-                  { value: 'produccion', label: 'Produccion preparada' },
+                  { value: 'produccion', label: 'Producción' },
                 ]}
               />
             </div>
@@ -745,7 +761,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               disabled={Boolean(smartPseBusy)}
               onClick={handleViewSmartPseCompany}
             >
-              {smartPseBusy === 'view' ? 'Consultando...' : 'Ver empresa Smart PSE'}
+              {smartPseBusy === 'view' ? 'Consultando…' : 'Consultar en Smart PSE'}
             </button>
             <button
               type="button"
@@ -753,7 +769,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               disabled={Boolean(smartPseBusy)}
               onClick={handleSyncSmartPseCompany}
             >
-              {smartPseBusy === 'sync' ? 'Sincronizando...' : 'Sincronizar'}
+              {smartPseBusy === 'sync' ? 'Actualizando…' : 'Actualizar estado'}
             </button>
             <button
               type="button"
@@ -761,7 +777,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               disabled={Boolean(smartPseBusy) || !tenant.smartpse_company_id}
               onClick={handleUpdateSmartPseCompany}
             >
-              {smartPseBusy === 'update' ? 'Guardando...' : 'Actualizar remoto'}
+              {smartPseBusy === 'update' ? 'Guardando…' : 'Guardar en Smart PSE'}
             </button>
             <button
               type="button"
@@ -772,8 +788,8 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               {smartPseBusy === 'activation'
                 ? 'Cambiando...'
                 : smartPseRemoteActive
-                  ? 'Desactivar remoto'
-                  : 'Activar remoto'}
+                  ? 'Desactivar en Smart PSE'
+                  : 'Activar en Smart PSE'}
             </button>
             <button
               type="button"
@@ -781,7 +797,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               disabled={Boolean(smartPseBusy)}
               onClick={() => setShowSmartPseCredentials((value) => !value)}
             >
-              Rotar credenciales CPE
+              Cambiar credenciales
             </button>
             <button
               type="button"
@@ -789,7 +805,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               disabled={smartPseAuditLoading}
               onClick={handleLoadSmartPseAudit}
             >
-              {smartPseAuditLoading ? 'Cargando auditoria...' : 'Auditoria Smart PSE'}
+              {smartPseAuditLoading ? 'Cargando historial…' : 'Ver historial'}
             </button>
             <button
               type="button"
@@ -797,21 +813,21 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               disabled={Boolean(smartPseBusy) || !tenant.smartpse_company_id}
               onClick={() => setShowSmartPseDelete((value) => !value)}
             >
-              Eliminar Smart PSE
+              Desvincular de Smart PSE
             </button>
           </div>
 
           {showSmartPseCredentials ? (
             <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-4">
               <div className="mb-3">
-                <p className="text-sm font-semibold text-[var(--text-primary)]">Rotar credenciales CPE</p>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Cambiar credenciales</p>
                 <p className="text-xs text-[var(--text-secondary)]">
-                  Se guardan como datos write-only. El panel no vuelve a mostrar valores anteriores.
+                  Por seguridad, después de guardarlas el panel no volverá a mostrar los valores.
                 </p>
               </div>
               <div className="grid gap-4 md:grid-cols-3">
                 <div>
-                  <label className="label" htmlFor="smartpse-company-id">Company id</label>
+                  <label className="label" htmlFor="smartpse-company-id">Identificador de empresa</label>
                   <input
                     id="smartpse-company-id"
                     className="input"
@@ -820,7 +836,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
                   />
                 </div>
                 <div>
-                  <label className="label" htmlFor="smartpse-secondary-user">Usuario secundaria nuevo</label>
+                  <label className="label" htmlFor="smartpse-secondary-user">Nuevo usuario secundario</label>
                   <input
                     id="smartpse-secondary-user"
                     className="input"
@@ -830,7 +846,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
                   />
                 </div>
                 <div>
-                  <label className="label" htmlFor="smartpse-access-key">Token CPE nuevo</label>
+                  <label className="label" htmlFor="smartpse-access-key">Nueva clave de acceso</label>
                   <input
                     id="smartpse-access-key"
                     type="password"
@@ -848,7 +864,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
                   disabled={smartPseBusy === 'credentials'}
                   onClick={handleUpdateSmartPseCredentials}
                 >
-                  {smartPseBusy === 'credentials' ? 'Guardando...' : 'Guardar credenciales CPE'}
+                  {smartPseBusy === 'credentials' ? 'Guardando…' : 'Guardar credenciales'}
                 </button>
               </div>
             </div>
@@ -858,8 +874,8 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
             <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-[var(--text-primary)]">Auditoria Smart PSE</p>
-                  <p className="text-xs text-[var(--text-secondary)]">Ultimas acciones CPE registradas para este tenant.</p>
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">Historial de Smart PSE</p>
+                  <p className="text-xs text-[var(--text-secondary)]">Últimas acciones registradas para esta empresa.</p>
                 </div>
                 <button type="button" className="btn-secondary" onClick={handleLoadSmartPseAudit}>
                   Actualizar
@@ -885,13 +901,13 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
 
           {showSmartPseDelete ? (
             <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--color-error)] bg-[var(--bg-surface-low)] p-4">
-              <p className="text-sm font-semibold text-[var(--color-error)]">Confirmar eliminacion Smart PSE</p>
+              <p className="text-sm font-semibold text-[var(--color-error)]">Confirmar desvinculación</p>
               <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                Esta accion elimina la empresa remota y borra la asociacion CPE local. No borra documentos ni tenants.
+                Esta acción elimina la empresa en Smart PSE y borra su vínculo local. No borra documentos ni la empresa en Inkora.
               </p>
               <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
                 <div>
-                  <label className="label" htmlFor="smartpse-delete-confirm">Confirmar company id</label>
+                  <label className="label" htmlFor="smartpse-delete-confirm">Confirma el identificador</label>
                   <input
                     id="smartpse-delete-confirm"
                     className="input"
@@ -907,7 +923,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
                     disabled={smartPseBusy === 'delete-company'}
                     onClick={handleDeleteSmartPseCompany}
                   >
-                    {smartPseBusy === 'delete-company' ? 'Eliminando...' : 'Eliminar empresa remota'}
+                    {smartPseBusy === 'delete-company' ? 'Desvinculando…' : 'Desvincular empresa'}
                   </button>
                 </div>
               </div>
@@ -920,10 +936,10 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
             type="button"
             onClick={handleDelete}
             disabled={saving || deleting}
-            className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--color-error)] transition-opacity hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn-secondary inline-flex items-center gap-2 text-[var(--color-error)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Trash2 className="h-4 w-4" />
-            {deleting ? 'Eliminando...' : 'Eliminar tenant'}
+            {deleting ? 'Eliminando…' : 'Eliminar empresa'}
           </button>
 
           <div className="flex flex-wrap justify-end gap-2">
@@ -1001,9 +1017,9 @@ function CreateTenantModal({ onClose, onCreated }) {
       let tenantForList = created;
       try {
         tenantForList = await svc.provisionSmartPseTenant(created.id, { environment: 'demo' });
-        toast('Tenant creado y Smart PSE CPE aprovisionado');
+        toast('Empresa creada y conectada con Smart PSE');
       } catch (provisionError) {
-        toast(`Tenant creado. Smart PSE CPE queda pendiente: ${provisionError.message}`, 'error');
+        toast(`Empresa creada. La conexión con Smart PSE quedó pendiente: ${provisionError.message}`, 'error');
       }
       onCreated(tenantForList);
       onClose();
@@ -1018,8 +1034,8 @@ function CreateTenantModal({ onClose, onCreated }) {
     <Drawer
       open={true}
       onClose={onClose}
-      title="Nuevo tenant"
-      subtitle="Alta operativa Smart PSE CPE"
+      title="Nueva empresa"
+      subtitle="Datos fiscales y conexión de facturación"
       icon={<Building2 size={18} />}
       footer={(
         <>
@@ -1033,7 +1049,7 @@ function CreateTenantModal({ onClose, onCreated }) {
             className="btn-primary flex items-center gap-2"
           >
             {saving ? <Spinner size="sm" /> : null}
-            Crear y aprovisionar
+            Crear empresa
           </button>
         </>
       )}
@@ -1041,9 +1057,9 @@ function CreateTenantModal({ onClose, onCreated }) {
       <form id="new-tenant-form" onSubmit={handleSubmit} className="space-y-6">
         <section className="card-raw" data-label="alta">
           <SectionHeader
-            kicker="Onboarding"
+            kicker="Datos fiscales"
             title="Crear empresa operativa"
-            copy="El alta fiscal parte por la identidad basica. Al crear el tenant se aprovisiona Smart PSE CPE en ambiente demo."
+            copy="Ingresa la identidad fiscal. La conexión inicial con Smart PSE se prepara en modo demo."
           />
 
           <div className="space-y-4">
@@ -1097,15 +1113,15 @@ function CreateTenantModal({ onClose, onCreated }) {
 
         <section className="ink-card p-6">
           <SectionHeader
-            kicker="Smart PSE CPE"
-            title="Aprovisionamiento demo"
-            copy="El panel creara la empresa en Smart PSE y guardara solo el estado operativo visible para el superadmin."
+            kicker="Facturación electrónica"
+            title="Conexión en modo demo"
+            copy="El panel registrará la empresa en Smart PSE y mostrará únicamente su estado operativo."
           />
 
           <div className="ink-inline-alert ink-inline-alert-info">
-            <p className="text-sm font-semibold text-[var(--text-primary)]">Ambiente demo</p>
+            <p className="text-sm font-semibold text-[var(--text-primary)]">Entorno de prueba</p>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              El payload de creacion solo incluye identidad fiscal. Luego se solicita el aprovisionamiento CPE con Smart PSE.
+              Solo se envían los datos fiscales necesarios. Las credenciales se mantienen protegidas.
             </p>
           </div>
         </section>
@@ -1186,7 +1202,7 @@ function TenantGreCredentialsModal({ tenant, onClose, onSaved }) {
       setLocalTenant(updated);
       onSaved(updated);
       setValidationResult(result);
-      toast(result.valid ? 'Credenciales GRE validas' : result.message, result.valid ? 'success' : 'error');
+      toast(result.valid ? 'Credenciales de guías verificadas' : result.message, result.valid ? 'success' : 'error');
     } catch (error) {
       toast(error.message, 'error');
     } finally {
@@ -1198,16 +1214,16 @@ function TenantGreCredentialsModal({ tenant, onClose, onSaved }) {
     <Drawer
       open={Boolean(tenant)}
       onClose={onClose}
-      title="Smart PSE GRE"
+      title="Credenciales de guías"
       subtitle={tenant.business_name}
       icon={<Truck size={18} />}
     >
       <div className="space-y-6">
         <section className="card-raw" data-label="smart-pse-gre">
           <SectionHeader
-            kicker="Smart PSE GRE"
-            title="Credenciales SUNAT para guias"
-            copy="El backend las guarda cifradas y solo expone estado operativo en esta pantalla."
+            kicker="Guías electrónicas"
+            title="Conexión para emitir guías"
+            copy="Inkora guarda estas credenciales de forma protegida y solo muestra su estado."
           />
 
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
@@ -1215,7 +1231,7 @@ function TenantGreCredentialsModal({ tenant, onClose, onSaved }) {
               <p className="text-sm font-semibold text-[var(--text-primary)]">Estado actual</p>
               <p className="mt-1 text-sm text-[var(--text-secondary)]">{greMeta.description}</p>
               <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-                Ultima validacion: {formatDateTime(localTenant.smartpse_gre_checked_at)}
+                Última verificación: {formatDateTime(localTenant.smartpse_gre_checked_at)}
               </p>
             </div>
 
@@ -1229,7 +1245,7 @@ function TenantGreCredentialsModal({ tenant, onClose, onSaved }) {
                 disabled={checking || !greMeta.canCheck}
               >
                 {checking ? <Spinner size="sm" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                Validar
+                Verificar
               </button>
             </div>
           </div>
@@ -2051,7 +2067,7 @@ function TenantFiscalFlagsModal({ tenant, onClose }) {
       const data = await svc.updateFiscalFlags(tenant.id, flags);
       setFlags(data.flags || {});
       setDefinitions(data.definitions || definitions);
-      toast('Flags fiscales actualizados.');
+      toast('Permisos fiscales actualizados.');
     } catch (err) {
       toast(err.message, 'error');
     } finally {
@@ -2063,24 +2079,24 @@ function TenantFiscalFlagsModal({ tenant, onClose }) {
     <Drawer
       open={true}
       onClose={onClose}
-      title="Flags fiscales beta"
+      title="Permisos fiscales"
       subtitle={tenant.business_name}
       icon={<SlidersHorizontal size={18} />}
       size="wide"
     >
       <div className="ink-inline-alert ink-inline-alert-warning mb-5">
         <p className="text-xs">
-          Estos controles habilitan funciones fiscales sensibles por tenant. Facturas y boletas siguen controladas por suscripcion,
-          credenciales Smart PSE CPE y limites de emision; estos flags son para notas, guias y operaciones con mayor riesgo fiscal.
+          Estos permisos habilitan funciones fiscales sensibles para la empresa. Facturas y boletas mantienen sus controles
+          de suscripción, conexión y límites de emisión.
         </p>
       </div>
 
       {loading ? (
         <div className="flex justify-center py-10">
-          <Spinner size="lg" label="Cargando flags fiscales" />
+          <Spinner size="lg" label="Cargando permisos fiscales" />
         </div>
       ) : definitions.length === 0 ? (
-        <EmptyState title="Sin flags fiscales" description="El backend no devolvio definiciones de flags para este tenant." />
+        <EmptyState title="Sin permisos configurables" description="No hay permisos fiscales adicionales para esta empresa." />
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {definitions.map((definition) => {
@@ -2102,14 +2118,11 @@ function TenantFiscalFlagsModal({ tenant, onClose }) {
                       {definition.label}
                     </span>
                     <Badge variant={enabled ? 'success' : 'default'}>
-                      {enabled ? 'activo' : 'bloqueado'}
+                      {enabled ? 'Activo' : 'Bloqueado'}
                     </Badge>
                   </span>
                   <span className="mt-1 block text-xs text-[var(--text-secondary)]">
                     {definition.control}
-                  </span>
-                  <span className="mt-1 block font-mono text-[10px] text-[var(--text-tertiary)]">
-                    {definition.key} · {definition.category}
                   </span>
                 </span>
               </label>
@@ -2122,7 +2135,7 @@ function TenantFiscalFlagsModal({ tenant, onClose }) {
         <button type="button" onClick={onClose} className="btn-secondary">Cerrar</button>
         <button type="button" onClick={handleSave} disabled={saving || loading} className="btn-primary">
           <SlidersHorizontal className="h-4 w-4" />
-          {saving ? 'Guardando...' : 'Guardar flags'}
+          {saving ? 'Guardando…' : 'Guardar permisos'}
         </button>
       </div>
     </Drawer>
@@ -2150,17 +2163,17 @@ function TenantErrorsModal({ tenant, onClose }) {
     <Drawer
       open={true}
       onClose={onClose}
-      title="Errores de emisión"
+      title="Incidencias fiscales"
       subtitle={tenant.business_name}
       icon={<AlertCircle size={18} />}
       size="wide"
     >
       {loading ? (
         <div className="flex justify-center py-10">
-          <Spinner size="lg" label="Cargando errores" />
+          <Spinner size="lg" label="Cargando incidencias" />
         </div>
       ) : errors.length === 0 ? (
-        <EmptyState title="Sin errores recientes" description="No hay jobs de emisión fallidos para este tenant." />
+        <EmptyState title="Sin incidencias recientes" description="No hay envíos fiscales fallidos para esta empresa." />
       ) : (
         <div className="ink-table-card">
           <table className="ink-table">
@@ -2260,7 +2273,7 @@ function AccessRequestQueue() {
         <div>
           <p className="page-kicker">Altas solicitadas</p>
           <h3 className="ink-card-title">Solicitudes de acceso</h3>
-          <p className="ink-card-subtitle">Aprobar crea el tenant y su primer usuario administrador. Denegar no crea accesos.</p>
+          <p className="ink-card-subtitle">Aprobar crea la empresa y su primer usuario administrador. Rechazar no crea accesos.</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={total ? 'warning' : 'success'}>{total} pendientes</Badge>
@@ -2540,6 +2553,7 @@ export default function SuperadminPage() {
   const [viewingLimitsOf, setViewingLimitsOf] = useState(null);
   const [viewingFiscalFlagsOf, setViewingFiscalFlagsOf] = useState(null);
   const [viewingContingencyOf, setViewingContingencyOf] = useState(null);
+  const [editingSeriesOf, setEditingSeriesOf] = useState(null);
   const [checkingSmartPseId, setCheckingSmartPseId] = useState(null);
   const [editingGreOf, setEditingGreOf] = useState(null);
   const [checkingGreId, setCheckingGreId] = useState(null);
@@ -2587,7 +2601,7 @@ export default function SuperadminPage() {
         setTenantTotal(Number(data.total || 0));
         setTenantMetrics({ ...DEFAULT_TENANT_METRICS, ...(data.metrics || {}) });
       })
-      .catch(() => toast('No se pudo cargar la lista de tenants. Revisa tu conexión e inténtalo nuevamente.', 'error'))
+      .catch(() => toast('No se pudo cargar la lista de empresas. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
   }, [
     debouncedTenantSearch,
@@ -2664,6 +2678,7 @@ export default function SuperadminPage() {
     setTenants((current) => current.map((tenant) => (tenant.id === updated.id ? updated : tenant)));
     setEditing((current) => (current?.id === updated.id ? updated : current));
     setEditingGreOf((current) => (current?.id === updated.id ? updated : current));
+    setEditingSeriesOf((current) => (current?.id === updated.id ? updated : current));
     refreshTenantPage();
   };
 
@@ -2744,7 +2759,7 @@ export default function SuperadminPage() {
       setSmartPseSyncAllResult(result);
       setSmartPseCompanyReloadKey((key) => key + 1);
       refreshTenantPage();
-      toast(`Sync Smart PSE: ${result.synced || 0} ok, ${result.failed || 0} con error.`);
+      toast(`Actualización completada: ${result.synced || 0} empresas al día y ${result.failed || 0} con observaciones.`);
     } catch (err) {
       toast(err.message, 'error');
     } finally {
@@ -2755,7 +2770,7 @@ export default function SuperadminPage() {
   const handleCheckSmartPseCpe = async (tenant) => {
     const cpeMeta = getSmartPseCpeStatusMeta(tenant);
     if (!cpeMeta.canCheck) {
-      toast('Primero aprovisiona Smart PSE CPE para este tenant.', 'error');
+      toast('Primero conecta la facturación electrónica de esta empresa.', 'error');
       return;
     }
 
@@ -2789,7 +2804,7 @@ export default function SuperadminPage() {
   const handleCheckGreCredentials = async (tenant) => {
     const greMeta = getSmartPseGreStatusMeta(tenant);
     if (!greMeta.canCheck) {
-      toast('Primero guarda las credenciales GRE de Smart PSE.', 'error');
+      toast('Primero guarda las credenciales de guías electrónicas.', 'error');
       return;
     }
 
@@ -2808,7 +2823,7 @@ export default function SuperadminPage() {
             : t,
         ),
       );
-      toast(result.valid ? 'Credenciales GRE validas' : result.message, result.valid ? 'success' : 'error');
+      toast(result.valid ? 'Credenciales de guías verificadas' : result.message, result.valid ? 'success' : 'error');
     } catch (err) {
       toast(err.message, 'error');
     } finally {
@@ -2819,30 +2834,30 @@ export default function SuperadminPage() {
 
   const metrics = [
     {
-      label: 'Tenants totales',
+      label: 'Empresas registradas',
       value: tenantMetrics.total,
       note: 'Base total registrada en la plataforma.',
       icon: Building2,
       tone: 'neutral',
     },
     {
-      label: 'Tenants activos',
+      label: 'Empresas activas',
       value: tenantMetrics.active,
       note: 'Empresas habilitadas para operar.',
       icon: ShieldCheck,
       tone: 'success',
     },
     {
-      label: 'Smart PSE GRE',
+      label: 'Guías electrónicas',
       value: tenantMetrics.smartpse_gre,
-      note: 'Tenants listos para guias con credenciales cifradas.',
+      note: 'Empresas listas para emitir guías con credenciales protegidas.',
       icon: Truck,
       tone: 'brand',
     },
     {
-      label: 'GRE pendientes',
+      label: 'Guías pendientes',
       value: tenantMetrics.smartpse_gre_pending,
-      note: 'Empresas que aun requieren configuracion Smart PSE GRE.',
+      note: 'Empresas que aún deben completar la configuración de guías.',
       icon: KeyRound,
       tone: tenantMetrics.smartpse_gre_pending > 0 ? 'warning' : 'success',
     },
@@ -2853,18 +2868,18 @@ export default function SuperadminPage() {
     <div className="dashboard-page superadmin-shell">
       <div className="page-head ink-enter-1">
         <div>
-          <p className="eyebrow">Control interno</p>
+          <p className="eyebrow">Administración</p>
           <h2 style={{ margin: 0, fontSize: '28px', lineHeight: 1, letterSpacing: '-.06em' }}>
-            Superadmin operativo
+            Panel de empresas
           </h2>
           <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontSize: '14px' }}>
-            Altas, estados Smart PSE y gobierno de usuarios con la misma lectura operativa de Inkora.
+            Administra empresas, usuarios y conexiones fiscales desde un solo lugar.
           </p>
         </div>
         <div className="page-actions">
           <button type="button" onClick={() => setCreating(true)} className="btn flex items-center gap-2">
             <Plus className="h-4 w-4" />
-            Nuevo tenant
+            Nueva empresa
           </button>
         </div>
       </div>
@@ -2874,18 +2889,18 @@ export default function SuperadminPage() {
           <span className="attention-title-badge">
             <ShieldCheck size={16} />
           </span>
-          <h3>Gobierno interno</h3>
-          <p>Controla altas, credenciales cifradas y validaciones sin exponer secretos al tenant.</p>
+          <h3>Estado general</h3>
+          <p>Revisa qué empresas están listas y cuáles necesitan atención.</p>
         </div>
         <div className="attention-card superadmin-attention-card">
           <strong>Demo</strong>
-          <span className="attention-card-text">Smart PSE CPE queda aprovisionado en ambiente controlado.</span>
-          <div className="attention-card-link">Sin SUNAT real</div>
+          <span className="attention-card-text">Las pruebas usan un entorno separado de los documentos reales.</span>
+          <div className="attention-card-link">Sin emisión real</div>
         </div>
         <div className="attention-card superadmin-attention-card">
           <strong>{tenantMetrics.smartpse_gre}</strong>
-          <span className="attention-card-text">Tenants con GRE Smart PSE listo y credenciales cifradas.</span>
-          <div className="attention-card-link">GRE seguro</div>
+          <span className="attention-card-text">Empresas con guías electrónicas conectadas y verificadas.</span>
+          <div className="attention-card-link">Guías listas</div>
         </div>
         <div className="attention-card superadmin-attention-card">
           <strong>{tenantMetrics.active}</strong>
@@ -2894,7 +2909,7 @@ export default function SuperadminPage() {
         </div>
         <div className="attention-card superadmin-attention-card">
           <strong>0</strong>
-          <span className="attention-card-text">Secretos visibles para tenants: usuario SOL, clave o token.</span>
+          <span className="attention-card-text">Credenciales fiscales visibles para usuarios de empresa.</span>
           <div className="attention-card-link">Sin exposición</div>
         </div>
       </section>
@@ -2926,10 +2941,10 @@ export default function SuperadminPage() {
       <section className="panel superadmin-table-card">
         <div className="panel-header superadmin-table-header">
           <div>
-            <p className="page-kicker">Smart PSE CPE</p>
-            <h3 className="ink-card-title">Empresas Smart PSE</h3>
+            <p className="page-kicker">Facturación electrónica</p>
+            <h3 className="ink-card-title">Empresas conectadas con Smart PSE</h3>
             <p className="ink-card-subtitle">
-              Gestion remota de empresas CPE. La emision real sigue bloqueada fuera de FISCAL_ENV production.
+              Consulta y actualiza la conexión de cada empresa. Los documentos reales solo se emiten en producción.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -2940,7 +2955,7 @@ export default function SuperadminPage() {
               onClick={handleSyncAllSmartPseCompanies}
             >
               <RefreshCw className="h-3.5 w-3.5" />
-              {smartPseSyncAllBusy ? 'Sincronizando...' : 'Sincronizar todos'}
+              {smartPseSyncAllBusy ? 'Actualizando…' : 'Actualizar estados'}
             </button>
             <button
               type="button"
@@ -2948,7 +2963,7 @@ export default function SuperadminPage() {
               onClick={() => setShowSmartPseCreate(true)}
             >
               <Plus className="h-4 w-4" />
-              Crear empresa remota
+              Registrar en Smart PSE
             </button>
           </div>
         </div>
@@ -2957,7 +2972,7 @@ export default function SuperadminPage() {
           <label className="search-box">
             <Search size={16} />
             <input
-              placeholder="Buscar RUC o razon social Smart PSE..."
+              placeholder="Buscar por RUC o razón social…"
               value={smartPseCompanySearch}
               onChange={(event) => setSmartPseCompanySearch(event.target.value)}
             />
@@ -2973,8 +2988,8 @@ export default function SuperadminPage() {
 
         {smartPseSyncAllResult ? (
           <div className="mx-4 mb-4 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-surface-low)] p-3 text-sm text-[var(--text-secondary)]">
-            Sync masivo: <strong>{smartPseSyncAllResult.synced || 0}</strong> sincronizadas,
-            {' '}<strong>{smartPseSyncAllResult.failed || 0}</strong> con error.
+            Actualización: <strong>{smartPseSyncAllResult.synced || 0}</strong> empresas al día y
+            {' '}<strong>{smartPseSyncAllResult.failed || 0}</strong> con observaciones.
           </div>
         ) : null}
 
@@ -2984,7 +2999,7 @@ export default function SuperadminPage() {
               <Spinner size="sm" label="Cargando empresas Smart PSE" />
             </div>
           ) : smartPseCompanies.length === 0 ? (
-            <EmptyState title="Sin empresas Smart PSE visibles" description="Crea una empresa remota o ajusta la busqueda." />
+            <EmptyState title="Sin empresas conectadas" description="Registra una empresa o ajusta la búsqueda." />
           ) : (
             smartPseCompanies.map((company) => {
               const companyInitials = String(company.razon_social || company.ruc || 'SP')
@@ -3018,12 +3033,12 @@ export default function SuperadminPage() {
 
                   <div className="smartpse-company-details">
                     <div className="smartpse-company-detail">
-                      <span>Company id</span>
+                      <span>Identificador en Smart PSE</span>
                       <strong>{company.id || 'sin dato'}</strong>
                     </div>
                     <div className="smartpse-company-detail">
                       <span>Ambiente</span>
-                      <strong>{isProduction ? 'Produccion preparada' : 'Demo'}</strong>
+                      <strong>{isProduction ? 'Producción' : 'Demo'}</strong>
                     </div>
                     <div className="smartpse-company-detail">
                       <span>Estado</span>
@@ -3055,19 +3070,19 @@ export default function SuperadminPage() {
         </div>
       ) : tenantTotal === 0 ? (
         <EmptyState
-          title="Sin tenants registrados"
-          description="Crea el primer tenant para iniciar la operacion multiempresa."
+          title="Sin empresas registradas"
+          description="Crea la primera empresa para comenzar a usar Inkora."
         />
       ) : (
         <div className="panel superadmin-table-card">
           <div className="panel-header superadmin-table-header">
             <div>
-              <h3 className="ink-card-title">Tenants registrados</h3>
-              <p className="ink-card-subtitle">{tenantTotal} empresa{tenantTotal !== 1 ? 's' : ''} - Alta, edicion fiscal y gestion de usuarios.</p>
+              <h3 className="ink-card-title">Empresas registradas</h3>
+              <p className="ink-card-subtitle">{tenantTotal} empresa{tenantTotal !== 1 ? 's' : ''} · Datos, usuarios y configuración fiscal.</p>
             </div>
             <button onClick={() => setCreating(true)} className="btn-secondary superadmin-add-tenant-btn">
               <Plus className="h-3.5 w-3.5" />
-              Nuevo tenant
+              Nueva empresa
             </button>
           </div>
 
@@ -3075,14 +3090,14 @@ export default function SuperadminPage() {
             <label className="search-box">
               <Search size={16} />
               <input
-                placeholder="Buscar empresa, RUC, plan o estado GRE..."
+                placeholder="Buscar empresa, RUC, plan o estado de guías…"
                 value={tenantSearch}
                 onChange={(event) => setTenantSearch(event.target.value)}
               />
             </label>
 
             <div className="document-list-filter">
-              <span>GRE</span>
+              <span>Guías</span>
               <CustomSelect
                 compact
                 value={tenantGreFilter}
@@ -3109,7 +3124,7 @@ export default function SuperadminPage() {
           <div
             className="ink-table-scroll superadmin-table-scroll"
             role="region"
-            aria-label="Lista de tenants registrados"
+            aria-label="Lista de empresas registradas"
             tabIndex={0}
           >
             <table className="ink-table superadmin-tenants-table">
@@ -3118,8 +3133,7 @@ export default function SuperadminPage() {
                 <th>Empresa</th>
                 <th>RUC</th>
                 <th>Plan</th>
-                <th>Smart PSE CPE</th>
-                <th>Smart PSE GRE</th>
+                <th>Estado fiscal</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
@@ -3128,6 +3142,7 @@ export default function SuperadminPage() {
               {visibleTenants.map((tenant) => {
                 const cpeMeta = getSmartPseCpeStatusMeta(tenant);
                 const greMeta = getSmartPseGreStatusMeta(tenant);
+                const fiscalOverviewMeta = getTenantFiscalOverviewMeta(cpeMeta, greMeta);
                 const initials = tenant.business_name
                   .split(' ')
                   .slice(0, 2)
@@ -3160,66 +3175,77 @@ export default function SuperadminPage() {
                       </Badge>
                     </td>
 
-                    <td data-label="Smart PSE CPE">
-                      <div className="superadmin-status-panel">
-                        <div className="superadmin-status-caption">
-                          <StatusDot ok={tenant.has_smartpse_credentials} />
+                    <td data-label="Estado fiscal">
+                      <div className="superadmin-fiscal-summary">
+                        <div className="superadmin-fiscal-summary__head">
+                          <span>Conexiones fiscales</span>
+                          <Badge variant={fiscalOverviewMeta.badgeVariant}>{fiscalOverviewMeta.label}</Badge>
                         </div>
-                        <div className="superadmin-status-line">
-                          <Badge variant={cpeMeta.badgeVariant}>{cpeMeta.label}</Badge>
-                          {cpeMeta.canCheck && (
-                            <button
-                              type="button"
-                              title="Verificar Smart PSE CPE"
-                              aria-label={`Verificar Smart PSE CPE de ${tenant.business_name}`}
-                              aria-busy={checkingSmartPseId === tenant.id}
-                              disabled={checkingSmartPseId === tenant.id}
-                              onClick={() => handleCheckSmartPseCpe(tenant)}
-                              className="superadmin-token-check"
-                            >
-                              <RefreshCw className="h-3 w-3 superadmin-token-check-icon" />
-                            </button>
-                          )}
-                        </div>
-                        <span className="superadmin-status-meta">
-                          {tenant.smartpse_environment || 'demo'} - {formatDateTime(tenant.smartpse_checked_at)}
-                        </span>
-                        <span className="superadmin-status-meta">
-                          {tenant.smartpse_remote_estado || 'Sin sync'} - {typeof tenant.smartpse_remote_active === 'boolean' ? (tenant.smartpse_remote_active ? 'activo remoto' : 'inactivo remoto') : 'sin estado remoto'}
-                        </span>
-                      </div>
-                    </td>
 
-                    <td data-label="Smart PSE GRE">
-                      <div className="superadmin-status-panel">
-                        <div className="superadmin-status-caption">
-                          <StatusDot ok={tenant.has_smartpse_gre_credentials} />
+                        <div className="superadmin-fiscal-channel">
+                          <div className="superadmin-fiscal-channel__name">
+                            <strong>Comprobantes</strong>
+                            <span>Ventas, notas, resúmenes y bajas</span>
+                          </div>
+                          <div className="superadmin-fiscal-channel__status">
+                            <div className="superadmin-fiscal-channel__badge">
+                              <Badge variant={cpeMeta.badgeVariant}>{cpeMeta.label}</Badge>
+                              {cpeMeta.canCheck && (
+                                <button
+                                  type="button"
+                                  title="Verificar conexión de comprobantes"
+                                  aria-label={`Verificar comprobantes electrónicos de ${tenant.business_name}`}
+                                  aria-busy={checkingSmartPseId === tenant.id}
+                                  disabled={checkingSmartPseId === tenant.id}
+                                  onClick={() => handleCheckSmartPseCpe(tenant)}
+                                  className="superadmin-token-check"
+                                >
+                                  <RefreshCw className="h-3 w-3 superadmin-token-check-icon" />
+                                </button>
+                              )}
+                            </div>
+                            <span className="superadmin-fiscal-channel__meta">
+                              {tenant.smartpse_environment === 'produccion' ? 'Producción' : 'Demo'} · {formatDateTime(tenant.smartpse_checked_at)}
+                            </span>
+                            <span className="superadmin-fiscal-channel__meta">
+                              {tenant.smartpse_remote_estado || 'Sin actualizar'} · {typeof tenant.smartpse_remote_active === 'boolean' ? (tenant.smartpse_remote_active ? 'Activa en Smart PSE' : 'Inactiva en Smart PSE') : 'Estado no disponible'}
+                            </span>
+                          </div>
                         </div>
-                        <div className="superadmin-status-line">
-                          <Badge variant={greMeta.badgeVariant}>{greMeta.label}</Badge>
-                          {greMeta.canCheck && (
-                            <button
-                              type="button"
-                              title="Validar GRE desde Smart PSE"
-                              aria-label={`Validar credenciales GRE de ${tenant.business_name}`}
-                              aria-busy={checkingGreId === tenant.id}
-                              disabled={checkingGreId === tenant.id}
-                              onClick={() => handleCheckGreCredentials(tenant)}
-                              className="superadmin-token-check"
-                            >
-                              <RefreshCw className="h-3 w-3 superadmin-token-check-icon" />
-                            </button>
-                          )}
+
+                        <div className="superadmin-fiscal-channel">
+                          <div className="superadmin-fiscal-channel__name">
+                            <strong>Guías</strong>
+                            <span>Remitente y transportista</span>
+                          </div>
+                          <div className="superadmin-fiscal-channel__status">
+                            <div className="superadmin-fiscal-channel__badge">
+                              <Badge variant={greMeta.badgeVariant}>{greMeta.label}</Badge>
+                              {greMeta.canCheck && (
+                                <button
+                                  type="button"
+                                  title="Verificar conexión de guías"
+                                  aria-label={`Verificar guías electrónicas de ${tenant.business_name}`}
+                                  aria-busy={checkingGreId === tenant.id}
+                                  disabled={checkingGreId === tenant.id}
+                                  onClick={() => handleCheckGreCredentials(tenant)}
+                                  className="superadmin-token-check"
+                                >
+                                  <RefreshCw className="h-3 w-3 superadmin-token-check-icon" />
+                                </button>
+                              )}
+                            </div>
+                            <span className="superadmin-fiscal-channel__meta">
+                              Última revisión: {formatDateTime(tenant.smartpse_gre_checked_at)}
+                            </span>
+                          </div>
                         </div>
-                        <span className="superadmin-status-meta">
-                          {formatDateTime(tenant.smartpse_gre_checked_at)}
-                        </span>
                       </div>
                     </td>
 
                     <td data-label="Estado">
                       <Badge variant={tenant.is_active ? 'success' : 'danger'}>
-                        {tenant.is_active ? 'activo' : 'inactivo'}
+                        {tenant.is_active ? 'Activo' : 'Inactivo'}
                       </Badge>
                     </td>
 
@@ -3231,71 +3257,31 @@ export default function SuperadminPage() {
                           className="superadmin-toolbar-btn superadmin-toolbar-btn--brand"
                         >
                           <PencilLine className="h-3 w-3" />
-                          Editar
+                          Editar empresa
                         </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setViewingUsersOf(tenant)}
-                          title="Usuarios"
-                          aria-label={`Usuarios de ${tenant.business_name}`}
-                          className="superadmin-toolbar-btn superadmin-toolbar-btn--icon"
-                        >
-                          <Users className="h-3 w-3" />
-                          Usuarios
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setViewingErrorsOf(tenant)}
-                          title="Errores"
-                          aria-label={`Errores fiscales de ${tenant.business_name}`}
-                          className="superadmin-toolbar-btn superadmin-toolbar-btn--icon superadmin-toolbar-btn--warning"
-                        >
-                          <AlertCircle className="h-3 w-3" />
-                          Errores
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setViewingContingencyOf(tenant)}
-                          className="superadmin-toolbar-btn superadmin-toolbar-btn--warning"
-                        >
-                          <ShieldOff className="h-3 w-3" />
-                          Contingencia
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setEditingGreOf(tenant)}
-                          title="Smart PSE GRE"
-                          aria-label="GRE"
-                          className="superadmin-toolbar-btn superadmin-toolbar-btn--icon superadmin-toolbar-btn--accent"
-                        >
-                          <Truck className="h-3 w-3" />
-                          GRE
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setViewingLimitsOf(tenant)}
-                          title="Limites"
-                          aria-label={`Limites de ${tenant.business_name}`}
-                          className="superadmin-toolbar-btn superadmin-toolbar-btn--icon superadmin-toolbar-btn--accent"
-                        >
-                          <Gauge className="h-3 w-3" />
-                          Límites
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setViewingFiscalFlagsOf(tenant)}
-                          title="Flags fiscales"
-                          aria-label={`Flags fiscales de ${tenant.business_name}`}
-                          className="superadmin-toolbar-btn superadmin-toolbar-btn--icon"
-                        >
-                          <SlidersHorizontal className="h-3 w-3" />
-                          Flags
-                        </button>
+                        <ActionMenu label={`Más opciones para ${tenant.business_name}`}>
+                          <button type="button" onClick={() => setViewingUsersOf(tenant)}>
+                            <Users /> Usuarios
+                          </button>
+                          <button type="button" onClick={() => setEditingSeriesOf(tenant)}>
+                            <Hash /> Series y numeración
+                          </button>
+                          <button type="button" onClick={() => setViewingErrorsOf(tenant)}>
+                            <AlertCircle /> Incidencias fiscales
+                          </button>
+                          <button type="button" onClick={() => setViewingContingencyOf(tenant)}>
+                            <ShieldOff /> Modo contingencia
+                          </button>
+                          <button type="button" onClick={() => setEditingGreOf(tenant)}>
+                            <Truck /> Credenciales de guías
+                          </button>
+                          <button type="button" onClick={() => setViewingLimitsOf(tenant)}>
+                            <Gauge /> Límites de emisión
+                          </button>
+                          <button type="button" onClick={() => setViewingFiscalFlagsOf(tenant)}>
+                            <SlidersHorizontal /> Permisos fiscales
+                          </button>
+                        </ActionMenu>
                       </div>
                     </td>
                   </tr>
@@ -3352,6 +3338,14 @@ export default function SuperadminPage() {
         <TenantGreCredentialsModal
           tenant={editingGreOf}
           onClose={() => setEditingGreOf(null)}
+          onSaved={handleSaved}
+        />
+      ) : null}
+
+      {editingSeriesOf ? (
+        <TenantFiscalSeriesDrawer
+          tenant={editingSeriesOf}
+          onClose={() => setEditingSeriesOf(null)}
           onSaved={handleSaved}
         />
       ) : null}

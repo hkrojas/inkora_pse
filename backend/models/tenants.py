@@ -78,6 +78,10 @@ class Tenant(Base):
     fiscal_invoice_series_floor = Column(Integer, nullable=True)
     fiscal_boleta_series = Column(String(4), nullable=True)
     fiscal_boleta_series_floor = Column(Integer, nullable=True)
+    fiscal_gre_remitente_series = Column(String(4), nullable=True)
+    fiscal_gre_remitente_series_floor = Column(Integer, nullable=True)
+    fiscal_gre_transportista_series = Column(String(4), nullable=True)
+    fiscal_gre_transportista_series_floor = Column(Integer, nullable=True)
 
     sunat_gre_client_id = Column(String, nullable=True)
     sunat_gre_client_secret = Column(String, nullable=True)

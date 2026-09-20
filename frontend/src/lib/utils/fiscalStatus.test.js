@@ -61,7 +61,7 @@ test('getSmartPseGreStatusMeta hides missing secrets behind status text only', (
     smartpse_gre_status: 'ok',
   });
 
-  assert.equal(meta.label, 'no configurado');
+  assert.equal(meta.label, 'Pendiente');
   assert.equal(meta.badgeVariant, 'default');
   assert.equal(meta.canCheck, false);
 });
@@ -72,7 +72,7 @@ test('getSmartPseGreStatusMeta exposes validation state without secret values', 
     smartpse_gre_status: 'invalid',
   });
 
-  assert.equal(meta.label, 'inválido');
+  assert.equal(meta.label, 'Revisar');
   assert.equal(meta.badgeVariant, 'danger');
   assert.equal(meta.canCheck, true);
   assert.deepEqual(Object.keys(meta).sort(), [

@@ -36,10 +36,6 @@ EDITABLE_DISPATCH_STATUSES = {
     models.DISPATCH_STATUS_DRAFT,
 }
 
-GUIDE_SERIES_BY_ENVIRONMENT = {
-    "demo": {"09": "T999", "31": "V999"},
-    "production": {"09": "T001", "31": "V001"},
-}
 SUPPORTED_SALES_DOCUMENT_TYPES = {"01", "03"}
 
 
@@ -454,38 +450,28 @@ def _lock_tenant(db: Session, tenant_id: int):
     return tenant
 
 
-def _next_guide_number(db: Session, tenant_id: int, series: str) -> int:
-    _lock_tenant(db, tenant_id)
-    value = db.query(func.max(models.GuiaRemision.correlativo)).filter(
-        models.GuiaRemision.tenant_id == tenant_id,
-        models.GuiaRemision.serie == series,
-    ).scalar()
-    return int(value or 0) + 1
+def _next_guide_number(db: Session, tenant_id: int, document_type: str, series: str) -> int:
+    from services.guide_series_service import GuideSeriesConfigurationError, next_guide_correlativo
+    try:
+        return next_guide_correlativo(db, tenant_id, document_type, series)
+    except GuideSeriesConfigurationError as exc:
+        raise DispatchError(str(exc), status_code=422, code=exc.code) from exc
 
 
 def _guide_environment(tenant) -> str:
-    value = str(getattr(tenant, "smartpse_environment", "") or "").strip().lower()
-    if value in {"produccion", "production", "prod"}:
-        return "production"
-    if value == "demo":
-        return "demo"
-    raise DispatchError(
-        "La empresa no tiene un ambiente Smart PSE válido para numerar la guía.",
-        status_code=422,
-        code="GUIDE_ENVIRONMENT_REQUIRED",
-    )
+    from services.guide_series_service import GuideSeriesConfigurationError, guide_environment
+    try:
+        return guide_environment(tenant)
+    except GuideSeriesConfigurationError as exc:
+        raise DispatchError(str(exc), status_code=422, code=exc.code) from exc
 
 
 def _guide_series(tenant, document_type: str) -> tuple[str, str]:
-    environment = _guide_environment(tenant)
+    from services.guide_series_service import GuideSeriesConfigurationError, guide_series
     try:
-        return environment, GUIDE_SERIES_BY_ENVIRONMENT[environment][document_type]
-    except KeyError as exc:
-        raise DispatchError(
-            "Tipo de GRE no soportado para asignar serie.",
-            status_code=422,
-            code="GUIDE_TYPE_UNSUPPORTED",
-        ) from exc
+        return guide_series(tenant, document_type)
+    except GuideSeriesConfigurationError as exc:
+        raise DispatchError(str(exc), status_code=422, code=exc.code) from exc
 
 
 def _guide_fields(data) -> dict:
@@ -548,7 +534,7 @@ def _new_guide_from_dispatch(db: Session, tenant, invoice, dispatch, data, resol
     guide = models.GuiaRemision(
         tipo_documento="09",
         serie=series,
-        correlativo=_next_guide_number(db, tenant.id, series),
+        correlativo=_next_guide_number(db, tenant.id, "09", series),
         emission_environment=environment,
         fecha_emision=datetime.now(),
         estado="pendiente",
@@ -1163,7 +1149,7 @@ def create_transport_guide(db: Session, tenant_id: int, user_id: int, payload):
     guide = models.GuiaRemision(
         tipo_documento="31",
         serie=series,
-        correlativo=_next_guide_number(db, tenant_id, series),
+        correlativo=_next_guide_number(db, tenant_id, "31", series),
         emission_environment=environment,
         fecha_emision=datetime.now(),
         estado="pendiente",

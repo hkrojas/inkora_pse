@@ -144,8 +144,9 @@ function assertSafeNetworkAndConsole(state, criticalErrors) {
 
 async function openContingencyModal(page) {
   await page.goto('/superadmin');
-  await expect(page.getByRole('heading', { name: /^Superadmin operativo$/i, level: 2 })).toBeVisible();
-  await page.getByRole('button', { name: /^Contingencia$/i }).click();
+  await expect(page.getByRole('heading', { name: /^Panel de empresas$/i, level: 2 })).toBeVisible();
+  await page.getByRole('button', { name: /Más opciones para/i }).click();
+  await page.getByRole('button', { name: /^Modo contingencia$/i }).click();
   await expect(page.getByRole('heading', { name: /Contingencia fiscal/i })).toBeVisible();
 }
 

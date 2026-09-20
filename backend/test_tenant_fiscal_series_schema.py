@@ -29,3 +29,35 @@ def test_superadmin_normalizes_configured_fiscal_series():
 def test_superadmin_rejects_invalid_fiscal_series(field, value, message):
     with pytest.raises(ValidationError, match=message):
         schemas.TenantSaaSUpdate(**{field: value})
+
+
+def test_superadmin_normalizes_all_document_series_in_confirmed_update():
+    payload = schemas.TenantFiscalSeriesUpdate(
+        fiscal_invoice_series="fa01",
+        fiscal_invoice_series_floor=180,
+        fiscal_boleta_series="ba01",
+        fiscal_boleta_series_floor=72,
+        fiscal_gre_remitente_series="ti01",
+        fiscal_gre_remitente_series_floor=0,
+        fiscal_gre_transportista_series="vi01",
+        fiscal_gre_transportista_series_floor=0,
+        confirmed=True,
+    )
+
+    assert payload.fiscal_gre_remitente_series == "TI01"
+    assert payload.fiscal_gre_transportista_series == "VI01"
+
+
+def test_superadmin_requires_explicit_confirmation_for_fiscal_series():
+    with pytest.raises(ValidationError, match="Confirma que revisaste"):
+        schemas.TenantFiscalSeriesUpdate(
+            fiscal_invoice_series="FA01",
+            fiscal_invoice_series_floor=180,
+            fiscal_boleta_series="BA01",
+            fiscal_boleta_series_floor=72,
+            fiscal_gre_remitente_series="TI01",
+            fiscal_gre_remitente_series_floor=0,
+            fiscal_gre_transportista_series="VI01",
+            fiscal_gre_transportista_series_floor=0,
+            confirmed=False,
+        )

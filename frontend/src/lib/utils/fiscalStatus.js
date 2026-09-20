@@ -100,39 +100,39 @@ export function getSmartPseGreStatusMeta(tenant = {}) {
 
   if (!hasCredentials) {
     return {
-      label: 'no configurado',
+      label: 'Pendiente',
       badgeVariant: 'default',
       tone: 'neutral',
       canCheck: false,
-      description: 'Faltan credenciales GRE cifradas.',
+      description: 'Falta completar la conexión para emitir guías.',
     };
   }
 
   if (status === 'ok') {
     return {
-      label: 'ok',
+      label: 'Operativo',
       badgeVariant: 'success',
       tone: 'ok',
       canCheck: true,
-      description: 'Credenciales listas para emitir GRE.',
+      description: 'La conexión para emitir guías está verificada.',
     };
   }
 
   if (status === 'invalid') {
     return {
-      label: 'inválido',
+      label: 'Revisar',
       badgeVariant: 'danger',
       tone: 'bad',
       canCheck: true,
-      description: 'Revisar usuario SOL, clave, client ID o client secret.',
+      description: 'Smart PSE rechazó una o más credenciales de guías.',
     };
   }
 
   return {
-    label: 'sin verificar',
+    label: 'Sin verificar',
     badgeVariant: 'warning',
     tone: 'warn',
     canCheck: true,
-    description: 'Credenciales guardadas; falta validarlas.',
+    description: 'Las credenciales están guardadas y todavía no se han comprobado.',
   };
 }

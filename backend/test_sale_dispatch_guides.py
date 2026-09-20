@@ -209,6 +209,8 @@ def test_demo_and_production_guides_use_separate_series(db_session):
 
     prod_tenant, prod_user, prod_invoice = _accepted_invoice(db_session, "DSPENV2")
     prod_tenant.smartpse_environment = "produccion"
+    prod_tenant.fiscal_gre_remitente_series = "TI01"
+    prod_tenant.fiscal_gre_remitente_series_floor = 8
     db_session.commit()
     prod_dispatch, _ = sale_dispatch_service.create_from_invoice(
         db_session,
@@ -216,7 +218,8 @@ def test_demo_and_production_guides_use_separate_series(db_session):
         prod_user.id,
         _payload(prod_invoice, Decimal("1"), "prod-series-key-0001"),
     )
-    assert prod_dispatch.guides[0].serie == "T001"
+    assert prod_dispatch.guides[0].serie == "TI01"
+    assert prod_dispatch.guides[0].correlativo == 9
     assert prod_dispatch.guides[0].emission_environment == "production"
 
 
@@ -231,6 +234,8 @@ def test_guide_emission_blocks_if_environment_changes_after_draft(db_session):
         _payload(invoice, Decimal("1"), "environment-change-key-0001"),
     )
     tenant.smartpse_environment = "produccion"
+    tenant.fiscal_gre_remitente_series = "TI01"
+    tenant.fiscal_gre_remitente_series_floor = 0
     db_session.commit()
 
     validation = sale_dispatch_service.validate_guide_for_emission(
@@ -240,6 +245,22 @@ def test_guide_emission_blocks_if_environment_changes_after_draft(db_session):
         error["code"] == "GUIDE_ENVIRONMENT_CHANGED"
         for error in validation["errors"]
     )
+
+
+def test_production_guide_requires_superadmin_configured_series(db_session):
+    tenant, user, invoice = _accepted_invoice(db_session, "DSPENV4")
+    tenant.smartpse_environment = "produccion"
+    db_session.commit()
+
+    with pytest.raises(sale_dispatch_service.DispatchError) as exc:
+        sale_dispatch_service.create_from_invoice(
+            db_session,
+            tenant.id,
+            user.id,
+            _payload(invoice, Decimal("1"), "missing-prod-series-key-0001"),
+        )
+
+    assert exc.value.code == "GUIDE_PRODUCTION_SERIES_REQUIRED"
 
 
 def test_dispatch_creation_idempotency_rejects_changed_content(db_session):

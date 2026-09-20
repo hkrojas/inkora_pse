@@ -11,6 +11,7 @@ export const superadmin = {
   tenantsPage:          (params)        => api.get(`/superadmin/tenants-page${buildQueryString(params)}`),
   createTenant:         (data)          => api.post('/superadmin/tenants', data),
   updateTenant:         (id, data)      => api.patch(`/superadmin/tenants/${id}`, data),
+  updateFiscalSeries:   (id, data)      => api.put(`/superadmin/tenants/${id}/fiscal-series`, data),
   deleteTenant:         (id)            => api.delete(`/superadmin/tenants/${id}`),
   consultarDocumento:   (numero)        => api.get(`/consultar-documento/${numero}`),
   validateApisPeruToken:(data)          => api.post('/superadmin/validate/apisperu-token', data),

@@ -237,21 +237,22 @@ def _create_guia_remision_inner(db: Session, data: dict, usuario_id: int, tenant
             if fiscal_document:
                 fiscal_document_id = fiscal_document.id
 
-    serie = data.get("serie") or "T001"
+    from services.guide_series_service import guide_series, next_guide_correlativo
 
-    last_guia = db.query(models.GuiaRemision).filter(
-        models.GuiaRemision.tenant_id == tenant_id,
-        models.GuiaRemision.serie == serie
-    ).order_by(models.GuiaRemision.correlativo.desc()).with_for_update().first()
-
-    ultimo_correlativo_guia = last_guia.correlativo if last_guia else 0
-    nuevo_correlativo = ultimo_correlativo_guia + 1
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).with_for_update().first()
+    if not tenant or not tenant.is_active:
+        raise ValueError("La empresa no está activa para crear guías.")
+    document_type = str(data.get("tipo_documento") or "09")
+    environment, serie = guide_series(tenant, document_type)
+    nuevo_correlativo = next_guide_correlativo(db, tenant_id, document_type, serie)
+    data.pop("serie", None)
 
     items_db = [models.GuiaRemisionItem(**item) for item in items_data]
 
     db_guia = models.GuiaRemision(
         **data,
         serie=serie,
+        emission_environment=environment,
         source_quote_id=source_quote_id,
         fiscal_document_id=fiscal_document_id,
         internal_order_number=internal_order_number,

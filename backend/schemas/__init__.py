@@ -37,6 +37,7 @@ from schemas.tenants import (
     TenantSummaryResponse,
     TenantResponse,
     TenantSaaSUpdate,
+    TenantFiscalSeriesUpdate,
     SuperadminTenantCreate,
     SuperadminTenantResponse,
     ApisPeruTokenValidationRequest,
@@ -276,7 +277,7 @@ __all__ = [
     "CatalogSiteResponse", "CatalogItemResponse", "CatalogPublicItemResponse", "normalize_catalog_slug",
     # tenants
     "TenantBase", "TenantCreate", "TenantUpdate", "TenantSummaryResponse",
-    "TenantResponse", "TenantSaaSUpdate", "SuperadminTenantCreate", "SuperadminTenantResponse",
+    "TenantResponse", "TenantSaaSUpdate", "TenantFiscalSeriesUpdate", "SuperadminTenantCreate", "SuperadminTenantResponse",
     "SuperadminTenantPageMetrics", "SuperadminTenantPageResponse",
     "ApisPeruTokenValidationRequest", "ApisPeruTokenValidationResponse",
     "SmartPSECredentialsValidationRequest", "SmartPSECredentialsValidationResponse",

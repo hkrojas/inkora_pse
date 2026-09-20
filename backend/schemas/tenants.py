@@ -152,6 +152,10 @@ class TenantResponse(TenantSummaryResponse):
     fiscal_invoice_series_floor: Optional[int] = None
     fiscal_boleta_series: Optional[str] = None
     fiscal_boleta_series_floor: Optional[int] = None
+    fiscal_gre_remitente_series: Optional[str] = None
+    fiscal_gre_remitente_series_floor: Optional[int] = None
+    fiscal_gre_transportista_series: Optional[str] = None
+    fiscal_gre_transportista_series_floor: Optional[int] = None
     smartpse_gre_status: Optional[str] = None
     smartpse_gre_checked_at: Optional[datetime] = None
 
@@ -295,6 +299,59 @@ class TenantSaaSUpdate(StrictInputModel):
         if normalized and not normalized.startswith("B"):
             raise ValueError("La serie de boleta debe iniciar con B.")
         return normalized
+
+
+class TenantFiscalSeriesUpdate(StrictInputModel):
+    """Series productivas confirmadas por un superadministrador.
+
+    El correlativo informado es el ultimo ya utilizado fuera o dentro de Inkora;
+    nunca se usa para renumerar documentos existentes.
+    """
+
+    fiscal_invoice_series: str
+    fiscal_invoice_series_floor: int = Field(ge=0, le=99_999_999)
+    fiscal_boleta_series: str
+    fiscal_boleta_series_floor: int = Field(ge=0, le=99_999_999)
+    fiscal_gre_remitente_series: str
+    fiscal_gre_remitente_series_floor: int = Field(ge=0, le=99_999_999)
+    fiscal_gre_transportista_series: str
+    fiscal_gre_transportista_series_floor: int = Field(ge=0, le=99_999_999)
+    confirmed: bool
+
+    @field_validator(
+        "fiscal_invoice_series",
+        "fiscal_boleta_series",
+        "fiscal_gre_remitente_series",
+        "fiscal_gre_transportista_series",
+        mode="before",
+    )
+    @classmethod
+    def normalize_series(cls, value: str) -> str:
+        normalized = _normalize_optional_fiscal_series(value)
+        if not normalized:
+            raise ValueError("La serie es obligatoria.")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_prefixes_and_confirmation(self):
+        expected_prefixes = {
+            "fiscal_invoice_series": "F",
+            "fiscal_boleta_series": "B",
+            "fiscal_gre_remitente_series": "T",
+            "fiscal_gre_transportista_series": "V",
+        }
+        for field_name, prefix in expected_prefixes.items():
+            if not getattr(self, field_name).startswith(prefix):
+                labels = {
+                    "F": "factura",
+                    "B": "boleta",
+                    "T": "GRE remitente",
+                    "V": "GRE transportista",
+                }
+                raise ValueError(f"La serie de {labels[prefix]} debe iniciar con {prefix}.")
+        if not self.confirmed:
+            raise ValueError("Confirma que revisaste las series y los ultimos numeros utilizados.")
+        return self
 
 
 class SuperadminTenantCreate(StrictInputModel):

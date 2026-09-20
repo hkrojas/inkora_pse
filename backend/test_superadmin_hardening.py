@@ -39,6 +39,126 @@ def _audit_actions(db_session):
     return [row.action for row in db_session.query(models.AuditLog).all()]
 
 
+def _fiscal_series_payload(**overrides):
+    payload = {
+        "fiscal_invoice_series": "FA01",
+        "fiscal_invoice_series_floor": 180,
+        "fiscal_boleta_series": "BA01",
+        "fiscal_boleta_series_floor": 72,
+        "fiscal_gre_remitente_series": "TI01",
+        "fiscal_gre_remitente_series_floor": 0,
+        "fiscal_gre_transportista_series": "VI01",
+        "fiscal_gre_transportista_series_floor": 0,
+        "confirmed": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_superadmin_configura_series_fiscales_sin_exponerlas_al_tenant(db_session):
+    tenant = make_tenant(db_session, "SASER1")
+    tenant_admin = make_user(db_session, tenant, email="tenant-series@test.com", rol=ROLE_ADMIN)
+    superadmin = make_user(
+        db_session,
+        tenant,
+        email="superadmin-series@test.com",
+        rol=ROLE_SUPERADMIN,
+        is_superadmin=True,
+    )
+    db_session.commit()
+
+    forbidden = _client_for_user(db_session, tenant_admin, superadmin_router).put(
+        f"/superadmin/tenants/{tenant.id}/fiscal-series",
+        json=_fiscal_series_payload(),
+    )
+    assert forbidden.status_code == 403
+
+    response = _client_for_user(db_session, superadmin, superadmin_router).put(
+        f"/superadmin/tenants/{tenant.id}/fiscal-series",
+        json=_fiscal_series_payload(),
+    )
+    assert response.status_code == 200
+    assert response.json()["fiscal_gre_remitente_series"] == "TI01"
+    assert response.json()["fiscal_gre_transportista_series"] == "VI01"
+    db_session.refresh(tenant)
+    assert tenant.fiscal_invoice_series_floor == 180
+    assert "superadmin.tenant.fiscal_series_updated" in _audit_actions(db_session)
+
+
+def test_superadmin_no_puede_reducir_correlativo_confirmado(db_session):
+    tenant = make_tenant(db_session, "SASER2")
+    tenant.fiscal_invoice_series = "FA01"
+    tenant.fiscal_invoice_series_floor = 180
+    superadmin = make_user(
+        db_session,
+        tenant,
+        email="superadmin-floor@test.com",
+        rol=ROLE_SUPERADMIN,
+        is_superadmin=True,
+    )
+    db_session.commit()
+
+    response = _client_for_user(db_session, superadmin, superadmin_router).put(
+        f"/superadmin/tenants/{tenant.id}/fiscal-series",
+        json=_fiscal_series_payload(fiscal_invoice_series_floor=179),
+    )
+    assert response.status_code == 409
+    db_session.refresh(tenant)
+    assert tenant.fiscal_invoice_series_floor == 180
+
+
+def test_actualizacion_generica_no_omite_confirmacion_de_series(db_session):
+    tenant = make_tenant(db_session, "SASER4")
+    superadmin = make_user(
+        db_session,
+        tenant,
+        email="superadmin-generic-series@test.com",
+        rol=ROLE_SUPERADMIN,
+        is_superadmin=True,
+    )
+    db_session.commit()
+
+    response = _client_for_user(db_session, superadmin, superadmin_router).patch(
+        f"/superadmin/tenants/{tenant.id}",
+        json={"fiscal_invoice_series": "FA01", "fiscal_invoice_series_floor": 180},
+    )
+
+    assert response.status_code == 409
+    db_session.refresh(tenant)
+    assert tenant.fiscal_invoice_series is None
+
+
+def test_superadmin_no_cambia_serie_con_guia_productiva_pendiente(db_session):
+    tenant = make_tenant(db_session, "SASER3")
+    tenant.fiscal_gre_remitente_series = "TI01"
+    tenant.fiscal_gre_remitente_series_floor = 1
+    superadmin = make_user(
+        db_session,
+        tenant,
+        email="superadmin-pending-guide@test.com",
+        rol=ROLE_SUPERADMIN,
+        is_superadmin=True,
+    )
+    db_session.add(models.GuiaRemision(
+        tenant_id=tenant.id,
+        usuario_id=superadmin.id,
+        tipo_documento="09",
+        serie="TI01",
+        correlativo=2,
+        estado="pendiente_smartpse",
+        emission_environment="production",
+    ))
+    db_session.commit()
+
+    response = _client_for_user(db_session, superadmin, superadmin_router).put(
+        f"/superadmin/tenants/{tenant.id}/fiscal-series",
+        json=_fiscal_series_payload(fiscal_gre_remitente_series="TI02"),
+    )
+    assert response.status_code == 409
+    db_session.refresh(tenant)
+    assert tenant.fiscal_gre_remitente_series == "TI01"
+
+
 def test_tenant_admin_no_puede_crear_rol_superadmin(db_session):
     tenant = make_tenant(db_session, "SA01")
     admin = make_user(db_session, tenant, email="tenant-admin@test.com", rol=ROLE_ADMIN)
