@@ -79,7 +79,7 @@ const ROUTE_META = {
   '/cobranza': { title: 'Cobranza', sub: 'Seguimiento de pagos' },
   '/guias': { title: 'Guías de remisión', sub: 'Despacho fiscal' },
   '/traslados-internos': { title: 'Traslados internos', sub: 'Entre establecimientos' },
-  '/inventario/establecimientos': { title: 'Establecimientos', sub: 'Ubicaciones declaradas' },
+  '/inventario/establecimientos': { title: 'Almacenes', sub: 'Inventario y datos SUNAT' },
   '/facturas': { title: 'Facturas', sub: 'Comprobantes tipo 01' },
   '/comprobantes/nuevo': { title: 'Crear comprobante', sub: 'Emisión central' },
   '/boletas': { title: 'Boletas', sub: 'Comprobantes tipo 03' },

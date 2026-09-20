@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -32,7 +32,6 @@ export default function InternalTransferNewPage() {
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [establishments, setEstablishments] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -47,11 +46,8 @@ export default function InternalTransferNewPage() {
   const [lines, setLines] = useState([]);
 
   useEffect(() => {
-    Promise.all([internalTransfers.establishments(), inventory.warehouses()])
-      .then(([establishmentRows, warehouseRows]) => {
-        setEstablishments(establishmentRows);
-        setWarehouses(warehouseRows);
-      })
+    inventory.warehouses()
+      .then(setWarehouses)
       .catch((err) =>
         toast(err.message || "No se pudo preparar el formulario.", "error"),
       )
@@ -89,28 +85,14 @@ export default function InternalTransferNewPage() {
     };
   }, [query]);
 
-  const verified = establishments.filter(
-    (row) => row.is_active && row.verified_at,
-  );
-  const sourceWarehouses = useMemo(
-    () =>
-      warehouses.filter(
-        (row) =>
-          String(row.establishment_id) === String(form.source_establishment_id),
-      ),
-    [form.source_establishment_id, warehouses],
-  );
-  const destinationWarehouses = useMemo(
-    () =>
-      warehouses.filter(
-        (row) =>
-          String(row.establishment_id) ===
-          String(form.destination_establishment_id),
-      ),
-    [form.destination_establishment_id, warehouses],
+  const verifiedWarehouses = warehouses.filter(
+    (row) => row.establishment?.is_active && row.establishment?.verified_at,
   );
   const canSubmit = Boolean(
-    form.source_establishment_id &&
+    form.source_warehouse_id &&
+      form.destination_warehouse_id &&
+      form.source_warehouse_id !== form.destination_warehouse_id &&
+      form.source_establishment_id &&
       form.destination_establishment_id &&
       form.reason.trim().length >= 3 &&
       lines.length &&
@@ -202,15 +184,15 @@ export default function InternalTransferNewPage() {
           </p>
         </div>
       </header>
-      {verified.length < 1 ? (
+      {verifiedWarehouses.length < 2 ? (
         <section className="internal-transfer-card internal-transfer-blocker">
           <Boxes size={22} />
           <div>
             <h2>Completa la configuración fiscal</h2>
-            <p>Necesitas al menos un establecimiento activo y verificado.</p>
+            <p>Necesitas al menos dos almacenes con datos SUNAT verificados.</p>
           </div>
-          <Link className="btn-primary" to="/inventario/establecimientos">
-            Configurar establecimientos
+          <Link className="btn-primary" to="/inventario?tab=warehouses">
+            Configurar almacenes
           </Link>
         </section>
       ) : (
@@ -221,84 +203,60 @@ export default function InternalTransferNewPage() {
               <div>
                 <h2>Ruta del traslado</h2>
                 <p>
-                  Elige establecimientos verificados y, si controlas stock, sus
-                  almacenes.
+                  Elige los almacenes de partida y llegada. Sus datos SUNAT se
+                  incorporarán automáticamente a la guía.
                 </p>
               </div>
             </div>
             <div className="internal-transfer-route-grid">
               <div>
-                <label>Establecimiento de partida</label>
+                <label>Almacén de partida</label>
                 <CustomSelect
                   required
-                  ariaLabel="Establecimiento de partida"
-                  value={form.source_establishment_id}
-                  onChange={(value) =>
+                  ariaLabel="Almacén de partida"
+                  value={form.source_warehouse_id}
+                  onChange={(value) => {
+                    const warehouse = verifiedWarehouses.find((row) => String(row.id) === String(value));
                     setForm({
                       ...form,
-                      source_establishment_id: value,
-                      source_warehouse_id: "",
-                    })
-                  }
-                  options={verified.map((row) => ({
+                      source_warehouse_id: value,
+                      source_establishment_id: warehouse?.establishment_id || "",
+                      destination_warehouse_id:
+                        String(form.destination_warehouse_id) === String(value)
+                          ? ""
+                          : form.destination_warehouse_id,
+                      destination_establishment_id:
+                        String(form.destination_warehouse_id) === String(value)
+                          ? ""
+                          : form.destination_establishment_id,
+                    });
+                  }}
+                  options={verifiedWarehouses.map((row) => ({
                     value: row.id,
-                    label: `${row.sunat_code} · ${row.name}`,
+                    label: `${row.name} · ${row.establishment.sunat_code}`,
                   }))}
                 />
               </div>
               <ArrowRight className="internal-transfer-route-arrow" />
               <div>
-                <label>Establecimiento de llegada</label>
+                <label>Almacén de llegada</label>
                 <CustomSelect
                   required
-                  ariaLabel="Establecimiento de llegada"
-                  value={form.destination_establishment_id}
-                  onChange={(value) =>
+                  ariaLabel="Almacén de llegada"
+                  value={form.destination_warehouse_id}
+                  onChange={(value) => {
+                    const warehouse = verifiedWarehouses.find((row) => String(row.id) === String(value));
                     setForm({
                       ...form,
-                      destination_establishment_id: value,
-                      destination_warehouse_id: "",
-                    })
-                  }
-                  options={verified.map((row) => ({
+                      destination_warehouse_id: value,
+                      destination_establishment_id: warehouse?.establishment_id || "",
+                    });
+                  }}
+                  options={verifiedWarehouses
+                    .filter((row) => String(row.id) !== String(form.source_warehouse_id))
+                    .map((row) => ({
                     value: row.id,
-                    label: `${row.sunat_code} · ${row.name}`,
-                  }))}
-                />
-              </div>
-            </div>
-            <div className="internal-transfer-form-grid">
-              <div>
-                <label>
-                  Almacén de origen <small>(si controla stock)</small>
-                </label>
-                <CustomSelect
-                  ariaLabel="Almacén de origen"
-                  value={form.source_warehouse_id}
-                  onChange={(value) =>
-                    setForm({ ...form, source_warehouse_id: value })
-                  }
-                  placeholder="Sin almacén"
-                  options={sourceWarehouses.map((row) => ({
-                    value: row.id,
-                    label: row.name,
-                  }))}
-                />
-              </div>
-              <div>
-                <label>
-                  Almacén de destino <small>(si controla stock)</small>
-                </label>
-                <CustomSelect
-                  ariaLabel="Almacén de destino"
-                  value={form.destination_warehouse_id}
-                  onChange={(value) =>
-                    setForm({ ...form, destination_warehouse_id: value })
-                  }
-                  placeholder="Sin almacén"
-                  options={destinationWarehouses.map((row) => ({
-                    value: row.id,
-                    label: row.name,
+                    label: `${row.name} · ${row.establishment.sunat_code}`,
                   }))}
                 />
               </div>

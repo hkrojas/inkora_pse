@@ -7396,12 +7396,19 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
 .inventory-warehouse-card__identity h3 { margin: 3px 0 0; }
 .inventory-warehouse-card__location { display: flex; align-items: center; gap: 7px; min-height: 42px; margin-top: 13px; padding: 10px; border-radius: 12px; background: var(--color-surface-soft); color: var(--color-text-muted); font-size: 11px; }
 .inventory-warehouse-card__location svg { flex: 0 0 auto; color: var(--color-primary); }
+.inventory-warehouse-fiscal { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; color: var(--color-text-muted); }
+.inventory-warehouse-fiscal svg { flex: 0 0 auto; margin-top: 1px; color: var(--color-primary); }
+.inventory-warehouse-fiscal div { display: grid; gap: 2px; }
+.inventory-warehouse-fiscal strong { color: var(--color-text); font-size: 10px; font-weight: 850; }
+.inventory-warehouse-fiscal small { font-size: 9px; line-height: 1.4; }
 .inventory-warehouse-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; color: var(--color-text-muted); font-size: 9px; font-weight: 750; }
 .inventory-warehouse-card__foot > span { display: inline-flex; align-items: center; gap: 6px; }
 .inventory-warehouse-card__foot > span > span { width: 6px; height: 6px; border-radius: 50%; background: var(--color-success); }
 .inventory-warehouse-card__foot small { font-family: var(--font-mono); }
 .inventory-warehouse-edit { display: inline-flex; align-items: center; gap: 5px; color: var(--color-primary); font-weight: 850; }
 .inventory-warehouse-edit:hover { text-decoration: underline; }
+.inventory-warehouse-card__actions { display: inline-flex; align-items: center; gap: 10px; }
+.inventory-form-help { margin-top: -3px; color: var(--color-text-muted); font-size: 10px; line-height: 1.45; }
 
 .inventory-add-warehouse {
   min-height: 190px;

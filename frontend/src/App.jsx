@@ -22,7 +22,6 @@ const GuiaTransportistaNuevaPage = lazy(() => import('./pages/GuiaTransportistaN
 const InternalTransfersPage = lazy(() => import('./pages/InternalTransfersPage'));
 const InternalTransferNewPage = lazy(() => import('./pages/InternalTransferNewPage'));
 const InternalTransferDetailPage = lazy(() => import('./pages/InternalTransferDetailPage'));
-const EstablishmentsPage = lazy(() => import('./pages/EstablishmentsPage'));
 const ConfiguracionPage = lazy(() => import('./pages/ConfiguracionPage'));
 const PdfDesignerPage = lazy(() => import('./pages/PdfDesignerPage'));
 const SuperadminPage = lazy(() => import('./pages/SuperadminPage'));
@@ -76,7 +75,7 @@ export default function App() {
               <Route path="/traslados-internos" element={<LazyRoute><InternalTransfersPage /></LazyRoute>} />
               <Route path="/traslados-internos/nuevo" element={<LazyRoute><InternalTransferNewPage /></LazyRoute>} />
               <Route path="/traslados-internos/:id" element={<LazyRoute><InternalTransferDetailPage /></LazyRoute>} />
-              <Route path="/inventario/establecimientos" element={<LazyRoute><EstablishmentsPage /></LazyRoute>} />
+              <Route path="/inventario/establecimientos" element={<Navigate to="/inventario?tab=warehouses" replace />} />
               <Route path="/configuracion" element={<LazyRoute><ConfiguracionPage /></LazyRoute>} />
               <Route path="/cambiar-password" element={<Navigate to="/configuracion?tab=seguridad" replace />} />
               <Route path="/diseno-pdf" element={<LazyRoute><PdfDesignerPage /></LazyRoute>} />

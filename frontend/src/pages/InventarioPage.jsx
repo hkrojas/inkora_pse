@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowDown, ArrowLeftRight, ArrowUp, Boxes, ClipboardList,
   Download, MapPin, PackageCheck, PackageMinus, Pencil, Plus, RefreshCw, RotateCcw,
-  Search, Upload, Warehouse, X,
+  Search, ShieldCheck, Upload, Warehouse, X,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Button from '../components/ui/Button';
@@ -54,6 +54,10 @@ const movementTypeOptions = [
   { value: 'return_received', label: 'Devolución recibida' },
 ];
 const qty = (value) => Number(value || 0).toLocaleString('es-PE', { maximumFractionDigits: 4 });
+const emptyWarehouseForm = () => ({
+  code: '', name: '', location: '', is_default: false,
+  sunat_code: '', ubigeo: '', is_sunat_main: false,
+});
 
 function Metric({ label, value, description, icon: Icon, tone = 'neutral' }) {
   return (
@@ -159,8 +163,9 @@ export default function InventarioPage() {
   const [productOptions, setProductOptions] = useState([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [form, setForm] = useState({ warehouse_id: '', product_id: '', quantity: '', reason: '', movement_type: 'adjustment' });
-  const [warehouseForm, setWarehouseForm] = useState({ code: '', name: '', location: '', is_default: false });
+  const [warehouseForm, setWarehouseForm] = useState(emptyWarehouseForm);
   const [editingWarehouse, setEditingWarehouse] = useState(null);
+  const [warehouseVerificationNote, setWarehouseVerificationNote] = useState('');
   const [bulk, setBulk] = useState({ warehouse_id: '', mode: 'add', reason: 'Carga masiva de existencias', query: '', quantities: {} });
   const [importErrors, setImportErrors] = useState([]);
   const [config, setConfig] = useState({ product_id: '', warehouse_id: '', opening_stock: '0', minimum_stock: '0', item_type: 'inventory' });
@@ -346,25 +351,51 @@ export default function InventarioPage() {
     });
     setModal('stock');
   };
+  const warehousePayload = () => ({
+    ...warehouseForm,
+    location: warehouseForm.location.trim() || null,
+    sunat_code: warehouseForm.sunat_code || null,
+    ubigeo: warehouseForm.ubigeo || null,
+  });
+  const openWarehouseCreate = () => {
+    setEditingWarehouse(null);
+    setWarehouseForm(emptyWarehouseForm());
+    setModal('warehouse');
+  };
   const submitWarehouse = (event) => {
     event.preventDefault();
-    return run(() => inventory.createWarehouse(warehouseForm), 'Almacén creado.');
+    return run(() => inventory.createWarehouse(warehousePayload()), 'Almacén creado.');
   };
   const openWarehouseEdit = (row) => {
     setEditingWarehouse(row);
-    setWarehouseForm({ code: row.code, name: row.name, location: row.location || '', is_default: row.is_default });
+    setWarehouseForm({
+      code: row.code,
+      name: row.name,
+      location: row.location || row.establishment?.address || '',
+      is_default: row.is_default,
+      sunat_code: row.establishment?.sunat_code || '',
+      ubigeo: row.establishment?.ubigeo || '',
+      is_sunat_main: Boolean(row.establishment?.is_main),
+    });
     setModal('warehouse-edit');
   };
   const submitWarehouseEdit = (event) => {
     event.preventDefault();
     return run(
-      () => inventory.updateWarehouse(editingWarehouse.id, {
-        name: warehouseForm.name,
-        location: warehouseForm.location || null,
-        is_default: warehouseForm.is_default,
-        establishment_id: editingWarehouse.establishment_id || null,
-      }),
+      () => inventory.updateWarehouse(editingWarehouse.id, warehousePayload()),
       'Almacén actualizado.',
+    );
+  };
+  const openWarehouseVerification = (row) => {
+    setEditingWarehouse(row);
+    setWarehouseVerificationNote('Datos contrastados con la ficha RUC y los establecimientos anexos declarados a SUNAT.');
+    setModal('warehouse-verify');
+  };
+  const submitWarehouseVerification = (event) => {
+    event.preventDefault();
+    return run(
+      () => inventory.verifyWarehouseFiscalLocation(editingWarehouse.id, warehouseVerificationNote),
+      'Datos SUNAT del almacén verificados.',
     );
   };
   const openProductHistory = (row) => {
@@ -611,9 +642,88 @@ export default function InventarioPage() {
         </section>
       )}
 
-      {tab === 'warehouses' && <section className="inventory-panel"><PanelHeading eyebrow="Ubicaciones" title="Almacenes activos" description="Organiza el stock por sede y prepara transferencias entre ubicaciones." meta={`${warehouses.length} almacenes`} /><div className="inventory-warehouse-grid">{warehouses.length === 0 ? <EmptyState icon={<Warehouse size={22} />} title="Configura el almacén principal" description="El inventario seguirá desactivado hasta completar este paso." actionLabel={isAdmin ? 'Activar inventario' : undefined} onAction={activate} /> : <>{warehouses.map((row) => <article key={row.id} className={`inventory-warehouse-card ${row.is_default ? 'is-primary' : ''}`}><div className="inventory-warehouse-card__top"><span className="inventory-warehouse-card__icon"><Warehouse size={18} /></span>{row.is_default ? <span className="inventory-warehouse-card__badge">Almacén principal</span> : <span className="inventory-warehouse-card__badge inventory-warehouse-card__badge--secondary">Sede adicional</span>}</div><div className="inventory-warehouse-card__identity"><span>{row.code}</span><h3>{row.name}</h3></div><div className="inventory-warehouse-card__location"><MapPin size={14} /><span>{row.location || 'Ubicación pendiente de registrar'}</span></div><div className="inventory-warehouse-card__foot"><span><span aria-hidden="true" />Disponible para movimientos</span>{isAdmin ? <button type="button" onClick={() => openWarehouseEdit(row)} className="inventory-warehouse-edit"><Pencil size={12} />Editar</button> : <small>ID {row.id}</small>}</div></article>)}{isAdmin && <button type="button" onClick={() => setModal('warehouse')} className="inventory-add-warehouse"><span className="inventory-add-warehouse__icon"><Plus size={18} /></span><strong>Añadir almacén</strong><small>Crea otra ubicación para distribuir existencias.</small></button>}</>}</div></section>}
+      {tab === 'warehouses' && (
+        <section className="inventory-panel">
+          <PanelHeading
+            eyebrow="Ubicaciones"
+            title="Almacenes activos"
+            description="Administra el stock y los datos SUNAT de cada ubicación desde un solo lugar."
+            meta={`${warehouses.length} almacenes`}
+          />
+          <div className="inventory-warehouse-grid">
+            {warehouses.length === 0 ? (
+              <EmptyState
+                icon={<Warehouse size={22} />}
+                title="Configura el almacén principal"
+                description="El inventario seguirá desactivado hasta completar este paso."
+                actionLabel={isAdmin ? 'Activar inventario' : undefined}
+                onAction={activate}
+              />
+            ) : (
+              <>
+                {warehouses.map((row) => {
+                  const fiscal = row.establishment;
+                  return (
+                    <article key={row.id} className={`inventory-warehouse-card ${row.is_default ? 'is-primary' : ''}`}>
+                      <div className="inventory-warehouse-card__top">
+                        <span className="inventory-warehouse-card__icon"><Warehouse size={18} /></span>
+                        {row.is_default ? (
+                          <span className="inventory-warehouse-card__badge">Almacén principal</span>
+                        ) : (
+                          <span className="inventory-warehouse-card__badge inventory-warehouse-card__badge--secondary">Sede adicional</span>
+                        )}
+                      </div>
+                      <div className="inventory-warehouse-card__identity">
+                        <span>{row.code}</span>
+                        <h3>{row.name}</h3>
+                      </div>
+                      <div className="inventory-warehouse-card__location">
+                        <MapPin size={14} />
+                        <span>{row.location || 'Dirección pendiente de registrar'}</span>
+                      </div>
+                      <div className="inventory-warehouse-fiscal">
+                        <ShieldCheck size={14} />
+                        <div>
+                          <strong>
+                            {fiscal?.verified_at ? 'Datos SUNAT verificados' : fiscal ? 'Datos SUNAT pendientes de verificar' : 'Falta configuración SUNAT'}
+                          </strong>
+                          <small>
+                            {fiscal ? `${fiscal.sunat_code} · Ubigeo ${fiscal.ubigeo}` : 'Completa código de local y ubigeo para usarlo en GRE.'}
+                          </small>
+                        </div>
+                      </div>
+                      <div className="inventory-warehouse-card__foot">
+                        <span><span aria-hidden="true" />Disponible para movimientos</span>
+                        {isAdmin ? (
+                          <div className="inventory-warehouse-card__actions">
+                            {fiscal && !fiscal.verified_at && (
+                              <button type="button" onClick={() => openWarehouseVerification(row)} className="inventory-warehouse-edit">
+                                <ShieldCheck size={12} />Verificar
+                              </button>
+                            )}
+                            <button type="button" onClick={() => openWarehouseEdit(row)} className="inventory-warehouse-edit">
+                              <Pencil size={12} />Editar
+                            </button>
+                          </div>
+                        ) : <small>ID {row.id}</small>}
+                      </div>
+                    </article>
+                  );
+                })}
+                {isAdmin && (
+                  <button type="button" onClick={openWarehouseCreate} className="inventory-add-warehouse">
+                    <span className="inventory-add-warehouse__icon"><Plus size={18} /></span>
+                    <strong>Añadir almacén</strong>
+                    <small>Registra inventario y datos SUNAT en una sola ubicación.</small>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </section>
+      )}
 
-      {tab === 'transfers' && <section className="inventory-panel"><PanelHeading eyebrow="Movimiento interno" title="Traslados entre establecimientos" description="Prepara despachos, emite la GRE cuando corresponde y registra la recepción física sin adelantar el ingreso al destino." /><div className="inventory-transfer-empty"><div className="inventory-transfer-route" aria-hidden="true"><span><Warehouse size={18} /></span><i /><span><ArrowLeftRight size={18} /></span><i /><span><Warehouse size={18} /></span></div>{internalTransfersEnabled ? <EmptyState icon={<ArrowLeftRight size={22} />} title="Gestiona el traslado completo" description="La salida y la recepción se registran en momentos distintos. Los movimientos históricos inmediatos se conservan solo para consulta." action={<div className="flex flex-wrap justify-center gap-2"><Link className="btn-primary" to="/traslados-internos/nuevo">Nuevo traslado</Link><Link className="btn-secondary" to="/traslados-internos">Ver traslados</Link><Link className="btn" to="/inventario/establecimientos">Establecimientos</Link></div>} /> : <EmptyState icon={<ArrowLeftRight size={22} />} title="Traslados internos no habilitados" description="Solicita al administrador habilitar esta función para tu empresa. El inventario actual no se modifica." />}</div></section>}
+      {tab === 'transfers' && <section className="inventory-panel"><PanelHeading eyebrow="Movimiento interno" title="Traslados entre almacenes" description="Prepara despachos, emite la GRE cuando corresponde y registra la recepción física sin adelantar el ingreso al destino." /><div className="inventory-transfer-empty"><div className="inventory-transfer-route" aria-hidden="true"><span><Warehouse size={18} /></span><i /><span><ArrowLeftRight size={18} /></span><i /><span><Warehouse size={18} /></span></div>{internalTransfersEnabled ? <EmptyState icon={<ArrowLeftRight size={22} />} title="Gestiona el traslado completo" description="La salida y la recepción se registran en momentos distintos. Los movimientos históricos inmediatos se conservan solo para consulta." action={<div className="flex flex-wrap justify-center gap-2"><Link className="btn-primary" to="/traslados-internos/nuevo">Nuevo traslado</Link><Link className="btn-secondary" to="/traslados-internos">Ver traslados</Link><Link className="btn" to="/inventario?tab=warehouses">Configurar almacenes</Link></div>} /> : <EmptyState icon={<ArrowLeftRight size={22} />} title="Traslados internos no habilitados" description="Solicita al administrador habilitar esta función para tu empresa. El inventario actual no se modifica." />}</div></section>}
 
       {tab === 'returns' && <section className="inventory-panel"><PanelHeading eyebrow="Ingreso por devolución" title="Recepciones pendientes" description="Confirma únicamente las unidades que regresaron físicamente al almacén." meta={`${returns.length} pendientes`} /><div className="inventory-return-list">{returns.length === 0 ? <div className="p-4"><EmptyState icon={<RotateCcw size={22} />} title="No hay devoluciones pendientes" description="Las notas de crédito con devolución física aparecerán aquí después de ser aceptadas." /></div> : returns.map((row) => <article key={row.id} className="inventory-return-card"><div className="inventory-return-card__head"><div><p className="inventory-panel__eyebrow">Nota de crédito</p><h3>{row.credit_note_number || `Documento #${row.credit_note_id}`}</h3><span>{row.items.length} {row.items.length === 1 ? 'producto autorizado' : 'productos autorizados'}</span></div><div className="inventory-return-card__actions"><span className="inventory-return-status"><span aria-hidden="true" />{row.status === 'received' ? 'Recibida' : 'Pendiente de recepción'}</span>{canOperate && row.status !== 'received' && <Button onClick={() => openReceipt(row)}>Confirmar recepción</Button>}</div></div><div className="inventory-return-items">{row.items.map((item) => { const authorized = Number(item.authorized_quantity || 0); const received = Number(item.received_quantity || 0); const progress = authorized > 0 ? Math.min(100, (received / authorized) * 100) : 0; return <div key={item.id} className="inventory-return-item"><div><span className="inventory-return-item__icon" aria-hidden="true"><Boxes size={14} /></span><div><strong>{item.product_name || `Producto #${item.product_id}`}</strong><small>Recibido {qty(received)} de {qty(authorized)}</small></div></div><div className="inventory-return-progress" aria-label={`${Math.round(progress)}% recibido`}><span style={{ width: `${progress}%` }} /></div><b>{qty(Math.max(authorized - received, 0))} pendiente</b></div>; })}</div></article>)}</div></section>}
 
@@ -668,11 +778,51 @@ export default function InventarioPage() {
       </Drawer>
 
       <Drawer open={modal === 'warehouse'} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Red de almacenes" status="Nueva ubicación" initialFocus="input" title="Crear almacén" subtitle="Añade una ubicación para organizar stock y realizar transferencias." icon={<Warehouse size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="warehouse-form" className="btn-primary" disabled={saving}>{saving ? 'Creando…' : 'Crear almacén'}</button></>}>
-        <form id="warehouse-form" onSubmit={submitWarehouse} className="inventory-action-form"><section className="inventory-form-section"><div className="inventory-form-section__heading"><span>01</span><div><h3>Identificación</h3><p>Usa un código corto que permita reconocer esta ubicación.</p></div></div><label>Código<input required maxLength={30} className="input mt-1 uppercase" value={warehouseForm.code} onChange={(event) => setWarehouseForm({ ...warehouseForm, code: event.target.value.toUpperCase() })} placeholder="TIENDA-01" /></label><label>Nombre<input required minLength={2} className="input mt-1" value={warehouseForm.name} onChange={(event) => setWarehouseForm({ ...warehouseForm, name: event.target.value })} placeholder="Tienda principal" /></label><label>Ubicación <small>(opcional)</small><input className="input mt-1" value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} placeholder="Dirección o referencia" /></label></section><label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_default} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_default: event.target.checked })} /><span><strong>Usar como almacén principal</strong><small>Será la ubicación sugerida en nuevas operaciones.</small></span></label></form>
+        <form id="warehouse-form" onSubmit={submitWarehouse} className="inventory-action-form">
+          <section className="inventory-form-section">
+            <div className="inventory-form-section__heading"><span>01</span><div><h3>Identificación</h3><p>Usa un código corto que permita reconocer esta ubicación.</p></div></div>
+            <label>Código interno<input required maxLength={30} className="input mt-1 uppercase" value={warehouseForm.code} onChange={(event) => setWarehouseForm({ ...warehouseForm, code: event.target.value.toUpperCase() })} placeholder="TIENDA-01" /></label>
+            <label>Nombre<input required minLength={2} className="input mt-1" value={warehouseForm.name} onChange={(event) => setWarehouseForm({ ...warehouseForm, name: event.target.value })} placeholder="Tienda principal" /></label>
+            <label>Dirección completa<input className="input mt-1" required={Boolean(warehouseForm.sunat_code || warehouseForm.ubigeo)} value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} placeholder="Av., calle, número y distrito" /></label>
+          </section>
+          <section className="inventory-form-section">
+            <div className="inventory-form-section__heading"><span>02</span><div><h3>Datos para guías electrónicas</h3><p>Completa estos datos si el almacén será origen o destino de una GRE.</p></div></div>
+            <div className="inventory-form-grid">
+              <label>Código de local SUNAT<input inputMode="numeric" pattern="[0-9]{4}" maxLength={4} className="input mt-1" value={warehouseForm.sunat_code} onChange={(event) => setWarehouseForm({ ...warehouseForm, sunat_code: event.target.value.replace(/\D/g, '') })} placeholder="0000" /></label>
+              <label>Ubigeo<input inputMode="numeric" pattern="[0-9]{6}" maxLength={6} className="input mt-1" value={warehouseForm.ubigeo} onChange={(event) => setWarehouseForm({ ...warehouseForm, ubigeo: event.target.value.replace(/\D/g, '') })} placeholder="150101" /></label>
+            </div>
+            <p className="inventory-form-help">El código 0000 solo corresponde al establecimiento principal declarado ante SUNAT.</p>
+          </section>
+          <label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_default} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_default: event.target.checked })} /><span><strong>Usar como almacén principal</strong><small>Será la ubicación sugerida en nuevas operaciones.</small></span></label>
+          <label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_sunat_main} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_sunat_main: event.target.checked })} /><span><strong>Local principal ante SUNAT</strong><small>Esta condición es fiscal y puede diferir del almacén sugerido.</small></span></label>
+        </form>
       </Drawer>
 
       <Drawer open={modal === 'warehouse-edit' && Boolean(editingWarehouse)} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Red de almacenes" status="Edición segura" initialFocus="input" title="Editar almacén" subtitle={editingWarehouse?.code || ''} icon={<Pencil size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="warehouse-edit-form" className="btn-primary" disabled={saving}>{saving ? 'Guardando…' : 'Guardar cambios'}</button></>}>
-        <form id="warehouse-edit-form" onSubmit={submitWarehouseEdit} className="inventory-action-form"><section className="inventory-form-section"><div className="inventory-form-section__heading"><span><Warehouse size={14} /></span><div><h3>Datos de la ubicación</h3><p>El código se conserva para no perder referencias históricas.</p></div></div><label>Código<input disabled className="input mt-1" value={warehouseForm.code} /></label><label>Nombre<input required minLength={2} className="input mt-1" value={warehouseForm.name} onChange={(event) => setWarehouseForm({ ...warehouseForm, name: event.target.value })} /></label><label>Dirección o referencia<input className="input mt-1" value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} /></label></section><label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_default} disabled={editingWarehouse?.is_default} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_default: event.target.checked })} /><span><strong>Usar como almacén principal</strong><small>{editingWarehouse?.is_default ? 'Este almacén ya es el principal.' : 'Reemplazará al almacén principal actual.'}</small></span></label></form>
+        <form id="warehouse-edit-form" onSubmit={submitWarehouseEdit} className="inventory-action-form">
+          <section className="inventory-form-section">
+            <div className="inventory-form-section__heading"><span><Warehouse size={14} /></span><div><h3>Datos de la ubicación</h3><p>El código interno se conserva para no perder referencias históricas.</p></div></div>
+            <label>Código interno<input disabled className="input mt-1" value={warehouseForm.code} /></label>
+            <label>Nombre<input required minLength={2} className="input mt-1" value={warehouseForm.name} onChange={(event) => setWarehouseForm({ ...warehouseForm, name: event.target.value })} /></label>
+            <label>Dirección completa<input className="input mt-1" required={Boolean(warehouseForm.sunat_code || warehouseForm.ubigeo)} value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} /></label>
+          </section>
+          <section className="inventory-form-section">
+            <div className="inventory-form-section__heading"><span>02</span><div><h3>Datos para guías electrónicas</h3><p>Si cambias estos datos, Inkora solicitará verificarlos nuevamente.</p></div></div>
+            <div className="inventory-form-grid">
+              <label>Código de local SUNAT<input inputMode="numeric" pattern="[0-9]{4}" maxLength={4} className="input mt-1" value={warehouseForm.sunat_code} onChange={(event) => setWarehouseForm({ ...warehouseForm, sunat_code: event.target.value.replace(/\D/g, '') })} placeholder="0000" /></label>
+              <label>Ubigeo<input inputMode="numeric" pattern="[0-9]{6}" maxLength={6} className="input mt-1" value={warehouseForm.ubigeo} onChange={(event) => setWarehouseForm({ ...warehouseForm, ubigeo: event.target.value.replace(/\D/g, '') })} placeholder="150101" /></label>
+            </div>
+          </section>
+          <label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_default} disabled={editingWarehouse?.is_default} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_default: event.target.checked })} /><span><strong>Usar como almacén principal</strong><small>{editingWarehouse?.is_default ? 'Este almacén ya es el principal.' : 'Reemplazará al almacén principal actual.'}</small></span></label>
+          <label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_sunat_main} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_sunat_main: event.target.checked })} /><span><strong>Local principal ante SUNAT</strong><small>Usa esta opción solo cuando coincida con la declaración fiscal.</small></span></label>
+        </form>
+      </Drawer>
+
+      <Drawer open={modal === 'warehouse-verify' && Boolean(editingWarehouse)} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Datos SUNAT" status="Confirmación administrativa" initialFocus="textarea" title="Verificar almacén" subtitle={editingWarehouse?.name || ''} icon={<ShieldCheck size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="warehouse-verify-form" className="btn-primary" disabled={saving}>{saving ? 'Verificando…' : 'Confirmar verificación'}</button></>}>
+        <form id="warehouse-verify-form" onSubmit={submitWarehouseVerification} className="inventory-action-form">
+          <p className="inventory-stock-drawer__notice"><ShieldCheck size={15} aria-hidden="true" />La verificación registra quién contrastó los datos y cuándo. No modifica la información declarada en SUNAT.</p>
+          <label>Evidencia o criterio de verificación<textarea required minLength={10} className="input mt-1 min-h-28" value={warehouseVerificationNote} onChange={(event) => setWarehouseVerificationNote(event.target.value)} /></label>
+        </form>
       </Drawer>
 
       <Drawer open={modal === 'bulk'} onClose={() => setModal(null)} variant="inventory-action" eyebrow="Operación por lote" status="Vista previa obligatoria" initialFocus=".ink-select-trigger" title="Carga masiva de existencias" subtitle="Registra varios productos en una sola operación trazable." icon={<Upload size={20} />} footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="bulk-stock-form" className="btn-primary" disabled={saving || !Object.values(bulk.quantities).some((value) => value !== '')}>{saving ? 'Procesando…' : 'Confirmar carga'}</button></>}>
