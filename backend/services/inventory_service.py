@@ -43,6 +43,148 @@ def get_warehouse(db: Session, tenant_id: int, warehouse_id: int, *, active=True
     return warehouse
 
 
+def list_fiscal_establishments(db: Session, tenant_id: int):
+    return db.query(models.TenantEstablishment).filter(
+        models.TenantEstablishment.tenant_id == tenant_id,
+        models.TenantEstablishment.is_active.is_(True),
+    ).order_by(
+        models.TenantEstablishment.is_main.desc(),
+        models.TenantEstablishment.sunat_code,
+    ).all()
+
+
+def _available_generated_warehouse_code(db: Session, tenant_id: int, sunat_code: str) -> str:
+    base = f"SUNAT-{sunat_code}"
+    existing = {
+        row[0]
+        for row in db.query(models.Warehouse.code).filter(
+            models.Warehouse.tenant_id == tenant_id,
+            models.Warehouse.code.like(f"{base}%"),
+        ).all()
+    }
+    if base not in existing:
+        return base
+    suffix = 2
+    while f"{base}-{suffix}" in existing:
+        suffix += 1
+    return f"{base}-{suffix}"
+
+
+def sync_factiliza_establishments(
+    db: Session,
+    tenant_id: int,
+    ruc: str,
+    locations: list[dict],
+    *,
+    user_id: int | None = None,
+    commit: bool = True,
+) -> dict:
+    """Persist one Factiliza snapshot without deleting operational locations.
+
+    The provider call must complete before entering this function. Re-running
+    the same snapshot updates fiscal identity in place and never creates a
+    second warehouse for an already linked establishment.
+    """
+    tenant = db.query(models.Tenant).filter(
+        models.Tenant.id == tenant_id,
+    ).with_for_update().first()
+    if not tenant:
+        raise HTTPException(404, "Empresa no encontrada.")
+    if str(tenant.business_ruc or "").strip() != str(ruc or "").strip():
+        raise HTTPException(409, "La consulta no corresponde al RUC de la empresa autenticada.")
+
+    now = datetime.now()
+    created = updated = warehouses_created = warehouses_linked = 0
+    main_establishment = None
+    normalized_codes = {str(row["sunat_code"]).strip() for row in locations}
+    if "0000" not in normalized_codes:
+        raise HTTPException(422, "La consulta no contiene el establecimiento principal 0000.")
+
+    for location in locations:
+        code = str(location["sunat_code"]).strip()
+        if bool(location["is_main"]):
+            db.query(models.TenantEstablishment).filter(
+                models.TenantEstablishment.tenant_id == tenant_id,
+                models.TenantEstablishment.sunat_code != code,
+            ).update({models.TenantEstablishment.is_main: False}, synchronize_session=False)
+        establishment = db.query(models.TenantEstablishment).filter(
+            models.TenantEstablishment.tenant_id == tenant_id,
+            models.TenantEstablishment.sunat_code == code,
+        ).with_for_update().first()
+        if establishment is None:
+            establishment = models.TenantEstablishment(
+                tenant_id=tenant_id,
+                sunat_code=code,
+                name=location["name"],
+                ubigeo=location["ubigeo"],
+                address=location["address"],
+                is_main=bool(location["is_main"]),
+                is_active=True,
+            )
+            db.add(establishment)
+            db.flush()
+            created += 1
+        else:
+            establishment.name = location["name"]
+            establishment.ubigeo = location["ubigeo"]
+            establishment.address = location["address"]
+            establishment.is_main = bool(location["is_main"])
+            establishment.is_active = True
+            updated += 1
+        establishment.verified_at = now
+        establishment.verified_by_user_id = user_id
+        establishment.verification_note = f"Sincronizado con Factiliza Consulta para el RUC {ruc}."
+        if establishment.is_main:
+            main_establishment = establishment
+
+        linked_warehouse = db.query(models.Warehouse).filter(
+            models.Warehouse.tenant_id == tenant_id,
+            models.Warehouse.establishment_id == establishment.id,
+        ).order_by(models.Warehouse.is_default.desc(), models.Warehouse.id).first()
+        if linked_warehouse:
+            continue
+        if establishment.is_main:
+            linked_warehouse = get_default_warehouse(db, tenant_id)
+            if linked_warehouse:
+                linked_warehouse.establishment_id = establishment.id
+                if not (linked_warehouse.location or "").strip():
+                    linked_warehouse.location = establishment.address
+                warehouses_linked += 1
+                continue
+        db.add(models.Warehouse(
+            tenant_id=tenant_id,
+            establishment_id=establishment.id,
+            code=_available_generated_warehouse_code(db, tenant_id, code),
+            name=establishment.name,
+            location=establishment.address,
+            is_default=False,
+            is_active=True,
+        ))
+        db.flush()
+        warehouses_created += 1
+
+    if main_establishment:
+        db.query(models.TenantEstablishment).filter(
+            models.TenantEstablishment.tenant_id == tenant_id,
+            models.TenantEstablishment.id != main_establishment.id,
+        ).update({models.TenantEstablishment.is_main: False}, synchronize_session=False)
+
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    establishments = list_fiscal_establishments(db, tenant_id)
+    return {
+        "provider": "factiliza",
+        "ruc": str(ruc),
+        "establishments_created": created,
+        "establishments_updated": updated,
+        "warehouses_created": warehouses_created,
+        "warehouses_linked": warehouses_linked,
+        "establishments": establishments,
+    }
+
+
 def _apply_warehouse_fiscal_location(db: Session, tenant_id: int, warehouse, data):
     """Create or maintain the SUNAT location behind a warehouse.
 
@@ -55,6 +197,11 @@ def _apply_warehouse_fiscal_location(db: Session, tenant_id: int, warehouse, dat
     has_fiscal_payload = bool(sunat_code or ubigeo)
     establishment = warehouse.establishment if warehouse.establishment_id else None
     requested_establishment_id = getattr(data, "establishment_id", None)
+    establishment_selection_sent = "establishment_id" in getattr(data, "model_fields_set", set())
+
+    if establishment_selection_sent and requested_establishment_id is None and not has_fiscal_payload:
+        warehouse.establishment_id = None
+        return None
 
     if requested_establishment_id and requested_establishment_id != warehouse.establishment_id:
         establishment = db.query(models.TenantEstablishment).filter(
@@ -71,12 +218,9 @@ def _apply_warehouse_fiscal_location(db: Session, tenant_id: int, warehouse, dat
 
     address = (getattr(data, "location", None) or "").strip()
     if establishment is not None and not has_fiscal_payload:
-        establishment.name = warehouse.name
-        if address and establishment.address != address:
-            establishment.address = address
-            establishment.verified_at = None
-            establishment.verified_by_user_id = None
-            establishment.verification_note = None
+        # The warehouse is an operational location. Multiple warehouses can
+        # share one SUNAT establishment, so editing a warehouse must never
+        # overwrite the persisted fiscal name, address or verification.
         return establishment
 
     if not address:

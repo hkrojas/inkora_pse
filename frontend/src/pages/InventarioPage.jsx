@@ -56,7 +56,7 @@ const movementTypeOptions = [
 const qty = (value) => Number(value || 0).toLocaleString('es-PE', { maximumFractionDigits: 4 });
 const emptyWarehouseForm = () => ({
   code: '', name: '', location: '', is_default: false,
-  sunat_code: '', ubigeo: '', is_sunat_main: false,
+  establishment_id: '',
 });
 
 function Metric({ label, value, description, icon: Icon, tone = 'neutral' }) {
@@ -137,6 +137,8 @@ export default function InventarioPage() {
   const [movementTotal, setMovementTotal] = useState(0);
   const [movementPage, setMovementPage] = useState(1);
   const [warehouses, setWarehouses] = useState([]);
+  const [fiscalEstablishments, setFiscalEstablishments] = useState([]);
+  const [syncingEstablishments, setSyncingEstablishments] = useState(false);
   const [returns, setReturns] = useState([]);
   const [query, setQuery] = useState(() => initialParams.get('stock_q') || '');
   const [stockStatus, setStockStatus] = useState(() => initialParams.get('stock_status') || 'all');
@@ -179,16 +181,18 @@ export default function InventarioPage() {
       const skip = (movementPage - 1) * PAGE_SIZE;
       const movementParams = new URLSearchParams({ skip: String(skip), limit: String(PAGE_SIZE) });
       Object.entries(movementFilters).forEach(([key, value]) => { if (value) movementParams.set(key, value); });
-      const [stockRows, movementData, warehouseRows, returnRows] = await Promise.all([
+      const [stockRows, movementData, warehouseRows, establishmentRows, returnRows] = await Promise.all([
         inventory.stock(),
         inventory.movementsPage(`?${movementParams.toString()}`),
         inventory.warehouses(),
+        inventory.fiscalEstablishments(),
         inventory.returns('?skip=0&limit=15'),
       ]);
       setStock(stockRows);
       setMovements(movementData.items || []);
       setMovementTotal(Number(movementData.total || 0));
       setWarehouses(warehouseRows);
+      setFiscalEstablishments(establishmentRows);
       setReturns(returnRows);
     } catch (err) {
       setError(err.message || 'No se pudo cargar el inventario.');
@@ -354,8 +358,7 @@ export default function InventarioPage() {
   const warehousePayload = () => ({
     ...warehouseForm,
     location: warehouseForm.location.trim() || null,
-    sunat_code: warehouseForm.sunat_code || null,
-    ubigeo: warehouseForm.ubigeo || null,
+    establishment_id: warehouseForm.establishment_id ? Number(warehouseForm.establishment_id) : null,
   });
   const openWarehouseCreate = () => {
     setEditingWarehouse(null);
@@ -373,9 +376,7 @@ export default function InventarioPage() {
       name: row.name,
       location: row.location || row.establishment?.address || '',
       is_default: row.is_default,
-      sunat_code: row.establishment?.sunat_code || '',
-      ubigeo: row.establishment?.ubigeo || '',
-      is_sunat_main: Boolean(row.establishment?.is_main),
+      establishment_id: row.establishment_id ? String(row.establishment_id) : '',
     });
     setModal('warehouse-edit');
   };
@@ -397,6 +398,21 @@ export default function InventarioPage() {
       () => inventory.verifyWarehouseFiscalLocation(editingWarehouse.id, warehouseVerificationNote),
       'Datos SUNAT del almacén verificados.',
     );
+  };
+  const syncSunatEstablishments = async () => {
+    setSyncingEstablishments(true);
+    try {
+      const result = await inventory.syncSunatEstablishments();
+      await load();
+      toast(
+        `Establecimientos actualizados: ${result.establishments_created} nuevos y ${result.establishments_updated} revisados.`,
+        'success',
+      );
+    } catch (err) {
+      toast(err.message || 'No se pudieron sincronizar los establecimientos SUNAT.', 'error');
+    } finally {
+      setSyncingEstablishments(false);
+    }
   };
   const openProductHistory = (row) => {
     setKardexProductQuery('');
@@ -647,9 +663,18 @@ export default function InventarioPage() {
           <PanelHeading
             eyebrow="Ubicaciones"
             title="Almacenes activos"
-            description="Administra el stock y los datos SUNAT de cada ubicación desde un solo lugar."
+            description="Administra el stock y vincula cada ubicación con los establecimientos declarados ante SUNAT."
             meta={`${warehouses.length} almacenes`}
           />
+          {isAdmin && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] px-5 py-3">
+              <p className="text-sm text-[var(--color-text-muted)]">La consulta se realiza solo al sincronizar; luego Inkora usa los datos guardados.</p>
+              <button type="button" className="btn-secondary" onClick={syncSunatEstablishments} disabled={syncingEstablishments}>
+                <RefreshCw size={14} className={syncingEstablishments ? 'animate-spin' : ''} />
+                {syncingEstablishments ? 'Consultando SUNAT…' : 'Actualizar establecimientos SUNAT'}
+              </button>
+            </div>
+          )}
           <div className="inventory-warehouse-grid">
             {warehouses.length === 0 ? (
               <EmptyState
@@ -688,7 +713,7 @@ export default function InventarioPage() {
                             {fiscal?.verified_at ? 'Datos SUNAT verificados' : fiscal ? 'Datos SUNAT pendientes de verificar' : 'Falta configuración SUNAT'}
                           </strong>
                           <small>
-                            {fiscal ? `${fiscal.sunat_code} · Ubigeo ${fiscal.ubigeo}` : 'Completa código de local y ubigeo para usarlo en GRE.'}
+                            {fiscal ? `${fiscal.sunat_code} · Ubigeo ${fiscal.ubigeo}` : 'Ubicación interna: vincúlala a un establecimiento para usarla en GRE.'}
                           </small>
                         </div>
                       </div>
@@ -714,7 +739,7 @@ export default function InventarioPage() {
                   <button type="button" onClick={openWarehouseCreate} className="inventory-add-warehouse">
                     <span className="inventory-add-warehouse__icon"><Plus size={18} /></span>
                     <strong>Añadir almacén</strong>
-                    <small>Registra inventario y datos SUNAT en una sola ubicación.</small>
+                    <small>Puede compartir un establecimiento SUNAT con otros almacenes.</small>
                   </button>
                 )}
               </>
@@ -783,18 +808,25 @@ export default function InventarioPage() {
             <div className="inventory-form-section__heading"><span>01</span><div><h3>Identificación</h3><p>Usa un código corto que permita reconocer esta ubicación.</p></div></div>
             <label>Código interno<input required maxLength={30} className="input mt-1 uppercase" value={warehouseForm.code} onChange={(event) => setWarehouseForm({ ...warehouseForm, code: event.target.value.toUpperCase() })} placeholder="TIENDA-01" /></label>
             <label>Nombre<input required minLength={2} className="input mt-1" value={warehouseForm.name} onChange={(event) => setWarehouseForm({ ...warehouseForm, name: event.target.value })} placeholder="Tienda principal" /></label>
-            <label>Dirección completa<input className="input mt-1" required={Boolean(warehouseForm.sunat_code || warehouseForm.ubigeo)} value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} placeholder="Av., calle, número y distrito" /></label>
+            <label>Dirección interna (opcional)<input className="input mt-1" value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} placeholder="Piso, stand o referencia interna" /></label>
           </section>
           <section className="inventory-form-section">
-            <div className="inventory-form-section__heading"><span>02</span><div><h3>Datos para guías electrónicas</h3><p>Completa estos datos si el almacén será origen o destino de una GRE.</p></div></div>
-            <div className="inventory-form-grid">
-              <label>Código de local SUNAT<input inputMode="numeric" pattern="[0-9]{4}" maxLength={4} className="input mt-1" value={warehouseForm.sunat_code} onChange={(event) => setWarehouseForm({ ...warehouseForm, sunat_code: event.target.value.replace(/\D/g, '') })} placeholder="0000" /></label>
-              <label>Ubigeo<input inputMode="numeric" pattern="[0-9]{6}" maxLength={6} className="input mt-1" value={warehouseForm.ubigeo} onChange={(event) => setWarehouseForm({ ...warehouseForm, ubigeo: event.target.value.replace(/\D/g, '') })} placeholder="150101" /></label>
-            </div>
-            <p className="inventory-form-help">El código 0000 solo corresponde al establecimiento principal declarado ante SUNAT.</p>
+            <div className="inventory-form-section__heading"><span>02</span><div><h3>Establecimiento para guías</h3><p>Elige la sede SUNAT a la que pertenece este almacén. Varias ubicaciones internas pueden compartirla.</p></div></div>
+            <label>Establecimiento SUNAT
+              <CustomSelect
+                ariaLabel="Establecimiento SUNAT del almacén"
+                value={warehouseForm.establishment_id}
+                onChange={(value) => setWarehouseForm({ ...warehouseForm, establishment_id: value })}
+                placeholder="Solo uso interno"
+                options={fiscalEstablishments.map((row) => ({
+                  value: String(row.id),
+                  label: `${row.sunat_code} · ${row.name} · ${row.ubigeo}`,
+                }))}
+              />
+            </label>
+            <p className="inventory-form-help">Si no aparece una sede nueva, actualiza los establecimientos SUNAT antes de crear el almacén.</p>
           </section>
           <label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_default} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_default: event.target.checked })} /><span><strong>Usar como almacén principal</strong><small>Será la ubicación sugerida en nuevas operaciones.</small></span></label>
-          <label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_sunat_main} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_sunat_main: event.target.checked })} /><span><strong>Local principal ante SUNAT</strong><small>Esta condición es fiscal y puede diferir del almacén sugerido.</small></span></label>
         </form>
       </Drawer>
 
@@ -804,17 +836,24 @@ export default function InventarioPage() {
             <div className="inventory-form-section__heading"><span><Warehouse size={14} /></span><div><h3>Datos de la ubicación</h3><p>El código interno se conserva para no perder referencias históricas.</p></div></div>
             <label>Código interno<input disabled className="input mt-1" value={warehouseForm.code} /></label>
             <label>Nombre<input required minLength={2} className="input mt-1" value={warehouseForm.name} onChange={(event) => setWarehouseForm({ ...warehouseForm, name: event.target.value })} /></label>
-            <label>Dirección completa<input className="input mt-1" required={Boolean(warehouseForm.sunat_code || warehouseForm.ubigeo)} value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} /></label>
+            <label>Dirección interna (opcional)<input className="input mt-1" value={warehouseForm.location} onChange={(event) => setWarehouseForm({ ...warehouseForm, location: event.target.value })} /></label>
           </section>
           <section className="inventory-form-section">
-            <div className="inventory-form-section__heading"><span>02</span><div><h3>Datos para guías electrónicas</h3><p>Si cambias estos datos, Inkora solicitará verificarlos nuevamente.</p></div></div>
-            <div className="inventory-form-grid">
-              <label>Código de local SUNAT<input inputMode="numeric" pattern="[0-9]{4}" maxLength={4} className="input mt-1" value={warehouseForm.sunat_code} onChange={(event) => setWarehouseForm({ ...warehouseForm, sunat_code: event.target.value.replace(/\D/g, '') })} placeholder="0000" /></label>
-              <label>Ubigeo<input inputMode="numeric" pattern="[0-9]{6}" maxLength={6} className="input mt-1" value={warehouseForm.ubigeo} onChange={(event) => setWarehouseForm({ ...warehouseForm, ubigeo: event.target.value.replace(/\D/g, '') })} placeholder="150101" /></label>
-            </div>
+            <div className="inventory-form-section__heading"><span>02</span><div><h3>Establecimiento para guías</h3><p>Cambiar el almacén no modifica la dirección fiscal guardada del establecimiento.</p></div></div>
+            <label>Establecimiento SUNAT
+              <CustomSelect
+                ariaLabel="Establecimiento SUNAT del almacén"
+                value={warehouseForm.establishment_id}
+                onChange={(value) => setWarehouseForm({ ...warehouseForm, establishment_id: value })}
+                placeholder="Solo uso interno"
+                options={fiscalEstablishments.map((row) => ({
+                  value: String(row.id),
+                  label: `${row.sunat_code} · ${row.name} · ${row.ubigeo}`,
+                }))}
+              />
+            </label>
           </section>
           <label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_default} disabled={editingWarehouse?.is_default} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_default: event.target.checked })} /><span><strong>Usar como almacén principal</strong><small>{editingWarehouse?.is_default ? 'Este almacén ya es el principal.' : 'Reemplazará al almacén principal actual.'}</small></span></label>
-          <label className="inventory-drawer-check"><input type="checkbox" checked={warehouseForm.is_sunat_main} onChange={(event) => setWarehouseForm({ ...warehouseForm, is_sunat_main: event.target.checked })} /><span><strong>Local principal ante SUNAT</strong><small>Usa esta opción solo cuando coincida con la declaración fiscal.</small></span></label>
         </form>
       </Drawer>
 

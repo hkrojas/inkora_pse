@@ -87,8 +87,13 @@ export default function GuiaNuevaPage() {
     setLoading(true);
     svc.documentContext(documentId).then((data) => {
       setContext(data);
+      const sourceEstablishment = data.source_location?.ready
+        ? data.source_location.establishment
+        : null;
       setForm((current) => ({
         ...current,
+        partida_direccion: sourceEstablishment?.address || current.partida_direccion,
+        partida_ubigeo: sourceEstablishment?.ubigeo || current.partida_ubigeo,
         llegada_direccion: current.llegada_direccion || data.customer?.address || '',
         llegada_ubigeo: current.llegada_ubigeo || data.customer?.ubigeo || '',
       }));
@@ -413,9 +418,26 @@ export default function GuiaNuevaPage() {
 
               <div className="guide-route-block">
                 <div className="guide-subsection-title"><MapPin size={16} /><span>Ruta del traslado</span></div>
+                {context.source_location?.ready ? (
+                  <div className="guide-eligibility is-ready">
+                    <ShieldCheck size={18} />
+                    <div>
+                      <strong>{context.source_location.establishment.sunat_code} · {context.source_location.warehouse.name}</strong>
+                      <p>El origen se toma del establecimiento SUNAT vinculado al almacén del comprobante.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="guide-eligibility is-warning">
+                    <AlertTriangle size={18} />
+                    <div>
+                      <strong>Origen fiscal pendiente</strong>
+                      <p>{context.source_location?.reason || 'Configura el almacén de origen antes de emitir la guía.'}</p>
+                    </div>
+                  </div>
+                )}
                 <div className="guide-form-grid">
-                  <FormField label="Ubigeo de partida" required><input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} className="input" value={form.partida_ubigeo} onChange={set('partida_ubigeo')} placeholder="150101" /></FormField>
-                  <FormField label="Dirección de partida" required className="md:col-span-2"><input required className="input" value={form.partida_direccion} onChange={set('partida_direccion')} placeholder="Dirección completa de origen" /></FormField>
+                  <FormField label="Ubigeo de partida" required><input required readOnly={Boolean(context.source_location?.ready)} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} className="input" value={form.partida_ubigeo} onChange={set('partida_ubigeo')} placeholder="150101" /></FormField>
+                  <FormField label="Dirección de partida" required className="md:col-span-2"><input required readOnly={Boolean(context.source_location?.ready)} className="input" value={form.partida_direccion} onChange={set('partida_direccion')} placeholder="Dirección completa de origen" /></FormField>
                   <FormField label="Ubigeo de llegada" required><input required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} className="input" value={form.llegada_ubigeo || ''} onChange={set('llegada_ubigeo')} placeholder="150103" /></FormField>
                   <FormField label="Dirección de llegada" required className="md:col-span-2"><input required className="input" value={form.llegada_direccion || ''} onChange={set('llegada_direccion')} placeholder="Dirección completa de destino" /></FormField>
                 </div>

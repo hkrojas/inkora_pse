@@ -22,6 +22,7 @@ Nota: El propio script bloquea entornos no locales y bases que no sean SQLite.
 
 import os
 import sys
+from datetime import datetime
 
 # Asegurar que el directorio del script esté en el path
 sys.path.insert(0, os.path.dirname(__file__))
@@ -222,7 +223,35 @@ def main():
             db.refresh(user)
             print(f"[CREADO] Usuario admin sintético: {user.email}")
 
-        # 3. Clientes
+        # 3. Establecimiento fiscal sintético. Las pruebas de navegador no
+        # consultan proveedores externos; simulan el snapshot que Factiliza
+        # persistiría para una empresa real.
+        demo_establishment = (
+            db.query(models.TenantEstablishment)
+            .filter(
+                models.TenantEstablishment.tenant_id == tenant.id,
+                models.TenantEstablishment.sunat_code == "0000",
+            )
+            .first()
+        )
+        if not demo_establishment:
+            demo_establishment = models.TenantEstablishment(
+                tenant_id=tenant.id,
+                sunat_code="0000",
+                name="Establecimiento principal",
+                ubigeo="150101",
+                address="Av. Demo 123, Lima, Lima",
+                is_main=True,
+                is_active=True,
+                verified_at=datetime.now(),
+                verified_by_user_id=user.id,
+                verification_note="Snapshot SUNAT sintético para pruebas locales aisladas.",
+            )
+            db.add(demo_establishment)
+            db.commit()
+            print("[CREADO] Establecimiento fiscal sintético: 0000")
+
+        # 4. Clientes
         clientes_creados = 0
         for c_data in DEMO_CLIENTES:
             existing = (
@@ -241,7 +270,7 @@ def main():
 
         print(f"[CLIENTES] {clientes_creados} creados ({len(DEMO_CLIENTES) - clientes_creados} ya existían)")
 
-        # 4. Productos
+        # 5. Productos
         from decimal import Decimal
         productos_creados = 0
         for p_data in DEMO_PRODUCTOS:
@@ -268,7 +297,7 @@ def main():
 
         print(f"[PRODUCTOS] {productos_creados} creados ({len(DEMO_PRODUCTOS) - productos_creados} ya existían)")
 
-        # 5. Cotización de muestra
+        # 6. Cotización de muestra
         primer_cliente = (
             db.query(models.Cliente)
             .filter(models.Cliente.tenant_id == tenant.id)

@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     SMARTPSE_SERIES_FLOORS: str = ""
     DNIRUC_API_URL: str = "https://dniruc.apisperu.com/api/v1"
     DNIRUC_TOKEN: str = ""
+    FACTILIZA_API_URL: str = "https://api.factiliza.com/v1"
+    FACTILIZA_API_TOKEN: str = ""
+    FACTILIZA_TIMEOUT_SECONDS: int = 10
     GEMINI_API_KEY: str = ""
     EMISSION_MODE_DEFAULT: str = "async"
     EMISSION_WORKER_POLL_SECONDS: int = 3

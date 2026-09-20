@@ -425,7 +425,15 @@ def create_tenant_endpoint(
             business_ruc=data.business_ruc,
             business_address=data.business_address,
         )
-        tenant = crud.create_tenant(db, tenant_create)
+        from services import factiliza_lookup_service
+        locations = factiliza_lookup_service.fetch_company_locations_for_onboarding(
+            tenant_create.business_ruc
+        )
+        tenant = crud.create_tenant(
+            db,
+            tenant_create,
+            factiliza_locations=locations,
+        )
         # Si se proporcionaron credenciales ApisPeru, actualizarlas de inmediato
         if data.apisperu_token or data.apisperu_url:
             extra = {}
