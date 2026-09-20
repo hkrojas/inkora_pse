@@ -509,22 +509,19 @@ def _paginate_item_rows(
     first_page_capacity: int = 8,
     continuation_capacity: int = 10,
 ) -> list[list]:
-    """Distribute every row across the fewest pages without sparse tail pages."""
+    """Fill page one, then balance continuation rows without exceeding the cap."""
     rows = list(items or [])
     total = len(rows)
     if total <= single_page_capacity:
         return [rows]
 
-    continuation_pages = max(
-        1,
-        (max(total - first_page_capacity, 0) + continuation_capacity - 1)
-        // continuation_capacity,
-    )
-    page_count = 1 + continuation_pages
-    first_size = min(first_page_capacity, (total + page_count - 1) // page_count)
+    first_size = min(first_page_capacity, total)
     pages = [rows[:first_size]]
     cursor = first_size
     remaining = total - first_size
+    continuation_pages = (
+        remaining + continuation_capacity - 1
+    ) // continuation_capacity
     for pages_left in range(continuation_pages, 0, -1):
         page_size = (remaining + pages_left - 1) // pages_left
         pages.append(rows[cursor : cursor + page_size])
@@ -816,13 +813,16 @@ def build_guide_pdf(guide, tenant) -> bytes:
         elements.extend([Spacer(1, 3), _card(transport_title, transport_rows, width, styles, palette)])
     all_items = list(getattr(guide, "items", None) or [])
     # Measurements against the rendered A4 layout establish these capacities:
-    # two lines fit beside the accepted-document QR on the complete first page;
-    # a compact non-QR footer fits with seven; without a footer, the complete
-    # first-page metadata fits with eight. Continuation pages carry at most ten.
-    single_page_capacity = 5 if _cdr_qr_content(guide, tenant) else 8
+    # five rows fit with the accepted-document QR on the complete first page;
+    # without a QR, the complete first-page metadata fits with eight.
+    # Continuation pages carry at most ten rows and are balanced only after the
+    # first page has consumed its full reserved capacity.
+    qr_content = _cdr_qr_content(guide, tenant)
+    first_page_capacity = 5 if qr_content else 8
     item_pages = _paginate_item_rows(
         all_items,
-        single_page_capacity=single_page_capacity,
+        single_page_capacity=first_page_capacity,
+        first_page_capacity=first_page_capacity,
     )
     first_page_items = item_pages[0]
     elements.extend(
@@ -833,13 +833,19 @@ def build_guide_pdf(guide, tenant) -> bytes:
             _build_items(first_page_items, 1, width, styles, palette),
         ]
     )
+    if len(item_pages) > 1:
+        elements.extend(
+            [Spacer(1, 3), Paragraph("Continúa en la página siguiente.", styles["small_right"])]
+        )
+    # The fiscal QR belongs to the first-page representation, even when the
+    # goods table continues. Never defer this evidence to the last page.
+    elements.extend([Spacer(1, 4), _build_footer(guide, tenant, width, styles, palette)])
 
     next_index = len(first_page_items) + 1
-    for page_items in item_pages[1:]:
+    continuation_items = item_pages[1:]
+    for page_number, page_items in enumerate(continuation_items, start=1):
         elements.extend(
             [
-                Spacer(1, 3),
-                Paragraph("Continúa en la página siguiente.", styles["small_right"]),
                 PageBreak(),
                 _build_continuation_header(
                     guide,
@@ -856,8 +862,10 @@ def build_guide_pdf(guide, tenant) -> bytes:
         )
         elements.append(_build_items(page_items, next_index, width, styles, palette))
         next_index += len(page_items)
-
-    elements.extend([Spacer(1, 4), _build_footer(guide, tenant, width, styles, palette)])
+        if page_number < len(continuation_items):
+            elements.extend(
+                [Spacer(1, 3), Paragraph("Continúa en la página siguiente.", styles["small_right"])]
+            )
 
     document.build(elements, onFirstPage=draw_page, onLaterPages=draw_page)
     return output.getvalue()
