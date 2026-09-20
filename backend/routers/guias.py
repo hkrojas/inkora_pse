@@ -8,7 +8,7 @@ import crud
 from services import emission_queue_service, facturacion_service, fiscal_provider_service, smartpse_response
 from services import gre_ubl_service
 from services import guide_pdf_service
-from services import sale_dispatch_service
+from services import internal_transfer_service, sale_dispatch_service
 from services import beta_feature_flags
 import models
 import schemas
@@ -85,7 +85,7 @@ def _ensure_dispatch_owner(dispatch, current_user):
 
 def _guide_detail_payload(db: Session, guia, current_user) -> dict:
     payload = schemas.GuiaRemisionResponse.model_validate(guia).model_dump()
-    dispatch = guia.dispatch
+    dispatch = guia.dispatch or guia.internal_transfer_dispatch
     reservation_status = None
     if dispatch and dispatch.lines:
         statuses = {line.reservation_status for line in dispatch.lines}
@@ -96,6 +96,11 @@ def _guide_detail_payload(db: Session, guia, current_user) -> dict:
         models.DocumentEmissionJob.resource_id == guia.id,
     ).order_by(models.DocumentEmissionJob.created_at.desc(), models.DocumentEmissionJob.id.desc()).first()
     payload.update({
+        "internal_transfer_id": (
+            guia.internal_transfer_dispatch.transfer_id
+            if guia.internal_transfer_dispatch_id and guia.internal_transfer_dispatch
+            else None
+        ),
         "dispatch_status": dispatch.status if dispatch else None,
         "reservation_status": reservation_status,
         "departure_confirmed_at": dispatch.departure_confirmed_at if dispatch else None,
@@ -113,6 +118,14 @@ def crear_guia_remision(
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
+    if guia_data.motivo_traslado != "01":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "SPECIALIZED_GUIDE_FLOW_REQUIRED",
+                "message": "Use el flujo específico del motivo de traslado seleccionado.",
+            },
+        )
     data = guia_data.model_dump()
     items_raw = data.pop("items", [])
     data["items"] = [item for item in items_raw]
@@ -328,6 +341,42 @@ def crear_guia_transportista(
     except sale_dispatch_service.DispatchError as exc:
         db.rollback()
         _raise_dispatch_error(exc)
+
+
+@router.post(
+    "/guias-remision/desde-traslado-interno",
+    response_model=schemas.GuiaRemisionResponse,
+    status_code=201,
+)
+def crear_guia_desde_traslado_interno(
+    payload: schemas.InternalTransferGuideCreate,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+    _emission_check: models.User = Depends(require_emission_allowed),
+):
+    beta_feature_flags.require_fiscal_feature_enabled(
+        db,
+        current_user.tenant_id,
+        beta_feature_flags.FISCAL_FEATURE_GUIDES,
+        current_user=current_user,
+    )
+    beta_feature_flags.require_fiscal_feature_enabled(
+        db,
+        current_user.tenant_id,
+        beta_feature_flags.FISCAL_FEATURE_INTERNAL_TRANSFERS,
+        current_user=current_user,
+    )
+    try:
+        guide, _ = internal_transfer_service.create_guide(
+            db, current_user.tenant_id, current_user.id, payload
+        )
+        return guide
+    except internal_transfer_service.InternalTransferError as exc:
+        db.rollback()
+        detail = {"code": exc.code, "message": str(exc)}
+        if exc.context is not None:
+            detail["context"] = exc.context
+        raise HTTPException(status_code=exc.status_code, detail=detail)
 
 
 @router.post("/guias-remision/{guia_id}/gre-transportista-externa", response_model=schemas.GuiaRemisionResponse)

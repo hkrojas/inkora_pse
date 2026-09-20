@@ -53,9 +53,19 @@ def create_warehouse(db: Session, tenant_id: int, data):
         db.query(models.Warehouse).filter(models.Warehouse.tenant_id == tenant_id).update(
             {models.Warehouse.is_default: False}, synchronize_session=False
         )
+    establishment_id = getattr(data, "establishment_id", None)
+    if establishment_id is not None:
+        establishment = db.query(models.TenantEstablishment.id).filter(
+            models.TenantEstablishment.id == establishment_id,
+            models.TenantEstablishment.tenant_id == tenant_id,
+            models.TenantEstablishment.is_active.is_(True),
+        ).first()
+        if not establishment:
+            raise HTTPException(404, "Establecimiento no encontrado para la empresa autenticada.")
     warehouse = models.Warehouse(
         tenant_id=tenant_id, code=data.code, name=data.name,
         location=data.location, is_default=make_default,
+        establishment_id=establishment_id,
     )
     db.add(warehouse)
     try:
@@ -221,7 +231,7 @@ def transfer_stock(db, tenant_id, data, user_id, *, can_override_negative=False)
     transfer = models.InventoryTransfer(
         tenant_id=tenant_id, source_warehouse_id=data.source_warehouse_id,
         destination_warehouse_id=data.destination_warehouse_id, reason=data.reason,
-        created_by_user_id=user_id, status="completed",
+        created_by_user_id=user_id, status="completed", lifecycle_mode="legacy_immediate",
     )
     db.add(transfer)
     db.flush()
@@ -646,6 +656,15 @@ def receive_return(db: Session, tenant_id: int, return_id: int, data, user_id: i
 def update_warehouse(db: Session, tenant_id: int, warehouse_id: int, data):
     db.query(models.Tenant).filter(models.Tenant.id == tenant_id).with_for_update().one()
     warehouse = get_warehouse(db, tenant_id, warehouse_id)
+    establishment_id = getattr(data, "establishment_id", None)
+    if establishment_id is not None:
+        establishment = db.query(models.TenantEstablishment.id).filter(
+            models.TenantEstablishment.id == establishment_id,
+            models.TenantEstablishment.tenant_id == tenant_id,
+            models.TenantEstablishment.is_active.is_(True),
+        ).first()
+        if not establishment:
+            raise HTTPException(404, "Establecimiento no encontrado para la empresa autenticada.")
     warehouse.name = data.name.strip()
     warehouse.location = data.location.strip() if data.location and data.location.strip() else None
     if data.is_default and not warehouse.is_default:
@@ -654,6 +673,8 @@ def update_warehouse(db: Session, tenant_id: int, warehouse_id: int, data):
             models.Warehouse.id != warehouse.id,
         ).update({models.Warehouse.is_default: False}, synchronize_session=False)
         warehouse.is_default = True
+    if hasattr(data, "establishment_id"):
+        warehouse.establishment_id = establishment_id
     db.commit()
     db.refresh(warehouse)
     return warehouse

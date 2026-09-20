@@ -83,13 +83,16 @@ def _guide(**overrides):
         "registrar_vehiculo_transportista": False,
         "transportista_acuerdo_confirmado_at": None,
         "observaciones": None,
+        "internal_order_number": None,
         "peso_bruto_total": "1.000",
         "unidad_medida_peso": "KGM",
         "numero_bultos": 1,
         "partida_ubigeo": "150101",
         "partida_direccion": "AV. ALFONSO UGARTE 252 INT. 1023, LIMA",
+        "partida_codigo_local": None,
         "llegada_ubigeo": "150118",
         "llegada_direccion": "CAL. LAS ACACIAS MZA. I LOTE. 5, LURIGANCHO",
+        "llegada_codigo_local": None,
         "num_contenedor": None,
         "cod_puerto": None,
         "transportista_razon_social": None,
@@ -118,6 +121,30 @@ def test_pdf_guia_pendiente_usa_diseno_inkora_y_estado_humano():
         "PENDIENTE DE ACEPTACIÓN",
     )
     assert guide_pdf_service._invoice_reference(_guide()) == "FA01-000178"
+
+
+def test_pdf_traslado_interno_muestra_transferencia_y_codigos_locales_sin_factura():
+    guide = _guide(
+        motivo_traslado="04",
+        descripcion_motivo="TRASLADO ENTRE ESTABLECIMIENTOS DE LA MISMA EMPRESA",
+        cotizacion=None,
+        cliente=None,
+        destinatario_razon_social="PAPELERIA GRAFICA Y PUBLICITARIA SAC.",
+        destinatario_nro_doc="20606751509",
+        internal_order_number="TI-18",
+        partida_codigo_local="0000",
+        llegada_codigo_local="0001",
+    )
+
+    with patch("services.guide_pdf_service._label_value", wraps=guide_pdf_service._label_value) as label_value:
+        pdf_bytes = guide_pdf_service.build_guide_pdf(guide, _tenant())
+
+    rendered_rows = [(call.args[0], str(call.args[1])) for call in label_value.call_args_list]
+    assert pdf_bytes.startswith(b"%PDF")
+    assert ("Transferencia interna", "TI-18") in rendered_rows
+    assert any(label == "Punto de partida" and value.startswith("0000") for label, value in rendered_rows)
+    assert any(label == "Punto de llegada" and value.startswith("0001") for label, value in rendered_rows)
+    assert all(label not in {"Factura de bienes", "Boleta de venta"} for label, _ in rendered_rows)
 
 
 def test_pdf_guia_aceptada_incluye_qr_y_leyenda_fiscal():

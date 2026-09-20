@@ -150,6 +150,7 @@ class GuiaRemision(Base):
     source_quote_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
     fiscal_document_id = Column(Integer, ForeignKey("cotizaciones.id"), nullable=True)
     dispatch_id = Column(Integer, ForeignKey("sale_dispatches.id"), nullable=True, index=True)
+    internal_transfer_dispatch_id = Column(Integer, ForeignKey("internal_transfer_dispatches.id"), nullable=True, index=True)
     related_guide_id = Column(Integer, ForeignKey("guias_remision.id"), nullable=True, index=True)
     external_gre_reference_id = Column(Integer, ForeignKey("guide_external_references.id"), nullable=True)
     goods_invoice_reference_id = Column(Integer, ForeignKey("guide_external_references.id"), nullable=True)
@@ -209,9 +210,11 @@ class GuiaRemision(Base):
 
     partida_ubigeo = Column(String, nullable=True)
     partida_direccion = Column(String, nullable=True)
+    partida_codigo_local = Column(String(4), nullable=True)
 
     llegada_ubigeo = Column(String, nullable=True)
     llegada_direccion = Column(String, nullable=True)
+    llegada_codigo_local = Column(String(4), nullable=True)
 
     sunat_xml_url = Column(String, nullable=True)
     sunat_pdf_url = Column(String, nullable=True)
@@ -231,6 +234,7 @@ class GuiaRemision(Base):
 
     items = relationship("GuiaRemisionItem", back_populates="guia", cascade="all, delete-orphan")
     dispatch = relationship("SaleDispatch", back_populates="guides")
+    internal_transfer_dispatch = relationship("InternalTransferDispatch", back_populates="guides")
     related_guide = relationship("GuiaRemision", remote_side=[id], foreign_keys=[related_guide_id])
     external_gre_reference = relationship("GuideExternalReference", foreign_keys=[external_gre_reference_id])
     goods_invoice_reference = relationship("GuideExternalReference", foreign_keys=[goods_invoice_reference_id])
@@ -282,6 +286,7 @@ class GuiaRemisionItem(Base):
     guia_id = Column(Integer, ForeignKey("guias_remision.id"))
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=True, index=True)
     dispatch_line_id = Column(Integer, ForeignKey("sale_dispatch_lines.id"), nullable=True, index=True)
+    internal_transfer_dispatch_line_id = Column(Integer, ForeignKey("internal_transfer_dispatch_lines.id"), nullable=True, index=True)
     fiscal_document_item_id = Column(Integer, ForeignKey("cotizacion_items.id"), nullable=True, index=True)
 
     descripcion = Column(String)
@@ -292,3 +297,4 @@ class GuiaRemisionItem(Base):
 
     guia = relationship("GuiaRemision", back_populates="items")
     dispatch_line = relationship("SaleDispatchLine")
+    internal_transfer_dispatch_line = relationship("InternalTransferDispatchLine")

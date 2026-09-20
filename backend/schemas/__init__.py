@@ -182,6 +182,21 @@ from schemas.inventory import (
     ReturnReceiptLine,
     ReturnReceiptCreate,
 )
+from schemas.internal_transfers import (
+    EstablishmentCreate,
+    EstablishmentUpdate,
+    EstablishmentVerify,
+    EstablishmentResponse,
+    InternalTransferLineCreate,
+    InternalTransferCreate,
+    InternalTransferUpdate,
+    InternalTransferDispatchLineCreate,
+    InternalTransferDispatchCreate,
+    InternalTransferGuideCreate,
+    InternalTransferDepartureConfirm,
+    InternalTransferReceiptLineCreate,
+    InternalTransferReceiptCreate,
+)
 
 from schemas.resumenes import (
     ResumenDiarioDocReferencia,

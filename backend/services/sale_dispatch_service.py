@@ -23,6 +23,7 @@ from services.document_flow_service import (
     DOCUMENT_STATUS_PENDING,
     DOCUMENT_STATUS_VOIDED,
 )
+from services import internal_transfer_service
 
 
 ZERO = Decimal("0.0000")
@@ -801,7 +802,7 @@ def _transport_validation_errors(guide) -> list[dict]:
 
 def validate_guide_for_emission(db: Session, guide) -> dict:
     errors = []
-    dispatch = guide.dispatch
+    dispatch = guide.dispatch or guide.internal_transfer_dispatch
     tenant = db.query(models.Tenant).filter(models.Tenant.id == guide.tenant_id).first()
     try:
         current_environment, expected_series = _guide_series(tenant, guide.tipo_documento)
@@ -817,7 +818,9 @@ def validate_guide_for_emission(db: Session, guide) -> dict:
     except DispatchError as exc:
         errors.append({"field": "emission_environment", "code": exc.code, "message": str(exc)})
     if guide.tipo_documento == "09":
-        if not dispatch or not guide.fiscal_document_id:
+        if guide.motivo_traslado == "04":
+            errors.extend(internal_transfer_service.validate_guide_for_emission(db, guide))
+        elif not dispatch or not guide.fiscal_document_id:
             errors.append({"field": "fiscal_document_id", "code": "SALES_DOCUMENT_REQUIRED", "message": "La GRE 09 inicial debe provenir de una factura o boleta de venta."})
         else:
             context = get_sales_document_dispatch_context(db, guide.tenant_id, guide.fiscal_document_id, lock=True, exclude_dispatch_id=dispatch.id)
@@ -853,8 +856,8 @@ def validate_guide_for_emission(db: Session, guide) -> dict:
             errors.append({"field": "goods_invoice", "code": "GOODS_DOCUMENT_REQUIRED", "message": "La factura o boleta de bienes debe conservarse como referencia separada."})
         if not tenant or guide.transportista_ruc != tenant.business_ruc:
             errors.append({"field": "transportista_ruc", "code": "CARRIER_ISSUER_MISMATCH", "message": "La GRE 31 solo puede emitirla el tenant transportista autenticado."})
-    if guide.motivo_traslado != "01":
-        errors.append({"field": "motivo_traslado", "code": "OUT_OF_SCOPE", "message": "Esta versión emite guías por venta facturada (motivo 01)."})
+    if guide.motivo_traslado not in {"01", "04"}:
+        errors.append({"field": "motivo_traslado", "code": "OUT_OF_SCOPE", "message": "Esta versión emite guías por venta (01) o traslado interno (04)."})
     if guide.fecha_traslado and guide.fecha_emision and guide.fecha_traslado.date() < guide.fecha_emision.date():
         errors.append({"field": "fecha_traslado", "code": "INVALID_TRANSFER_DATE", "message": "La fecha de traslado no puede ser anterior a la fecha de emisión."})
     if guide.tipo_documento == "31" and guide.modalidad_traslado != "01":
@@ -888,6 +891,8 @@ def validate_guide_for_emission(db: Session, guide) -> dict:
 
 
 def mark_guide_pending(db: Session, guide):
+    if guide.internal_transfer_dispatch_id:
+        internal_transfer_service.mark_guide_pending(db, guide)
     if guide.dispatch:
         guide.dispatch.status = models.DISPATCH_STATUS_GUIDE_PENDING
         guide.dispatch.version += 1
@@ -896,7 +901,10 @@ def mark_guide_pending(db: Session, guide):
 
 
 def apply_guide_result(db: Session, guide, *, accepted: bool, rejected: bool = False):
-    dispatch = guide.dispatch
+    if guide.internal_transfer_dispatch_id:
+        internal_transfer_service.apply_guide_result(db, guide, accepted=accepted, rejected=rejected)
+        return
+    dispatch = guide.dispatch or guide.internal_transfer_dispatch
     if not dispatch:
         return
     now = datetime.now()
@@ -923,6 +931,8 @@ def lock_guide_result_scope(db: Session, guide):
         dispatch = get_dispatch(db, guide.tenant_id, guide.dispatch_id, lock=True)
         if dispatch:
             _get_sales_document(db, guide.tenant_id, dispatch.fiscal_document_id, lock=True)
+    elif guide.internal_transfer_dispatch_id:
+        internal_transfer_service.lock_guide_result_scope(db, guide)
 
 
 def confirm_departure(db: Session, tenant_id: int, dispatch_id: int, user_id: int, idempotency_key: str):
@@ -1072,7 +1082,7 @@ def guide_action_availability(db: Session, guide, current_user) -> dict:
     subscription_active = current_user.is_superadmin or (
         subscription is not None and str(subscription.status or "").lower() in {"active", "trial", "grace"}
     )
-    dispatch = guide.dispatch
+    dispatch = guide.dispatch or guide.internal_transfer_dispatch
 
     def state(enabled, code=None, reason=None):
         return {"enabled": bool(enabled), "code": code, "reason": reason}
@@ -1087,7 +1097,7 @@ def guide_action_availability(db: Session, guide, current_user) -> dict:
     departure_code = "GRE_09_NOT_ACCEPTED"
     departure_reason = "La GRE remitente debe estar aceptada antes de confirmar la salida."
     if guide.tipo_documento != "09" or not dispatch:
-        departure_code, departure_reason = "DISPATCH_NOT_AVAILABLE", "Esta guía no controla una salida de venta."
+        departure_code, departure_reason = "DISPATCH_NOT_AVAILABLE", "Esta guía no controla una salida física."
     elif dispatch.departure_confirmed_at:
         departure_code, departure_reason = "DEPARTURE_ALREADY_CONFIRMED", "La salida física ya fue confirmada."
     elif guide.estado == "emitida":
@@ -1107,8 +1117,8 @@ def guide_action_availability(db: Session, guide, current_user) -> dict:
             departure_enabled, departure_code, departure_reason = True, None, None
 
     return {
-        "edit": state(mutable and bool(dispatch), "GUIDE_NOT_EDITABLE" if not mutable else None, None if mutable else "El borrador ya no es editable."),
-        "cancel": state(mutable and bool(dispatch), "GUIDE_NOT_CANCELLABLE" if not mutable else None, None if mutable else "Solo se cancela un borrador no enviado."),
+        "edit": state(mutable and bool(guide.dispatch), "GUIDE_NOT_EDITABLE" if not mutable else None, None if mutable else "El borrador ya no es editable."),
+        "cancel": state(mutable and bool(guide.dispatch), "GUIDE_NOT_CANCELLABLE" if not mutable else None, None if mutable else "Cancela el traslado desde su operación de origen."),
         "validate": state(draft and can_manage, "GUIDE_NOT_VALIDATABLE" if not draft else None, None if draft else "La guía ya fue enviada."),
         "emit": state(emission_ready, None if emission_ready else "GUIDE_NOT_READY", None if emission_ready else (validation_reason or "La guía, la suscripción o el tenant no permiten emitir.")),
         "consult": state(guide.estado == "pendiente_smartpse" and can_manage, "GUIDE_NOT_PENDING" if guide.estado != "pendiente_smartpse" else None, None if guide.estado == "pendiente_smartpse" else "La guía no tiene resultado pendiente."),
