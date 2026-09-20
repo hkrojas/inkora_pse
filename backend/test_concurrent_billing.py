@@ -309,7 +309,8 @@ def run_load_test(
     if failed:
         print(f"\n  Errores:")
         for f_item in failed[:5]:
-            print(f"    Usuario {f_item['user']}: {f_item['error'] or f'HTTP {f_item["status_code"]}'}")
+            error_detail = f_item["error"] or f"HTTP {f_item['status_code']}"
+            print(f"    Usuario {f_item['user']}: {error_detail}")
         if len(failed) > 5:
             print(f"    ... y {len(failed) - 5} más")
 
