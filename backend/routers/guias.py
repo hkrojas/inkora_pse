@@ -1,22 +1,28 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 import crud
 from services import emission_queue_service, facturacion_service, fiscal_provider_service, smartpse_response
+from services import gre_ubl_service
+from services import guide_pdf_service
+from services import sale_dispatch_service
 from services import beta_feature_flags
 import models
 import schemas
 from api_dependencies import (
     get_current_user,
     get_db_tenant,
+    require_admin,
     require_document_emitter,
     require_emission_allowed,
 )
 from api_utils import raise_internal_server_error
 from models.tenants import USAGE_LIMIT_KIND_GUIA
 from rate_limit import limiter
+from access_control import can_access_all_tenant_resources
 
 router = APIRouter(tags=["guias"])
 
@@ -68,6 +74,39 @@ def _gre_credentials_warning_message() -> str:
     )
 
 
+def _raise_dispatch_error(exc: sale_dispatch_service.DispatchError):
+    raise HTTPException(status_code=exc.status_code, detail=exc.detail())
+
+
+def _ensure_dispatch_owner(dispatch, current_user):
+    if not can_access_all_tenant_resources(current_user) and dispatch.created_by_user_id != current_user.id:
+        raise HTTPException(404, "Despacho no encontrado.")
+
+
+def _guide_detail_payload(db: Session, guia, current_user) -> dict:
+    payload = schemas.GuiaRemisionResponse.model_validate(guia).model_dump()
+    dispatch = guia.dispatch
+    reservation_status = None
+    if dispatch and dispatch.lines:
+        statuses = {line.reservation_status for line in dispatch.lines}
+        reservation_status = next(iter(statuses)) if len(statuses) == 1 else "mixed"
+    latest_job = db.query(models.DocumentEmissionJob).filter(
+        models.DocumentEmissionJob.tenant_id == guia.tenant_id,
+        models.DocumentEmissionJob.resource_type == models.EMISSION_JOB_RESOURCE_GUIA,
+        models.DocumentEmissionJob.resource_id == guia.id,
+    ).order_by(models.DocumentEmissionJob.created_at.desc(), models.DocumentEmissionJob.id.desc()).first()
+    payload.update({
+        "dispatch_status": dispatch.status if dispatch else None,
+        "reservation_status": reservation_status,
+        "departure_confirmed_at": dispatch.departure_confirmed_at if dispatch else None,
+        "external_gre_reference": guia.external_gre_reference,
+        "goods_invoice_reference": guia.goods_invoice_reference,
+        "actions": sale_dispatch_service.guide_action_availability(db, guia, current_user),
+        "emission_job": latest_job,
+    })
+    return payload
+
+
 @router.post("/guias-remision/", response_model=schemas.GuiaRemisionResponse)
 def crear_guia_remision(
     guia_data: schemas.GuiaRemisionCreate,
@@ -99,6 +138,7 @@ def listar_guias_remision(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=15, ge=1, le=100),
     estado: str | None = Query(default=None),
+    tipo_documento: str | None = Query(default=None, pattern="^(09|31)$"),
     tab: str | None = Query(default="all", pattern="^(all|pending|smartpse|transit|emitted|cancelled|voided)$"),
     motivo: str | None = Query(default=None),
     modalidad: str | None = Query(default=None),
@@ -127,6 +167,7 @@ def listar_guias_remision(
         skip,
         limit,
         estado=estado,
+        tipo_documento=tipo_documento,
         tab=tab,
         motivo=motivo,
         modalidad=modalidad,
@@ -136,7 +177,195 @@ def listar_guias_remision(
     )
 
 
-@router.get("/guias-remision/{guia_id}", response_model=schemas.GuiaRemisionResponse)
+@router.post(
+    "/guias-remision/desde-factura",
+    response_model=schemas.SaleDispatchResponse,
+    status_code=201,
+)
+def crear_guia_desde_factura(
+    payload: schemas.SaleDispatchFromInvoiceCreate,
+    response: Response,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+    _emission_check: models.User = Depends(require_emission_allowed),
+):
+    if not crud.get_cotizacion(db, payload.fiscal_document_id, current_user):
+        raise HTTPException(404, "Factura no encontrada para el usuario autenticado.")
+    try:
+        dispatch, created = sale_dispatch_service.create_from_invoice(
+            db, current_user.tenant_id, current_user.id, payload
+        )
+        if not created:
+            response.status_code = 200
+        return dispatch
+    except sale_dispatch_service.DispatchError as exc:
+        db.rollback()
+        _raise_dispatch_error(exc)
+
+
+@router.post(
+    "/guias-remision/desde-comprobante",
+    response_model=schemas.SaleDispatchResponse,
+    status_code=201,
+)
+def crear_guia_desde_comprobante(
+    payload: schemas.SaleDispatchFromDocumentCreate,
+    response: Response,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+    _emission_check: models.User = Depends(require_emission_allowed),
+):
+    if not crud.get_cotizacion(db, payload.fiscal_document_id, current_user):
+        raise HTTPException(404, "Comprobante no encontrado para el usuario autenticado.")
+    try:
+        dispatch, created = sale_dispatch_service.create_from_document(
+            db, current_user.tenant_id, current_user.id, payload
+        )
+        if not created:
+            response.status_code = 200
+        return dispatch
+    except sale_dispatch_service.DispatchError as exc:
+        db.rollback()
+        _raise_dispatch_error(exc)
+
+
+@router.get("/despachos/{dispatch_id}", response_model=schemas.SaleDispatchResponse)
+def obtener_despacho(
+    dispatch_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    dispatch = sale_dispatch_service.get_dispatch(db, current_user.tenant_id, dispatch_id)
+    if not dispatch:
+        raise HTTPException(404, "Despacho no encontrado.")
+    _ensure_dispatch_owner(dispatch, current_user)
+    return dispatch
+
+
+@router.put("/guias-remision/{guia_id}", response_model=schemas.SaleDispatchResponse)
+def editar_borrador_guia(
+    guia_id: int,
+    payload: schemas.SaleDispatchUpdate,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+    _emission_check: models.User = Depends(require_emission_allowed),
+):
+    guia = crud.get_guia_remision(db, guia_id, current_user)
+    if not guia or not guia.dispatch_id:
+        raise HTTPException(404, "Guía vinculada a despacho no encontrada.")
+    try:
+        return sale_dispatch_service.update_dispatch(
+            db, current_user.tenant_id, guia.dispatch_id, payload, user_id=current_user.id
+        )
+    except sale_dispatch_service.DispatchError as exc:
+        db.rollback()
+        _raise_dispatch_error(exc)
+
+
+@router.post("/guias-remision/{guia_id}/cancelar-borrador", response_model=schemas.SaleDispatchResponse)
+def cancelar_borrador_guia(
+    guia_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+):
+    guia = crud.get_guia_remision(db, guia_id, current_user)
+    if not guia or not guia.dispatch_id:
+        raise HTTPException(404, "Guía vinculada a despacho no encontrada.")
+    try:
+        return sale_dispatch_service.cancel_dispatch(db, current_user.tenant_id, guia.dispatch_id)
+    except sale_dispatch_service.DispatchError as exc:
+        db.rollback()
+        _raise_dispatch_error(exc)
+
+
+@router.post("/guias-remision/{guia_id}/validar")
+def validar_guia(
+    guia_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+):
+    guia = crud.get_guia_remision(db, guia_id, current_user)
+    if not guia:
+        raise HTTPException(404, "Guía no encontrada.")
+    return sale_dispatch_service.validate_guide_for_emission(db, guia)
+
+
+@router.post("/despachos/{dispatch_id}/confirmar-salida", response_model=schemas.SaleDispatchResponse)
+def confirmar_salida_despacho(
+    dispatch_id: int,
+    payload: schemas.DispatchDepartureConfirm,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+    _emission_check: models.User = Depends(require_emission_allowed),
+):
+    try:
+        dispatch = sale_dispatch_service.get_dispatch(db, current_user.tenant_id, dispatch_id)
+        if not dispatch:
+            raise HTTPException(404, "Despacho no encontrado.")
+        _ensure_dispatch_owner(dispatch, current_user)
+        return sale_dispatch_service.confirm_departure(
+            db, current_user.tenant_id, dispatch_id, current_user.id, payload.idempotency_key
+        )
+    except sale_dispatch_service.DispatchError as exc:
+        db.rollback()
+        _raise_dispatch_error(exc)
+
+
+@router.post("/guias-remision/transportista", response_model=schemas.GuiaRemisionResponse, status_code=201)
+def crear_guia_transportista(
+    payload: schemas.TransportGuideCreate,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+    _emission_check: models.User = Depends(require_emission_allowed),
+):
+    try:
+        guide, created = sale_dispatch_service.create_transport_guide(
+            db, current_user.tenant_id, current_user.id, payload
+        )
+        if not created:
+            return guide
+        return guide
+    except sale_dispatch_service.DispatchError as exc:
+        db.rollback()
+        _raise_dispatch_error(exc)
+
+
+@router.post("/guias-remision/{guia_id}/gre-transportista-externa", response_model=schemas.GuiaRemisionResponse)
+def registrar_gre_transportista_externa(
+    guia_id: int,
+    payload: schemas.GuideExternalRegistration,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+):
+    try:
+        return sale_dispatch_service.register_external_carrier_guide(
+            db, current_user.tenant_id, current_user.id, guia_id, payload
+        )
+    except sale_dispatch_service.DispatchError as exc:
+        db.rollback()
+        _raise_dispatch_error(exc)
+
+
+@router.post(
+    "/guias-remision/{guia_id}/verificar-referencia-externa",
+    response_model=schemas.GuideExternalReferenceResponse,
+)
+def verificar_referencia_gre_externa(
+    guia_id: int,
+    payload: schemas.ExternalGuideVerification,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_admin),
+):
+    try:
+        return sale_dispatch_service.verify_external_guide_reference(
+            db, current_user.tenant_id, current_user.id, guia_id, payload
+        )
+    except sale_dispatch_service.DispatchError as exc:
+        db.rollback()
+        _raise_dispatch_error(exc)
+
+
+@router.get("/guias-remision/{guia_id}", response_model=schemas.GuiaRemisionDetailResponse)
 def obtener_guia_remision(
     guia_id: int,
     db: Session = Depends(get_db_tenant),
@@ -146,7 +375,7 @@ def obtener_guia_remision(
     guia = crud.get_guia_remision(db, guia_id, current_user)
     if not guia:
         raise HTTPException(404, "Guia de Remision no encontrada.")
-    return guia
+    return _guide_detail_payload(db, guia, current_user)
 
 
 @router.get("/guias-remision/{guia_id}/xml")
@@ -171,6 +400,24 @@ def descargar_cdr_guia_remision(
     if not guia:
         raise HTTPException(404, "Guía de Remisión no encontrada.")
     return _guide_artifact_response(guia, "cdr")
+
+
+@router.get("/guias-remision/{guia_id}/pdf")
+def descargar_pdf_guia_remision(
+    guia_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    guia = crud.get_guia_remision(db, guia_id, current_user)
+    if not guia:
+        raise HTTPException(404, "Guía de Remisión no encontrada.")
+    content = guide_pdf_service.build_guide_pdf(guia, current_user.tenant)
+    filename = f"{guia.serie}-{str(guia.correlativo).zfill(6)}.pdf"
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.get(
@@ -263,13 +510,29 @@ def emitir_guia_remision_endpoint(
     guia = crud.get_guia_remision(db, guia_id, current_user)
     if not guia:
         raise HTTPException(404, "Guia de Remision no encontrada.")
+    if guia.estado == "pendiente_smartpse":
+        existing_job = crud.get_emission_job_by_key(
+            db, current_user.tenant_id, f"emit:guide:{guia.id}"
+        )
+        if existing_job:
+            return JSONResponse(
+                status_code=202,
+                content=emission_queue_service.build_job_acceptance_payload(
+                    existing_job,
+                    message="La guía ya está encolada; consulte el resultado sin reenviarla.",
+                    resource_id=guia.id,
+                    resource_type=models.EMISSION_JOB_RESOURCE_GUIA,
+                    internal_order_number=guia.internal_order_number,
+                ),
+            )
+        raise HTTPException(400, "La guía ya fue enviada. Use consultar para conciliar sin reenviar.")
     if guia.estado != "pendiente":
         raise HTTPException(
             400,
             (
                 f"Operacion bloqueada: La guia {guia.serie}-{str(guia.correlativo).zfill(6)} "
                 f"no se puede emitir desde el estado '{guia.estado}'. "
-                "Solo las guias pendientes pueden encolarse para SUNAT."
+                "Solo las guías en borrador o pendientes de conciliación pueden procesarse."
             ),
         )
 
@@ -311,6 +574,22 @@ def emitir_guia_remision_endpoint(
                 "Las guías se emiten exclusivamente por cola. Usa mode=async.",
             )
         if resolved_mode == emission_queue_service.EMISSION_MODE_ASYNC:
+            validation = sale_dispatch_service.validate_guide_for_emission(db, guia)
+            if not validation["valid"]:
+                raise HTTPException(status_code=422, detail=validation)
+            # Fiscal data is immutable from this point forward. The worker must
+            # send this exact snapshot, never rebuild it from mutable masters.
+            guia.fecha_emision = datetime.now()
+            frozen_payload = jsonable_encoder(
+                facturacion_service._base_payload_gre(guia, current_user)
+            )
+            guia.frozen_payload = frozen_payload
+            guia.frozen_xml = gre_ubl_service.build_despatch_xml(frozen_payload)
+            guia.emission_environment = (
+                "demo" if facturacion_service._smartpse_demo_mode(current_user) else "production"
+            )
+            sale_dispatch_service.mark_guide_pending(db, guia)
+            db.flush()
             job, _ = emission_queue_service.enqueue_guide_job(db, guia, current_user)
             return JSONResponse(
                 status_code=202,
@@ -339,3 +618,27 @@ def emitir_guia_remision_endpoint(
             "Error en el servicio de guias de remision.",
             exc,
         )
+
+
+@router.post("/guias-remision/{guia_id}/consultar")
+def consultar_guia_remision_endpoint(
+    guia_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+):
+    guia = crud.get_guia_remision(db, guia_id, current_user)
+    if not guia:
+        raise HTTPException(404, "Guía de remisión no encontrada.")
+    if guia.estado != "pendiente_smartpse":
+        raise HTTPException(409, "Solo se concilian guías con resultado fiscal pendiente.")
+    job, _ = emission_queue_service.enqueue_guide_consult_job(db, guia, current_user)
+    return JSONResponse(
+        status_code=202,
+        content=emission_queue_service.build_job_acceptance_payload(
+            job,
+            message="Consulta de resultado GRE encolada sin reenviar el documento.",
+            resource_id=guia.id,
+            resource_type=models.EMISSION_JOB_RESOURCE_GUIA,
+            internal_order_number=guia.internal_order_number,
+        ),
+    )

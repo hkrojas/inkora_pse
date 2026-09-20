@@ -1,0 +1,28 @@
+.ink-action-menu {
+  position: fixed;
+  z-index: 100;
+  max-height: min(480px, calc(100dvh - 24px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-floating);
+}
+.ink-action-menu button, .ink-action-menu a {
+  width: 100%; min-height: 36px; display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--color-text); font-size: 12px; font-weight: 800; text-align: left;
+  text-decoration: none; overflow-wrap: anywhere; cursor: pointer;
+}
+.ink-action-menu svg { width: 15px; height: 15px; flex-shrink: 0; }
+.ink-action-menu button:hover:not(:disabled), .ink-action-menu a:hover { background: var(--color-surface-soft); }
+.ink-action-menu button:disabled { color: var(--color-text-muted); cursor: not-allowed; }
+.ink-action-menu .is-danger { color: var(--color-danger); }
+.ink-action-menu :is(button, a):focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.ink-action-menu p { margin: 4px 10px 10px; color: var(--color-text-muted); font-size: 12px; line-height: 1.5; }
+.ink-action-menu-title { margin: 4px 10px 8px; color: var(--color-text-muted); font-size: 12px; font-weight: 700; }
+.ink-action-menu-divider { border-top: 1px solid var(--color-border); margin: 6px 0; }
+@media (max-width: 768px) { .ink-action-menu button, .ink-action-menu a { min-height: 44px; font-size: 14px; } }

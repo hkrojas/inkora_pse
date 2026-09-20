@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  getDispatchReservationLabel,
+  getDispatchStatusLabel,
   getGuideStatusMeta,
   getSmartPseGreStatusMeta,
 } from './fiscalStatus.js';
@@ -25,6 +27,32 @@ test('getGuideStatusMeta keeps accepted guides in emitted tab', () => {
   assert.equal(meta.tabKey, 'emitted');
   assert.equal(meta.label, 'Emitida');
   assert.equal(meta.badgeVariant, 'success');
+});
+
+test('getGuideStatusMeta distinguishes a cancelled draft from a pending fiscal guide', () => {
+  const meta = getGuideStatusMeta({ estado: 'cancelled' });
+
+  assert.equal(meta.tabKey, 'cancelled');
+  assert.equal(meta.label, 'Borrador cancelado');
+  assert.equal(meta.badgeVariant, 'cancelled');
+  assert.match(meta.helper, /cantidades reservadas fueron liberadas/i);
+});
+
+test('dispatch reservation states use operator-facing Spanish labels', () => {
+  assert.equal(getDispatchReservationLabel('active'), 'Activa');
+  assert.equal(getDispatchReservationLabel('covered'), 'Cubierta por GRE');
+  assert.equal(getDispatchReservationLabel('released'), 'Liberada');
+  assert.equal(getDispatchReservationLabel('provisional'), 'Provisional');
+  assert.equal(getDispatchReservationLabel(null), 'No aplica');
+});
+
+test('dispatch lifecycle states use operator-facing Spanish labels', () => {
+  assert.equal(getDispatchStatusLabel('draft'), 'Borrador con reserva');
+  assert.equal(getDispatchStatusLabel('guide_pending'), 'GRE pendiente de resultado');
+  assert.equal(getDispatchStatusLabel('guide_accepted'), 'GRE aceptada');
+  assert.equal(getDispatchStatusLabel('departed'), 'Salida confirmada');
+  assert.equal(getDispatchStatusLabel('cancelled'), 'Borrador cancelado');
+  assert.equal(getDispatchStatusLabel(undefined), 'Sin estado operativo');
 });
 
 test('getSmartPseGreStatusMeta hides missing secrets behind status text only', () => {

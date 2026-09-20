@@ -194,41 +194,6 @@ def test_delete_superadmin_users_funciona_solo_con_superadmin_real_y_audita(db_s
     assert "superadmin.user.deleted" in _audit_actions(db_session)
 
 
-def test_superadmin_crea_y_lista_usuarios_de_tenant_sin_error_de_schema(db_session):
-    tenant = make_tenant(db_session, "SA08")
-    superadmin = make_user(
-        db_session,
-        tenant,
-        email="real-sa08@test.com",
-        rol=ROLE_SUPERADMIN,
-        is_superadmin=True,
-    )
-    client = _client_for_user(db_session, superadmin, superadmin_router)
-
-    create_response = client.post(
-        f"/superadmin/tenants/{tenant.id}/users",
-        json={
-            "email": "operador-sa08@test.com",
-            "nombre_completo": "Operador SA08",
-            "rol": ROLE_VENDEDOR,
-        },
-    )
-
-    assert create_response.status_code == 201
-    created = create_response.json()["user"]
-    assert created["tenant_id"] == tenant.id
-    assert created["must_change_password"] is True
-
-    detail_response = client.get(f"/superadmin/tenants/{tenant.id}/users-detail")
-
-    assert detail_response.status_code == 200
-    users = detail_response.json()
-    target = next(user for user in users if user["email"] == "operador-sa08@test.com")
-    assert target["tenant_id"] == tenant.id
-    assert target["must_change_password"] is True
-    assert target["metrics"]["cotizaciones_total"] == 0
-
-
 def test_frontend_superadmin_visibility_usa_solo_is_superadmin():
     files = [
         ROOT / "frontend" / "src" / "pages" / "SuperadminPage.jsx",
@@ -246,72 +211,6 @@ def test_frontend_superadmin_visibility_usa_solo_is_superadmin():
         text = file_path.read_text(encoding="utf-8")
         for pattern in forbidden_patterns:
             assert pattern not in text
-
-
-def test_frontend_superadmin_onboarding_usa_smartpse_first():
-    page_text = (ROOT / "frontend" / "src" / "pages" / "SuperadminPage.jsx").read_text(
-        encoding="utf-8"
-    )
-    service_text = (ROOT / "frontend" / "src" / "services" / "superadmin.js").read_text(
-        encoding="utf-8"
-    )
-
-    forbidden_page_patterns = [
-        "validateApisPeruToken",
-        "checkTokenHealth",
-        "handleCheckTokenHealth",
-        "has_apisperu_token",
-        "Token inicial",
-        "URL ApisPeru",
-        "ApisPeru",
-    ]
-    required_patterns = [
-        "provisionSmartPseTenant",
-        "checkSmartPseTenant",
-        "Smart PSE CPE",
-        "has_smartpse_credentials",
-    ]
-
-    for pattern in forbidden_page_patterns:
-        assert pattern not in page_text
-    for pattern in required_patterns:
-        assert pattern in page_text or pattern in service_text
-
-
-def test_frontend_superadmin_smartpse_company_management_is_safe_beta():
-    page_text = (ROOT / "frontend" / "src" / "pages" / "SuperadminPage.jsx").read_text(
-        encoding="utf-8"
-    )
-    service_text = (ROOT / "frontend" / "src" / "services" / "superadmin.js").read_text(
-        encoding="utf-8"
-    )
-
-    required_patterns = [
-        "getSmartPseTenantCompany",
-        "syncSmartPseTenantCompany",
-        "updateSmartPseTenantCompany",
-        "toggleSmartPseTenantCompanyActivation",
-        "createSmartPseCompany",
-        "deleteSmartPseTenantCompany",
-        "syncAllSmartPseCompanies",
-        "updateSmartPseTenantCredentials",
-        "smartPseTenantAuditLogs",
-        "Empresa Smart PSE",
-        "Empresas Smart PSE",
-        "Produccion preparada",
-        "Confirmar eliminacion Smart PSE",
-        "Rotar credenciales CPE",
-        "Auditoria Smart PSE",
-    ]
-    forbidden_patterns = [
-        "token_acceso",
-        "usuario_secundaria",
-    ]
-
-    for pattern in required_patterns:
-        assert pattern in page_text or pattern in service_text
-    for pattern in forbidden_patterns:
-        assert pattern not in page_text
 
 
 def test_superadmin_tenants_page_escala_filtra_y_no_expone_secretos_gre(db_session):

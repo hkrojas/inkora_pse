@@ -6,6 +6,28 @@ sin cambiar ningún caller externo.
 """
 
 from schemas._base import StrictInputModel
+from schemas.productos import ProductoInventarioInicial
+from schemas.access_requests import (
+    AccessRequestCreate, AccessRequestCreated, AccessRequestRucLookup,
+    AccessRequestStatusLookup, AccessRequestPublicStatus, AccessRequestReview,
+    AccessRequestAdminResponse, AccessRequestPageResponse,
+)
+from schemas.catalog import (
+    CatalogEntitlementUpdate,
+    CatalogThemeConfig,
+    CatalogSiteCreate,
+    CatalogSiteUpdate,
+    CatalogCategoryCreate,
+    CatalogItemCreate,
+    CatalogCollectionCreate,
+    CatalogCollectionItemsUpdate,
+    CatalogItemAssetsUpdate,
+    CatalogEntitlementResponse,
+    CatalogSiteResponse,
+    CatalogItemResponse,
+    CatalogPublicItemResponse,
+    normalize_catalog_slug,
+)
 
 from schemas.tenants import (
     TenantBase,
@@ -27,7 +49,6 @@ from schemas.tenants import (
     SmartPSETenantCredentialsUpdate,
     SmartPSECompanyResponse,
     SmartPSECompanyPageResponse,
-    SmartPSESyncAllItem,
     SmartPSESyncAllResponse,
     SmartPSEDeleteResponse,
     SmartPSEGreCredentialsUpdate,
@@ -36,6 +57,8 @@ from schemas.tenants import (
     SuperadminTenantPageResponse,
     EmissionErrorResponse,
     TokenHealthResponse,
+    FiscalContingencyUpdate,
+    FiscalContingencyResponse,
 )
 
 from schemas.auth import (
@@ -96,6 +119,7 @@ from schemas.cotizaciones import (
     CotizacionCreate,
     CotizacionUpdate,
     CotizacionListResponse,
+    CotizacionPageResponse,
     CotizacionResponse,
     ClienteDocumentoListResponse,
     FiscalDocumentListResponse,
@@ -123,6 +147,23 @@ from schemas.guias import (
     GuiaRemisionCountsResponse,
     GuiaRemisionPageResponse,
     SmartPSEGuideReconcileRequest,
+    DispatchLineSelection,
+    SaleDispatchGuideData,
+    SaleDispatchFromInvoiceCreate,
+    SaleDispatchFromDocumentCreate,
+    SaleDispatchUpdate,
+    ExternalDocumentReferenceInput,
+    TransportGuideCreate,
+    GuideExternalRegistration,
+    ExternalGuideVerification,
+    GuideExternalReferenceResponse,
+    DispatchDepartureConfirm,
+    HistoricalDispatchReconciliation,
+    SaleDispatchLineResponse,
+    SaleDispatchResponse,
+    GuideActionAvailability,
+    GuideEmissionJobSummary,
+    GuiaRemisionDetailResponse,
 )
 
 from schemas.inventory import (
@@ -206,16 +247,6 @@ from schemas.onboarding import (
     OnboardingEstadoResponse,
 )
 from schemas.emission_jobs import EmissionJobResponse
-from schemas.access_requests import (
-    AccessRequestCreate,
-    AccessRequestCreated,
-    AccessRequestStatusLookup,
-    AccessRequestPublicStatus,
-    AccessRequestReview,
-    AccessRequestAdminResponse,
-    AccessRequestPageResponse,
-    AccessRequestRucLookup,
-)
 from schemas.notes import (
     NoteAdjustmentLine,
     FiscalNoteDraftCreate,
@@ -232,19 +263,27 @@ from schemas.usage_limits import (
 )
 
 __all__ = [
+    "ProductoInventarioInicial",
+    "SmartPSECompanyCreate", "SmartPSECompanyUpdate", "SmartPSETenantCredentialsUpdate",
+    "SmartPSECompanyResponse", "SmartPSECompanyPageResponse", "SmartPSESyncAllResponse",
+    "SmartPSEDeleteResponse",
+    "AccessRequestCreate", "AccessRequestCreated", "AccessRequestRucLookup",
+    "AccessRequestStatusLookup", "AccessRequestPublicStatus", "AccessRequestReview",
+    "AccessRequestAdminResponse", "AccessRequestPageResponse",
     "StrictInputModel",
+    "CatalogEntitlementUpdate", "CatalogThemeConfig", "CatalogSiteCreate", "CatalogSiteUpdate",
+    "CatalogCategoryCreate", "CatalogItemCreate", "CatalogCollectionCreate", "CatalogCollectionItemsUpdate", "CatalogItemAssetsUpdate", "CatalogEntitlementResponse",
+    "CatalogSiteResponse", "CatalogItemResponse", "CatalogPublicItemResponse", "normalize_catalog_slug",
     # tenants
     "TenantBase", "TenantCreate", "TenantUpdate", "TenantSummaryResponse",
     "TenantResponse", "TenantSaaSUpdate", "SuperadminTenantCreate", "SuperadminTenantResponse",
     "SuperadminTenantPageMetrics", "SuperadminTenantPageResponse",
     "ApisPeruTokenValidationRequest", "ApisPeruTokenValidationResponse",
     "SmartPSECredentialsValidationRequest", "SmartPSECredentialsValidationResponse",
-    "SmartPSEProvisionRequest", "SmartPSECompanyCreate", "SmartPSECompanyUpdate",
-    "SmartPSETenantCredentialsUpdate", "SmartPSECompanyResponse",
-    "SmartPSECompanyPageResponse", "SmartPSESyncAllItem", "SmartPSESyncAllResponse",
-    "SmartPSEDeleteResponse", "SmartPSEGreCredentialsUpdate",
+    "SmartPSEProvisionRequest", "SmartPSEGreCredentialsUpdate",
     "SmartPSEGreCredentialsValidationResponse",
     "EmissionErrorResponse", "TokenHealthResponse",
+    "FiscalContingencyUpdate", "FiscalContingencyResponse",
     # auth
     "UserIdentity", "UserRegisterRequest", "UserUpdateProfile", "UserAdminUpdate",
     "SuperadminUserCreate", "UserResponse", "UserMetrics", "UserDetailResponse",
@@ -260,7 +299,7 @@ __all__ = [
     "ProveedorBase", "ProveedorCreate", "ProveedorUpdate", "ProveedorResponse",
     "OrdenProduccionDetalleResponse", "OrdenProduccionResponse",
     # cotizaciones + pagos
-    "CotizacionItemCreate", "CotizacionItemResponse", "CuotaPagoCreate", "ClienteSnapshot", "CotizacionCreate", "CotizacionUpdate", "CotizacionListResponse", "CotizacionResponse",
+    "CotizacionItemCreate", "CotizacionItemResponse", "CuotaPagoCreate", "ClienteSnapshot", "CotizacionCreate", "CotizacionUpdate", "CotizacionListResponse", "CotizacionPageResponse", "CotizacionResponse",
     "ClienteDocumentoListResponse", "FiscalDocumentListResponse", "FiscalDocumentPageResponse",
     "NoteReferenceDocumentListResponse", "FiscalNoteListResponse", "FiscalNotePageResponse",
     "PagoCreate", "PagoResponse",
@@ -270,6 +309,11 @@ __all__ = [
     "GuiaRemisionItemCreate", "GuiaRemisionCreate", "GuiaRemisionItemResponse",
     "EtiquetaGuiaResponse", "GuiaRemisionResponse", "GuiaRemisionListResponse",
     "GuiaRemisionCountsResponse", "GuiaRemisionPageResponse", "SmartPSEGuideReconcileRequest",
+    "DispatchLineSelection", "SaleDispatchGuideData", "SaleDispatchFromInvoiceCreate",
+    "SaleDispatchUpdate", "ExternalDocumentReferenceInput", "TransportGuideCreate",
+    "GuideExternalRegistration", "ExternalGuideVerification", "GuideExternalReferenceResponse",
+    "DispatchDepartureConfirm", "HistoricalDispatchReconciliation", "SaleDispatchLineResponse",
+    "SaleDispatchResponse", "GuideActionAvailability", "GuideEmissionJobSummary", "GuiaRemisionDetailResponse",
     # resumen diario
     "ResumenDiarioDocReferencia", "ResumenDiarioPercepcion",
     "ResumenDiarioDetalleCreate", "ResumenDiarioCreate", "ResumenDiarioResponse", "ResumenDiarioPageResponse",
@@ -296,8 +340,6 @@ __all__ = [
     "OnboardingChecklistItem", "OnboardingEstadoResponse",
     # emission jobs
     "EmissionJobResponse",
-    "AccessRequestCreate", "AccessRequestCreated", "AccessRequestStatusLookup", "AccessRequestPublicStatus",
-    "AccessRequestReview", "AccessRequestAdminResponse", "AccessRequestPageResponse", "AccessRequestRucLookup",
     "NoteAdjustmentLine", "FiscalNoteDraftCreate", "FiscalNoteDraftUpdate",
     # usage limits
     "UsageLimitBase", "UsageLimitCreate", "UsageLimitResponse",

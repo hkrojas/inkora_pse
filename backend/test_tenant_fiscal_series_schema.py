@@ -1,26 +1,31 @@
 import pytest
 from pydantic import ValidationError
 
-from schemas.tenants import TenantSaaSUpdate
+import schemas
 
 
-def test_superadmin_accepts_valid_invoice_and_boleta_series():
-    payload = TenantSaaSUpdate(
+def test_superadmin_normalizes_configured_fiscal_series():
+    payload = schemas.TenantSaaSUpdate(
         fiscal_invoice_series="fa01",
+        fiscal_invoice_series_floor=178,
         fiscal_boleta_series="bb01",
+        fiscal_boleta_series_floor=22,
     )
 
     assert payload.fiscal_invoice_series == "FA01"
+    assert payload.fiscal_invoice_series_floor == 178
     assert payload.fiscal_boleta_series == "BB01"
+    assert payload.fiscal_boleta_series_floor == 22
 
 
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
-        ("fiscal_invoice_series", "E001", "serie de factura debe iniciar con F"),
-        ("fiscal_boleta_series", "EB01", "serie de boleta debe iniciar con B"),
+        ("fiscal_invoice_series", "B001", "serie de factura debe iniciar con F"),
+        ("fiscal_boleta_series", "F001", "serie de boleta debe iniciar con B"),
+        ("fiscal_invoice_series", "F01", "4 caracteres alfanumericos"),
     ],
 )
-def test_superadmin_rejects_series_with_invalid_document_prefix(field, value, message):
+def test_superadmin_rejects_invalid_fiscal_series(field, value, message):
     with pytest.raises(ValidationError, match=message):
-        TenantSaaSUpdate(**{field: value})
+        schemas.TenantSaaSUpdate(**{field: value})

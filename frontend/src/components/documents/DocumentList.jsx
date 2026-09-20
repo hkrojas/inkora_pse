@@ -5,18 +5,10 @@ import {
   CheckCircle2,
   Clock3,
   Download,
-  Eye,
-  ExternalLink,
-  FileArchive,
   FileText,
-  Mail,
-  MessageCircle,
-  MoreHorizontal,
   Plus,
   RefreshCw,
-  Send,
   Search,
-  Share2,
   XCircle,
   XOctagon,
 } from 'lucide-react';
@@ -26,26 +18,22 @@ import Spinner from '../ui/Spinner';
 import Badge from '../ui/Badge';
 import CustomSelect from '../ui/CustomSelect';
 import DatePicker from '../ui/DatePicker';
-import Pagination from '../ui/Pagination';
 import { DocumentTypeBadge } from './DocumentType';
 import { formatCurrency } from '../../lib/utils/documents';
 import {
-  buildFiscalDownloadRequest,
-  canRetryFiscalArtifacts,
   formatFiscalDate,
   getFiscalDocumentStatus,
-  hasFiscalDownload,
 } from '../../lib/utils/documentArtifacts';
 import EmptyState from '../ui/EmptyState';
-import Modal from '../ui/Modal';
 import { PageError } from '../ui/PageState';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
+import FiscalDocumentActions from './FiscalDocumentActions';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos' },
   { value: 'aceptado', label: 'Aceptado' },
   { value: 'pendiente', label: 'Pendiente' },
-  { value: 'error', label: 'Observadas' },
+  { value: 'error', label: 'Error SUNAT' },
   { value: 'anulado', label: 'Anulado' },
 ];
 
@@ -77,7 +65,7 @@ function getDocumentFamily(tipo, title) {
   if (tipo === '01') {
     return {
       pageTitle: 'Facturas',
-      heroSubtitle: 'Aceptacion, archivos y seguimiento en una sola vista.',
+      heroSubtitle: 'Emitidas ante SUNAT y listas para seguimiento.',
       emptyTitle: 'Aun no tienes facturas emitidas',
       emptyDescription: 'Crea tu primera factura usando un cliente registrado o una cotizacion aprobada.',
       filteredEmptyTitle: 'No hay facturas para esta vista',
@@ -88,7 +76,7 @@ function getDocumentFamily(tipo, title) {
   if (tipo === '03') {
     return {
       pageTitle: 'Boletas',
-      heroSubtitle: 'Aceptacion, archivos y seguimiento en una sola vista.',
+      heroSubtitle: 'Emitidas ante SUNAT y listas para seguimiento.',
       emptyTitle: 'Aun no tienes boletas emitidas',
       emptyDescription: 'Emite la primera boleta cuando el cliente necesite un comprobante rapido y validado.',
       filteredEmptyTitle: 'No hay boletas para esta vista',
@@ -116,7 +104,7 @@ function getVisibleRange(page, pageSize, total) {
 function getStateEmptyCopy(activeTab, family) {
   if (activeTab === 'draft') return `No hay ${family.pageTitle.toLowerCase()} en borrador.`;
   if (activeTab === 'emitted') return `No hay ${family.pageTitle.toLowerCase()} aceptadas en esta vista.`;
-  if (activeTab === 'pending') return `No hay ${family.pageTitle.toLowerCase()} pendientes de validacion.`;
+  if (activeTab === 'pending') return `No hay ${family.pageTitle.toLowerCase()} pendientes de respuesta SUNAT.`;
   if (activeTab === 'rejected') return `No hay ${family.pageTitle.toLowerCase()} rechazadas u observadas.`;
   if (activeTab === 'voided') return `No hay ${family.pageTitle.toLowerCase()} anuladas en esta vista.`;
   return family.filteredEmptyTitle;
@@ -148,49 +136,16 @@ function downloadTextFile(filename, content, mime = 'text/csv;charset=utf-8') {
   URL.revokeObjectURL(url);
 }
 
-function filenameFromDisposition(disposition, fallback) {
-  const match = /filename="?([^"]+)"?/i.exec(disposition || '');
-  return match?.[1] || fallback;
-}
-
-function downloadBlobFile(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function getFiscalDocumentName(doc) {
-  if (doc?.tipo_comprobante === '01') return 'factura';
-  if (doc?.tipo_comprobante === '03') return 'boleta';
-  if (doc?.tipo_comprobante === '07') return 'nota de credito';
-  if (doc?.tipo_comprobante === '08') return 'nota de debito';
-  return 'comprobante';
-}
-
-export default function DocumentList({ tipo, title, subtitle, newLabel, newHref, endpoint }) {
+export default function DocumentList({ tipo, title, subtitle, newLabel, newHref, endpoint, allowGuides = false }) {
   const [docs, setDocs] = useState([]);
   const [total, setTotal] = useState(0);
   const [tabCounts, setTabCounts] = useState({ all: 0, draft: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [downloadingId, setDownloadingId] = useState(null);
-  const [retryingArtifactsId, setRetryingArtifactsId] = useState(null);
-  const [retryingFiscalId, setRetryingFiscalId] = useState(null);
-  const [retryingDoc, setRetryingDoc] = useState(null);
-  const [retryFiscalStatus, setRetryFiscalStatus] = useState(null);
-  const [voidingDoc, setVoidingDoc] = useState(null);
-  const [voidReason, setVoidReason] = useState('');
-  const [voiding, setVoiding] = useState(false);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ desde: '', hasta: '', estado: 'all', moneda: 'all' });
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState('all');
-  const [openActionMenu, setOpenActionMenu] = useState(null);
   const toast = useToast();
   const debouncedSearch = useDebouncedValue(search, 300);
 
@@ -200,8 +155,8 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
     [newLabel, family.newFallback],
   );
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ background = false } = {}) => {
+    if (!background) setLoading(true);
     setError(null);
     try {
       const selectedTab = filters.estado !== 'all'
@@ -244,15 +199,6 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
 
   const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
 
-  const toggleActionMenu = (key) => {
-    setOpenActionMenu((current) => (current === key ? null : key));
-  };
-
-  const runActionMenuItem = (handler) => {
-    setOpenActionMenu(null);
-    handler();
-  };
-
   const clearFilters = () => {
     setFilters({ desde: '', hasta: '', estado: 'all', moneda: 'all' });
     setSearch('');
@@ -281,190 +227,6 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
     });
     downloadTextFile(`${family.pageTitle.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`, [headers.join(','), ...rows].join('\n'));
     toast('Exportación CSV generada.', 'success');
-  };
-
-  const downloadFiscalFile = async (doc, type) => {
-    setDownloadingId(`${doc.id}-${type}`);
-    try {
-      const fallback = `${formatDocNumber(doc)}.${type === 'cdr' ? 'zip' : type}`;
-      const target = buildFiscalDownloadRequest(doc, type);
-      if (target.method === 'getBlob') {
-        const { blob, disposition } = await api.getBlob(target.path, { timeoutMs: 45000 });
-        downloadBlobFile(blob, filenameFromDisposition(disposition, fallback));
-        return;
-      }
-      const { blob, disposition } = await api.blob(target.path, target.body, { timeoutMs: 45000 });
-      downloadBlobFile(blob, filenameFromDisposition(disposition, fallback));
-    } catch (err) {
-      toast(err.message || 'No se pudo descargar el archivo fiscal.', 'error');
-    } finally {
-      setDownloadingId(null);
-    }
-  };
-
-  const resolveSharePayload = async (doc) => {
-    try {
-      return await api.get(`/cotizaciones/${doc.id}/compartir`);
-    } catch (err) {
-      toast(err.message || 'No se pudo preparar el enlace para compartir.', 'error');
-      return null;
-    }
-  };
-
-  const handleOpenFiscalPdf = async (doc) => {
-    try {
-      const data = await api.get(`/cotizaciones/${doc.id}/pdf`, { timeoutMs: 45000 });
-      const url = data?.url || data?.url_compartir || data?.public_url || doc.sunat_pdf_url;
-      if (url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-        return;
-      }
-      toast('No se pudo abrir el PDF del comprobante.', 'error');
-    } catch (err) {
-      toast(err.message || 'No se pudo abrir el PDF del comprobante.', 'error');
-    }
-  };
-
-  const handleRetryArtifacts = async (doc) => {
-    setRetryingArtifactsId(doc.id);
-    try {
-      await api.post(`/facturacion/${doc.id}/artifacts/retry`, {}, { timeoutMs: 60000 });
-      toast('Artefactos fiscales reconstruidos.', 'success');
-      await load();
-    } catch (err) {
-      toast(err.message || 'No se pudieron reconstruir los artefactos fiscales.', 'error');
-    } finally {
-      setRetryingArtifactsId(null);
-    }
-  };
-
-  const pollFiscalRetry = async (jobId) => {
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      const job = await api.get(`/emission-jobs/${jobId}`);
-      setRetryFiscalStatus(job.status);
-      if (job.status === 'succeeded') return job;
-      if (job.status === 'failed') {
-        throw new Error(job.last_error || 'SUNAT rechazó nuevamente el comprobante.');
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, 1500));
-    }
-    return null;
-  };
-
-  const submitFiscalRetry = async () => {
-    if (!retryingDoc) return;
-    setRetryingFiscalId(retryingDoc.id);
-    setRetryFiscalStatus('queued');
-    try {
-      const response = await api.post(
-        `/facturas-emitidas/${retryingDoc.id}/reintentar?confirmar_operacion_estandar=${retryingDoc.sujeta_detraccion ? 'true' : 'false'}`,
-        {},
-        { timeoutMs: 60000 },
-      );
-      const completedJob = await pollFiscalRetry(response.job_id);
-      if (completedJob) {
-        toast('Comprobante aceptado por SUNAT.', 'success');
-        setRetryingDoc(null);
-        setRetryFiscalStatus(null);
-      } else {
-        toast('El reintento continúa procesándose en segundo plano.', 'success');
-      }
-      await load();
-    } catch (err) {
-      setRetryFiscalStatus('failed');
-      toast(err.message || 'No se pudo reenviar el comprobante.', 'error');
-      await load();
-    } finally {
-      setRetryingFiscalId(null);
-    }
-  };
-
-  const canVoidDocument = (doc) => Boolean(
-    doc
-    && doc.estado === 'facturada'
-    && !doc.sunat_error
-    && (doc.has_sunat_xml || doc.sunat_xml_url)
-  );
-
-  const openVoidDialog = (doc) => {
-    setOpenActionMenu(null);
-    setVoidReason('');
-    setVoidingDoc(doc);
-  };
-
-  const submitVoid = async () => {
-    if (!voidingDoc || !voidReason.trim()) return;
-    setVoiding(true);
-    try {
-      await api.post('/bajas/anular', {
-        comprobante_id: voidingDoc.id,
-        motivo: voidReason.trim(),
-      }, { timeoutMs: 60000 });
-      toast('Solicitud de baja enviada correctamente.', 'success');
-      setVoidingDoc(null);
-      setVoidReason('');
-      await load();
-    } catch (err) {
-      toast(err.message || 'No se pudo solicitar la baja del comprobante.', 'error');
-    } finally {
-      setVoiding(false);
-    }
-  };
-
-  const handleCopyShareLink = async (doc) => {
-    const data = await resolveSharePayload(doc);
-    const url = data?.url_compartir || data?.url || data?.public_url;
-    if (!url) {
-      toast('No se pudo generar el enlace publico.', 'error');
-      return;
-    }
-
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-      } else {
-        window.prompt('Copia el enlace:', url);
-      }
-      toast('Enlace publico copiado.', 'success');
-    } catch {
-      window.prompt('Copia el enlace:', url);
-    }
-  };
-
-  const openShareLink = (link, channel) => {
-    if (!link) {
-      toast(
-        channel === 'email'
-          ? 'El cliente no tiene correo registrado.'
-          : 'El cliente no tiene WhatsApp valido.',
-        'error',
-      );
-      return false;
-    }
-
-    if (channel === 'email') {
-      window.location.href = link;
-    } else {
-      window.open(link, '_blank', 'noopener,noreferrer');
-    }
-    return true;
-  };
-
-  const handleOpenShareChannel = async (doc, channel) => {
-    const data = await resolveSharePayload(doc);
-    if (!data) return;
-    openShareLink(channel === 'email' ? data.mailto_link : data.whatsapp_link, channel);
-  };
-
-  const handleOpenCombinedShare = async (doc) => {
-    const data = await resolveSharePayload(doc);
-    if (!data) return;
-    const openedWhatsApp = openShareLink(data.whatsapp_link, 'whatsapp');
-    if (data.mailto_link) {
-      window.setTimeout(() => openShareLink(data.mailto_link, 'email'), openedWhatsApp ? 120 : 0);
-    } else {
-      toast('El cliente no tiene correo registrado.', 'error');
-    }
   };
 
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
@@ -506,7 +268,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
     {
       key: 'emitted',
       value: metrics.accepted,
-      label: 'Aceptadas',
+      label: 'Aceptadas SUNAT',
       text: `${acceptedRate}% del total actual`,
       link: 'Abrir emitidas',
       icon: <CheckCircle2 size={16} />,
@@ -523,7 +285,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
       key: 'rejected',
       value: metrics.rejected,
       label: 'Observadas',
-      text: metrics.rejected ? 'Necesitan correccion' : 'Sin observaciones',
+      text: metrics.rejected ? 'Necesitan corrección o reenvío' : 'Sin errores SUNAT',
       link: 'Ver observadas',
       icon: <XOctagon size={16} />,
     },
@@ -563,7 +325,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
           <div className="document-list-hero-pagecopy">
             <h2>{family.pageTitle}</h2>
             <p>
-              {family.heroSubtitle || subtitle || `Administra ${family.pageTitle.toLowerCase()} emitidas, estados y acciones pendientes.`}
+              {family.heroSubtitle || subtitle || `Administra ${family.pageTitle.toLowerCase()} emitidas, estados SUNAT y acciones pendientes.`}
             </p>
           </div>
 
@@ -610,7 +372,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
             {metrics.pending > 0 && (
               <button type="button" className="btn-secondary" onClick={load}>
                 <RefreshCw size={15} />
-                Actualizar estados
+            Actualizar lista
               </button>
             )}
             {hasActiveFilters && (
@@ -624,7 +386,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
 
         <div className="document-list-filters">
           <div className="document-list-filter">
-            <span>Estado</span>
+            <span>Estado SUNAT</span>
             <CustomSelect compact value={filters.estado} onChange={(v) => setFilter('estado', v)} options={STATUS_OPTIONS} />
           </div>
           <div className="document-list-filter">
@@ -737,8 +499,8 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                     <th>Fecha</th>
                     <th>Cliente</th>
                     <th>Tipo</th>
-                    <th className="text-center">Total</th>
-                    <th>Estado</th>
+                    <th className="text-right">Total</th>
+                    <th>Estado SUNAT</th>
                     <th className="text-right">Acciones</th>
                   </tr>
                 </thead>
@@ -746,21 +508,14 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                   {pageItems.map((doc) => {
                     const sunat = getFiscalDocumentStatus(doc);
                     const num = formatDocNumber(doc);
-                    const desktopMenuKey = `${doc.id}-desktop`;
-                    const mobileMenuKey = `${doc.id}-mobile`;
                     const clienteName = doc.cliente?.razon_social || doc.cliente?.nombre || '-';
                     const clienteDoc = doc.cliente?.numero_documento || doc.cliente?.ruc || doc.cliente?.dni;
                     const rowClass =
                       sunat?.kind === 'ok'
                         ? 'ink-table-row--accepted'
-                          : sunat?.kind === 'pending'
-                            ? 'ink-table-row--active'
-                            : '';
-                    const canRetryArtifacts = canRetryFiscalArtifacts(doc);
-                    const canRetryFiscal = sunat?.kind === 'error'
-                      && ['01', '03'].includes(doc.tipo_comprobante)
-                      && doc.estado !== 'anulada';
-                    const canVoid = canVoidDocument(doc);
+                        : sunat?.kind === 'pending'
+                          ? 'ink-table-row--active'
+                          : '';
 
                     return (
                       <tr key={doc.id} className={rowClass}>
@@ -783,250 +538,22 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                         <td data-label="Tipo">
                           <DocumentTypeBadge tipo={doc.tipo_comprobante} size="sm" />
                         </td>
-                        <td className="text-center" data-label="Total">
+                        <td className="text-right" data-label="Total">
                           <div className="ink-table-cell__primary document-list-amount">
                             {formatCurrency(doc.total_venta, doc.moneda)}
                           </div>
                         </td>
-                        <td data-label="Estado">
-                          <div className="document-list-status-stack">
-                            {sunat ? (
-                              <Badge variant={sunat.variant === 'danger' ? 'error' : sunat.variant} title={sunat.tooltip}>
-                                {sunat.label}
-                              </Badge>
-                            ) : (
-                              <Badge variant="default">Sin estado</Badge>
-                            )}
-                          </div>
+                        <td data-label="Estado SUNAT">
+                          {sunat ? (
+                            <Badge variant={sunat.variant === 'danger' ? 'error' : sunat.variant} title={sunat.tooltip}>
+                              {sunat.label}
+                            </Badge>
+                          ) : (
+                            <Badge variant="default">Sin estado</Badge>
+                          )}
                         </td>
                         <td data-label="Acciones">
-                          <div className="document-list-action-shell">
-                            <div className="history-actions-desktop document-list-actions-desktop">
-                              {hasFiscalDownload(doc, 'pdf') && (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="history-action-button history-action-button--brand"
-                                    onClick={() => handleOpenFiscalPdf(doc)}
-                                    aria-label={`Ver PDF de ${getFiscalDocumentName(doc)}`}
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                    <span>Ver</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="history-action-button history-action-button--info"
-                                    disabled={downloadingId === `${doc.id}-pdf`}
-                                    onClick={() => downloadFiscalFile(doc, 'pdf')}
-                                    aria-label={`Descargar PDF de ${getFiscalDocumentName(doc)}`}
-                                  >
-                                    {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download className="h-4 w-4" />}
-                                    <span>PDF</span>
-                                  </button>
-                                </>
-                              )}
-                              <div className="history-actions-more document-list-actions-more">
-                                <button
-                                  type="button"
-                                  className="history-action-button history-action-button--neutral"
-                                  aria-label={`Mas acciones de ${getFiscalDocumentName(doc)}`}
-                                  aria-expanded={openActionMenu === desktopMenuKey}
-                                  onClick={() => toggleActionMenu(desktopMenuKey)}
-                                >
-                                  <MoreHorizontal className="h-4 w-4" />
-                                  <span>Mas</span>
-                                </button>
-                                {openActionMenu === desktopMenuKey && (
-                                  <div className="history-actions-more-menu document-list-actions-menu">
-                                    {hasFiscalDownload(doc, 'xml') && (
-                                      <button
-                                        type="button"
-                                        className="history-actions-mobile-item"
-                                        disabled={downloadingId === `${doc.id}-xml`}
-                                        onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'xml'))}
-                                      >
-                                        {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink className="h-3.5 w-3.5" />}
-                                        Descargar XML
-                                      </button>
-                                    )}
-                                    {hasFiscalDownload(doc, 'cdr') && (
-                                      <button
-                                        type="button"
-                                        className="history-actions-mobile-item"
-                                        disabled={downloadingId === `${doc.id}-cdr`}
-                                        onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'cdr'))}
-                                      >
-                                        {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileArchive className="h-3.5 w-3.5" />}
-                                        Descargar CDR
-                                      </button>
-                                    )}
-                                    {canRetryArtifacts && (
-                                      <button
-                                        type="button"
-                                        className="history-actions-mobile-item"
-                                        disabled={retryingArtifactsId === doc.id}
-                                        onClick={() => runActionMenuItem(() => handleRetryArtifacts(doc))}
-                                      >
-                                        {retryingArtifactsId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
-                                        Reintentar archivos
-                                      </button>
-                                    )}
-                                    {canRetryFiscal && (
-                                      <button
-                                        type="button"
-                                        className="history-actions-mobile-item"
-                                        disabled={retryingFiscalId === doc.id}
-                                        onClick={() => runActionMenuItem(() => {
-                                          setRetryFiscalStatus(null);
-                                          setRetryingDoc(doc);
-                                        })}
-                                      >
-                                        {retryingFiscalId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
-                                        Reintentar envío SUNAT
-                                      </button>
-                                    )}
-                                    <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleCopyShareLink(doc))}>
-                                      <Share2 className="h-3.5 w-3.5" />
-                                      Copiar enlace
-                                    </button>
-                                    <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenShareChannel(doc, 'whatsapp'))}>
-                                      <MessageCircle className="h-3.5 w-3.5" />
-                                      WhatsApp
-                                    </button>
-                                    <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenShareChannel(doc, 'email'))}>
-                                      <Mail className="h-3.5 w-3.5" />
-                                      Correo
-                                    </button>
-                                    <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenCombinedShare(doc))}>
-                                      <Send className="h-3.5 w-3.5" />
-                                      WhatsApp + correo
-                                    </button>
-                                    {canVoid && (
-                                      <button type="button" className="history-actions-mobile-item is-danger" onClick={() => openVoidDialog(doc)}>
-                                        <XCircle className="h-3.5 w-3.5" />
-                                        Dar de baja
-                                      </button>
-                                    )}
-                                    {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
-                                      <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(load)}>
-                                        <RefreshCw className="h-3.5 w-3.5" />
-                                        Recargar estado
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="history-actions-mobile document-list-actions-mobile">
-                              <button
-                                type="button"
-                                className="history-action-button history-action-button--neutral"
-                                aria-label={`Acciones de ${getFiscalDocumentName(doc)}`}
-                                aria-expanded={openActionMenu === mobileMenuKey}
-                                onClick={() => toggleActionMenu(mobileMenuKey)}
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                                <span>Acciones</span>
-                              </button>
-                              {openActionMenu === mobileMenuKey && (
-                                <div className="history-actions-mobile-menu document-list-actions-menu">
-                                  {hasFiscalDownload(doc, 'pdf') && (
-                                    <>
-                                      <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenFiscalPdf(doc))}>
-                                        <Eye className="h-3.5 w-3.5" />
-                                        Ver PDF
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="history-actions-mobile-item"
-                                        disabled={downloadingId === `${doc.id}-pdf`}
-                                        onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'pdf'))}
-                                      >
-                                        {downloadingId === `${doc.id}-pdf` ? <Spinner size={14} /> : <Download className="h-3.5 w-3.5" />}
-                                        Descargar PDF
-                                      </button>
-                                    </>
-                                  )}
-                                  <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleCopyShareLink(doc))}>
-                                    <Share2 className="h-3.5 w-3.5" />
-                                    Copiar enlace
-                                  </button>
-                                  <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenShareChannel(doc, 'whatsapp'))}>
-                                    <MessageCircle className="h-3.5 w-3.5" />
-                                    WhatsApp
-                                  </button>
-                                  <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenShareChannel(doc, 'email'))}>
-                                    <Mail className="h-3.5 w-3.5" />
-                                    Correo
-                                  </button>
-                                  <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(() => handleOpenCombinedShare(doc))}>
-                                    <Send className="h-3.5 w-3.5" />
-                                    WhatsApp + correo
-                                  </button>
-                                  {hasFiscalDownload(doc, 'xml') && (
-                                    <button
-                                      type="button"
-                                      className="history-actions-mobile-item"
-                                      disabled={downloadingId === `${doc.id}-xml`}
-                                      onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'xml'))}
-                                    >
-                                      {downloadingId === `${doc.id}-xml` ? <Spinner size={14} /> : <ExternalLink className="h-3.5 w-3.5" />}
-                                      Descargar XML
-                                    </button>
-                                  )}
-                                  {hasFiscalDownload(doc, 'cdr') && (
-                                    <button
-                                      type="button"
-                                      className="history-actions-mobile-item"
-                                      disabled={downloadingId === `${doc.id}-cdr`}
-                                      onClick={() => runActionMenuItem(() => downloadFiscalFile(doc, 'cdr'))}
-                                    >
-                                      {downloadingId === `${doc.id}-cdr` ? <Spinner size={14} /> : <FileArchive className="h-3.5 w-3.5" />}
-                                      Descargar CDR
-                                    </button>
-                                  )}
-                                  {canRetryArtifacts && (
-                                    <button
-                                      type="button"
-                                      className="history-actions-mobile-item"
-                                      disabled={retryingArtifactsId === doc.id}
-                                      onClick={() => runActionMenuItem(() => handleRetryArtifacts(doc))}
-                                    >
-                                      {retryingArtifactsId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
-                                      Reintentar archivos
-                                    </button>
-                                  )}
-                                  {canRetryFiscal && (
-                                    <button
-                                      type="button"
-                                      className="history-actions-mobile-item"
-                                      disabled={retryingFiscalId === doc.id}
-                                      onClick={() => runActionMenuItem(() => {
-                                        setRetryFiscalStatus(null);
-                                        setRetryingDoc(doc);
-                                      })}
-                                    >
-                                      {retryingFiscalId === doc.id ? <Spinner size={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
-                                      Reintentar envío SUNAT
-                                    </button>
-                                  )}
-                                  {canVoid && (
-                                    <button type="button" className="history-actions-mobile-item is-danger" onClick={() => openVoidDialog(doc)}>
-                                      <XCircle className="h-3.5 w-3.5" />
-                                      Dar de baja
-                                    </button>
-                                  )}
-                                  {!doc.sunat_pdf_url && sunat?.kind === 'pending' && (
-                                    <button type="button" className="history-actions-mobile-item" onClick={() => runActionMenuItem(load)}>
-                                      <RefreshCw className="h-3.5 w-3.5" />
-                                      Recargar estado
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
+                          <FiscalDocumentActions doc={doc} allowGuides={allowGuides} accepted={sunat?.kind === 'ok'} reload={load} />
                         </td>
                       </tr>
                     );
@@ -1037,111 +564,34 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
 
             <div className="ink-table-footer">
               <span className="ink-table-count">
-                Página <strong>{page}</strong> de <strong>{totalPages}</strong>
+                Pag. <strong>{page}</strong> de <strong>{totalPages}</strong>
               </span>
-              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} ariaLabel="Paginación de comprobantes" />
+              <div className="pagination">
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  &#8249;
+                </button>
+                <button type="button" className="page-btn active">
+                  {page}
+                </button>
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                >
+                  &#8250;
+                </button>
+              </div>
               <span className="ink-table-count">{PER_PAGE} por página</span>
             </div>
           </div>
         )}
       </article>
-      <Modal
-        open={Boolean(retryingDoc)}
-        onClose={() => !retryingFiscalId && setRetryingDoc(null)}
-        title="Reintentar envío a SUNAT"
-        subtitle={retryingDoc ? formatDocNumber(retryingDoc) : undefined}
-        icon={RefreshCw}
-        size="md"
-        footer={(
-          <>
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={Boolean(retryingFiscalId)}
-              onClick={() => setRetryingDoc(null)}
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={Boolean(retryingFiscalId)}
-              onClick={submitFiscalRetry}
-            >
-              {retryingFiscalId ? <Spinner size={15} /> : <RefreshCw size={15} />}
-              {retryingFiscalId ? 'Procesando…' : retryingDoc?.sujeta_detraccion ? 'Confirmar y reenviar' : 'Regenerar y reenviar'}
-            </button>
-          </>
-        )}
-      >
-        <div className="space-y-3">
-          <p className="text-sm text-[var(--text-secondary)]">
-            Inkora regenerará el XML con los datos guardados y conservará la misma serie y correlativo.
-            Esta acción solo está disponible para comprobantes rechazados.
-          </p>
-          {retryingDoc?.sujeta_detraccion && (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-              <strong>Corrección de la detracción automática anterior</strong>
-              <p className="mt-1">
-                Se regenerará como operación estándar 0101, sin detracción. Confirma solo si la venta realmente no estaba sujeta a detracción.
-              </p>
-            </div>
-          )}
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3 text-sm">
-            <strong>No se creará otro comprobante.</strong>
-            <p className="mt-1 text-[var(--text-secondary)]">
-              No cierres esta ventana mientras se confirma la recepción inicial. El proceso continuará en la cola si SUNAT demora.
-            </p>
-          </div>
-          {retryFiscalStatus && (
-            <p className="text-sm font-semibold text-[var(--text-primary)]" role="status">
-              Estado: {retryFiscalStatus === 'queued' ? 'En cola' : retryFiscalStatus === 'processing' ? 'Procesando' : retryFiscalStatus === 'retry' ? 'Reintentando' : retryFiscalStatus === 'failed' ? 'Rechazado' : 'Completado'}
-            </p>
-          )}
-        </div>
-      </Modal>
-      <Modal
-        open={Boolean(voidingDoc)}
-        onClose={() => !voiding && setVoidingDoc(null)}
-        title="Dar de baja comprobante"
-        subtitle={voidingDoc ? formatDocNumber(voidingDoc) : undefined}
-        icon={XCircle}
-        size="md"
-        footer={(
-          <>
-            <button type="button" className="btn-secondary" disabled={voiding} onClick={() => setVoidingDoc(null)}>
-              Cancelar
-            </button>
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={voiding || !voidReason.trim()}
-              onClick={submitVoid}
-              style={{ background: 'var(--color-error)' }}
-            >
-              {voiding ? <Spinner size={15} /> : <XCircle size={15} />}
-              Enviar baja
-            </button>
-          </>
-        )}
-      >
-        <div className="space-y-3">
-          <p className="text-sm text-[var(--text-secondary)]">
-            Esta acción envía la comunicación fiscal de baja. No elimina el comprobante de Inkora.
-          </p>
-          <label className="grid gap-2 text-sm font-semibold text-[var(--text-primary)]">
-            Motivo de la baja
-            <textarea
-              className="input min-h-28 resize-y"
-              value={voidReason}
-              onChange={(event) => setVoidReason(event.target.value)}
-              placeholder="Describe el motivo de la anulación"
-              maxLength={250}
-              disabled={voiding}
-            />
-          </label>
-        </div>
-      </Modal>
     </div>
   );
 }

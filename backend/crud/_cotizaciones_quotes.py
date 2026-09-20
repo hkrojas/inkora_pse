@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
+from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session, joinedload
 
 import models
@@ -20,7 +21,6 @@ from crud._cotizaciones_shared import (
     _next_quote_identity,
 )
 from services import calculations
-from services.fiscal_clock import now_in_peru_naive
 from services.bank_account_validation import validate_and_normalize_bank_accounts
 from services.client_snapshot_service import build_cliente_snapshot
 from services.document_flow_service import (
@@ -98,9 +98,7 @@ def _pick_quote_wallet_snapshot(payment_methods, selected_wallet_id: str | None)
     if not normalized_selected:
         return None
     for method in payment_methods or []:
-        if method.get("tipo") != "wallet":
-            continue
-        if str(method.get("id") or "").strip() == normalized_selected:
+        if method.get("tipo") == "wallet" and str(method.get("id") or "").strip() == normalized_selected:
             return dict(method)
     return None
 
@@ -113,7 +111,6 @@ def _resolve_quote_payment_methods_snapshot(
     default_wallet_id: str | None = None,
 ) -> tuple[list[dict] | None, str | None]:
     normalized_tenant_methods = validate_and_normalize_bank_accounts(tenant_payment_methods or []) or []
-
     if quote_payment_methods is None:
         selected_bank_methods = [
             dict(method)
@@ -123,26 +120,32 @@ def _resolve_quote_payment_methods_snapshot(
     else:
         selected_bank_methods = [
             dict(method)
-            for method in quote_payment_methods or []
+            for method in quote_payment_methods
             if isinstance(method, dict) and method.get("tipo") == "bank"
         ]
-
     resolved_wallet_id = _resolve_quote_selected_wallet_id(
         normalized_tenant_methods,
         selected_wallet_id=selected_wallet_id,
         default_wallet_id=default_wallet_id,
     )
-    wallet_snapshot = _pick_quote_wallet_snapshot(normalized_tenant_methods, resolved_wallet_id)
-
-    snapshot: list[dict] = []
-    if wallet_snapshot:
-        snapshot.append(wallet_snapshot)
-    snapshot.extend(selected_bank_methods)
-
-    if quote_payment_methods is not None:
-        return snapshot, resolved_wallet_id
-
+    wallet_snapshots = [
+        dict(method) for method in normalized_tenant_methods if method.get("tipo") == "wallet"
+    ]
+    snapshot = wallet_snapshots + selected_bank_methods
     return (snapshot or None), resolved_wallet_id
+
+
+def _validated_warehouse_id(db: Session, tenant_id: int, warehouse_id: int | None):
+    if warehouse_id is None:
+        return None
+    warehouse = db.query(models.Warehouse).filter(
+        models.Warehouse.id == warehouse_id,
+        models.Warehouse.tenant_id == tenant_id,
+        models.Warehouse.is_active.is_(True),
+    ).first()
+    if not warehouse:
+        raise ValueError("El almacen seleccionado no pertenece a la empresa autenticada.")
+    return warehouse.id
 
 
 def get_cotizaciones(
@@ -154,6 +157,48 @@ def get_cotizaciones(
     query = _build_quote_listing_query(db)
     query = _apply_quote_user_scope(query, usuario)
     return query.offset(skip).limit(limit).all()
+
+
+def get_cotizaciones_page(
+    db: Session,
+    usuario: Optional[models.User] = None,
+    *,
+    skip: int = 0,
+    limit: int = 15,
+    q: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+):
+    query = _build_quote_listing_query(db).filter(
+        models.Cotizacion.document_kind == DOCUMENT_KIND_QUOTATION,
+    )
+    query = _apply_quote_user_scope(query, usuario)
+
+    normalized_q = str(q or "").strip()
+    if normalized_q:
+        term = f"%{normalized_q}%"
+        query = query.outerjoin(
+            models.Cliente,
+            models.Cliente.id == models.Cotizacion.cliente_id,
+        ).filter(
+            or_(
+                models.Cliente.razon_social.ilike(term),
+                models.Cliente.nombre_comercial.ilike(term),
+                models.Cliente.numero_documento.ilike(term),
+                models.Cotizacion.internal_order_number.ilike(term),
+                models.Cotizacion.serie.ilike(term),
+                cast(models.Cotizacion.id, String).ilike(term),
+                cast(models.Cotizacion.correlativo, String).ilike(term),
+            )
+        )
+    if date_from:
+        query = query.filter(models.Cotizacion.fecha_emision >= date_from)
+    if date_to:
+        query = query.filter(models.Cotizacion.fecha_emision <= date_to)
+
+    total = query.order_by(None).count()
+    items = query.offset(skip).limit(limit).all()
+    return {"items": items, "total": total, "skip": skip, "limit": limit}
 
 
 def get_cotizacion(
@@ -193,19 +238,6 @@ def create_cotizacion(
     )
 
 
-def _validated_warehouse_id(db: Session, tenant_id: int, warehouse_id: int | None):
-    if warehouse_id is None:
-        return None
-    warehouse = db.query(models.Warehouse).filter(
-        models.Warehouse.id == warehouse_id,
-        models.Warehouse.tenant_id == tenant_id,
-        models.Warehouse.is_active.is_(True),
-    ).first()
-    if not warehouse:
-        raise ValueError("El almacén seleccionado no pertenece a la empresa autenticada.")
-    return warehouse.id
-
-
 def _create_cotizacion_inner(
     db: Session,
     cotizacion: schemas.CotizacionCreate,
@@ -217,7 +249,7 @@ def _create_cotizacion_inner(
         raise ValueError("Cliente no encontrado o no pertenece al tenant actual.")
 
     tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
-    quote_payment_snapshot, quote_selected_wallet_id = _resolve_quote_payment_methods_snapshot(
+    quote_payment_methods, quote_selected_wallet_id = _resolve_quote_payment_methods_snapshot(
         tenant_payment_methods=getattr(tenant, "bank_accounts", None) or [],
         quote_payment_methods=getattr(cotizacion, "quote_payment_methods", None),
         selected_wallet_id=getattr(cotizacion, "quote_selected_wallet_id", None),
@@ -225,10 +257,12 @@ def _create_cotizacion_inner(
     )
 
     items_db, items_procesados_para_suma = _build_quote_items(db, cotizacion, tenant_id)
-    totales = calculations.sumarizar_cotizacion(items_procesados_para_suma)
+    totales = calculations.sumarizar_cotizacion(
+        items_procesados_para_suma
+    )
     nuevo_correlativo, internal_order_number = _next_quote_identity(db, tenant_id)
 
-    fecha_emision = cotizacion.fecha_emision or now_in_peru_naive()
+    fecha_emision = cotizacion.fecha_emision or datetime.now()
     condicion_pago = (
         getattr(cotizacion, "condicion_pago", None)
         or getattr(db_cliente, "condicion_pago", None)
@@ -241,7 +275,7 @@ def _create_cotizacion_inner(
     cuotas_pago = _serialize_cuotas_pago(getattr(cotizacion, "cuotas_pago", None))
     cliente_snapshot = build_cliente_snapshot(
         db_cliente,
-        getattr(cotizacion, "cliente_snapshot", None).model_dump(exclude_none=False)
+        cotizacion.cliente_snapshot.model_dump(exclude_none=False)
         if getattr(cotizacion, "cliente_snapshot", None)
         else None,
     )
@@ -249,8 +283,6 @@ def _create_cotizacion_inner(
     db_cotizacion = models.Cotizacion(
         cliente_id=db_cliente.id,
         cliente_snapshot=cliente_snapshot,
-        quote_payment_methods=quote_payment_snapshot,
-        quote_selected_wallet_id=quote_selected_wallet_id,
         usuario_id=usuario_id,
         tenant_id=tenant_id,
         fecha_emision=fecha_emision,
@@ -259,14 +291,14 @@ def _create_cotizacion_inner(
         tipo_comprobante=cotizacion.tipo_comprobante,
         document_kind=DOCUMENT_KIND_QUOTATION,
         internal_order_number=internal_order_number,
-        warehouse_id=_validated_warehouse_id(
-            db, tenant_id, getattr(cotizacion, "warehouse_id", None),
-        ),
+        warehouse_id=_validated_warehouse_id(db, tenant_id, getattr(cotizacion, "warehouse_id", None)),
         correlativo=nuevo_correlativo,
         serie=QUOTE_SERIE,
         observaciones=getattr(cotizacion, "observaciones", None),
         condicion_pago=condicion_pago,
         cuotas_pago=cuotas_pago or None,
+        quote_payment_methods=quote_payment_methods,
+        quote_selected_wallet_id=quote_selected_wallet_id,
         total_gravada=totales["total_gravada"],
         total_exonerada=totales["total_exonerada"],
         total_inafecta=totales["total_inafecta"],
@@ -288,16 +320,11 @@ def _create_cotizacion_inner(
 
 
 def _has_active_derived_document(db: Session, cotizacion: models.Cotizacion) -> bool:
-    return (
-        db.query(models.Cotizacion.id)
-        .filter(
-            models.Cotizacion.source_quote_id == cotizacion.id,
-            models.Cotizacion.document_kind != DOCUMENT_KIND_QUOTATION,
-            models.Cotizacion.estado != DOCUMENT_STATUS_VOIDED,
-        )
-        .first()
-        is not None
-    )
+    return db.query(models.Cotizacion.id).filter(
+        models.Cotizacion.source_quote_id == cotizacion.id,
+        models.Cotizacion.document_kind != DOCUMENT_KIND_QUOTATION,
+        models.Cotizacion.estado != DOCUMENT_STATUS_VOIDED,
+    ).first() is not None
 
 
 def _ensure_cotizacion_editable(db: Session, cotizacion: models.Cotizacion) -> None:
@@ -306,12 +333,8 @@ def _ensure_cotizacion_editable(db: Session, cotizacion: models.Cotizacion) -> N
     if cotizacion.estado != DOCUMENT_STATUS_PENDING:
         raise ValueError("Solo se puede editar una cotizacion en estado pendiente.")
     if cotizacion.linked_fiscal_document_id or _has_active_derived_document(db, cotizacion):
-        raise ValueError(
-            "No se puede editar una cotizacion con comprobante fiscal asociado."
-        )
-    if Decimal(str(cotizacion.monto_pagado or 0)) > Decimal("0"):
-        raise ValueError("No se puede editar una cotizacion con pagos asociados.")
-    if getattr(cotizacion, "pagos", None):
+        raise ValueError("No se puede editar una cotizacion con comprobante fiscal asociado.")
+    if Decimal(str(cotizacion.monto_pagado or 0)) > Decimal("0") or getattr(cotizacion, "pagos", None):
         raise ValueError("No se puede editar una cotizacion con pagos asociados.")
 
 
@@ -323,72 +346,53 @@ def update_cotizacion(
 ):
     query = db.query(models.Cotizacion).filter(models.Cotizacion.id == cotizacion_id)
     query = _apply_quote_user_scope(query, usuario)
-
     db_cotizacion = query.with_for_update().first()
     if not db_cotizacion:
         return None
 
     _ensure_cotizacion_editable(db, db_cotizacion)
-
-    db_cliente = get_cliente_for_tenant(
-        db,
-        cotizacion.cliente_id,
-        db_cotizacion.tenant_id,
-    )
+    db_cliente = get_cliente_for_tenant(db, cotizacion.cliente_id, db_cotizacion.tenant_id)
     if not db_cliente:
         raise ValueError("Cliente no encontrado o no pertenece al tenant actual.")
 
     tenant = db.query(models.Tenant).filter(models.Tenant.id == db_cotizacion.tenant_id).first()
-    quote_payment_snapshot, quote_selected_wallet_id = _resolve_quote_payment_methods_snapshot(
+    payment_snapshot, selected_wallet_id = _resolve_quote_payment_methods_snapshot(
         tenant_payment_methods=getattr(tenant, "bank_accounts", None) or [],
         quote_payment_methods=getattr(cotizacion, "quote_payment_methods", None),
         selected_wallet_id=getattr(cotizacion, "quote_selected_wallet_id", None),
         default_wallet_id=getattr(tenant, "quote_default_wallet_id", None),
     )
-
-    items_db, items_procesados_para_suma = _build_quote_items(
-        db,
-        cotizacion,
-        db_cotizacion.tenant_id,
-    )
-    totales = calculations.sumarizar_cotizacion(items_procesados_para_suma)
-    condicion_pago = (
-        getattr(cotizacion, "condicion_pago", None)
-        or getattr(db_cliente, "condicion_pago", None)
-    )
+    items_db, items_for_totals = _build_quote_items(db, cotizacion, db_cotizacion.tenant_id)
+    totals = calculations.sumarizar_cotizacion(items_for_totals)
     cuotas_pago = _serialize_cuotas_pago(getattr(cotizacion, "cuotas_pago", None))
-    cliente_snapshot = build_cliente_snapshot(
+
+    db_cotizacion.cliente_id = db_cliente.id
+    db_cotizacion.cliente_snapshot = build_cliente_snapshot(
         db_cliente,
-        getattr(cotizacion, "cliente_snapshot", None).model_dump(exclude_none=False)
+        cotizacion.cliente_snapshot.model_dump(exclude_none=False)
         if getattr(cotizacion, "cliente_snapshot", None)
         else None,
     )
-
-    db_cotizacion.cliente_id = db_cliente.id
-    db_cotizacion.cliente_snapshot = cliente_snapshot
-    db_cotizacion.quote_payment_methods = quote_payment_snapshot
-    db_cotizacion.quote_selected_wallet_id = quote_selected_wallet_id
+    db_cotizacion.quote_payment_methods = payment_snapshot
+    db_cotizacion.quote_selected_wallet_id = selected_wallet_id
     if cotizacion.fecha_emision is not None:
         db_cotizacion.fecha_emision = cotizacion.fecha_emision
     db_cotizacion.fecha_vencimiento = cotizacion.fecha_vencimiento
     db_cotizacion.moneda = cotizacion.moneda
     db_cotizacion.tipo_comprobante = cotizacion.tipo_comprobante
     db_cotizacion.warehouse_id = _validated_warehouse_id(
-        db,
-        db_cotizacion.tenant_id,
-        getattr(cotizacion, "warehouse_id", None),
+        db, db_cotizacion.tenant_id, getattr(cotizacion, "warehouse_id", None)
     )
-    db_cotizacion.observaciones = getattr(cotizacion, "observaciones", None)
-    db_cotizacion.condicion_pago = condicion_pago
+    db_cotizacion.observaciones = cotizacion.observaciones
+    db_cotizacion.condicion_pago = cotizacion.condicion_pago or getattr(db_cliente, "condicion_pago", None)
     db_cotizacion.cuotas_pago = cuotas_pago or None
-    db_cotizacion.total_gravada = totales["total_gravada"]
-    db_cotizacion.total_exonerada = totales["total_exonerada"]
-    db_cotizacion.total_inafecta = totales["total_inafecta"]
-    db_cotizacion.total_igv = totales["total_igv"]
-    db_cotizacion.total_venta = totales["total_venta"]
-    db_cotizacion.saldo_pendiente = totales["total_venta"]
+    db_cotizacion.total_gravada = totals["total_gravada"]
+    db_cotizacion.total_exonerada = totals["total_exonerada"]
+    db_cotizacion.total_inafecta = totals["total_inafecta"]
+    db_cotizacion.total_igv = totals["total_igv"]
+    db_cotizacion.total_venta = totals["total_venta"]
+    db_cotizacion.saldo_pendiente = totals["total_venta"]
     db_cotizacion.items = items_db
-
     db_cotizacion.sunat_pdf_url = None
     db_cotizacion.sunat_xml_url = None
     db_cotizacion.sunat_cdr_url = None
@@ -402,9 +406,9 @@ def update_cotizacion(
         db.commit()
         db.refresh(db_cotizacion)
         return get_cotizacion(db, db_cotizacion.id, usuario)
-    except Exception as exc:
+    except Exception:
         db.rollback()
-        raise exc
+        raise
 
 
 def duplicate_cotizacion(
@@ -421,9 +425,6 @@ def duplicate_cotizacion(
 
     payload = schemas.CotizacionCreate(
         cliente_id=original.cliente_id,
-        cliente_snapshot=original.cliente_snapshot,
-        quote_payment_methods=original.quote_payment_methods,
-        quote_selected_wallet_id=getattr(original, "quote_selected_wallet_id", None),
         fecha_vencimiento=original.fecha_vencimiento,
         moneda=original.moneda,
         tipo_comprobante=original.tipo_comprobante or "00",
@@ -445,10 +446,7 @@ def duplicate_cotizacion(
         ],
     )
     copia = create_cotizacion(db, payload, usuario.id, original.tenant_id)
-    if (
-        getattr(original, "quote_payment_methods", None) is not None
-        or getattr(original, "quote_selected_wallet_id", None) is not None
-    ):
+    if getattr(original, "quote_payment_methods", None):
         copia.quote_payment_methods = original.quote_payment_methods
         copia.quote_selected_wallet_id = getattr(original, "quote_selected_wallet_id", None)
         db.commit()

@@ -27,36 +27,25 @@ def _read_value(source: Any, key: str):
 
 
 def _clean_string(value: Any) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()
+    return "" if value is None else str(value).strip()
 
 
 def build_cliente_snapshot(cliente: Any, override: Mapping[str, Any] | None = None) -> dict:
-    """Build the non-secret client snapshot stored with a document.
-
-    Values from ``override`` win, so a document can preserve one-off edits
-    without mutating the customer's master record.
-    """
     source = override or {}
     snapshot: dict[str, Any] = {}
-
-    client_id = _read_value(source, "id") if "id" in source else _read_value(cliente, "id")
+    client_id = source.get("id") if isinstance(source, Mapping) and "id" in source else _read_value(cliente, "id")
     if client_id not in (None, ""):
         try:
             snapshot["id"] = int(client_id)
         except (TypeError, ValueError):
             pass
-
     for field in CLIENT_SNAPSHOT_STRING_FIELDS:
-        value = _read_value(source, field) if field in source else _read_value(cliente, field)
+        value = source.get(field) if isinstance(source, Mapping) and field in source else _read_value(cliente, field)
         snapshot[field] = _clean_string(value)
-
     if not snapshot.get("razon_social") and snapshot.get("nombre_comercial"):
         snapshot["razon_social"] = snapshot["nombre_comercial"]
     if not snapshot.get("whatsapp") and snapshot.get("telefono"):
         snapshot["whatsapp"] = snapshot["telefono"]
-
     return snapshot
 
 

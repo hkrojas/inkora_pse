@@ -35,7 +35,10 @@ Endpoint:
 
 Para `RC` y `RA`, el resultado puede ser asincrono y se consulta con `GET /api/cpe/consultar/{nombre_archivo}`.
 
-Para `GRE`, en las pruebas Smart PSE firma y devuelve ticket, pero el endpoint de consulta documentado aplica a resumenes y no devuelve estado final de guia.
+Para `GRE`, Smart PSE documenta un flujo asincrono: el envio devuelve ticket y
+`GET /api/cpe/consultar/{nombre_archivo}` debe recibir nuevamente las cuatro
+credenciales OAuth/SOL para obtener el CDR. La ubicacion exacta de esos campos
+en la consulta queda pendiente de confirmar con evidencia demo.
 
 ## Convenciones globales XML
 
@@ -340,10 +343,10 @@ Smart PSE exige estos campos en el payload de `procesar-demo` para guias:
 
 | Campo | Obligatorio | Nota |
 | --- | --- | --- |
-| `client_id_sunat` | Si | Credencial API SUNAT. |
-| `client_secret_sunat` | Si | Secreto API SUNAT. |
-| `sol_user` | Si | En pruebas funciono como `RUC + usuario SOL`, no solo usuario. |
-| `sol_password` | Si | Clave SOL. |
+| `client_id_sunat` | Produccion | Credencial API SUNAT. Smart PSE la declara opcional en demo. |
+| `client_secret_sunat` | Produccion | Secreto API SUNAT. Smart PSE lo declara opcional en demo. |
+| `sol_user` | Produccion | `RUC + usuario SOL`. Smart PSE lo declara opcional en demo. |
+| `sol_password` | Produccion | Clave SOL. Smart PSE la declara opcional en demo. |
 
 ### Obligatorios minimos firmados por Smart PSE
 
@@ -405,9 +408,10 @@ Aunque Smart PSE firmo el XML minimo, GRE debe endurecerse antes de produccion p
 4. Si falta un campo obligatorio, bloquear antes de enviar a Smart PSE con mensaje claro.
 5. Si Smart PSE devuelve `xml_firmado`, guardar XML firmado, hash y respuesta cruda.
 6. Si el CDR no existe, no marcar como aceptado.
-7. Para GRE demo, guardar estado `pendiente_smartpse` hasta tener confirmacion final.
-8. Para RC/RA, consultar solo con el endpoint documentado de resumenes.
-9. Para RR, mantener bloqueado hasta confirmacion formal de Smart PSE.
+7. Para GRE demo, guardar estado `pendiente_smartpse` hasta tener CDR definitivo.
+8. Para GRE 09/31, consultar el ticket reenviando las cuatro credenciales cuando esten configuradas; en produccion son obligatorias.
+9. Para RC/RA, consultar el ticket sin credenciales GRE.
+10. Para RR, mantener bloqueado hasta confirmacion formal de Smart PSE.
 
 ## Fuentes
 

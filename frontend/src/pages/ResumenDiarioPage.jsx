@@ -19,7 +19,6 @@ import Drawer from '../components/ui/Drawer';
 import Spinner from '../components/ui/Spinner';
 import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
-import Pagination from '../components/ui/Pagination';
 
 const ESTADO_OPTS = [
   { value: '1', label: '1 - Emitida' },
@@ -510,10 +509,30 @@ export default function ResumenDiarioPage() {
 
             <div className="ink-table-footer">
               <span className="ink-table-count">
-                Página <strong>{page}</strong> de <strong>{totalPages}</strong>
+                Pag. <strong>{page}</strong> de <strong>{totalPages}</strong>
               </span>
-              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} ariaLabel="Paginación del resumen diario" />
-              <span className="ink-table-count">{PER_PAGE} por página</span>
+              <div className="pagination">
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  &#8249;
+                </button>
+                <button type="button" className="page-btn active">
+                  {page}
+                </button>
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                >
+                  &#8250;
+                </button>
+              </div>
+              <span className="ink-table-count">{PER_PAGE} por pagina</span>
             </div>
           </div>
         )}
@@ -522,10 +541,6 @@ export default function ResumenDiarioPage() {
       <Drawer
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        variant="fiscal"
-        eyebrow="Resumen SUNAT"
-        status="Boletas del día"
-        initialFocus="input, select, textarea"
         title="Nuevo resumen diario"
         subtitle="Consolida las boletas del dia y envia el resumen a SUNAT sin salir del listado."
         icon={<BarChart3 size={22} />}
@@ -545,7 +560,7 @@ export default function ResumenDiarioPage() {
               <p>Cabecera operativa</p>
             </div>
             <p className="drawer-editor-section-intro">
-              Define la fecha de generacion, el corte del resumen y el correlativo numerico que enviara el proveedor fiscal.
+              Define la fecha de generacion, el corte del resumen y el correlativo numerico que APISPeru enviara a SUNAT.
             </p>
             <div className="responsive-form-grid-1-1-2">
               <div>
@@ -560,7 +575,7 @@ export default function ResumenDiarioPage() {
                 <label className="label">Correlativo <span style={{ color: 'var(--color-error)' }}>*</span></label>
                 <input className="input" value={form.correlativo} onChange={setInput('correlativo')} placeholder="00001" required />
                 <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                  Ingresa solo el correlativo numerico. El proveedor fiscal arma el RC con la fecha.
+                  Ingresa solo el correlativo numerico. APISPeru arma el RC con la fecha.
                 </p>
               </div>
             </div>
@@ -622,7 +637,7 @@ export default function ResumenDiarioPage() {
           </div>
 
           <div className="proto-alert warning drawer-editor-note" style={{ fontSize: 12 }}>
-            <strong>Nota:</strong> El resumen diario se guarda primero en Inkora y luego se marca como enviado o rechazado segun la respuesta del proveedor fiscal.
+            <strong>Nota:</strong> El resumen diario se guarda primero en Inkora y luego se marca como enviado o rechazado segun la respuesta de APISPeru.
           </div>
         </form>
       </Drawer>

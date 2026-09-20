@@ -19,6 +19,10 @@ Smart_PSE
 backups
 logo
 supabase
+_release_guides_prod
+_push_main_sync
+_push_quote_footer_main
+tmp
 
 backend/.env
 backend/venv

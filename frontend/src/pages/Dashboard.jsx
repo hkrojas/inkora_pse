@@ -86,6 +86,17 @@ function percent(value, total) {
   return Math.max(0, Math.min(100, Math.round((value / total) * 100)));
 }
 
+function getDocTypeLabel(doc) {
+  const kind = doc?.document_kind || doc?.tipo_comprobante;
+  if (kind === 'quotation' || kind === '00') return 'COT.';
+  if (kind === 'invoice' || kind === '01') return 'FACTURA';
+  if (kind === 'receipt' || kind === '03') return 'BOLETA';
+  if (kind === 'debit_note' || kind === '08') return 'ND';
+  if (kind === 'credit_note' || kind === '07') return 'NC';
+  if (kind === 'guide' || kind === '09') return 'GUÍA';
+  return 'DOC';
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
@@ -165,12 +176,11 @@ export default function Dashboard() {
     );
   }
 
-  const cobrosRegistradosHistoricos = safeNumber(stats?.ingresos_totales);
+  const ingresosTotales = safeNumber(stats?.ingresos_totales);
   const totalCobradoMes = safeNumber(cobranza?.total_pagado_mes);
   const totalPorCobrar = safeNumber(cobranza?.total_por_cobrar ?? stats?.saldos_por_cobrar);
   const saldoVencido = safeNumber(cobranza?.total_vencido ?? stats?.saldo_vencido);
   const documentosPendientes = safeNumber(cobranza?.documentos_pendientes);
-  const documentosVencidos = safeNumber(cobranza?.documentos_vencidos);
   const clientesConDeuda = safeNumber(cobranza?.clientes_con_deuda ?? overdueDocs.length);
   const docsRechazados = [...recentDocs, ...overdueDocs].filter(
     (doc) => getStatusMeta(doc?.estado).tone === 'bad',
@@ -180,33 +190,32 @@ export default function Dashboard() {
   ).length;
 
   const porVencer = Math.max(totalPorCobrar - saldoVencido, 0);
+  const vencidoCorto = Math.min(saldoVencido, totalPorCobrar * 0.72);
+  const vencidoLargo = Math.max(0, saldoVencido - vencidoCorto);
   const totalAging = Math.max(totalPorCobrar, 1);
-  const documentosConDeuda = documentosPendientes + documentosVencidos;
-  const headerSummary = documentosConDeuda > 0
-    ? `${documentosConDeuda} documentos con saldo pendiente${cotizacionesPendientes > 0 ? ` y ${cotizacionesPendientes} cotizaciones por seguir.` : '.'}`
-    : cotizacionesPendientes > 0
-      ? `${cotizacionesPendientes} cotizaciones recientes esperan seguimiento.`
-      : 'Revisa caja, emisión fiscal y seguimiento comercial en un solo lugar.';
 
   const attentionCards = [
     {
-      value: documentosConDeuda,
-      label: 'Documentos fiscales con saldo pendiente.',
-      detail: `${clientesConDeuda} clientes${documentosVencidos > 0 ? ` · ${documentosVencidos} vencidos` : ' · sin vencidos'}`,
-      action: 'Abrir cobranza',
+      value: documentosPendientes,
+      label: 'Documentos fiscales por cobrar, no vencidos.',
+      action: 'Revisar ahora',
       href: '/cobranza',
     },
     {
       value: docsRechazados,
-      label: 'Alertas en documentos visibles.',
-      detail: 'Revisa los estados que requieren corrección.',
+      label: 'Alertas en documentos recientes.',
       action: 'Ver documentos',
       href: '/facturas',
     },
     {
+      value: clientesConDeuda,
+      label: 'Clientes con deuda fiscal.',
+      action: 'Ver cobranzas',
+      href: '/cobranza',
+    },
+    {
       value: cotizacionesPendientes,
       label: 'Cotizaciones recientes pendientes.',
-      detail: 'Da seguimiento antes de que pierdan vigencia.',
       action: 'Dar seguimiento',
       href: '/cotizaciones',
     },
@@ -221,13 +230,13 @@ export default function Dashboard() {
         variant="monitoring"
         eyebrow="Centro operativo"
         title="Resumen operativo"
-        description={headerSummary}
+        description="Lo importante no es ver gráficos: es saber qué cobrar, qué emitir y qué corregir hoy."
         meta={<span className="operational-page-header__scope">Vista consolidada del negocio</span>}
         actions={
-          <span className="dashboard-period" aria-label={`Periodo actual: ${formatDashboardMonth()}`}>
+          <button type="button" className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '9px' }}>
             <CalendarDays size={16} />
             {formatDashboardMonth()}
-          </span>
+          </button>
         }
       />
 
@@ -241,33 +250,30 @@ export default function Dashboard() {
         </div>
       )}
 
-      <section
-        className="attention ink-enter-2"
-        style={{ '--attention-cards': Math.max(actionableAttentionCards.length, 1) }}
-        aria-labelledby="dashboard-attention-title"
-      >
+      <section className="attention ink-enter-2">
         <div className="attention-title">
           <span className="attention-title-badge">
             <CircleAlert size={16} />
           </span>
-          <h3 id="dashboard-attention-title">Prioridades de hoy</h3>
-          <p>Solo acciones que impactan caja, emisión fiscal o seguimiento comercial.</p>
+          <h3>Necesita atención hoy</h3>
+          <p>Prioriza pendientes que afectan caja, emisión fiscal o seguimiento comercial.</p>
         </div>
         {actionableAttentionCards.map((item) => (
-          <button
-            type="button"
+          <div
             key={item.label}
             className="attention-card"
             onClick={() => navigate(item.href)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && navigate(item.href)}
           >
             <strong>{item.value}</strong>
             <span className="attention-card-text">{item.label}</span>
-            <span className="attention-card-detail">{item.detail}</span>
-            <span className="attention-card-link">
+            <div className="attention-card-link">
               {item.action}
               <ArrowRight size={13} />
-            </span>
-          </button>
+            </div>
+          </div>
         ))}
         {actionableAttentionCards.length === 0 && (
           <div className="attention-card attention-card--calm">
@@ -277,17 +283,17 @@ export default function Dashboard() {
         )}
       </section>
 
-      <section className="metrics-grid metrics-grid--core" aria-label="Indicadores de caja y cobranza">
+      <section className="metrics-grid">
         <article className="metric-card ink-enter-3">
           <div className="metric-top">
-            <div className="metric-label">Cobros registrados</div>
+            <div className="metric-label">Pagos fiscales registrados</div>
             <span className="metric-badge neutral">Historico</span>
           </div>
           <div className="metric-value">
-            {cobrosRegistradosHistoricos.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {ingresosTotales.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="metric-sub">
-            Acumulado de cobros registrados desde el inicio de operaciones.
+            Acumulado histórico de pagos aplicados a documentos fiscales.
           </div>
         </article>
 
@@ -300,7 +306,7 @@ export default function Dashboard() {
             {totalCobradoMes.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="metric-sub">
-            Pagos aplicados a documentos fiscales durante el mes actual.
+            Equivale al <strong>{percent(totalCobradoMes, ingresosTotales || 1)}%</strong> del acumulado histórico.
           </div>
         </article>
 
@@ -313,25 +319,34 @@ export default function Dashboard() {
             {totalPorCobrar.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="metric-sub">
-            <span className="red">{clientesConDeuda} clientes</span> · {documentosConDeuda} documentos con saldo.
+            <span className="red">{clientesConDeuda} clientes</span> · {overdueDocs.length || documentosPendientes} documentos.
           </div>
         </article>
 
+        <article className={`metric-card ink-enter-4${docsRechazados === 0 ? ' metric-card--quiet' : ''}`}>
+          <div className="metric-top">
+          <div className="metric-label">Alertas documentales visibles</div>
+            <span className={`metric-badge ${docsRechazados > 0 ? 'warn' : ''}`}>
+              {docsRechazados > 0 ? 'Revisar' : 'Sin alertas'}
+            </span>
+          </div>
+          <div className="metric-value">{docsRechazados === 0 ? '—' : docsRechazados}</div>
+          <div className="metric-sub">
+            {docsRechazados > 0
+              ? 'Documentos con alerta en los listados recientes.'
+              : 'Sin alertas en los documentos visibles del dashboard.'}
+          </div>
+        </article>
       </section>
 
       <section className="dashboard-grid ink-enter-5">
-        <div className="dashboard-main-stack">
-          <article className="panel dashboard-quote-panel">
-          <div className="panel-header dashboard-quote-panel__header">
+        <article className="panel">
+          <div className="panel-header">
             <div>
-              <span className="dashboard-section-kicker">Seguimiento comercial</span>
-              <h3>Cotizaciones recientes</h3>
-              <p>Las últimas cotizaciones creadas o actualizadas.</p>
+              <h3>Actividad reciente</h3>
+              <p>Ultimos comprobantes, pagos y acciones importantes.</p>
             </div>
-            <div className="dashboard-quote-panel__actions">
-              <span className="dashboard-quote-count">{Math.min(recentDocs.length, 4)} visibles</span>
-              <button type="button" className="btn" onClick={() => navigate('/cotizaciones')}>Ver cotizaciones</button>
-            </div>
+            <button type="button" className="btn" onClick={() => navigate('/facturas')}>Ver todo</button>
           </div>
           <p className="mb-2 text-xs font-semibold text-[var(--color-text-muted)] md:hidden">Desliza horizontalmente para ver todas las columnas.</p>
           <div className="table-wrap">
@@ -351,20 +366,23 @@ export default function Dashboard() {
                     return (
                       <tr key={`empty-${index}`}>
                         <td colSpan={5} style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px 16px' }}>
-                          Aún no hay cotizaciones recientes para mostrar.
+                          Aun no hay actividad reciente para mostrar.
                         </td>
                       </tr>
                     );
                   }
                   const status = getStatusMeta(doc.estado);
                   return (
-                    <tr key={doc.id ?? `${formatDocNumber(doc)}-${index}`} className="dashboard-quote-row">
-                      <td className="dashboard-quote-document">
+                    <tr key={doc.id ?? `${formatDocNumber(doc)}-${index}`}>
+                      <td>
                         <strong>{formatDocNumber(doc)}</strong>
+                        <span className="status neutral" style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px' }}>
+                          {getDocTypeLabel(doc)}
+                        </span>
                       </td>
-                      <td className="dashboard-quote-client">{getDocClient(doc)}</td>
+                      <td>{getDocClient(doc)}</td>
                       <td>{formatShortDate(doc.fecha_emision || doc.created_at)}</td>
-                      <td className="dashboard-quote-total">
+                      <td>
                         <strong>
                           {getDocAmount(doc).toLocaleString('es-PE', { style: 'currency', currency: doc.moneda || 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </strong>
@@ -385,69 +403,14 @@ export default function Dashboard() {
               <strong>Registrar cobro</strong>
               <span>Conciliar pago recibido</span>
             </button>
-            <button type="button" className="quick-btn" onClick={() => navigate('/cobranza')}>
+            <button type="button" className="quick-btn" onClick={() => navigate('/cotizaciones')}>
               <strong>Enviar recordatorio</strong>
               <span>Gestionar deuda vencida</span>
             </button>
           </div>
-          </article>
-
-          <article className="panel ink-enter-6">
-            <div className="panel-header">
-              <div>
-                <h3>Seguimiento de cobranza</h3>
-                <p>Documentos vencidos que requieren seguimiento.</p>
-              </div>
-            </div>
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Cliente</th>
-                    <th>Documento</th>
-                    <th>Monto</th>
-                    <th>Vencimiento</th>
-                    <th>Dias atraso</th>
-                    <th>Estado</th>
-                    <th>Accion</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(overdueDocs.length ? overdueDocs.slice(0, 4) : [null]).map((doc, index) => {
-                    if (!doc) {
-                      return (
-                        <tr key={`overdue-empty-${index}`}>
-                          <td colSpan={7} style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px 16px' }}>
-                            No hay documentos vencidos para mostrar.
-                          </td>
-                        </tr>
-                      );
-                    }
-                    const lateDays = getDaysLate(doc);
-                    const status = getStatusMeta(lateDays > 0 ? 'vencido' : 'por vencer');
-                    const daysColor = lateDays ? (lateDays > 10 ? '#dc2626' : '#c76f13') : undefined;
-                    return (
-                      <tr key={doc.id ?? `${formatDocNumber(doc)}-due-${index}`}>
-                        <td>{getDocClient(doc)}</td>
-                        <td>{formatDocNumber(doc)}</td>
-                        <td>{getDocAmount(doc).toLocaleString('es-PE', { style: 'currency', currency: doc.moneda || 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td>{formatShortDate(doc.fecha_vencimiento || doc.fecha_emision)}</td>
-                        <td style={daysColor ? { color: daysColor, fontWeight: 800 } : undefined}>{lateDays ? `${lateDays} dias` : '-'}</td>
-                        <td><span className={`status ${status.tone}`}>{status.label}</span></td>
-                        <td>
-                          <button type="button" className="view-btn" onClick={() => navigate('/cobranza')}>Recordar</button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </article>
-        </div>
+        </article>
 
         <aside className="side-stack">
-          {urgentItems.length > 0 && (
           <article className="panel">
             <div className="panel-header">
               <div>
@@ -456,7 +419,7 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="todo-list">
-              {urgentItems.map((doc, index) => {
+              {urgentItems.length > 0 ? urgentItems.map((doc, index) => {
                 const lateDays = getDaysLate(doc);
                 return (
                   <div key={doc.id ?? `${formatDocNumber(doc)}-${index}`} className="todo-item">
@@ -472,10 +435,17 @@ export default function Dashboard() {
                     <button type="button" className="mini-link" onClick={() => navigate('/cobranza')}>Abrir</button>
                   </div>
                 );
-              })}
+              }) : (
+                <div className="todo-item">
+                  <div className="todo-icon"><CircleAlert size={18} /></div>
+                  <div>
+                    <strong>No hay pendientes urgentes para mostrar.</strong>
+                    <span>Cuando existan documentos vencidos, rechazos fiscales o acciones criticas, apareceran aqui.</span>
+                  </div>
+                </div>
+              )}
             </div>
           </article>
-          )}
 
           <article className="panel">
             <div className="panel-header">
@@ -494,15 +464,76 @@ export default function Dashboard() {
               </div>
               <div className="aging-row">
                 <div className="aging-top">
-                  <span>Vencido</span>
-                  <strong>{saldoVencido.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                  <span>Vencido - tramo visual</span>
+                  <strong>{vencidoCorto.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                 </div>
-                <div className="bar red"><i style={{ width: `${percent(saldoVencido, totalAging)}%` }} /></div>
+                <div className="bar orange"><i style={{ width: `${percent(vencidoCorto, totalAging)}%` }} /></div>
+              </div>
+              <div className="aging-row">
+                <div className="aging-top">
+                  <span>Vencido - resto visual</span>
+                  <strong>{vencidoLargo.toLocaleString('es-PE', { style: 'currency', currency: 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                </div>
+                <div className="bar red"><i style={{ width: `${percent(vencidoLargo, totalAging)}%` }} /></div>
               </div>
             </div>
           </article>
         </aside>
       </section>
+
+      <article className="panel ink-enter-6" style={{ marginTop: '16px' }}>
+        <div className="panel-header">
+          <div>
+            <h3>Documentos vencidos</h3>
+            <p>Comprobantes fiscales con saldo pendiente y vencimiento pasado.</p>
+          </div>
+        </div>
+        <p className="mb-2 text-xs font-semibold text-[var(--color-text-muted)] md:hidden">Desliza horizontalmente para ver todas las columnas.</p>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Documento</th>
+                <th>Monto</th>
+                <th>Vencimiento</th>
+                <th>Dias atraso</th>
+                <th>Estado</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(overdueDocs.length ? overdueDocs.slice(0, 4) : [null]).map((doc, index) => {
+                if (!doc) {
+                  return (
+                    <tr key={`overdue-empty-${index}`}>
+                      <td colSpan={7} style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: '24px 16px' }}>
+                        No hay documentos vencidos para mostrar.
+                      </td>
+                    </tr>
+                  );
+                }
+                const lateDays = getDaysLate(doc);
+                const status = getStatusMeta(lateDays > 0 ? 'vencido' : 'por vencer');
+                const daysColor = lateDays ? (lateDays > 10 ? '#dc2626' : '#c76f13') : undefined;
+                return (
+                  <tr key={doc.id ?? `${formatDocNumber(doc)}-due-${index}`}>
+                    <td>{getDocClient(doc)}</td>
+                    <td>{formatDocNumber(doc)}</td>
+                    <td>{getDocAmount(doc).toLocaleString('es-PE', { style: 'currency', currency: doc.moneda || 'PEN', minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td>{formatShortDate(doc.fecha_vencimiento || doc.fecha_emision)}</td>
+                    <td style={daysColor ? { color: daysColor, fontWeight: 800 } : undefined}>{lateDays ? `${lateDays} dias` : '-'}</td>
+                    <td><span className={`status ${status.tone}`}>{status.label}</span></td>
+                    <td>
+                      <button type="button" className="view-btn" onClick={() => navigate('/cobranza')}>Recordar</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </article>
     </div>
   );
 }

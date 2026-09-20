@@ -146,7 +146,7 @@ def test_sale_response_without_cdr_is_not_accepted_when_cdr_required():
     assert "CDR" in str(exc_info.value)
 
 
-def test_sale_ticket_response_without_cdr_is_not_accepted_when_cdr_required():
+def test_sale_ticket_response_without_cdr_stays_pending_when_cdr_required():
     payload = {"serie": "F001", "correlativo": "00000001", "tipoDoc": "01"}
     data = {
         "estado": 200,
@@ -156,13 +156,15 @@ def test_sale_ticket_response_without_cdr_is_not_accepted_when_cdr_required():
         "rechazado": False,
     }
 
-    with pytest.raises(SmartPSEException) as exc_info:
-        build_smartpse_result(
-            payload,
-            data,
-            endpoint="/api/cpe/procesar",
-            status_code=200,
-            require_cdr=True,
-        )
+    result = build_smartpse_result(
+        payload,
+        data,
+        endpoint="/api/cpe/procesar",
+        status_code=200,
+        require_cdr=True,
+    )
 
-    assert "CDR" in str(exc_info.value)
+    assert result["success"] is True
+    assert result["pending"] is True
+    assert result["ticket"] == "TICKET-1"
+    assert result["cdr_xml"] is None

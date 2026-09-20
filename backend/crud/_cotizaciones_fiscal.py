@@ -34,13 +34,24 @@ from services import inventory_service
 from services.fiscal_balance_service import ensure_credit_note_within_available_amount
 
 
+def _parse_provider_verified_at(value):
+    if value is None or isinstance(value, datetime):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def create_fiscal_document_from_quote(
     db: Session,
     quote: models.Cotizacion,
     usuario_id: int,
     tipo_comprobante: str,
     serie_override: str | None = None,
-    fiscal_issue_date: datetime | None = None,
 ):
     return _retry_on_correlativo_conflict(
         _create_fiscal_document_from_quote_inner,
@@ -49,7 +60,6 @@ def create_fiscal_document_from_quote(
         usuario_id,
         tipo_comprobante,
         serie_override,
-        fiscal_issue_date,
     )
 
 
@@ -59,7 +69,6 @@ def _create_fiscal_document_from_quote_inner(
     usuario_id: int,
     tipo_comprobante: str,
     serie_override: str | None = None,
-    fiscal_issue_date: datetime | None = None,
 ):
     if not is_quote_document(quote):
         raise ValueError("Solo se puede facturar una cotizacion comercial.")
@@ -80,17 +89,11 @@ def _create_fiscal_document_from_quote_inner(
         tipo_comprobante,
         serie,
         nuevo_correlativo,
-        fiscal_issue_date,
     )
 
     try:
         db.add(fiscal_document)
         db.flush()
-        inventory_service.create_document_holds(
-            db,
-            fiscal_document,
-            usuario_id,
-        )
         db.commit()
         db.refresh(fiscal_document)
         return get_cotizacion(db, fiscal_document.id)
@@ -132,14 +135,10 @@ def guardar_respuesta_sunat(
             db_cot.provider_document_name = data_sunat.get("provider_document_name")
         if "provider_verification_status" in data_sunat:
             db_cot.provider_verification_status = data_sunat.get("provider_verification_status")
-            if data_sunat.get("provider_verification_status") == "verified":
-                db_cot.provider_verified_at = data_sunat.get("provider_verified_at") or datetime.now()
+        if "provider_verified_at" in data_sunat:
+            db_cot.provider_verified_at = _parse_provider_verified_at(data_sunat.get("provider_verified_at"))
         if "provider_verification_error" in data_sunat:
             db_cot.provider_verification_error = data_sunat.get("provider_verification_error")
-        if "cdr_artifact_status" in data_sunat:
-            db_cot.cdr_artifact_status = data_sunat.get("cdr_artifact_status")
-        if "pdf_artifact_status" in data_sunat:
-            db_cot.pdf_artifact_status = data_sunat.get("pdf_artifact_status")
         qr_payload = data_sunat.get("qr_payload") or fiscal_qr_service.build_sunat_qr_payload(
             data_sunat.get("xml") or db_cot.sunat_xml_content,
             provider_hash=data_sunat.get("hash") or db_cot.sunat_hash,
@@ -151,18 +150,29 @@ def guardar_respuesta_sunat(
 
         verification_status = data_sunat.get("provider_verification_status")
         verification_failed = bool(verification_status and verification_status != "verified")
-        is_v2_note = bool(db_cot.nota_ajuste_metadata and db_cot.tipo_comprobante in {"07", "08"})
-        cdr_available = bool(data_sunat.get("cdr_xml") or links.get("cdr") or db_cot.sunat_cdr_content or db_cot.sunat_cdr_url)
+        is_v2_note = bool(
+            db_cot.nota_ajuste_metadata
+            and db_cot.tipo_comprobante in {"07", "08"}
+        )
+        cdr_available = bool(
+            data_sunat.get("cdr_xml")
+            or links.get("cdr")
+            or db_cot.sunat_cdr_content
+            or db_cot.sunat_cdr_url
+        )
         if is_v2_note and data_sunat.get("success"):
             if not cdr_available:
                 verification_failed = True
                 db_cot.provider_verification_error = "SmartPSE respondio sin CDR; la nota no fue aceptada."
             elif verification_status != "verified":
                 verification_failed = True
-                db_cot.provider_verification_error = "El CDR de la nota aun no fue verificado contra el proveedor."
+                db_cot.provider_verification_error = (
+                    "El CDR de la nota aun no fue verificado contra el proveedor."
+                )
 
         if (
-            data_sunat.get("success") and not verification_failed
+            data_sunat.get("success")
+            and not verification_failed
             and (
                 db_cot.document_kind == DOCUMENT_KIND_CREDIT_NOTE
                 or db_cot.tipo_comprobante == "07"
@@ -183,14 +193,10 @@ def guardar_respuesta_sunat(
         if data_sunat.get("success") and not verification_failed:
             db_cot.estado = DOCUMENT_STATUS_ISSUED
             db_cot.sunat_error = None
-            if data_sunat.get("cdr_xml") and not db_cot.sunat_cdr_url and not db_cot.cdr_artifact_status:
-                db_cot.cdr_artifact_status = "pending"
-            if not db_cot.sunat_pdf_url and not db_cot.pdf_artifact_status:
-                db_cot.pdf_artifact_status = "pending"
         else:
             if verification_failed and not was_issued:
                 db_cot.estado = DOCUMENT_STATUS_PENDING
-            db_cot.sunat_error = db_cot.provider_verification_error or _resolve_provider_error_message(data_sunat)
+            db_cot.sunat_error = db_cot.provider_verification_error or data_sunat.get("provider_verification_error") or _resolve_provider_error_message(data_sunat)
 
         if data_sunat.get("serie"):
             db_cot.serie = data_sunat.get("serie")
@@ -211,7 +217,8 @@ def guardar_respuesta_sunat(
                 source_quote.estado = DOCUMENT_STATUS_ISSUED
 
         if (
-            data_sunat.get("success") and not verification_failed
+            data_sunat.get("success")
+            and not verification_failed
             and db_cot.document_kind == DOCUMENT_KIND_FISCAL_DOCUMENT
         ):
             from crud.pagos import apply_prefiscal_advances_to_fiscal_document
@@ -224,7 +231,8 @@ def guardar_respuesta_sunat(
             )
 
         if (
-            data_sunat.get("success") and not verification_failed
+            data_sunat.get("success")
+            and not verification_failed
             and not was_issued
             and db_cot.document_kind == DOCUMENT_KIND_FISCAL_DOCUMENT
         ):
@@ -241,7 +249,11 @@ def guardar_respuesta_sunat(
                 inventory_service.finalize_document_inventory(db, db_cot)
             elif db_cot.document_kind == DOCUMENT_KIND_CREDIT_NOTE:
                 inventory_service.apply_credit_note_inventory(db, db_cot)
-        elif data_sunat.get("success") is False and not verification_failed and 400 <= int(data_sunat.get("provider_status_code") or 0) < 500:
+        elif (
+            data_sunat.get("success") is False
+            and not verification_failed
+            and 400 <= int(data_sunat.get("provider_status_code") or 0) < 500
+        ):
             inventory_service.release_document_holds(db, db_cot)
 
         db.commit()
@@ -260,10 +272,7 @@ def guardar_error_sunat(
         query = query.filter(models.Cotizacion.tenant_id == tenant_id)
     db_cot = query.first()
     if db_cot:
-        message = str(error)
-        db_cot.sunat_error = message
-        db_cot.provider_verification_status = "failed"
-        db_cot.provider_verification_error = message
+        db_cot.sunat_error = str(error)
         db.commit()
         db.refresh(db_cot)
     return db_cot
@@ -284,14 +293,34 @@ def anular_cotizacion(
     if db_cot.estado == DOCUMENT_STATUS_VOIDED:
         return db_cot
 
-    try:
-        inventory_service.reverse_document_inventory(
-            db,
-            db_cot,
-            user_id=db_cot.usuario_id,
-            reason=f"Reversion por anulacion de {db_cot.document_number}",
+    from services import sale_dispatch_service
+    if sale_dispatch_service.active_dispatch_allocation_exists(
+        db, db_cot.tenant_id, db_cot.id
+    ):
+        raise ValueError(
+            "La anulación no puede revertir stock mientras existan reservas o cobertura GRE."
         )
+
+    try:
+        inventory_service.ensure_document_void_inventory_safe(db, db_cot)
         db_cot.estado = DOCUMENT_STATUS_VOIDED
+        original_movements = db.query(models.InventoryMovement).filter(
+            models.InventoryMovement.tenant_id == db_cot.tenant_id,
+            models.InventoryMovement.source_type == "fiscal_document",
+            models.InventoryMovement.source_id == db_cot.id,
+            models.InventoryMovement.movement_type == "sale_out",
+        ).order_by(models.InventoryMovement.product_id, models.InventoryMovement.id).all()
+        for original in original_movements:
+            balance = inventory_service._balance(
+                db, original.tenant_id, original.warehouse_id, original.product_id
+            )
+            reversal = inventory_service._record_movement(
+                db, balance, -original.quantity, "void_reversal", "voided_document",
+                db_cot.id, original.source_line_id, db_cot.usuario_id,
+                f"Reversion por anulacion de {db_cot.document_number}",
+                f"void:{db_cot.id}:{original.id}",
+            )
+            reversal.related_movement_id = original.id
         if db_cot.source_quote_id:
             source_quote = (
                 db.query(models.Cotizacion)

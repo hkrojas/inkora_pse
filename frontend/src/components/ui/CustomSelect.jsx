@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 
 export default function CustomSelect({
+  id,
   value,
   onChange,
   options = [],
@@ -20,20 +21,20 @@ export default function CustomSelect({
   matchOption,
   noResultsLabel = 'Sin resultados',
   footerAction,
-  id,
   ariaLabel,
+  ariaLabelledby,
   required = false,
   className = '',
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0, maxHeight: 260 });
   const triggerRef = useRef(null);
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
   const selectedOptionRef = useRef(null);
-  const generatedId = useId();
+  const generatedId = useId().replace(/:/g, '');
   const triggerId = id || `ink-select-${generatedId}`;
   const listboxId = `${triggerId}-listbox`;
 
@@ -101,41 +102,8 @@ export default function CustomSelect({
   const openDropdown = () => {
     if (disabled) return;
     const selectedIndex = filteredOptions.findIndex((opt) => String(opt.value) === String(value));
-    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : 0);
     setOpen(true);
-  };
-
-  const handleSelect = (optValue) => {
-    onChange(optValue);
-    setOpen(false);
-    setQuery('');
-  };
-
-  const handleKeyDown = (event) => {
-    if (disabled) return;
-    if (!open && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
-      event.preventDefault();
-      openDropdown();
-      return;
-    }
-    if (!open) return;
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      if (!filteredOptions.length) return;
-      setActiveIndex((current) => Math.min(current + 1, filteredOptions.length - 1));
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (!filteredOptions.length) return;
-      setActiveIndex((current) => Math.max(current - 1, 0));
-    } else if (event.key === 'Enter' && filteredOptions[activeIndex]) {
-      event.preventDefault();
-      handleSelect(filteredOptions[activeIndex].value);
-      triggerRef.current?.focus();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      setOpen(false);
-      triggerRef.current?.focus();
-    }
   };
 
   useEffect(() => {
@@ -145,7 +113,23 @@ export default function CustomSelect({
       const insideDropdown = dropdownRef.current?.contains(e.target);
       if (!insideTrigger && !insideDropdown) setOpen(false);
     };
-    const handleKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const handleKey = (e) => {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+        return;
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key) || !filteredOptions.length) return;
+      e.preventDefault();
+      if (e.key === 'ArrowDown') {
+        setHighlightedIndex((current) => (current + 1 + filteredOptions.length) % filteredOptions.length);
+      } else if (e.key === 'ArrowUp') {
+        setHighlightedIndex((current) => (current - 1 + filteredOptions.length) % filteredOptions.length);
+      } else if (filteredOptions[highlightedIndex]) {
+        handleSelect(filteredOptions[highlightedIndex].value);
+        triggerRef.current?.focus();
+      }
+    };
     const handleViewport = () => syncDropdownPosition();
     syncDropdownPosition();
     document.addEventListener('mousedown', handleClickOutside);
@@ -158,11 +142,12 @@ export default function CustomSelect({
       window.removeEventListener('resize', handleViewport);
       window.removeEventListener('scroll', handleViewport, true);
     };
-  }, [open, compact, filteredOptions.length, showCreateOption]);
+  }, [open, compact, filteredOptions.length, highlightedIndex, showCreateOption]);
 
   useEffect(() => {
     if (!open) {
       setQuery('');
+      setHighlightedIndex(-1);
       return;
     }
     if (searchable) {
@@ -170,11 +155,11 @@ export default function CustomSelect({
     }
   }, [open, searchable]);
 
-  useEffect(() => {
-    if (activeIndex >= filteredOptions.length) {
-      setActiveIndex(Math.max(0, filteredOptions.length - 1));
-    }
-  }, [activeIndex, filteredOptions.length]);
+  const handleSelect = (optValue) => {
+    onChange(optValue);
+    setOpen(false);
+    setQuery('');
+  };
 
   const handleCreate = () => {
     const text = query.trim();
@@ -182,13 +167,6 @@ export default function CustomSelect({
     onCreateNew(text);
     setOpen(false);
     setQuery('');
-  };
-
-  const handleSearchChange = (event) => {
-    const nextQuery = event.target.value;
-    setQuery(nextQuery);
-    setActiveIndex(0);
-    onSearchChange?.(nextQuery);
   };
 
   const chevron = (
@@ -210,20 +188,24 @@ export default function CustomSelect({
   return (
     <>
       <button
-        ref={triggerRef}
         id={triggerId}
+        ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={open ? () => setOpen(false) : openDropdown}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listboxId : undefined}
-        aria-activedescendant={open && filteredOptions[activeIndex]
-          ? `${listboxId}-option-${activeIndex}`
-          : undefined}
         aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledby}
         aria-required={required || undefined}
-        onKeyDown={handleKeyDown}
+        aria-activedescendant={open && filteredOptions[highlightedIndex] ? `${listboxId}-option-${highlightedIndex}` : undefined}
+        onKeyDown={(event) => {
+          if (!open && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
+            event.preventDefault();
+            openDropdown();
+          }
+        }}
         className={`ink-select-trigger ${compact ? 'ink-select-trigger--compact' : ''} ${open ? 'is-open' : ''} ${className}`}
       >
         <div className={`ink-select-value ${selected ? '' : 'text-[var(--text-tertiary)]'}`}>
@@ -240,13 +222,12 @@ export default function CustomSelect({
 
       {open && createPortal(
         <div
-          ref={dropdownRef}
           id={listboxId}
+          ref={dropdownRef}
           className="ink-select-dropdown dropdown-enter"
           role="listbox"
-          aria-label={ariaLabel}
+          aria-label={ariaLabel || 'Opciones'}
           aria-busy={loading || undefined}
-          onKeyDown={handleKeyDown}
           style={{
             top: dropPos.top,
             left: dropPos.left,
@@ -259,7 +240,11 @@ export default function CustomSelect({
               <input
                 ref={searchInputRef}
                 value={query}
-                onChange={handleSearchChange}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setHighlightedIndex(0);
+                  onSearchChange?.(e.target.value);
+                }}
                 placeholder={searchPlaceholder}
                 aria-label={searchPlaceholder}
                 className="input-flat w-full text-xs"
@@ -270,14 +255,13 @@ export default function CustomSelect({
 
           {filteredOptions.map((opt, index) => {
             const isActive = String(opt.value) === String(value);
-            const isHighlighted = index === activeIndex;
             return (
               <div
-                key={opt.value}
                 id={`${listboxId}-option-${index}`}
+                key={opt.value}
                 onMouseDown={(e) => { e.preventDefault(); handleSelect(opt.value); }}
-                onMouseEnter={() => setActiveIndex(index)}
-                className={`ink-select-option ${isActive ? 'is-active' : ''} ${isHighlighted ? 'is-highlighted' : ''}`}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                className={`ink-select-option ${isActive ? 'is-active' : ''} ${highlightedIndex === index ? 'is-highlighted' : ''}`}
                 role="option"
                 aria-selected={isActive}
               >
@@ -310,12 +294,8 @@ export default function CustomSelect({
           })}
 
           {loading && (
-            <div className="ink-select-option-empty ink-select-option-loading" role="status" aria-live="polite">
-              <span className="ink-select-loading-dot" aria-hidden="true" />
-              Buscando resultados…
-            </div>
+            <div className="ink-select-option-empty" role="status" aria-live="polite">Buscando resultados…</div>
           )}
-
           {!loading && !filteredOptions.length && !showCreateOption && (
             <div className="ink-select-option-empty">
               {noResultsLabel}

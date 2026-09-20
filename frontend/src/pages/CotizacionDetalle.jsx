@@ -2,14 +2,18 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, FileText, Plus, Receipt, Share2 } from 'lucide-react';
 import { cotizaciones as svc } from '../services/cotizaciones';
+import { guias as guideSvc } from '../services/guias';
 import { inventory } from '../services/inventory';
-import { BASE_URL } from '../lib/utils/config';
 import Spinner from '../components/ui/Spinner';
 import Badge, { statusBadge } from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
 import CustomSelect from '../components/ui/CustomSelect';
 import EmptyState from '../components/ui/EmptyState';
 import { useToast } from '../components/ui/Toast';
+import { getDispatchStatusLabel, getGuideStatusMeta } from '../lib/utils/fiscalStatus';
+import FiscalDocumentActions from '../components/documents/FiscalDocumentActions';
+import { getFiscalDocumentStatus } from '../lib/utils/documentArtifacts';
+import { getEmissionOutcome } from '../lib/utils/emissionJobs';
 
 function getDocumentDisplayNumber(doc) {
   if (!doc) return '--';
@@ -124,6 +128,7 @@ export default function CotizacionDetalle() {
   const toast = useToast();
   const [cot, setCot] = useState(null);
   const [pagos, setPagos] = useState([]);
+  const [relatedGuides, setRelatedGuides] = useState([]);
   const [loading, setLoading] = useState(true);
   const [shareUrl, setShareUrl] = useState('');
   const [pagoModal, setPagoModal] = useState(false);
@@ -133,12 +138,28 @@ export default function CotizacionDetalle() {
   const [availability, setAvailability] = useState(null);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
 
-  const load = () => {
-    setLoading(true);
+  const load = ({ background = false } = {}) => {
+    if (!background) setLoading(true);
     Promise.all([svc.get(id), svc.pagos(id)])
       .then(([cotizacionResponse, pagosResponse]) => {
         setCot(cotizacionResponse);
         setPagos(Array.isArray(pagosResponse) ? pagosResponse : []);
+        if (cotizacionResponse.document_kind === 'fiscal_document' && ['01', '03'].includes(cotizacionResponse.tipo_comprobante)) {
+          guideSvc.documentGuides(id).then((dispatches) => {
+            const guides = (dispatches || []).flatMap((dispatch) =>
+              (dispatch.guides || []).map((guide) => ({
+                ...guide,
+                tipo_documento: guide.type,
+                estado: guide.status,
+                dispatch_status: dispatch.status,
+                departure_confirmed_at: dispatch.departure_confirmed_at,
+              })),
+            );
+            setRelatedGuides(guides);
+          }).catch(() => setRelatedGuides([]));
+        } else {
+          setRelatedGuides([]);
+        }
       })
       .catch(() => toast('No se pudo cargar la cotización. Revisa tu conexión e inténtalo nuevamente.', 'error'))
       .finally(() => setLoading(false));
@@ -168,12 +189,31 @@ export default function CotizacionDetalle() {
     }
   };
 
+  const handleDownloadPdf = async () => {
+    try {
+      const { blob, disposition } = await svc.downloadPdf(id);
+      const fallback = `${cot?.serie || 'COT'}-${String(cot?.correlativo || 0).padStart(6, '0')}.pdf`;
+      const filename = /filename="?([^";]+)"?/i.exec(disposition || '')?.[1] || fallback;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast(err.message || 'No se pudo descargar el PDF.', 'error');
+    }
+  };
+
   const handleEmitir = async () => {
     setEmitiendo(true);
     try {
-      await svc.facturar(id, { tipo_comprobante: emitirModal });
+      const response = await svc.facturar(id, { tipo_comprobante: emitirModal });
       const label = emitirModal === '01' ? 'Factura' : 'Boleta';
-      toast(`${label} emitida correctamente`);
+      const outcome = getEmissionOutcome(response, label);
+      toast(outcome.message, outcome.toastType);
       setEmitirModal(null);
       load();
     } catch (err) {
@@ -226,17 +266,22 @@ export default function CotizacionDetalle() {
         </div>
 
         <div className="page-actions">
+          {cot.document_kind === 'fiscal_document' && ['01', '03'].includes(cot.tipo_comprobante) ? (
+            <FiscalDocumentActions doc={cot} reload={load} hideDetail />
+          ) : <>
           <button onClick={handleShare} className="btn-secondary flex items-center gap-2">
             <Share2 className="h-4 w-4" />
             Compartir
           </button>
-          <a
-            href={`${BASE_URL}/cotizaciones/${id}/pdf/download`}
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
             className="btn-secondary flex items-center gap-2"
           >
             <FileText className="h-4 w-4" />
             PDF
-          </a>
+          </button>
+          </>}
           {cot.document_kind === 'quotation' && cot.estado !== 'anulada' && !cot.linked_fiscal_document_id && (
             <>
               <button
@@ -372,6 +417,42 @@ export default function CotizacionDetalle() {
           </div>
         </div>
       </div>
+
+      {cot.document_kind === 'fiscal_document' && <p className="mb-4" role="status">Estado fiscal: {getFiscalDocumentStatus(cot)?.label}</p>}
+      {cot.document_kind === 'fiscal_document' && ['01', '03'].includes(cot.tipo_comprobante) && (
+        <section className="ink-table-card">
+          <div className="ink-card-header">
+            <div>
+              <h3 className="ink-card-title">Despachos y guías</h3>
+              <p className="ink-card-subtitle">Trazabilidad permanente de este comprobante de venta.</p>
+            </div>
+            <Link to={`/guias/nueva?comprobante_id=${cot.id}`} className="btn-secondary">Crear guía</Link>
+          </div>
+          {relatedGuides.length === 0 ? (
+            <p className="p-5 text-sm text-[var(--text-secondary)]">Aún no hay despachos vinculados.</p>
+          ) : (
+            <div className="ink-table-scroll">
+              <table className="ink-table">
+                <thead><tr><th>Guía</th><th>Tipo</th><th>Despacho</th><th>Estado fiscal</th><th /></tr></thead>
+                <tbody>
+                  {relatedGuides.map((guide) => {
+                    const guideStatus = getGuideStatusMeta(guide);
+                    return (
+                      <tr key={guide.id}>
+                        <td>{guide.number}</td>
+                        <td>GRE {guide.tipo_documento || '09'}</td>
+                        <td>{guide.departure_confirmed_at ? `Salida ${new Date(guide.departure_confirmed_at).toLocaleDateString('es-PE')}` : getDispatchStatusLabel(guide.dispatch_status)}</td>
+                        <td><Badge variant={guideStatus.badgeVariant}>{guideStatus.label}</Badge></td>
+                        <td><Link className="ink-row-action-pill" to={`/guias/${guide.id}`}>Abrir</Link></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
 
       <Modal open={pagoModal} onClose={() => setPagoModal(false)} title="Registrar pago">
         <PagoForm onSave={handlePago} onCancel={() => setPagoModal(false)} saving={saving} />

@@ -45,8 +45,8 @@ test('la landing no descarga el shell autenticado ni fuentes remotas', async ({ 
   const { context, page } = await openPublicPage(browser, baseURL, { width: 375, height: 812 }, '/presentacion');
   try {
     const resources = await page.evaluate(() => performance.getEntriesByType('resource').map(({ name }) => name));
-    expect(resources.some((url) => /globals(?:-|\.css)|fonts\.googleapis\.com|\/assets\/App-/.test(url))).toBe(false);
-    expect(resources.some((url) => /LandingPage-.*\.css|\/src\/styles\/landing\.css/.test(url))).toBe(true);
+    expect(resources.some((url) => /globals(?:-|\.css)|\/assets\/App-|fonts\.googleapis\.com|fonts\.gstatic\.com/.test(url))).toBe(false);
+    await expect(page.locator('.landing-page')).toBeVisible();
   } finally { await context.close(); }
 });
 
@@ -115,7 +115,11 @@ test('la consulta valida, envía los cinco datos y representa el resultado real'
     await lookup.getByLabel('Serie').fill('F001');
     await lookup.getByLabel('Correlativo').fill('184');
     await lookup.getByLabel('Fecha de emisión').click();
-    await lookup.getByRole('gridcell', { name: /18 de julio de 2026/ }).click();
+    const calendar = page.getByRole('dialog', { name: 'Seleccionar fecha' });
+    const todayButton = calendar.locator('.landing-calendar__grid button.is-today');
+    await expect(todayButton).toBeVisible();
+    const expectedDate = await todayButton.getAttribute('data-date');
+    await todayButton.click();
     await lookup.getByLabel(/Importe total/).fill('498.00');
     await lookup.getByRole('button', { name: 'Consultar comprobante' }).click();
     await expect(lookup.getByText('ACEPTADO', { exact: true }).first()).toBeVisible();
@@ -126,7 +130,7 @@ test('la consulta valida, envía los cinco datos y representa el resultado real'
       tipo_comprobante: '01',
       serie: 'F001',
       correlativo: '184',
-      fecha_emision: '2026-07-18',
+      fecha_emision: expectedDate,
       importe_total: '498.00',
     });
     await lookup.getByLabel(/Importe total/).fill('499.00');

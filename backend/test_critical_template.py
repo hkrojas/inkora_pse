@@ -1,62 +1,42 @@
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 import pytest
 from decimal import Decimal
 
 pytest.importorskip("slowapi")
 
-# Import your FastAPI app and models
-from main import app
-from database import get_db
 from database import Base
 import models
 import crud
-import schemas
 from services import calculations
 
-# Setup Test Database (SQLite in-memory)
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+# Base aislada por módulo: no depende de un test.db persistente ni del orden de la suite.
+engine = create_engine(
+    "sqlite://",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Base.metadata.create_all(bind=engine)
+
+@event.listens_for(engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
-def _ensure_legacy_sqlite_test_schema():
-    tenant_columns = {column["name"] for column in inspect(engine).get_columns("tenants")}
-    tenant_required_columns = {
-        "smartpse_remote_active": "BOOLEAN",
-        "smartpse_remote_estado": "VARCHAR",
-        "smartpse_remote_synced_at": "DATETIME",
-        "smartpse_start_date": "DATETIME",
-        "smartpse_end_date": "DATETIME",
-        "smartpse_firmas_usadas": "INTEGER",
-    }
-    cotizacion_columns = {column["name"] for column in inspect(engine).get_columns("cotizaciones")}
-    cotizacion_required_columns = {
-        "cliente_snapshot": "JSON",
-    }
-    with engine.begin() as connection:
-        for name, sql_type in tenant_required_columns.items():
-            if name not in tenant_columns:
-                connection.execute(text(f"ALTER TABLE tenants ADD COLUMN {name} {sql_type}"))
-        for name, sql_type in cotizacion_required_columns.items():
-            if name not in cotizacion_columns:
-                connection.execute(text(f"ALTER TABLE cotizaciones ADD COLUMN {name} {sql_type}"))
-
-
-_ensure_legacy_sqlite_test_schema()
-
-def override_get_db():
+@pytest.fixture
+def critical_db():
+    Base.metadata.create_all(bind=engine)
+    db = TestingSessionLocal()
     try:
-        db = TestingSessionLocal()
         yield db
     finally:
+        db.rollback()
         db.close()
-
-app.dependency_overrides[get_db] = override_get_db
-client = TestClient(app)
+        Base.metadata.drop_all(bind=engine)
 
 # ========================================================
 # 1. TEST DE PRECISIÓN NUMÉRICA (CÁLCULO SUNAT)
@@ -80,22 +60,12 @@ def test_calculo_redondeo_sunat():
 # ========================================================
 # 2. TEST DE IDOR (INSECURE DIRECT OBJECT REFERENCE)
 # ========================================================
-def test_idor_lectura_ajena():
-    db = TestingSessionLocal()
+def test_idor_lectura_ajena(critical_db):
+    db = critical_db
 
-    # Limpiar datos previos de este test para evitar UNIQUE violations en reruns
-    for email in ["a@test.com", "b@test.com"]:
-        existing = db.query(models.User).filter_by(email=email).first()
-        if existing:
-            db.delete(existing)
+    tenant = models.Tenant(business_name="Test Co", business_ruc="20000000001")
+    db.add(tenant)
     db.flush()
-
-    # Tenant requerido (tenant_id NOT NULL en User y Cotizacion) — get-or-create
-    tenant = db.query(models.Tenant).filter_by(business_ruc="20000000001").first()
-    if not tenant:
-        tenant = models.Tenant(business_name="Test Co", business_ruc="20000000001")
-        db.add(tenant)
-        db.flush()
 
     # Dos usuarios del mismo tenant, ambos rol vendedor
     user_A = models.User(email="a@test.com", rol="vendedor", hashed_password="X", tenant_id=tenant.id)
@@ -123,23 +93,35 @@ def test_idor_lectura_ajena():
 # ========================================================
 # 3. TEST TRANSACTIONAL (ATOMIC SUCCESS AND FAIL)
 # ========================================================
-def test_rollback_atomo_maestro_detalle():
-    db = TestingSessionLocal()
-    user = db.query(models.User).first()
+def test_rollback_atomo_maestro_detalle(critical_db):
+    db = critical_db
+    tenant = models.Tenant(business_name="Rollback Co", business_ruc="20000000002")
+    db.add(tenant)
+    db.flush()
+    user = models.User(
+        email="rollback@test.com",
+        rol="vendedor",
+        hashed_password="X",
+        tenant_id=tenant.id,
+    )
+    db.add(user)
+    db.commit()
     
     # Simulamos enviar una cotización con un item corrupto que hará fallar el commit parcial
     # Para la prueba, omitimos detalles largos, pero el objetivo es asegurar que 
     # si ocurre una excepción en la creación, el rollback limpia la DB.
     try:
-        from sqlalchemy.exc import IntegrityError
         # Inyectamos una cotización sin cliente válido (Foreign Key failed)
-        falla = models.Cotizacion(usuario_id=user.id, cliente_id=99999) # 9999 no existe
+        falla = models.Cotizacion(
+            usuario_id=user.id,
+            tenant_id=tenant.id,
+            cliente_id=99999,
+        )
         db.add(falla)
         db.commit()
     except Exception:
         db.rollback()
     
     # Verificamos que no quedó colgada parcialmente en la sesión o BD
-    db_test = TestingSessionLocal()
-    búsqueda = db_test.query(models.Cotizacion).filter(models.Cotizacion.cliente_id == 99999).first()
+    búsqueda = db.query(models.Cotizacion).filter(models.Cotizacion.cliente_id == 99999).first()
     assert búsqueda is None, "La transacción no hizo rollback adecuadamente"

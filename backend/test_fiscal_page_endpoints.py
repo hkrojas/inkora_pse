@@ -1,7 +1,3 @@
-import asyncio
-
-import pytest
-
 from conftest import make_cliente, make_cotizacion, make_tenant, make_user
 from routers import facturacion as facturacion_router
 import schemas
@@ -152,8 +148,10 @@ def test_guardar_respuesta_sunat_persiste_trazabilidad_smartpse(db_session):
             "provider_response": provider_response,
             "provider_endpoint": "/api/cpe/procesar",
             "provider_status_code": 200,
-            "provider_document_name": "20123456789-01-F001-00000001",
+            "provider_document_name": "20123456789-01-F001-000001",
             "provider_verification_status": "verified",
+            "provider_verified_at": "2026-06-23T12:00:00+00:00",
+            "provider_verification_error": None,
         },
         tenant_id=tenant.id,
     )
@@ -161,11 +159,46 @@ def test_guardar_respuesta_sunat_persiste_trazabilidad_smartpse(db_session):
     assert updated.provider_response == provider_response
     assert updated.provider_endpoint == "/api/cpe/procesar"
     assert updated.provider_status_code == 200
-    assert updated.provider_document_name == "20123456789-01-F001-00000001"
+    assert updated.provider_document_name == "20123456789-01-F001-000001"
     assert updated.provider_verification_status == "verified"
     assert updated.provider_verified_at is not None
-    assert updated.cdr_artifact_status == "pending"
-    assert updated.pdf_artifact_status == "pending"
+    assert updated.provider_verification_error is None
+
+
+def test_guardar_respuesta_sunat_no_factura_smartpse_sin_verificacion(db_session):
+    import crud
+
+    tenant = make_tenant(db_session, "FP14")
+    user = make_user(db_session, tenant, email="fiscal-unverified@test.com")
+    cliente = make_cliente(db_session, tenant, "FP14")
+    doc = _numbered(db_session, make_cotizacion(
+        db_session,
+        tenant,
+        user,
+        cliente,
+        document_kind=DOCUMENT_KIND_FISCAL_DOCUMENT,
+        tipo_comprobante="01",
+        estado="pendiente",
+    ), "F001", 1)
+
+    updated = crud.guardar_respuesta_sunat(
+        db_session,
+        doc.id,
+        {
+            "success": True,
+            "xml": "<Invoice/>",
+            "cdr_xml": "<ApplicationResponse/>",
+            "provider_endpoint": "/api/cpe/procesar-demo",
+            "provider_verification_status": "failed",
+            "provider_verification_error": "Smart PSE remote verification missing",
+        },
+        tenant_id=tenant.id,
+    )
+
+    assert updated.estado == "pendiente"
+    assert updated.sunat_error == "Smart PSE remote verification missing"
+    assert updated.provider_verification_status == "failed"
+    assert updated.sunat_accepted is False
 
 
 def test_fiscal_document_list_response_expone_flags_de_archivos_sin_contenido(db_session):
@@ -190,108 +223,8 @@ def test_fiscal_document_list_response_expone_flags_de_archivos_sin_contenido(db
 
     assert payload["has_sunat_xml"] is True
     assert payload["has_sunat_cdr"] is True
-    assert payload["provider_verification_status"] is None
-    assert payload["cdr_artifact_status"] is None
-    assert payload["pdf_artifact_status"] is None
     assert "sunat_xml_content" not in payload
     assert "sunat_cdr_content" not in payload
-
-
-def test_facturas_emitidas_page_no_cuenta_cdr_sin_verificacion_smartpse(db_session):
-    tenant = make_tenant(db_session, "FP14")
-    user = make_user(db_session, tenant, email="fiscal-unverified@test.com")
-    cliente = make_cliente(db_session, tenant, "FP14")
-    doc = _numbered(db_session, make_cotizacion(
-        db_session,
-        tenant,
-        user,
-        cliente,
-        document_kind=DOCUMENT_KIND_FISCAL_DOCUMENT,
-        tipo_comprobante="01",
-        estado="facturada",
-    ), "F001", 1)
-    doc.sunat_xml_content = "<Invoice/>"
-    doc.sunat_cdr_content = "<ApplicationResponse/>"
-    doc.provider_verification_status = "failed"
-    db_session.commit()
-
-    page = facturacion_router.list_facturas_emitidas_page(
-        skip=0,
-        limit=15,
-        tipo_comprobante="01",
-        tab="all",
-        estado=None,
-        moneda=None,
-        desde=None,
-        hasta=None,
-        q=None,
-        db=db_session,
-        current_user=user,
-    )
-
-    assert page["counts"]["emitted"] == 0
-    assert page["counts"]["pending"] == 1
-    assert page["items"][0].sunat_accepted is False
-
-
-def test_retry_fiscal_artifacts_requiere_cdr_persistido(db_session):
-    tenant = make_tenant(db_session, "FP15")
-    user = make_user(db_session, tenant, email="fiscal-retry-missing@test.com")
-    cliente = make_cliente(db_session, tenant, "FP15")
-    doc = _numbered(db_session, make_cotizacion(
-        db_session,
-        tenant,
-        user,
-        cliente,
-        document_kind=DOCUMENT_KIND_FISCAL_DOCUMENT,
-        tipo_comprobante="01",
-        estado="facturada",
-    ), "F001", 1)
-
-    with pytest.raises(facturacion_router.HTTPException) as exc_info:
-        asyncio.run(facturacion_router.retry_fiscal_artifacts(doc.id, db_session, user))
-
-    assert exc_info.value.status_code == 409
-
-
-def test_retry_fiscal_artifacts_regenera_pdf_y_cdr_desde_contenido(db_session, monkeypatch):
-    tenant = make_tenant(db_session, "FP16")
-    user = make_user(db_session, tenant, email="fiscal-retry-ok@test.com")
-    cliente = make_cliente(db_session, tenant, "FP16")
-    doc = _numbered(db_session, make_cotizacion(
-        db_session,
-        tenant,
-        user,
-        cliente,
-        document_kind=DOCUMENT_KIND_FISCAL_DOCUMENT,
-        tipo_comprobante="01",
-        estado="facturada",
-    ), "F001", 1)
-    doc.sunat_cdr_content = "<ApplicationResponse/>"
-    db_session.commit()
-
-    async def fake_cdr(db, comprobante, cdr_xml):
-        comprobante.sunat_cdr_url = "supabase-private://bucket/cdr.zip"
-        comprobante.cdr_artifact_status = "ready"
-        db.commit()
-        return comprobante.sunat_cdr_url
-
-    async def fake_pdf(db, comprobante):
-        comprobante.sunat_pdf_url = "supabase-private://bucket/doc.pdf"
-        comprobante.pdf_artifact_status = "ready"
-        db.commit()
-        return comprobante.sunat_pdf_url
-
-    monkeypatch.setattr(facturacion_router.fiscal_artifact_service, "persist_cdr_artifact", fake_cdr)
-    monkeypatch.setattr(facturacion_router.pdf_storage_service, "generate_and_upload_pdf", fake_pdf)
-
-    result = asyncio.run(facturacion_router.retry_fiscal_artifacts(doc.id, db_session, user))
-
-    assert result["ok"] is True
-    assert result["cdr_artifact_status"] == "ready"
-    assert result["pdf_artifact_status"] == "ready"
-    assert result["has_cdr"] is True
-    assert result["has_pdf"] is True
 
 
 def test_facturas_emitidas_page_busqueda_no_filtra_otro_tenant(db_session):

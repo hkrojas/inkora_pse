@@ -100,6 +100,7 @@ def test_nota_credito_no_crea_ni_llama_proveedor_si_flag_desactivado(db_session)
                 "tipo_nota": "credito",
                 "cod_motivo": "01",
                 "descripcion_motivo": "ANULACION DE LA OPERACION",
+                "legacy_full_adjustment": True,
             },
         )
 

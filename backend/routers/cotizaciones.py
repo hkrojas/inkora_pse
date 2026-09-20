@@ -1,3 +1,4 @@
+from datetime import date, datetime, time
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -37,11 +38,32 @@ def _resolve_pdf_download_url(documento_pdf) -> str:
 @router.get("/cotizaciones/", response_model=List[schemas.CotizacionListResponse])
 def read_cotizaciones(
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=15, ge=1, le=500),
+    limit: int = Query(default=15, ge=1, le=50),
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
     return crud.get_cotizaciones(db, current_user, skip, limit)
+
+
+@router.get("/cotizaciones/page", response_model=schemas.CotizacionPageResponse)
+def read_cotizaciones_page(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=15, ge=1, le=50),
+    q: Optional[str] = Query(default=None, max_length=120),
+    desde: Optional[date] = None,
+    hasta: Optional[date] = None,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    return crud.get_cotizaciones_page(
+        db,
+        current_user,
+        skip=skip,
+        limit=limit,
+        q=q,
+        date_from=datetime.combine(desde, time.min) if desde else None,
+        date_to=datetime.combine(hasta, time.max) if hasta else None,
+    )
 
 
 @router.post("/cotizaciones/", response_model=schemas.CotizacionResponse)
@@ -74,18 +96,11 @@ def update_cotizacion(
     current_user: models.User = Depends(get_current_user),
 ):
     try:
-        db_cotizacion = crud.update_cotizacion(
-            db,
-            cotizacion_id,
-            cotizacion,
-            current_user,
-        )
+        db_cotizacion = crud.update_cotizacion(db, cotizacion_id, cotizacion, current_user)
     except ValueError as exc:
-        raise HTTPException(400, str(exc))
-
+        raise HTTPException(409, str(exc))
     if not db_cotizacion:
         raise HTTPException(404, "Cotizacion no encontrada")
-
     background_tasks.add_task(
         pdf_storage_service.process_pdf_background,
         db_cotizacion.id,
@@ -188,18 +203,15 @@ async def descargar_pdf_interno(
     if cotizacion.document_kind == "quotation" and cotizacion.linked_fiscal_document:
         documento_pdf = cotizacion.linked_fiscal_document
 
-    if documento_pdf.sunat_pdf_url:
-        resolved_url = _resolve_pdf_download_url(documento_pdf)
-        if redirect:
-            return RedirectResponse(url=resolved_url, status_code=307)
-        return {"url": resolved_url}
-
-    background_tasks.add_task(
-        pdf_storage_service.process_pdf_background,
-        documento_pdf.id,
-        current_user.tenant_id,
-    )
-    raise HTTPException(202, "Generando PDF en segundo plano... Reintente en un momento.")
+    if not documento_pdf.sunat_pdf_url:
+        reference = await pdf_storage_service.generate_and_upload_pdf(db, documento_pdf)
+        if not reference:
+            raise HTTPException(202, "La cotizacion cambio mientras se generaba el PDF. Reintente.")
+        db.refresh(documento_pdf)
+    resolved_url = _resolve_pdf_download_url(documento_pdf)
+    if redirect:
+        return RedirectResponse(url=resolved_url, status_code=307)
+    return {"url": resolved_url}
 
 
 @router.get("/cotizaciones/{cotizacion_id}/pdf/download")
@@ -207,35 +219,21 @@ async def descargar_pdf_interno(
 async def descargar_pdf_interno_como_archivo(
     request: Request,
     cotizacion_id: int,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Download a stored PDF with the recipient-aware filename expected by users."""
     cotizacion = crud.get_cotizacion(db, cotizacion_id, current_user)
     if not cotizacion:
-        raise HTTPException(404)
-
-    documento_pdf = cotizacion
-    if cotizacion.document_kind == "quotation" and cotizacion.linked_fiscal_document:
-        documento_pdf = cotizacion.linked_fiscal_document
+        raise HTTPException(404, "Cotizacion no encontrada")
+    documento_pdf = cotizacion.linked_fiscal_document if (
+        cotizacion.document_kind == "quotation" and cotizacion.linked_fiscal_document
+    ) else cotizacion
 
     reference = getattr(documento_pdf, "sunat_pdf_url", None)
-    if not reference:
-        background_tasks.add_task(
-            pdf_storage_service.process_pdf_background,
-            documento_pdf.id,
-            current_user.tenant_id,
-        )
-        raise HTTPException(202, "Generando PDF en segundo plano... Reintente en un momento.")
     if not storage_service.is_private_storage_reference(reference):
-        background_tasks.add_task(
-            pdf_storage_service.process_pdf_background,
-            documento_pdf.id,
-            current_user.tenant_id,
-        )
-        raise HTTPException(202, "Actualizando PDF historico... Reintente en un momento.")
-
+        reference = await pdf_storage_service.generate_and_upload_pdf(db, documento_pdf)
+        if not reference:
+            raise HTTPException(202, "La cotizacion cambio mientras se generaba el PDF. Reintente.")
     try:
         content = await run_in_threadpool(storage_service.download_private_storage_reference, reference)
     except Exception as exc:
@@ -262,11 +260,7 @@ async def compartir_cotizacion(
     base_url = settings.BACKEND_URL.rstrip("/")
     url_publica = f"{base_url}/public/cotizaciones/{cotizacion.uuid_publico}/pdf"
     cliente_snapshot = resolve_document_cliente_snapshot(cotizacion)
-    telefono_cliente = (
-        cliente_snapshot.get("whatsapp")
-        or cliente_snapshot.get("telefono")
-        or ""
-    )
+    telefono_cliente = cliente_snapshot.get("whatsapp") or cliente_snapshot.get("telefono") or ""
     email_cliente = cliente_snapshot.get("email") or ""
     wp_link = comunicacion_service.generar_link_whatsapp(
         cotizacion,

@@ -19,7 +19,6 @@ import Drawer from '../components/ui/Drawer';
 import Spinner from '../components/ui/Spinner';
 import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
-import Pagination from '../components/ui/Pagination';
 
 const PER_PAGE = 15;
 const RETENTION_RATE = 0.03;
@@ -456,7 +455,7 @@ export default function RetencionesPage() {
               description={
                 hasActiveFilters
                   ? 'Ajusta la busqueda o el rango de fechas.'
-                  : 'Emite la primera retencion usando datos validados para el proveedor fiscal/SUNAT.'
+                  : 'Emite la primera retencion usando datos validados para APISPeru/SUNAT.'
               }
               action={
                 hasActiveFilters ? (
@@ -543,10 +542,28 @@ export default function RetencionesPage() {
 
             <div className="ink-table-footer">
               <span className="ink-table-count">
-                Página <strong>{page}</strong> de <strong>{totalPages}</strong>
+                Pag. <strong>{page}</strong> de <strong>{totalPages}</strong>
               </span>
-              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} ariaLabel="Paginación de retenciones" />
-              <span className="ink-table-count">{PER_PAGE} por página</span>
+              <div className="pagination">
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  &#8249;
+                </button>
+                <button type="button" className="page-btn active">{page}</button>
+                <button
+                  type="button"
+                  className="page-btn"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                >
+                  &#8250;
+                </button>
+              </div>
+              <span className="ink-table-count">{PER_PAGE} por pagina</span>
             </div>
           </div>
         )}
@@ -555,12 +572,8 @@ export default function RetencionesPage() {
       <Drawer
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        variant="fiscal"
-        eyebrow="Comprobante fiscal"
-        status="Retención"
-        initialFocus="select, input, textarea"
         title="Nueva retencion"
-        subtitle="Registra un comprobante tipo 20 con los campos exigidos por el proveedor fiscal y SUNAT."
+        subtitle="Registra un comprobante tipo 20 con los campos exigidos por APISPeru y SUNAT."
         icon={<HandCoins size={22} />}
         footer={(
           <>
@@ -651,7 +664,7 @@ export default function RetencionesPage() {
               </button>
             </div>
             <p className="drawer-editor-section-intro">
-              El proveedor fiscal espera numDoc con formato SERIE-CORRELATIVO y al menos un pago asociado.
+              APISPeru espera numDoc con formato SERIE-CORRELATIVO y al menos un pago asociado.
             </p>
             <div className="drawer-editor-list">
               {form.detalles.map((detalle, index) => (

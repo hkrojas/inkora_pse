@@ -1,11 +1,14 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  Eye, Search, Trash2, Send, FileText, FileDiff, FileDown,
+  Eye, Search, Trash2, Send, FileText,
   Download, CheckCircle2, Clock, AlertCircle, XCircle,
   Receipt, SlidersHorizontal, Save,
-  History, Copy, Share2, MessageCircle, Mail, MoreHorizontal, PencilLine,
+  History, Copy, Share2, MessageCircle, Mail, PencilLine,
 } from 'lucide-react';
+import ActionMenu from '../components/ui/ActionMenu';
+import FiscalDocumentActions from '../components/documents/FiscalDocumentActions';
+import { buildFiscalListQuery } from '../lib/utils/fiscalListQuery';
 import { cotizaciones as svc } from '../services/cotizaciones';
 import { clientes as cliSvc } from '../services/clientes';
 import { productos as prodSvc } from '../services/productos';
@@ -74,7 +77,7 @@ import {
 } from '../lib/utils/sunatCatalogs';
 import { hasCatalogProductOverrides } from '../lib/utils/productCatalogSync';
 import { clienteSnapshotFromForm, syncCatalogProductos, upsertCliente, upsertProductos } from '../lib/utils/upsert';
-import { getFiscalDocumentStatus } from '../lib/utils/documentArtifacts';
+import { formatFiscalDate, getFiscalDocumentStatus } from '../lib/utils/documentArtifacts';
 import { computeDocumentTotals, computeLine } from '../lib/utils/documents';
 import { isPositiveDecimal, normalizeQuantity, normalizeUnitPrice, sumMoney } from '../lib/utils/ublCalculations';
 import { useAuth } from '../context/AuthContext';
@@ -2129,6 +2132,7 @@ export default function CotizacionesPage() {
 
   // Documentos
   const [list, setList]         = useState([]);
+  const [historyDocumentTotal, setHistoryDocumentTotal] = useState(0);
   const [fiscalDocs, setFiscalDocs] = useState([]);
   const [fiscalDocumentTotal, setFiscalDocumentTotal] = useState(0);
   const [fiscalCounts, setFiscalCounts] = useState({
@@ -2174,10 +2178,21 @@ export default function CotizacionesPage() {
       .finally(() => setLoadingMaster(false));
   }, [toast]);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    Promise.all([svc.list(), svc.fiscalPage()])
+  const loadSequence = useRef(0);
+  const load = useCallback(({ background = false } = {}) => {
+    const sequence = ++loadSequence.current;
+    if (!background) setLoading(true);
+    const historyParams = new URLSearchParams({
+      skip: String((historyPage - 1) * HISTORY_PAGE_SIZE),
+      limit: String(HISTORY_PAGE_SIZE),
+    });
+    if (search.trim()) historyParams.set('q', search.trim());
+    if (filters.desde) historyParams.set('desde', filters.desde);
+    if (filters.hasta) historyParams.set('hasta', filters.hasta);
+
+    return Promise.all([svc.page(`?${historyParams.toString()}`), svc.fiscalPage(buildFiscalListQuery({ page: fiscalPage, search, filters }))])
       .then(([quotesResponse, fiscalResponse]) => {
+        if (sequence !== loadSequence.current) return;
         const quoteItems = Array.isArray(quotesResponse) ? quotesResponse : quotesResponse?.items || [];
         const fiscalItems = Array.isArray(fiscalResponse) ? fiscalResponse : fiscalResponse?.items || [];
         const fallbackCounts = {
@@ -2190,13 +2205,14 @@ export default function CotizacionesPage() {
         };
 
         setList(quoteItems);
+        setHistoryDocumentTotal(Number(quotesResponse?.total ?? quoteItems.length));
         setFiscalDocs(fiscalItems);
         setFiscalDocumentTotal(Number(fiscalResponse?.total ?? fiscalItems.length));
         setFiscalCounts(fiscalResponse?.counts || fallbackCounts);
       })
       .catch(() => toast('No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error'))
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => { if (sequence === loadSequence.current) setLoading(false); });
+  }, [filters, fiscalPage, historyPage, search, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -2218,49 +2234,20 @@ export default function CotizacionesPage() {
   }, {});
 
   // Filtrado historial
-  const filteredHistory = quotations.filter((item) => {
-    const q = search.toLowerCase();
-    const matchSearch = !q
-      || item.cliente?.razon_social?.toLowerCase().includes(q)
-      || String(item.id).includes(q)
-      || item.internal_order_number?.toLowerCase().includes(q)
-      || getDocumentDisplayNumber(item).toLowerCase().includes(q);
-    const matchDesde = !filters.desde || new Date(item.fecha_emision) >= new Date(filters.desde);
-    const matchHasta = !filters.hasta || new Date(item.fecha_emision) <= new Date(filters.hasta);
-    return matchSearch && matchDesde && matchHasta;
-  });
+  const filteredHistory = quotations;
 
   useEffect(() => {
     setHistoryPage(1);
-  }, [search, filters.desde, filters.hasta, quotations.length]);
+  }, [search, filters.desde, filters.hasta]);
 
-  const historyPageCount = Math.max(1, Math.ceil(filteredHistory.length / HISTORY_PAGE_SIZE));
+  const historyPageCount = Math.max(1, Math.ceil(historyDocumentTotal / HISTORY_PAGE_SIZE));
   const safeHistoryPage = Math.min(historyPage, historyPageCount);
-  const historyPageStart = filteredHistory.length ? (safeHistoryPage - 1) * HISTORY_PAGE_SIZE : 0;
-  const historyPageEnd = Math.min(historyPageStart + HISTORY_PAGE_SIZE, filteredHistory.length);
-  const historyPageItems = filteredHistory.slice(historyPageStart, historyPageEnd);
+  const historyPageStart = historyDocumentTotal ? (safeHistoryPage - 1) * HISTORY_PAGE_SIZE : 0;
+  const historyPageEnd = Math.min(historyPageStart + filteredHistory.length, historyDocumentTotal);
+  const historyPageItems = filteredHistory;
 
   // Filtrado emitidas
-  const filteredFiscal = fiscalDocs.filter((item) => {
-    const matchDoc    = !filters.docReceptor  || item.cliente?.numero_documento?.includes(filters.docReceptor);
-    const matchRazon  = !filters.razonSocial  || item.cliente?.razon_social?.toLowerCase().includes(filters.razonSocial.toLowerCase());
-    const matchSerie  = !filters.serie        || item.serie?.toLowerCase().startsWith(filters.serie.toLowerCase());
-    const matchNumero = !filters.numero       || String(item.correlativo || '').includes(filters.numero);
-    const matchTipo   = filters.tipo   === 'all' || item.tipo_comprobante === filters.tipo;
-    const matchMoneda = filters.moneda === 'all' || item.moneda === filters.moneda;
-    const matchPago   = filters.formaPago === 'all'
-      || (filters.formaPago === 'contado' && (!item.condicion_pago || item.condicion_pago === 'contado'))
-      || (filters.formaPago === 'credito' && item.condicion_pago && item.condicion_pago !== 'contado');
-    const matchDesde  = !filters.desde || new Date(item.fecha_emision) >= new Date(filters.desde);
-    const matchHasta  = !filters.hasta || new Date(item.fecha_emision) <= new Date(filters.hasta);
-    const q = search.toLowerCase();
-    const matchSearch = !q
-      || item.cliente?.razon_social?.toLowerCase().includes(q)
-      || item.cliente?.numero_documento?.includes(q)
-      || String(item.id).includes(q)
-      || item.serie?.toLowerCase().includes(q);
-    return matchDoc && matchRazon && matchSerie && matchNumero && matchTipo && matchMoneda && matchPago && matchDesde && matchHasta && matchSearch;
-  });
+  const filteredFiscal = fiscalDocs;
 
   useEffect(() => {
     setFiscalPage(1);
@@ -2276,14 +2263,13 @@ export default function CotizacionesPage() {
     filters.formaPago,
     filters.desde,
     filters.hasta,
-    fiscalDocs.length,
   ]);
 
-  const fiscalPageCount = Math.max(1, Math.ceil(filteredFiscal.length / FISCAL_PAGE_SIZE));
+  const fiscalPageCount = Math.max(1, Math.ceil(fiscalDocumentTotal / FISCAL_PAGE_SIZE));
   const safeFiscalPage = Math.min(fiscalPage, fiscalPageCount);
   const fiscalPageStart = filteredFiscal.length ? (safeFiscalPage - 1) * FISCAL_PAGE_SIZE : 0;
-  const fiscalPageEnd = Math.min(fiscalPageStart + FISCAL_PAGE_SIZE, filteredFiscal.length);
-  const fiscalPageItems = filteredFiscal.slice(fiscalPageStart, fiscalPageEnd);
+  const fiscalPageEnd = Math.min(fiscalPageStart + filteredFiscal.length, fiscalDocumentTotal);
+  const fiscalPageItems = filteredFiscal;
 
   const hasHistoryFilters = Boolean(search || filters.desde || filters.hasta);
   const hasFiscalFilters = Boolean(
@@ -2306,14 +2292,10 @@ export default function CotizacionesPage() {
   ).length;
 
   const fiscalPageTotal = fiscalPageItems.reduce((sum, item) => sum + Number(item.total_venta || 0), 0);
-  const fiscalAcceptedCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'success').length;
-  const fiscalPendingCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'warning').length;
-  const fiscalRejectedCount = filteredFiscal.filter((item) => getSunatStatus(item)?.variant === 'danger').length;
-  const fiscalVisibleCount = hasFiscalFilters ? filteredFiscal.length : fiscalDocumentTotal;
-  const fiscalVisibleAcceptedCount = hasFiscalFilters ? fiscalAcceptedCount : Number(fiscalCounts.emitted || 0);
-  const fiscalVisiblePendingCount = hasFiscalFilters ? fiscalPendingCount : Number(fiscalCounts.pending || 0);
-  const fiscalVisibleRejectedCount = hasFiscalFilters ? fiscalRejectedCount : Number(fiscalCounts.rejected || 0);
-  const fiscalLoadedIsPartial = fiscalDocumentTotal > fiscalDocs.length;
+  const fiscalVisibleCount = fiscalDocumentTotal;
+  const fiscalVisibleAcceptedCount = Number(fiscalCounts.emitted || 0);
+  const fiscalVisiblePendingCount = Number(fiscalCounts.pending || 0);
+  const fiscalVisibleRejectedCount = Number(fiscalCounts.rejected || 0);
 
   const handleFiscalPageChange = (nextPage) => {
     setSelectedFiscal(null);
@@ -2530,12 +2512,12 @@ export default function CotizacionesPage() {
           ? 'Actualiza una cotización pendiente antes de pasarla a comprobante.'
           : view === 'create'
           ? 'Construye una propuesta clara, calcula totales y déjala lista para vista previa.'
-          : `${quotations.length} cotizaciones · ${fiscalDocumentTotal} comprobantes emitidos.`}
+          : `${historyDocumentTotal} cotizaciones · ${fiscalDocumentTotal} comprobantes emitidos.`}
       />
 
       <nav className="quote-tabs ink-enter-2">
         <button className={`tab ${view === 'create' ? 'active' : ''}`} onClick={() => { setEditingQuote(null); setView('create'); }}>＋ Nueva cotización</button>
-        <button className={`tab ${view === 'history' ? 'active' : ''}`} onClick={() => { setEditingQuote(null); setView('history'); }}>↺ Historial <span className="count-badge">{quotations.length}</span></button>
+        <button className={`tab ${view === 'history' ? 'active' : ''}`} onClick={() => { setEditingQuote(null); setView('history'); }}>↺ Historial <span className="count-badge">{historyDocumentTotal}</span></button>
         <button className={`tab ${view === 'fiscal' ? 'active' : ''}`} onClick={() => setView('fiscal')}>▣ Emitidas SUNAT <span className="count-badge">{fiscalDocumentTotal}</span></button>
       </nav>
 
@@ -2612,8 +2594,8 @@ export default function CotizacionesPage() {
                   <div className="summary-icon"><History size={16} /></div>
                   <div>
                     <span>Cotizaciones visibles</span>
-                    <strong>{filteredHistory.length}</strong>
-                    <span>En esta vista</span>
+                    <strong>{historyDocumentTotal}</strong>
+                    <span>{filteredHistory.length} en esta página</span>
                   </div>
                 </div>
                 <div className="summary-item">
@@ -2673,8 +2655,8 @@ export default function CotizacionesPage() {
                 </div>
                 <div className="proto-pagination">
                   <span>
-                    {filteredHistory.length
-                      ? `${historyPageStart + 1}-${historyPageEnd} de ${filteredHistory.length}`
+                    {historyDocumentTotal
+                      ? `${historyPageStart + 1}-${historyPageEnd} de ${historyDocumentTotal}`
                       : 'Sin registros'}
                   </span>
                 </div>
@@ -2706,7 +2688,7 @@ export default function CotizacionesPage() {
                       <tr key={item.id} className="ink-tr">
                         <td className="ink-td history-date-cell" data-label="F. emision">
                           <span className="history-date-value">
-                            {item.fecha_emision ? new Date(item.fecha_emision).toLocaleDateString('es-PE') : '--'}
+                            {formatFiscalDate(item.fecha_emision) || '--'}
                           </span>
                         </td>
                         <td className="ink-td font-mono-label text-xs" data-label="N° cotización">
@@ -2775,12 +2757,8 @@ export default function CotizacionesPage() {
                                 <span>Emitir</span>
                               </button>
                             )}
-                            <details className="history-actions-more">
-                              <summary className="history-action-button history-action-button--neutral" aria-label="Mas acciones">
-                                <MoreHorizontal className="h-4 w-4" />
-                                <span>Mas</span>
-                              </summary>
-                              <div className="history-actions-more-menu">
+                            <ActionMenu label={`Más acciones de ${getDocumentDisplayNumber(item)}`}>
+                              <div>
                                 {canEditCommercialQuote(item) && (
                                   <button type="button" className="history-actions-mobile-item" onClick={() => handleEditQuote(item)}>
                                     <PencilLine className="h-3.5 w-3.5" />
@@ -2824,15 +2802,12 @@ export default function CotizacionesPage() {
                                   </button>
                                 )}
                               </div>
-                            </details>
+                            </ActionMenu>
                           </div>
 
-                          <details className="history-actions-mobile">
-                            <summary className="history-action-button history-action-button--neutral" title="Mas acciones">
-                              <MoreHorizontal className="h-4 w-4" />
-                              <span>Acciones</span>
-                            </summary>
-                            <div className="history-actions-mobile-menu">
+                          <div className="history-actions-mobile">
+                            <ActionMenu label={`Acciones de ${getDocumentDisplayNumber(item)}`} triggerLabel="Acciones">
+                            <div>
                               <Link to={`/cotizaciones/${item.id}`} className="history-actions-mobile-item">
                                 <Eye className="h-3.5 w-3.5" />
                                 Ver detalle
@@ -2890,7 +2865,8 @@ export default function CotizacionesPage() {
                                 </button>
                               )}
                             </div>
-                          </details>
+                            </ActionMenu>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -3009,10 +2985,8 @@ export default function CotizacionesPage() {
                   <strong>{fiscalVisibleCount}</strong>
                   <span>
                     {hasFiscalFilters
-                      ? `${filteredFiscal.length} resultados filtrados`
-                      : fiscalLoadedIsPartial
-                        ? `Mostrando los ${fiscalDocs.length} más recientes`
-                        : `${FISCAL_PAGE_SIZE} por página`}
+                      ? `${fiscalDocumentTotal} resultados filtrados`
+                      : `${FISCAL_PAGE_SIZE} por página`}
                   </span>
                 </div>
               </div>
@@ -3034,63 +3008,9 @@ export default function CotizacionesPage() {
               </div>
             </div>
             <div className="proto-summary-actions">
-              {!selectedFiscal ? (
-                <span className="proto-selection-note">
-                  Selecciona un comprobante para emitir nota o anular
-                </span>
-              ) : (
-                <>
-              <button
-                className="btn-secondary text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
-                disabled={!selectedFiscal || !['01','03'].includes(selectedFiscal?.tipo_comprobante) || selectedFiscal?.estado === 'anulada'}
-                onClick={() => selectedFiscal && setNotaDoc(selectedFiscal)}
-                style={{ color: selectedFiscal ? 'var(--color-warning)' : 'var(--border-subtle)', cursor: selectedFiscal ? 'pointer' : 'default' }}
-              >
-                Nota de Crédito
-              </button>
-              <button
-                className="btn-secondary text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
-                disabled={!selectedFiscal || !['01','03'].includes(selectedFiscal?.tipo_comprobante) || selectedFiscal?.estado === 'anulada'}
-                onClick={() => selectedFiscal && setNotaDoc(selectedFiscal)}
-                style={{ color: selectedFiscal ? 'var(--color-warning)' : 'var(--border-subtle)', cursor: selectedFiscal ? 'pointer' : 'default' }}
-              >
-                Nota de Débito
-              </button>
-              <div className="proto-action-divider" />
-              <button
-                className="btn-secondary text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 flex items-center gap-2"
-                disabled={!selectedFiscal || selectedFiscal?.estado === 'anulada'}
-                onClick={() => selectedFiscal && setAnularDoc(selectedFiscal)}
-                style={{ color: selectedFiscal ? 'var(--color-error)' : 'var(--border-subtle)', cursor: selectedFiscal ? 'pointer' : 'default' }}
-              >
-                Anular
-              </button>
-              <div className="proto-action-divider" />
-              {/* Iconos de descarga rápida para el registro seleccionado */}
-              <button
-                type="button"
-                title="Descargar PDF"
-                aria-label="Descargar PDF del comprobante seleccionado"
-                disabled={!selectedFiscal}
-                onClick={() => selectedFiscal && handleOpenPdf(selectedFiscal)}
-                style={{ opacity: selectedFiscal ? 1 : 0.3, pointerEvents: selectedFiscal ? 'auto' : 'none' }}
-                className="row-action-icon row-action-icon--download"
-              >
-                <FileDown className="h-3 w-3" />
-              </button>
-              <a
-                href={selectedFiscal?.sunat_xml_url || '#'}
-                target={selectedFiscal?.sunat_xml_url ? '_blank' : undefined}
-                rel="noreferrer"
-                title="Descargar XML"
-                aria-label="Descargar XML del comprobante seleccionado"
-                style={{ opacity: selectedFiscal?.sunat_xml_url ? 1 : 0.3, color: 'var(--color-info)', pointerEvents: selectedFiscal?.sunat_xml_url ? 'auto' : 'none' }}
-                className="row-action-icon row-action-icon--info"
-              >
-                <Download className="h-3 w-3" />
-              </a>
-                </>
-              )}
+              {selectedFiscal ? (
+                <FiscalDocumentActions key={selectedFiscal.id} doc={selectedFiscal} reload={load} />
+              ) : <span className="proto-selection-note">Selecciona un comprobante para ver sus acciones disponibles</span>}
             </div>
           </div>
 
@@ -3148,10 +3068,6 @@ export default function CotizacionesPage() {
                     const docNum = item.serie
                       ? `${item.serie}-${String(item.correlativo || 0).padStart(6, '0')}`
                       : `#${item.id}`;
-                    const waLink = getWhatsAppLink(item.cliente, item);
-                    const canAnular = item.estado !== 'anulada';
-                    const canNota = ['01', '03'].includes(item.tipo_comprobante) && item.estado !== 'anulada';
-                    const hasUtilityActions = Boolean(item.sunat_pdf_url || item.sunat_xml_url || waLink);
                     const isSelected = selectedFiscal?.id === item.id;
                     return (
                       <tr
@@ -3172,7 +3088,7 @@ export default function CotizacionesPage() {
                       >
                         <td className="ink-td" data-label="Emisión">
                           <span className="font-mono-label text-[10px] uppercase">
-                            {item.fecha_emision ? new Date(item.fecha_emision).toLocaleDateString('es-PE') : '--'}
+                            {formatFiscalDate(item.fecha_emision) || '--'}
                           </span>
                         </td>
                         <td className="ink-td" data-label="Tipo">
@@ -3225,68 +3141,8 @@ export default function CotizacionesPage() {
                           )}
                         </td>
                         <td className="ink-td" data-label="Acciones">
-                          <div
-                            className="fiscal-record-actions flex justify-end items-center gap-1"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            {item.sunat_pdf_url && (
-                              <button type="button" onClick={() => handleOpenPdf(item)}
-                                title="Descargar PDF"
-                                aria-label={`Descargar PDF de ${docNum}`}
-                                className="row-action-icon row-action-icon--download">
-                                <FileDown className="h-3 w-3" />
-                              </button>
-                            )}
-                            {item.sunat_xml_url && (
-                              <a href={item.sunat_xml_url} target="_blank" rel="noreferrer"
-                                title="Descargar XML"
-                                aria-label={`Descargar XML de ${docNum}`}
-                                className="row-action-icon row-action-icon--info">
-                                <Download className="h-3 w-3" />
-                              </a>
-                            )}
-                            {waLink && (
-                              <button type="button" onClick={() => handleOpenShareChannel(item, 'whatsapp')}
-                                title="Enviar por WhatsApp"
-                                aria-label={`Enviar ${docNum} por WhatsApp`}
-                                className="row-action-icon row-action-icon--success">
-                                <Send className="h-3 w-3" />
-                              </button>
-                            )}
-                            {hasUtilityActions && (canNota || canAnular) && (
-                              <div className="history-actions-divider mx-1 h-4" aria-hidden="true" />
-                            )}
-                            {canNota && (
-                              <button
-                                type="button"
-                                title="Crear nota de crédito o débito"
-                                aria-label={`Crear nota de crédito o débito para ${docNum}`}
-                                className="row-action-icon row-action-icon--warning"
-                                onClick={() => setNotaDoc(item)}
-                              >
-                                <FileDiff className="h-3 w-3" />
-                              </button>
-                            )}
-                            {canAnular && (
-                              <button
-                                type="button"
-                                title="Anular documento"
-                                aria-label={`Anular ${docNum}`}
-                                className="row-action-icon row-action-icon--danger"
-                                onClick={() => setAnularDoc(item)}
-                              >
-                                <XCircle className="h-3 w-3" />
-                              </button>
-                            )}
-                            <div className="history-actions-divider mx-1 h-4" />
-                            <Link
-                              to={`/cotizaciones/${item.id}`}
-                              className="row-action-icon row-action-icon--brand"
-                              title="Ver detalle"
-                              aria-label={`Ver detalle de ${docNum}`}
-                            >
-                              <Eye className="h-3 w-3" />
-                            </Link>
+                          <div className="fiscal-record-actions" onClick={(event) => event.stopPropagation()}>
+                            <FiscalDocumentActions doc={item} reload={load} />
                           </div>
                         </td>
                       </tr>
@@ -3298,7 +3154,7 @@ export default function CotizacionesPage() {
               <div className="history-table-footer">
                 <span>
                   {filteredFiscal.length
-                    ? `Mostrando ${fiscalPageStart + 1}-${fiscalPageEnd} de ${filteredFiscal.length}`
+                    ? `Mostrando ${fiscalPageStart + 1}-${fiscalPageEnd} de ${fiscalDocumentTotal}`
                     : 'Sin comprobantes'}
                   {' '}· {FISCAL_PAGE_SIZE} por página
                 </span>

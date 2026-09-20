@@ -58,9 +58,17 @@ export function requireTenantCredentials() {
 export async function loginTenantByUi(page) {
   const { email, password } = requireTenantCredentials();
   await page.goto('/login');
-  await expect(page.getByRole('heading', { name: /bienvenido de vuelta/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /bienvenido de vuelta/i })).toBeVisible({
+    timeout: AUTH_TIMEOUT_MS,
+  });
   await page.getByLabel(/correo|usuario/i).fill(email);
   await page.locator('input[autocomplete="current-password"]').fill(password);
+  const rememberDevice = page.getByRole('checkbox', {
+    name: /recordar este dispositivo/i,
+  });
+  if (!(await rememberDevice.isChecked())) {
+    await rememberDevice.check();
+  }
   const tokenResponsePromise = page.waitForResponse(
     (response) => isApiResponse(response, { method: 'POST', path: '/token' }),
     { timeout: AUTH_TIMEOUT_MS },
@@ -70,7 +78,9 @@ export async function loginTenantByUi(page) {
     { timeout: AUTH_TIMEOUT_MS },
   ).catch((error) => ({ error }));
 
-  await page.getByRole('button', { name: /acceder al dashboard/i }).click();
+  await page.getByRole('button', {
+    name: /iniciar sesión|acceder al dashboard/i,
+  }).click();
 
   const tokenResponse = await tokenResponsePromise;
   await assertOkResponse(tokenResponse, 'POST /token');
@@ -96,6 +106,10 @@ export async function loginTenantByUi(page) {
 }
 
 export async function saveTenantStorageState(page) {
+  const hasPersistentToken = await page.evaluate(
+    () => Boolean(localStorage.getItem('token')),
+  );
+  expect(hasPersistentToken).toBe(true);
   mkdirSync(dirname(TENANT_STORAGE_STATE), { recursive: true });
   await page.context().storageState({ path: TENANT_STORAGE_STATE });
 }

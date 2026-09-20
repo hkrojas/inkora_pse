@@ -1,8 +1,9 @@
 import base64
 import decimal
 import json
+import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import requests
 from sqlalchemy.orm import Session
@@ -11,14 +12,13 @@ import models
 from config import settings
 from fiscal_catalogs import tax_affectation_bucket
 from services import calculations
-from services.client_snapshot_service import resolve_document_cliente_snapshot
 from services import fiscal_xml_service
 from services import fiscal_qr_service
-from services.fiscal_clock import fiscal_datetime_in_peru, now_in_peru
 from services import smartpse_client
 from services import smartpse_gre_credentials
 from services import smartpse_response
 from services import smartpse_ubl_service
+from services import gre_ubl_service
 from services import storage_service
 from services.quote_observation_service import observation_lines_to_plain_text
 from tenant_access import (
@@ -32,6 +32,15 @@ from tenant_access import (
 
 class FacturacionException(Exception):
     """Excepcion para errores de negocio en facturacion."""
+
+
+class FacturacionRejectedException(FacturacionException):
+    def __init__(self, message: str, provider_response: dict | None = None):
+        super().__init__(message)
+        self.provider_response = provider_response or {}
+
+
+logger = logging.getLogger(__name__)
 
 
 class SUNATDecimalEncoder(json.JSONEncoder):
@@ -87,6 +96,7 @@ DEFAULT_UBIGEO = "150101"
 DEFAULT_PROVINCIA = "LIMA"
 DEFAULT_DEPARTAMENTO = "LIMA"
 DEFAULT_DISTRITO = "LIMA"
+CPE_CORRELATIVE_WIDTH = 8
 DEFAULT_TIMEOUT_SECONDS = 30
 ASYNC_STATUS_MAX_ATTEMPTS = 5
 ASYNC_STATUS_RETRY_SECONDS = 2
@@ -311,48 +321,49 @@ def _build_company_payload(user) -> dict:
     }
 
 
-def _build_client_payload(cliente, snapshot: dict | None = None) -> dict:
+def _build_client_payload(cliente) -> dict:
     if not cliente:
         raise FacturacionException("Documento sin cliente asociado.")
 
-    snapshot = snapshot or {}
-    numero_documento = str(
-        snapshot.get("numero_documento")
-        or getattr(cliente, "numero_documento", "")
-        or ""
-    ).strip()
+    numero_documento = str(getattr(cliente, "numero_documento", "") or "").strip()
     if not numero_documento:
         raise FacturacionException("El cliente no tiene numero de documento configurado.")
 
-    razon_social = (
-        snapshot.get("razon_social")
-        or snapshot.get("nombre_comercial")
-        or getattr(cliente, "razon_social", None)
-        or getattr(cliente, "nombre_comercial", None)
-        or "-"
-    )
+    razon_social = getattr(cliente, "razon_social", None) or getattr(cliente, "nombre_comercial", None) or "-"
     return {
-        "tipoDoc": obtener_tipo_documento_codigo(
-            snapshot.get("tipo_documento") or getattr(cliente, "tipo_documento", None)
-        ),
+        "tipoDoc": obtener_tipo_documento_codigo(getattr(cliente, "tipo_documento", None)),
         "numDoc": numero_documento,
         "rznSocial": razon_social,
         "address": _build_address_payload(
-            snapshot.get("direccion") or getattr(cliente, "direccion", None),
-            snapshot.get("ubigeo") or getattr(cliente, "ubigeo", None),
+            getattr(cliente, "direccion", None),
+            getattr(cliente, "ubigeo", None),
         ),
     }
 
 
 def _current_issue_datetime(value: datetime | None = None, *, plus_minutes: int = 0) -> str:
-    issued_at = fiscal_datetime_in_peru(value)
+    issued_at = value or datetime.now().astimezone()
+    if issued_at.tzinfo is None:
+        issued_at = issued_at.astimezone()
     if plus_minutes:
         issued_at = issued_at + timedelta(minutes=plus_minutes)
     return issued_at.replace(microsecond=0).isoformat()
 
 
+def _gre_datetime(value: datetime | None = None) -> str:
+    # Peru uses UTC-05:00 year-round. A fixed offset avoids depending on an
+    # optional IANA tzdata package in minimal deployment images.
+    lima = timezone(timedelta(hours=-5))
+    issued_at = value or datetime.now(lima)
+    if issued_at.tzinfo is None:
+        issued_at = issued_at.replace(tzinfo=lima)
+    else:
+        issued_at = issued_at.astimezone(lima)
+    return issued_at.replace(microsecond=0).isoformat()
+
+
 def _build_batch_correlativo(reference_datetime=None) -> str:
-    now = now_in_peru()
+    now = datetime.now()
     seconds_of_day = now.hour * 3600 + now.minute * 60 + now.second
     reference = reference_datetime or now.isoformat()
     return smartpse_ubl_service.normalize_batch_correlativo(
@@ -372,6 +383,11 @@ def _document_number(documento) -> str:
     if not serie or correlativo is None:
         return "-"
     return f"{serie}-{str(correlativo).zfill(6)}"
+
+
+def _provider_correlativo(value) -> str:
+    """Canonical SUNAT/Smart PSE correlativo used in XML IDs and filenames."""
+    return str(value or 0).strip().zfill(CPE_CORRELATIVE_WIDTH)
 
 
 def _sync_invoice_totals(payload: dict) -> dict:
@@ -536,7 +552,7 @@ def _base_payload(cotizacion, user, tipo_doc_comprobante, *, tipo_operacion_over
         "fechaEmision": fecha_emision,
         "tipoMoneda": getattr(cotizacion, "moneda", None) or "PEN",
         "company": _build_company_payload(user),
-        "client": _build_client_payload(cliente, resolve_document_cliente_snapshot(cotizacion)),
+        "client": _build_client_payload(cliente),
         "mtoOperGravadas": totales["gravada"],
         "mtoOperExoneradas": totales["exonerada"],
         "mtoOperInafectas": totales["inafecta"],
@@ -569,6 +585,11 @@ def _base_payload(cotizacion, user, tipo_doc_comprobante, *, tipo_operacion_over
     return payload, totales
 
 
+UMBRAL_DETRACCION = calculations.Decimal("700.00")
+PORCENTAJE_DETRACCION_IMPRENTA = calculations.Decimal("12.00")
+CODIGO_DETRACCION_IMPRENTA = "012"
+
+
 def _aplicar_detraccion(payload, cotizacion, user, db: Session):
     monto_total = calculations.to_decimal(
         payload.get("mtoImpVenta", payload.get("mtoImporteTotal", 0))
@@ -591,7 +612,7 @@ def _aplicar_detraccion(payload, cotizacion, user, db: Session):
     if not isinstance(codigo_detraccion, (str, int)):
         codigo_detraccion = None
     codigo_detraccion = str(codigo_detraccion or "").strip().zfill(3)
-    if len(codigo_detraccion) != 3 or not codigo_detraccion.isdigit():
+    if len(codigo_detraccion) != 3 or not codigo_detraccion.isdigit() or codigo_detraccion == "000":
         raise ValueError("La detracción requiere un código válido del catálogo 54 de SUNAT")
 
     porcentaje = calculations.to_decimal(cotizacion.porcentaje_detraccion or 0)
@@ -958,7 +979,7 @@ def _poll_async_status(user, payload: dict, ticket: str, status_endpoint: str, *
 def _smartpse_demo_mode(user) -> bool:
     tenant = getattr(user, "tenant", None)
     environment = str(getattr(tenant, "smartpse_environment", "") or "").strip().lower()
-    if environment == "produccion":
+    if environment in {"produccion", "production", "prod"}:
         if not settings.is_fiscal_production:
             raise FacturacionException(
                 "Smart PSE esta configurado en produccion para el tenant, "
@@ -966,16 +987,42 @@ def _smartpse_demo_mode(user) -> bool:
                 "Emision bloqueada para evitar envio por ambiente demo."
             )
         return False
-    if environment:
+    if environment == "demo":
         return True
+    if environment:
+        raise FacturacionException(
+            f"Ambiente Smart PSE no reconocido: {environment}. Emision bloqueada."
+        )
     return not settings.is_fiscal_production
+
+
+def _smartpse_gre_request_credentials(user) -> dict[str, str] | None:
+    """Return GRE OAuth/SOL fields, allowing their omission only in demo."""
+    tenant = getattr(user, "tenant", None)
+    if smartpse_gre_credentials.has_complete_gre_credentials(tenant):
+        try:
+            payload = smartpse_gre_credentials.build_smartpse_gre_extra_payload(tenant)
+            payload["environment"] = "demo" if _smartpse_demo_mode(user) else "produccion"
+            return payload
+        except (
+            smartpse_gre_credentials.SmartPSEGreCredentialsError,
+            smartpse_gre_credentials.secret_box.SecretBoxError,
+        ) as exc:
+            raise FacturacionException(str(exc)) from exc
+
+    if _smartpse_demo_mode(user):
+        return None
+
+    missing = smartpse_gre_credentials.missing_gre_credential_fields(tenant)
+    raise FacturacionException(
+        "Faltan credenciales SUNAT GRE para emitir o consultar guias con Smart PSE "
+        f"en produccion: {', '.join(missing)}."
+    )
 
 
 def _prepare_smartpse_payload(payload: dict, endpoint: str) -> dict:
     prepared = dict(payload or {})
-    if endpoint == "/despatch/send":
-        prepared["tipoDoc"] = "09"
-    elif endpoint == "/summary/send":
+    if endpoint == "/summary/send":
         prepared["tipoDoc"] = "RC"
         prepared["correlativo"] = smartpse_ubl_service.normalize_batch_correlativo(prepared, "RC")
     elif endpoint == "/voided/send":
@@ -995,12 +1042,111 @@ def _build_smartpse_xml(payload: dict, endpoint: str) -> str:
     if endpoint in {"/invoice/send", "/note/send"}:
         return smartpse_ubl_service.build_sale_document_xml(payload)
     if endpoint == "/despatch/send":
-        return smartpse_ubl_service.build_despatch_document_xml(payload)
+        return gre_ubl_service.build_despatch_xml(payload)
     if endpoint == "/summary/send":
         return smartpse_ubl_service.build_summary_document_xml(payload)
     if endpoint in {"/voided/send", "/reversion/send"}:
         return smartpse_ubl_service.build_voided_document_xml(payload)
     raise FacturacionException(f"Endpoint Smart PSE no soportado: {endpoint}")
+
+
+def _smartpse_expected_identity(payload: dict) -> dict:
+    correlativo = str(payload.get("correlativo") or "").strip()
+    if correlativo.isdigit():
+        correlativo = _provider_correlativo(correlativo)
+    fecha_emision = str(payload.get("fechaEmision") or "").strip()
+    return {
+        "ruc": str((payload.get("company") or {}).get("ruc") or "").strip() or None,
+        "tipo_doc": str(payload.get("tipoDoc") or "").strip().zfill(2),
+        "serie": str(payload.get("serie") or "").strip() or None,
+        "correlativo": correlativo or None,
+        "issue_date": fecha_emision[:10] if len(fecha_emision) >= 10 else None,
+    }
+
+
+def _smartpse_identity_mismatches(expected: dict, actual: dict) -> list[str]:
+    labels = {
+        "ruc": "RUC emisor",
+        "tipo_doc": "tipo de documento",
+        "serie": "serie",
+        "correlativo": "correlativo",
+        "issue_date": "fecha de emision",
+    }
+    mismatches: list[str] = []
+    for key, label in labels.items():
+        expected_value = expected.get(key)
+        actual_value = actual.get(key)
+        if expected_value and str(actual_value or "").strip() != str(expected_value).strip():
+            mismatches.append(f"{label} esperado={expected_value} remoto={actual_value or 'sin valor'}")
+    return mismatches
+
+
+def _verify_smartpse_remote_document(
+    client,
+    tenant,
+    payload: dict,
+    nombre_archivo: str,
+    *,
+    require_cdr: bool,
+    process_result: dict,
+    process_response: dict,
+    process_endpoint: str,
+) -> dict:
+    try:
+        verification_response = client.consult_ticket(tenant, nombre_archivo)
+    except smartpse_client.SmartPSEException as exc:
+        logger.warning(
+            "smartpse.verify.result tenant_id=%s nombre_archivo=%s status=failed reason=missing",
+            getattr(tenant, "id", None),
+            nombre_archivo,
+        )
+        raise FacturacionException(f"Smart PSE remote verification missing: {exc}") from exc
+
+    try:
+        verification_result = smartpse_response.build_smartpse_result(
+            payload,
+            verification_response,
+            endpoint=f"/api/cpe/consultar/{nombre_archivo}",
+            status_code=200,
+            ticket=process_result.get("ticket"),
+            require_cdr=require_cdr,
+        )
+    except smartpse_client.SmartPSEException as exc:
+        logger.warning(
+            "smartpse.verify.result tenant_id=%s nombre_archivo=%s status=failed reason=response",
+            getattr(tenant, "id", None),
+            nombre_archivo,
+        )
+        raise FacturacionException(f"Smart PSE remote verification missing: {exc}") from exc
+
+    identity = smartpse_response.extract_sale_document_identity(verification_result.get("xml"))
+    mismatches = _smartpse_identity_mismatches(_smartpse_expected_identity(payload), identity)
+    if mismatches:
+        logger.warning(
+            "smartpse.verify.result tenant_id=%s nombre_archivo=%s status=failed reason=mismatch",
+            getattr(tenant, "id", None),
+            nombre_archivo,
+        )
+        raise FacturacionException("Smart PSE remote verification mismatch: " + "; ".join(mismatches))
+
+    verification_result["provider_endpoint"] = process_endpoint
+    verification_result["provider_response"] = {
+        "process": process_response,
+        "verification": verification_response,
+    }
+    verification_result["provider_document_name"] = nombre_archivo
+    verification_result["provider_verification_status"] = "verified"
+    verification_result["provider_verified_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    verification_result["provider_verification_error"] = None
+    logger.info(
+        "smartpse.verify.result tenant_id=%s nombre_archivo=%s status=verified hash=%s has_xml=%s has_cdr=%s",
+        getattr(tenant, "id", None),
+        nombre_archivo,
+        verification_result.get("hash"),
+        bool(verification_result.get("xml")),
+        bool(verification_result.get("cdr_xml")),
+    )
+    return verification_result
 
 
 def _poll_smartpse_ticket(
@@ -1050,71 +1196,6 @@ def _poll_smartpse_ticket(
     )
 
 
-def _verify_smartpse_document(
-    client,
-    tenant,
-    payload: dict,
-    consult_name: str,
-    initial_result: dict,
-) -> dict:
-    last_error = None
-    last_data = None
-    for attempt in range(1, ASYNC_STATUS_MAX_ATTEMPTS + 1):
-        try:
-            data = client.consult_ticket(tenant, consult_name)
-        except Exception as exc:
-            last_error = exc
-            if attempt < ASYNC_STATUS_MAX_ATTEMPTS:
-                time.sleep(ASYNC_STATUS_RETRY_SECONDS)
-                continue
-            raise FacturacionException(
-                f"No se pudo verificar el documento en Smart PSE ({consult_name}): {exc}"
-            ) from exc
-
-        last_data = data if isinstance(data, dict) else {"raw": str(data)}
-        if str(last_data.get("estado") or "").strip() == "202":
-            if attempt < ASYNC_STATUS_MAX_ATTEMPTS:
-                time.sleep(ASYNC_STATUS_RETRY_SECONDS)
-                continue
-            raise FacturacionException(
-                f"Smart PSE dejo el documento pendiente de verificacion ({consult_name})."
-            )
-
-        merged = dict(last_data)
-        if initial_result.get("xml") and not merged.get("xml_firmado"):
-            merged["xml_firmado"] = initial_result.get("xml")
-        if initial_result.get("hash") and not merged.get("codigo_hash"):
-            merged["codigo_hash"] = initial_result.get("hash")
-        if initial_result.get("cdr_xml") and not merged.get("cdr"):
-            merged["cdr"] = initial_result.get("cdr_xml")
-
-        try:
-            verified = smartpse_response.build_smartpse_result(
-                payload,
-                merged,
-                endpoint=f"/api/cpe/consultar/{consult_name}",
-                status_code=200,
-                ticket=initial_result.get("ticket"),
-                require_cdr=True,
-            )
-        except smartpse_client.SmartPSEException as exc:
-            raise FacturacionException(str(exc)) from exc
-
-        verified["provider_document_name"] = consult_name
-        verified["provider_verification_status"] = "verified"
-        verified["provider_endpoint"] = initial_result.get("provider_endpoint") or verified.get("provider_endpoint")
-        verified["provider_response"] = {
-            "process": initial_result.get("provider_response"),
-            "verification": merged,
-        }
-        return verified
-
-    raise FacturacionException(
-        f"No se pudo verificar el documento en Smart PSE ({consult_name}): "
-        f"{_extract_provider_error_message(last_data or {}) if last_data else str(last_error or '')}"
-    )
-
-
 def _enviar_a_smartpse(
     payload,
     user,
@@ -1123,6 +1204,7 @@ def _enviar_a_smartpse(
     status_endpoint: str | None = None,
     poll_async: bool = True,
     extra_payload: dict | None = None,
+    xml_content_override: str | None = None,
 ):
     tenant = getattr(user, "tenant", None)
     if not tenant:
@@ -1130,31 +1212,67 @@ def _enviar_a_smartpse(
 
     provider_payload = _prepare_smartpse_payload(payload, endpoint)
     nombre_archivo = smartpse_ubl_service.build_smartpse_filename(provider_payload)
-    xml_content = _build_smartpse_xml(provider_payload, endpoint)
+    xml_content = xml_content_override or _build_smartpse_xml(provider_payload, endpoint)
     client = smartpse_client.get_default_client()
     demo = _smartpse_demo_mode(user)
     provider_endpoint = "/api/cpe/procesar-demo" if demo else "/api/cpe/procesar"
+    requires_remote_verification = endpoint in {"/invoice/send", "/note/send"}
 
     try:
         process_kwargs = {"demo": demo}
         if extra_payload is not None:
             process_kwargs["extra_payload"] = extra_payload
+        logger.info(
+            "smartpse.send.start tenant_id=%s ruc=%s tipo_doc=%s serie=%s correlativo=%s nombre_archivo=%s endpoint=%s",
+            getattr(tenant, "id", None),
+            (provider_payload.get("company") or {}).get("ruc"),
+            provider_payload.get("tipoDoc"),
+            provider_payload.get("serie"),
+            provider_payload.get("correlativo"),
+            nombre_archivo,
+            provider_endpoint,
+        )
         data = client.process_xml(
             tenant,
             nombre_archivo,
             xml_content.encode("utf-8"),
             **process_kwargs,
         )
-        is_sync_cpe = endpoint in {"/invoice/send", "/note/send"}
         result = smartpse_response.build_smartpse_result(
             provider_payload,
             data,
             endpoint=provider_endpoint,
             status_code=200,
-            require_cdr=is_sync_cpe,
+            # Facturas y notas se validan inmediatamente contra el documento
+            # remoto; esa consulta puede ser la que entregue el CDR definitivo.
+            require_cdr=endpoint == "/despatch/send",
         )
+        result["provider_document_name"] = nombre_archivo
+        logger.info(
+            "smartpse.send.result tenant_id=%s nombre_archivo=%s status=accepted hash=%s pending=%s has_xml=%s has_cdr=%s",
+            getattr(tenant, "id", None),
+            nombre_archivo,
+            result.get("hash"),
+            bool(result.get("pending")),
+            bool(result.get("xml")),
+            bool(result.get("cdr_xml")),
+        )
+    except smartpse_client.SmartPSEDefinitiveRejection as exc:
+        raise FacturacionRejectedException(str(exc), exc.response_data) from exc
     except smartpse_client.SmartPSEException as exc:
         raise FacturacionException(str(exc)) from exc
+
+    if requires_remote_verification:
+        return _verify_smartpse_remote_document(
+            client,
+            tenant,
+            provider_payload,
+            nombre_archivo,
+            require_cdr=True,
+            process_result=result,
+            process_response=data,
+            process_endpoint=provider_endpoint,
+        )
 
     if status_endpoint and result.get("pending") and result.get("ticket"):
         if not poll_async:
@@ -1168,10 +1286,6 @@ def _enviar_a_smartpse(
             result.get("xml"),
             result.get("hash"),
         )
-    if endpoint in {"/invoice/send", "/note/send"}:
-        result["provider_document_name"] = nombre_archivo
-        result["provider_verification_status"] = "verified"
-        return result
     return result
 
 
@@ -1183,6 +1297,7 @@ def _enviar_a_api(
     status_endpoint: str | None = None,
     poll_async: bool = True,
     extra_payload: dict | None = None,
+    xml_content_override: str | None = None,
 ):
     return _enviar_a_smartpse(
         payload,
@@ -1191,6 +1306,7 @@ def _enviar_a_api(
         status_endpoint=status_endpoint,
         poll_async=poll_async,
         extra_payload=extra_payload,
+        xml_content_override=xml_content_override,
     )
 
 
@@ -1216,7 +1332,7 @@ def emitir_factura(
         tipo_operacion_override=tipo_operacion_override,
     )
     payload["serie"] = serie_override or cotizacion.serie or serie
-    payload["correlativo"] = str(cotizacion.correlativo or cotizacion.id).zfill(6)
+    payload["correlativo"] = _provider_correlativo(cotizacion.correlativo or cotizacion.id)
 
     payload = _aplicar_detraccion(payload, cotizacion, user, db)
     payload = _aplicar_anticipos(payload, cotizacion, user)
@@ -1239,7 +1355,7 @@ def emitir_nota(
 
     payload, _ = _base_payload(nota, user, tipo_comprobante)
     payload["serie"] = nota.serie or serie_nota
-    payload["correlativo"] = str(nota.correlativo or nota.id).zfill(6)
+    payload["correlativo"] = _provider_correlativo(nota.correlativo or nota.id)
     payload.update(
         _build_note_reference_payload(
             nota,
@@ -1314,7 +1430,6 @@ def anular_comprobante(comprobante: models.Cotizacion, motivo: str, user: models
             }
         ],
     }
-
     if comprobante.tipo_comprobante == "03" or (
         comprobante.tipo_comprobante in {"07", "08"} and (comprobante.serie or "").startswith("B")
     ):
@@ -1337,6 +1452,12 @@ def anular_comprobante(comprobante: models.Cotizacion, motivo: str, user: models
 
 
 def _resolve_guide_recipient(guia, user=None) -> dict:
+    if getattr(guia, "destinatario_nro_doc", None):
+        return {
+            "tipoDoc": guia.destinatario_tipo_doc or "6",
+            "numDoc": guia.destinatario_nro_doc,
+            "rznSocial": guia.destinatario_razon_social or "-",
+        }
     cotizacion = getattr(guia, "cotizacion", None)
     cliente = getattr(guia, "cliente", None) or (getattr(cotizacion, "cliente", None) if cotizacion else None)
     if not cliente and getattr(guia, "motivo_traslado", None) == "04" and user is not None:
@@ -1392,12 +1513,13 @@ def _base_payload_gre(guia, user):
     if guia.motivo_traslado == "04" or (destinatario_ruc and destinatario_ruc == company_ruc):
         llegada["codLocal"] = "0000"
 
+    tipo_documento = str(getattr(guia, "tipo_documento", None) or "09")
     payload = {
         "version": 2022,
-        "tipoDoc": "09",
-        "serie": guia.serie or "T001",
+        "tipoDoc": tipo_documento,
+        "serie": guia.serie or ("V001" if tipo_documento == "31" else "T001"),
         "correlativo": str(guia.correlativo).zfill(6),
-        "fechaEmision": _current_issue_datetime(getattr(guia, "fecha_emision", None)),
+        "fechaEmision": _gre_datetime(getattr(guia, "fecha_emision", None)),
         "observacion": guia.descripcion_motivo or "GUIA DE REMISION",
         "company": _build_company_payload_gre(user),
         "destinatario": _resolve_guide_recipient(guia, user),
@@ -1405,8 +1527,8 @@ def _base_payload_gre(guia, user):
             "codTraslado": guia.motivo_traslado,
             "desTraslado": (guia.descripcion_motivo or "VENTA").upper(),
             "modTraslado": guia.modalidad_traslado,
-            "fecTraslado": _current_issue_datetime(guia.fecha_traslado),
-            "pesoTotal": calculations.redondear(getattr(guia, "peso_bruto_total", 0)),
+            "fecTraslado": _gre_datetime(guia.fecha_traslado),
+            "pesoTotal": getattr(guia, "peso_bruto_total", 0),
             "undPesoTotal": guia.unidad_medida_peso or "KGM",
             "llegada": llegada,
             "partida": {
@@ -1418,7 +1540,7 @@ def _base_payload_gre(guia, user):
         },
         "details": [
             {
-                "cantidad": calculations.redondear(item.cantidad),
+                "cantidad": item.cantidad,
                 "unidad": item.unidad_medida or "NIU",
                 "descripcion": item.descripcion,
                 "codigo": item.codigo_producto or f"ITEM-{index:03d}",
@@ -1426,6 +1548,42 @@ def _base_payload_gre(guia, user):
             for index, item in enumerate(guia.items, start=1)
         ],
     }
+    if getattr(guia, "observaciones", None):
+        payload["observacion"] = guia.observaciones
+
+    if getattr(guia, "fiscal_document_id", None) and tipo_documento == "09":
+        fiscal_document = getattr(guia, "cotizacion", None)
+        if fiscal_document and fiscal_document.serie and fiscal_document.correlativo:
+            payload["documentosRelacionados"] = [{
+                "tipo_documento": fiscal_document.tipo_comprobante,
+                "serie": fiscal_document.serie,
+                "numero": str(fiscal_document.correlativo),
+                "ruc_emisor": company_ruc,
+            }]
+    if tipo_documento == "31":
+        payload["remitente"] = {
+            "tipoDoc": guia.remitente_tipo_doc or "6",
+            "numDoc": guia.remitente_nro_doc,
+            "rznSocial": guia.remitente_razon_social,
+        }
+        payload["envio"]["pagadorFlete"] = guia.pagador_flete_tipo or "Remitente"
+        if guia.pagador_flete_tipo == "Tercero":
+            payload["pagador"] = {
+                "tipoDoc": guia.pagador_tipo_doc,
+                "numDoc": guia.pagador_nro_doc,
+                "rznSocial": guia.pagador_razon_social,
+            }
+        references = []
+        external = getattr(guia, "external_gre_reference", None)
+        if external:
+            references.append({
+                "tipo_documento": "09",
+                "serie": external.series,
+                "numero": external.number,
+                "ruc_emisor": external.issuer_ruc,
+            })
+        if references:
+            payload["documentosRelacionados"] = references
 
     if guia.numero_bultos:
         payload["envio"]["numBultos"] = guia.numero_bultos
@@ -1433,35 +1591,83 @@ def _base_payload_gre(guia, user):
         payload["envio"]["sustentoPeso"] = guia.sustento_peso
     if guia.ind_transbordo is not None:
         payload["envio"]["indTransbordo"] = bool(guia.ind_transbordo)
+    payload["envio"]["indicadorM1L"] = bool(getattr(guia, "indicador_m1_l", False))
+    payload["envio"]["registrarVehiculoTransportista"] = bool(
+        getattr(guia, "registrar_vehiculo_transportista", False)
+    )
     if guia.num_contenedor:
         payload["envio"]["numContenedor"] = guia.num_contenedor
     if guia.cod_puerto:
         payload["envio"]["codPuerto"] = guia.cod_puerto
 
-    if guia.modalidad_traslado == "01":
-        if not guia.transportista_ruc:
+    if tipo_documento == "31":
+        # A GRE 31 is emitted by the carrier itself. Never let the seller or
+        # form-supplied party become the issuer/carrier silently.
+        payload["envio"]["transportista"] = {
+            "tipoDoc": "6",
+            "numDoc": company_ruc,
+            "rznSocial": payload["company"]["razonSocial"],
+            "nroMtc": guia.transportista_nro_mtc,
+        }
+        if not guia.vehiculo_placa or not guia.conductor_nro_doc:
+            raise FacturacionException(
+                "La GRE transportista requiere vehículo y conductor del tenant transportista."
+            )
+        payload["envio"]["vehiculo"] = {
+            "placa": guia.vehiculo_placa,
+            "nroCirculacion": guia.vehiculo_nro_circulacion,
+            "codEmisor": guia.vehiculo_cod_emisor,
+            "nroAutorizacion": guia.vehiculo_nro_autorizacion,
+        }
+        payload["envio"]["choferes"] = [{
+            "tipo": "Principal",
+            "tipoDoc": guia.conductor_tipo_doc or "1",
+            "nroDoc": guia.conductor_nro_doc,
+            "nombres": guia.conductor_nombres,
+            "apellidos": guia.conductor_apellidos,
+            "licencia": guia.conductor_licencia,
+        }]
+    elif guia.modalidad_traslado == "01":
+        if not guia.transportista_ruc and not guia.indicador_m1_l:
             raise FacturacionException(
                 "La guia con traslado publico requiere RUC del transportista."
             )
-        transportista = {
-            "tipoDoc": "6",
-            "numDoc": guia.transportista_ruc,
-            "rznSocial": guia.transportista_razon_social or "-",
-        }
-        if guia.transportista_nro_mtc:
-            transportista["nroMtc"] = guia.transportista_nro_mtc
-        if guia.vehiculo_placa:
-            transportista["placa"] = guia.vehiculo_placa
-        if guia.conductor_tipo_doc:
-            transportista["choferTipoDoc"] = guia.conductor_tipo_doc
-        if guia.conductor_nro_doc:
-            transportista["choferDoc"] = guia.conductor_nro_doc
-        payload["envio"]["transportista"] = transportista
-        payload["tercero"] = {
-            "tipoDoc": "6",
-            "numDoc": guia.transportista_ruc,
-            "rznSocial": guia.transportista_razon_social or "-",
-        }
+        payload["envio"]["fecEntrega"] = _gre_datetime(
+            getattr(guia, "fecha_entrega_transportista", None) or guia.fecha_traslado
+        )
+        if guia.indicador_m1_l:
+            payload["envio"]["vehiculo"] = {"placa": guia.vehiculo_placa}
+        else:
+            transportista = {
+                "tipoDoc": "6",
+                "numDoc": guia.transportista_ruc,
+                "rznSocial": guia.transportista_razon_social or "-",
+            }
+            if guia.transportista_nro_mtc:
+                transportista["nroMtc"] = guia.transportista_nro_mtc
+            payload["envio"]["transportista"] = transportista
+            payload["tercero"] = {
+                "tipoDoc": "6",
+                "numDoc": guia.transportista_ruc,
+                "rznSocial": guia.transportista_razon_social or "-",
+            }
+        if getattr(guia, "registrar_vehiculo_transportista", False) and not guia.indicador_m1_l:
+            payload["envio"]["vehiculo"] = {
+                "placa": guia.vehiculo_placa,
+                "nroCirculacion": guia.vehiculo_nro_circulacion,
+                "codEmisor": guia.vehiculo_cod_emisor,
+                "nroAutorizacion": guia.vehiculo_nro_autorizacion,
+            }
+            payload["envio"]["choferes"] = [{
+                "tipo": "Principal",
+                "tipoDoc": guia.conductor_tipo_doc or "1",
+                "nroDoc": guia.conductor_nro_doc,
+                "nombres": guia.conductor_nombres,
+                "apellidos": guia.conductor_apellidos,
+                "licencia": guia.conductor_licencia,
+            }]
+    elif guia.indicador_m1_l:
+        payload["envio"]["vehiculo"] = {"placa": guia.vehiculo_placa}
     else:
         if not guia.vehiculo_placa or not guia.conductor_nro_doc:
             raise FacturacionException(
@@ -1492,17 +1698,15 @@ def _base_payload_gre(guia, user):
     return payload
 
 
-def emitir_guia_remision(guia, user):
-    payload = _base_payload_gre(guia, user)
-    try:
-        extra_payload = smartpse_gre_credentials.build_smartpse_gre_extra_payload(
-            getattr(user, "tenant", None)
-        )
-    except (
-        smartpse_gre_credentials.SmartPSEGreCredentialsError,
-        smartpse_gre_credentials.secret_box.SecretBoxError,
-    ) as exc:
-        raise FacturacionException(str(exc)) from exc
+def emitir_guia_remision(guia, user, *, prepared_payload=None, prepared_xml=None):
+    payload = prepared_payload if prepared_payload is not None else _base_payload_gre(guia, user)
+    if payload.get("company", {}).get("ruc") != _get_company_ruc(user):
+        raise FacturacionException("El RUC emisor cambió después de encolar la guía.")
+    if (payload.get("tipoDoc"), payload.get("serie"), int(payload.get("correlativo"))) != (
+        str(getattr(guia, "tipo_documento", None) or "09"), guia.serie, guia.correlativo
+    ):
+        raise FacturacionException("El documento congelado no corresponde a la guía encolada.")
+    extra_payload = _smartpse_gre_request_credentials(user)
     return _enviar_a_api(
         payload,
         user,
@@ -1510,7 +1714,38 @@ def emitir_guia_remision(guia, user):
         status_endpoint=None,
         poll_async=False,
         extra_payload=extra_payload,
+        xml_content_override=prepared_xml,
     )
+
+
+def consultar_guia_remision(guia, user):
+    """Obtain the definitive result of a previously submitted GRE without resending it."""
+    tenant = getattr(user, "tenant", None)
+    if not tenant or tenant.id != guia.tenant_id:
+        raise FacturacionException("La guía no pertenece al tenant autenticado.")
+    payload = guia.frozen_payload
+    if not payload:
+        raise FacturacionException("No existe un payload congelado para conciliar la guía.")
+    name = smartpse_ubl_service.build_smartpse_filename(payload)
+    client = smartpse_client.get_default_client()
+    extra_payload = _smartpse_gre_request_credentials(user)
+    try:
+        consult_kwargs = {}
+        if extra_payload is not None:
+            consult_kwargs["extra_payload"] = extra_payload
+        data = client.consult_ticket(tenant, name, **consult_kwargs)
+        return smartpse_response.build_smartpse_result(
+            payload,
+            data,
+            endpoint=f"/api/cpe/consultar/{name}",
+            status_code=200,
+            ticket=guia.sunat_ticket,
+            require_cdr=True,
+        )
+    except smartpse_client.SmartPSEDefinitiveRejection as exc:
+        raise FacturacionRejectedException(str(exc), exc.response_data) from exc
+    except smartpse_client.SmartPSEException as exc:
+        raise FacturacionException(str(exc)) from exc
 
 
 def _summary_datetime(value) -> str:
@@ -1828,7 +2063,7 @@ def _build_minimal_lookup_payload(comprobante, user) -> dict:
     return {
         "tipoDoc": comprobante.tipo_comprobante,
         "serie": comprobante.serie,
-        "correlativo": str(comprobante.correlativo).zfill(6),
+        "correlativo": _provider_correlativo(comprobante.correlativo),
         "company": {"ruc": _get_company_ruc(user)},
     }
 
@@ -1867,13 +2102,13 @@ def _build_download_payload(comprobante, user) -> dict:
     if comprobante.tipo_comprobante in {"01", "03"}:
         payload, _ = _base_payload(comprobante, user, comprobante.tipo_comprobante)
         payload["serie"] = comprobante.serie
-        payload["correlativo"] = str(comprobante.correlativo).zfill(6)
+        payload["correlativo"] = _provider_correlativo(comprobante.correlativo)
         return _sync_invoice_totals(payload)
 
     if comprobante.tipo_comprobante in {"07", "08"}:
         payload, _ = _base_payload(comprobante, user, comprobante.tipo_comprobante)
         payload["serie"] = comprobante.serie
-        payload["correlativo"] = str(comprobante.correlativo).zfill(6)
+        payload["correlativo"] = _provider_correlativo(comprobante.correlativo)
         payload.update(_build_note_reference_payload(comprobante))
         return _sync_invoice_totals(payload)
 

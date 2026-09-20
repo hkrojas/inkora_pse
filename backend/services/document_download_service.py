@@ -8,7 +8,7 @@ from services.client_snapshot_service import resolve_document_cliente_snapshot
 
 
 def _document_number(document: Any) -> str:
-    serie = str(getattr(document, "serie", "") or "DOCUMENTO").strip().upper()
+    serie = _safe_filename_component(str(getattr(document, "serie", "") or "DOCUMENTO"))
     correlativo = getattr(document, "correlativo", None)
     try:
         number = str(int(correlativo)).zfill(6)

@@ -28,6 +28,11 @@ def _money(value) -> Decimal:
 def _public_status(document: models.Cotizacion) -> str:
     if document.estado == DOCUMENT_STATUS_VOIDED:
         return "ANULADO"
+    error = str(document.sunat_error or '').lower()
+    if document.provider_verification_status == 'pending_confirmation' or any(
+        marker in error for marker in ('1033', 'timeout', 'connection', 'sin cdr', 'duplicad', 'tiempo de espera')
+    ):
+        return "EN_PROCESO"
     if document.sunat_accepted:
         return "ACEPTADO"
     if document.sunat_error:

@@ -8,10 +8,9 @@ import Spinner from '../components/ui/Spinner';
 import { PageError } from '../components/ui/PageState';
 import EmptyState from '../components/ui/EmptyState';
 import Badge from '../components/ui/Badge';
-import Drawer from '../components/ui/Drawer';
+import Modal from '../components/ui/Modal';
 import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
-import Pagination from '../components/ui/Pagination';
 import { FieldError } from '../components/ui/FieldError';
 import { useToast } from '../components/ui/Toast';
 import { getGuideStatusMeta } from '../lib/utils/fiscalStatus';
@@ -232,7 +231,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 
       {/* ── Tab: General ── */}
       {tab === 'general' && (
-        <div className="guide-form-grid guide-form-panel">
+        <div className="guide-form-grid">
           <div>
             <label className="label">Motivo de traslado</label>
             <CustomSelect value={form.motivo_traslado} onChange={set('motivo_traslado')} options={MOTIVO_OPTS} />
@@ -292,7 +291,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 
       {/* ── Tab: Ruta ── */}
       {tab === 'ruta' && (
-        <div className="guide-form-grid guide-form-panel">
+        <div className="guide-form-grid">
           {/* Partida */}
           <div className="guide-form-section">
             <div className="guide-form-section-title">
@@ -333,7 +332,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 
       {/* ── Tab: Bienes ── */}
       {tab === 'bienes' && (
-        <div className="guide-form-body guide-form-panel">
+        <div className="guide-form-body">
           <FieldError message={errors.items} />
           <div className="guide-items-table">
             <div className="ink-table-scroll">
@@ -381,7 +380,7 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 
       {/* ── Tab: Transportista ── */}
       {tab === 'transportista' && (
-        <div className="guide-form-grid guide-form-panel">
+        <div className="guide-form-grid">
           <div className="guide-form-alert guide-form-field--full">
             <AlertCircle size={14} />
             Modalidad pública requiere datos del transportista para SUNAT.
@@ -409,11 +408,11 @@ function NuevaGuiaForm({ onSave, onCancel, saving, clientes, cotizaciones }) {
 
       {/* Footer */}
       <div className="modal-footer guide-form-footer">
-        <button type="button" onClick={onCancel} className="btn-secondary guide-form-cancel">Cancelar</button>
+        <button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button>
         <div className="guide-form-actions">
           {tab !== tabs[tabs.length - 1].id && (
-            <button type="button" onClick={() => setTab(tabs[tabs.findIndex((t) => t.id === tab) + 1].id)} className="btn-secondary guide-form-next">
-              Siguiente <ChevronDown size={13} className="guide-form-next-icon" />
+            <button type="button" onClick={() => setTab(tabs[tabs.findIndex((t) => t.id === tab) + 1].id)} className="btn-secondary">
+              Siguiente <ChevronDown size={13} style={{ transform: 'rotate(-90deg)' }} />
             </button>
           )}
           <button type="submit" disabled={saving} className="btn-primary guide-form-submit">
@@ -677,10 +676,13 @@ export default function GuiasPage() {
             <Download className="h-4 w-4" />
             Exportar
           </button>
-          <button className="btn-primary flex items-center gap-2" onClick={() => setModal(true)}>
+          <Link className="btn-primary flex items-center gap-2" to="/guias/nueva">
             <Plus className="h-4 w-4" />
             Nueva guía
-          </button>
+          </Link>
+          <Link className="btn-secondary flex items-center gap-2" to="/guias/nueva-transportista">
+            <Truck className="h-4 w-4" />GRE transportista
+          </Link>
         </div>
       </div>
 
@@ -813,7 +815,7 @@ export default function GuiasPage() {
                 hasActiveFilters ? (
                   <button className="btn-secondary" onClick={clearFilters}>Limpiar filtros</button>
                 ) : (
-                  <button className="btn-primary" onClick={() => setModal(true)}>Nueva guía</button>
+                  <Link className="btn-primary" to="/guias/nueva">Nueva guía</Link>
                 )
               }
             />
@@ -888,7 +890,7 @@ export default function GuiasPage() {
                             {item.fecha_traslado ? new Date(item.fecha_traslado).toLocaleDateString('es-PE') : '--'}
                           </div>
                           <div className="ink-table-cell__meta">
-                            {item.fecha_emision ? `Emitida ${new Date(item.fecha_emision).toLocaleDateString('es-PE')}` : 'Sin fecha de emisión'}
+                            {item.fecha_emision ? `Fecha documento ${new Date(item.fecha_emision).toLocaleDateString('es-PE')}` : 'Sin fecha de documento'}
                           </div>
                         </td>
                         <td data-label="Destinatario">
@@ -939,24 +941,36 @@ export default function GuiasPage() {
 
             <div className="ink-table-footer">
               <span className="ink-table-count">{pageItems.length} guías visibles</span>
-              <Pagination page={page} totalPages={guidePageCount} onPageChange={setPage} ariaLabel="Paginación de guías" />
+              {guidePageCount > 1 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={page <= 1}
+                  >
+                    Anterior
+                  </button>
+                  <span className="ink-table-count">
+                    Página {page} de {guidePageCount}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setPage((current) => Math.min(guidePageCount, current + 1))}
+                    disabled={page >= guidePageCount}
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              )}
               <span className="ink-table-count">{counts.pending} por salir · {counts.transit} en ruta</span>
             </div>
           </div>
         )}
       </article>
 
-      <Drawer
-        open={modal}
-        onClose={() => setModal(false)}
-        variant="workflow"
-        eyebrow="Despacho fiscal"
-        status="Borrador GRE"
-        initialFocus="select, input, textarea"
-        title="Nueva guía de remisión"
-        subtitle="Emisión GRE Smart PSE"
-        icon={<Truck size={18} />}
-      >
+      <Modal open={modal} onClose={() => setModal(false)} title="Nueva guía de remisión" size="xl">
         <NuevaGuiaForm
           onSave={handleSave}
           onCancel={() => setModal(false)}
@@ -964,7 +978,7 @@ export default function GuiasPage() {
           clientes={clientes}
           cotizaciones={cotizaciones}
         />
-      </Drawer>
+      </Modal>
     </div>
   );
 }

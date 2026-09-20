@@ -1,4 +1,5 @@
 """crud/guias.py — Guías de Remisión."""
+from datetime import datetime
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, func, not_, or_
 
@@ -19,6 +20,7 @@ def get_guias_remision(
     limit: int = 15,
     *,
     estado: str | None = None,
+    tipo_documento: str | None = None,
     motivo: str | None = None,
     modalidad: str | None = None,
     desde=None,
@@ -29,6 +31,7 @@ def get_guias_remision(
         db,
         usuario,
         estado=estado,
+        tipo_documento=tipo_documento,
         motivo=motivo,
         modalidad=modalidad,
         desde=desde,
@@ -47,6 +50,7 @@ def _build_guias_query(
     usuario: models.User = None,
     *,
     estado: str | None = None,
+    tipo_documento: str | None = None,
     motivo: str | None = None,
     modalidad: str | None = None,
     desde=None,
@@ -60,6 +64,8 @@ def _build_guias_query(
         query = query.filter(models.GuiaRemision.usuario_id == usuario.id)
     if estado:
         query = query.filter(models.GuiaRemision.estado == estado)
+    if tipo_documento:
+        query = query.filter(models.GuiaRemision.tipo_documento == tipo_documento)
     if motivo:
         query = query.filter(models.GuiaRemision.motivo_traslado == motivo)
     if modalidad:
@@ -130,6 +136,7 @@ def get_guias_remision_page(
     limit: int = 15,
     *,
     estado: str | None = None,
+    tipo_documento: str | None = None,
     motivo: str | None = None,
     modalidad: str | None = None,
     desde=None,
@@ -141,6 +148,7 @@ def get_guias_remision_page(
         db,
         usuario,
         estado=estado,
+        tipo_documento=tipo_documento,
         motivo=motivo,
         modalidad=modalidad,
         desde=desde,
@@ -268,6 +276,7 @@ def guardar_respuesta_sunat_gre(
     guia_id: int,
     data_sunat: dict,
     tenant_id: int | None = None,
+    commit: bool = True,
 ):
     query = db.query(models.GuiaRemision).filter(models.GuiaRemision.id == guia_id)
     if tenant_id is not None:
@@ -296,8 +305,11 @@ def guardar_respuesta_sunat_gre(
                 or data_sunat.get("provider_response", {}).get("error")
             )
             db_guia.sunat_error = str(error) if error else "El proveedor fiscal rechazo la guia."
-        db.commit()
-        db.refresh(db_guia)
+            db_guia.estado = "rechazada"
+            db_guia.rejected_at = datetime.now()
+        if commit:
+            db.commit()
+            db.refresh(db_guia)
     return db_guia
 
 

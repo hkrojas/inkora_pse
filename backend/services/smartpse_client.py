@@ -13,6 +13,14 @@ class SmartPSEException(Exception):
     """Business/provider error raised by the Smart PSE integration."""
 
 
+class SmartPSEDefinitiveRejection(SmartPSEException):
+    """Structured provider response that explicitly rejects the document."""
+
+    def __init__(self, message: str, response_data: dict | None = None):
+        super().__init__(message)
+        self.response_data = response_data or {}
+
+
 def _safe_json(response) -> dict:
     try:
         data = response.json()
@@ -191,20 +199,50 @@ class SmartPSEClient:
         except requests.exceptions.ConnectionError as exc:
             raise SmartPSEException(f"No se pudo conectar con Smart PSE en {endpoint}.") from exc
 
-    def consult_ticket(self, tenant, nombre_archivo: str) -> dict:
+    def consult_ticket(
+        self,
+        tenant,
+        nombre_archivo: str,
+        *,
+        extra_payload: dict | None = None,
+    ) -> dict:
         endpoint = f"/api/cpe/consultar/{nombre_archivo}"
-        response = self._get_cpe(endpoint, tenant, force_refresh=False)
+        response = self._get_cpe(
+            endpoint,
+            tenant,
+            force_refresh=False,
+            extra_payload=extra_payload,
+        )
         if getattr(response, "status_code", None) == 401:
-            response = self._get_cpe(endpoint, tenant, force_refresh=True)
+            response = self._get_cpe(
+                endpoint,
+                tenant,
+                force_refresh=True,
+                extra_payload=extra_payload,
+            )
         self._raise_for_response(response, action=f"consultar {nombre_archivo}")
         return _safe_json(response)
 
-    def _get_cpe(self, endpoint: str, tenant, *, force_refresh: bool):
+    def _get_cpe(
+        self,
+        endpoint: str,
+        tenant,
+        *,
+        force_refresh: bool,
+        extra_payload: dict | None = None,
+    ):
+        request_kwargs = {
+            "headers": self._cpe_headers(tenant, force_refresh=force_refresh),
+            "timeout": self.timeout_seconds,
+        }
+        if extra_payload:
+            # Smart PSE requires the four GRE OAuth/SOL fields again when
+            # resolving its asynchronous ticket. Keep secrets out of the URL.
+            request_kwargs["json"] = extra_payload
         try:
             return self._get(
                 self._url(endpoint),
-                headers=self._cpe_headers(tenant, force_refresh=force_refresh),
-                timeout=self.timeout_seconds,
+                **request_kwargs,
             )
         except requests.exceptions.Timeout as exc:
             raise SmartPSEException(f"Timeout consultando ticket Smart PSE en {endpoint}.") from exc

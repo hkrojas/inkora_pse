@@ -125,6 +125,15 @@ function buildRoute(path, params = {}) {
 }
 
 function getRouteMeta(pathname) {
+  if (pathname === '/guias/nueva') {
+    return { title: 'Nueva guía', sub: 'Remitente · despacho de venta' };
+  }
+  if (pathname === '/guias/nueva-transportista') {
+    return { title: 'Nueva guía transportista', sub: 'Preparación de traslado' };
+  }
+  if (/^\/guias\/[^/]+\/editar$/.test(pathname)) {
+    return { title: 'Editar guía', sub: 'Preparación de despacho' };
+  }
   if (pathname.startsWith('/cotizaciones/')) {
     return { title: 'Detalle de cotización', sub: 'Detalle comercial' };
   }

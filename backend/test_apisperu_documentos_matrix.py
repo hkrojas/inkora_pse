@@ -41,10 +41,10 @@ def _make_user_with_apisperu(db_session, suffix: str):
     tenant.smartpse_environment = "demo"
     tenant.smartpse_usuario_secundaria = "AB3KPQR9"
     tenant.smartpse_token_acceso = "MX7TNVQG"
-    tenant.smartpse_gre_sol_username = "SOLUSER"
-    tenant.smartpse_gre_sol_password_enc = secret_box.encrypt_secret("sol-password-demo")
-    tenant.smartpse_gre_client_id = "client-id"
-    tenant.smartpse_gre_client_secret_enc = secret_box.encrypt_secret("client-secret")
+    tenant.smartpse_gre_sol_username = "MODDATOS"
+    tenant.smartpse_gre_sol_password_enc = secret_box.encrypt_secret("moddatos")
+    tenant.smartpse_gre_client_id = "client-id-test"
+    tenant.smartpse_gre_client_secret_enc = secret_box.encrypt_secret("client-secret-test")
     db_session.commit()
     db_session.refresh(tenant)
     return tenant, user
@@ -89,7 +89,11 @@ class _FakeSmartPSEClient:
 
     def consult_ticket(self, tenant, nombre_archivo):
         self.consult_calls.append((tenant, nombre_archivo))
-        response = self.consult_responses.pop(0) if self.consult_responses else _smartpse_accepted()
+        if self.consult_responses:
+            response = self.consult_responses.pop(0)
+        else:
+            response = _smartpse_accepted()
+            response["xml_firmado"] = self.process_calls[-1][2].decode("utf-8")
         if isinstance(response, Exception):
             raise response
         return response
@@ -414,7 +418,7 @@ class TestApisPeruDocumentosMatrix:
         assert result["pending"] is True
         assert result["ticket"] == "summary-2"
 
-    def test_guia_remision_usa_despatch_send_y_retorna_ticket(self, db_session):
+    def test_guia_remision_usa_despatch_send_y_status(self, db_session):
         user, guia = _make_guia(db_session, "MX08")
         fake_client = _FakeSmartPSEClient(
             [_smartpse_pending("despatch-1", tag="DespatchAdvice")],
@@ -630,7 +634,7 @@ class TestApisPeruDocumentosMatrix:
         )
         assert len(payload["details"]) > 0
         assert payload.get("serie") == nota.serie
-        assert payload.get("correlativo") == str(nota.correlativo).zfill(6)
+        assert payload.get("correlativo") == str(nota.correlativo).zfill(8)
         assert "company" in payload
         assert "client" in payload
         assert payload["tipDocAfectado"] == fiscal.tipo_comprobante

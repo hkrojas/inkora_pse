@@ -14,15 +14,6 @@ from routers import cotizaciones as cotizaciones_router
 from services import fiscal_xml_service, pdf_generator, pdf_storage_service, storage_service
 
 
-def _make_png_bytes() -> bytes:
-    from PIL import Image as PillowImage
-
-    buffer = BytesIO()
-    image = PillowImage.new("RGB", (16, 16), color="white")
-    image.save(buffer, format="PNG")
-    return buffer.getvalue()
-
-
 def _make_request(path: str = "/test") -> Request:
     return Request(
         {
@@ -114,12 +105,6 @@ SIMPLE_QR_SVG = """<?xml version="1.0" encoding="UTF-8"?>
 </svg>
 """
 
-TINY_PNG_BYTES = _make_png_bytes()
-
-
-def _count_pdf_pages(buffer: BytesIO) -> int:
-    return len(re.findall(br"/Type /Page\b", buffer.getvalue()))
-
 
 def _fake_tenant():
     return SimpleNamespace(
@@ -191,99 +176,6 @@ def test_generar_pdf_cotizacion_crea_binario():
     assert len(buffer.getvalue()) > 0
 
 
-def test_resolve_document_client_data_prefiere_snapshot_sobre_ficha_actual():
-    document = SimpleNamespace(
-        cliente=_fake_cliente(),
-        cliente_snapshot={
-            "razon_social": "Cliente historico PDF",
-            "tipo_documento": "6",
-            "numero_documento": "20999999991",
-            "direccion": "Jr. Historico 789",
-        },
-    )
-
-    client_data = pdf_generator._resolve_document_client_data(document)
-
-    assert client_data["name"] == "Cliente historico PDF"
-    assert client_data["doc_type_label"] == "RUC"
-    assert client_data["doc_number"] == "20999999991"
-    assert client_data["address"] == "Jr. Historico 789"
-
-
-def test_pdf_customer_data_uses_snapshot_address_when_provider_xml_omits_it():
-    document = SimpleNamespace(
-        cliente=_fake_cliente(),
-        cliente_snapshot={
-            "razon_social": "Cliente historico PDF",
-            "tipo_documento": "6",
-            "numero_documento": "20999999991",
-            "direccion": "Jr. Historico 789",
-        },
-    )
-    parsed_xml = {
-        "customer": {
-            "name": "Cliente XML SAC",
-            "doc_type": "6",
-            "doc_number": "20999999991",
-            "address": None,
-        }
-    }
-
-    customer_data = pdf_generator._resolve_pdf_customer_data(document, parsed_xml)
-
-    assert customer_data["name"] == "Cliente XML SAC"
-    assert customer_data["address"] == "Jr. Historico 789"
-
-
-def test_quote_detail_col_widths_expande_codigo_sin_cambiar_ancho_total():
-    styles = pdf_generator.getSampleStyleSheet()
-    base = styles["Normal"]
-    header_style = pdf_generator.ParagraphStyle(
-        name="TestHeader",
-        parent=base,
-        fontName="Helvetica-Bold",
-        fontSize=7.45,
-    )
-    text_style = pdf_generator.ParagraphStyle(
-        name="TestText",
-        parent=base,
-        fontName="Helvetica",
-        fontSize=7.86,
-    )
-    money_style = pdf_generator.ParagraphStyle(
-        name="TestMoney",
-        parent=text_style,
-        fontSize=8.1,
-    )
-    total_width = 540
-    lines = [
-        {
-            "indice": 1,
-            "codigo": "PROD-8847D4",
-            "descripcion": "Bolsa pastillera",
-            "cantidad": 850,
-            "unidad": "UND",
-            "valor_unitario": 0.81,
-            "p_unit_con_igv": 0.95,
-            "subtotal_item": 684.32,
-            "precio_total_item": 807.50,
-        }
-    ]
-
-    widths = pdf_generator._build_quote_detail_col_widths(
-        lines,
-        total_width,
-        header_style=header_style,
-        text_style=text_style,
-        money_style=money_style,
-        symbol="S/",
-    )
-
-    assert round(sum(widths), 6) == total_width
-    assert widths[2] > total_width * 0.09
-    assert widths[3] >= total_width * 0.22
-
-
 def test_generar_pdf_cotizacion_genera_qr_para_billetera_o_fallback():
     tenant = _fake_tenant()
     tenant.bank_accounts = [
@@ -313,104 +205,6 @@ def test_generar_pdf_cotizacion_genera_qr_para_billetera_o_fallback():
     qr_make.assert_called()
 
 
-def test_generar_pdf_cotizacion_compacta_permanece_en_una_sola_pagina_con_tres_items():
-    tenant = _fake_tenant()
-    tenant.pdf_note_1 = "TODO TRABAJO SE REALIZA CON EL 50% DE ADELANTO"
-    tenant.pdf_note_2 = "LOS PRECIOS NO INCLUYEN ENVIOS"
-    tenant.bank_accounts = [
-        {
-            "tipo": "payment_qr_image",
-            "url": "https://cdn.test/qr-cobro.png",
-        },
-        {
-            "id": "wallet-yape",
-            "tipo": "wallet",
-            "proveedor": "Yape",
-            "titular": "Papeleria Grafica y Publicitaria SAC.",
-            "numero": "949985395",
-        },
-        {
-            "tipo": "bank",
-            "banco": "BCP",
-            "tipo_cuenta": "Cta Corriente",
-            "moneda": "Soles",
-            "cuenta": "1919870450013",
-            "cci": "00219100987045001355",
-            "mostrar_en_cotizaciones": True,
-        },
-        {
-            "tipo": "bank",
-            "banco": "Banco de la Nacion",
-            "tipo_cuenta": "Cuenta Detraccion",
-            "moneda": "Soles",
-            "cuenta": "00045115666",
-            "cci": "01804500004511566655",
-            "mostrar_en_cotizaciones": True,
-        },
-    ]
-    cotizacion = SimpleNamespace(
-        cliente=SimpleNamespace(
-            razon_social="LOPEZ TITO ROQUE ROGER",
-            tipo_documento="6",
-            numero_documento="10446458243",
-            direccion="JR. MARIANO MELGAR 568 URB. REYNOSO COLEGIO POLITECNICO PROV. CONST. DEL CALLAO PROV. CONST. DEL CALLAO-CARMEN DE LA LEGUA REYNOSO",
-        ),
-        items=[
-            SimpleNamespace(codigo="001", descripcion="bolsa de papel kraft n20 con imp a un color en una cara", cantidad=1000, precio_unitario=0.27),
-            SimpleNamespace(codigo="002", descripcion="bolsa de papel kraft N4 con imp un color en una cara", cantidad=1000, precio_unitario=0.11),
-            SimpleNamespace(codigo="003", descripcion="bolsa de papel kraft N2 con impresion a un color en una cara", cantidad=1000, precio_unitario=0.08),
-        ],
-        moneda="PEN",
-        serie="COT",
-        correlativo=1,
-        created_at=datetime(2026, 6, 17, 9, 30),
-        fecha_emision=datetime(2026, 6, 17, 9, 30),
-        fecha_vencimiento=datetime(2026, 6, 17, 9, 30),
-        usuario=_fake_user(),
-        quote_selected_wallet_id="wallet-yape",
-    )
-
-    with patch("services.pdf_generator._load_remote_logo_bytes", return_value=TINY_PNG_BYTES):
-        buffer = pdf_generator.generar_pdf_cotizacion(cotizacion, tenant)
-
-    assert isinstance(buffer, BytesIO)
-    assert len(buffer.getvalue()) > 0
-    assert _count_pdf_pages(buffer) == 1
-
-def test_generar_pdf_cotizacion_usa_qr_subido_en_lugar_de_generar_qr():
-    tenant = _fake_tenant()
-    tenant.bank_accounts = [
-        {"tipo": "payment_qr_image", "url": "https://cdn.test/qr-cobro.png"},
-        {
-            "tipo": "wallet",
-            "proveedor": "Yape",
-            "titular": "Inkora Test SAC",
-            "numero": "999888777",
-            "nota": "Pago inmediato",
-        },
-    ]
-    cotizacion = SimpleNamespace(
-        cliente=_fake_cliente(),
-        items=[_fake_item()],
-        moneda="PEN",
-        serie="COT",
-        correlativo=38,
-        created_at=datetime.now(),
-        usuario=_fake_user(),
-    )
-
-    with (
-        patch("services.pdf_generator._load_remote_logo_bytes", return_value=TINY_PNG_BYTES) as load_image,
-        patch("services.pdf_generator.qrcode.make", wraps=pdf_generator.qrcode.make) as qr_make,
-    ):
-        buffer = pdf_generator.generar_pdf_cotizacion(cotizacion, tenant)
-
-    assert isinstance(buffer, BytesIO)
-    assert len(buffer.getvalue()) > 0
-    load_image.assert_called_with("https://cdn.test/qr-cobro.png")
-    qr_make.assert_not_called()
-
-
 def test_resolve_quote_due_date_display_respeta_vencimiento_explicito():
     issue_date = datetime(2026, 6, 16, 9, 30)
     due_date = issue_date + timedelta(days=7)
@@ -425,6 +219,30 @@ def test_resolve_quote_due_date_display_respeta_vencimiento_explicito():
 
     assert fecha_emision == "16/06/2026"
     assert fecha_vencimiento == "23/06/2026"
+
+
+def test_pdf_customer_data_prefers_document_snapshot_over_live_client():
+    document = SimpleNamespace(
+        cliente=_fake_cliente(),
+        cliente_snapshot={
+            "razon_social": "Cliente Cotizacion SAC",
+            "tipo_documento": "6",
+            "numero_documento": "20999999991",
+            "direccion": "Av. Snapshot 987, Lima",
+        },
+    )
+
+    customer = pdf_generator._resolve_document_client_data(document)
+
+    assert customer == {
+        "name": "Cliente Cotizacion SAC",
+        "doc_type_label": "RUC",
+        "doc_number": "20999999991",
+        "address": "Av. Snapshot 987, Lima",
+        "doc_type": "6",
+        "email": "",
+        "phone": "",
+    }
 
 
 def test_resolve_quote_due_date_display_usa_credito_15_por_defecto():
@@ -455,82 +273,7 @@ def test_resolve_quote_company_data_usa_email_usuario_y_fallback_bancario():
 
     assert company_data["email"] == "ventas@inkora.test"
     assert company_data["bank_accounts"] == []
-    assert company_data["quote_bank_accounts"] == []
     assert company_data["name"] == tenant.business_name
-
-
-def test_resolve_quote_company_data_respeta_visibilidad_global_y_override_de_cotizacion():
-    tenant = _fake_tenant()
-    user = _fake_user()
-    user.tenant = tenant
-    tenant.bank_accounts = [
-        {
-            "tipo": "bank",
-            "banco": "BCP",
-            "tipo_cuenta": "Cta Corriente",
-            "moneda": "Soles",
-            "cuenta": "1919870450013",
-            "cci": "00219100987045001355",
-            "mostrar_en_cotizaciones": True,
-        },
-        {
-            "tipo": "bank",
-            "banco": "Banco de la Nacion",
-            "tipo_cuenta": "Cuenta Detraccion",
-            "moneda": "Soles",
-            "cuenta": "00045115666",
-            "cci": "01804500004511566655",
-            "mostrar_en_cotizaciones": False,
-        },
-        {
-            "tipo": "wallet",
-            "proveedor": "Yape",
-            "titular": "Inkora Test SAC",
-            "numero": "999888777",
-        },
-    ]
-
-    fallback = pdf_generator._resolve_quote_company_data(
-        SimpleNamespace(usuario=user),
-        tenant,
-    )
-    override = pdf_generator._resolve_quote_company_data(
-        SimpleNamespace(
-            usuario=user,
-            quote_payment_methods=[
-                {
-                    "tipo": "bank",
-                    "banco": "Banco de la Nacion",
-                    "tipo_cuenta": "Cuenta Detraccion",
-                    "moneda": "Soles",
-                    "cuenta": "00045115666",
-                    "cci": "01804500004511566655",
-                }
-            ],
-        ),
-        tenant,
-    )
-
-    assert [method["banco"] for method in fallback["quote_bank_accounts"]] == ["BCP"]
-    assert [method["banco"] for method in override["quote_bank_accounts"]] == ["Banco de la Nacion"]
-    assert any(method["tipo"] == "wallet" for method in override["bank_accounts"])
-
-
-def test_build_quote_client_layout_ancla_bloque_derecho():
-    total_width = 540
-
-    layout = pdf_generator._build_quote_client_layout(total_width)
-
-    assert round(sum(layout["col_widths"]), 6) == total_width
-    assert layout["col_widths"][3] <= total_width * 0.12
-    assert layout["right_block_align"] == "RIGHT"
-    assert layout["right_block_left_padding"] == 0
-    assert layout["detail_vertical_padding"] == pdf_generator.MODERN_QUOTE_DETAIL_VERTICAL_PADDING
-
-
-def test_format_detail_money_preserva_precio_unitario_extendido():
-    assert pdf_generator._format_detail_money("S/", "0.035") == "S/ 0.035"
-    assert pdf_generator._format_detail_money("S/", "118.00") == "S/ 118.00"
 
 
 def test_build_payment_methods_text_soporta_bancos_y_billeteras():
@@ -654,38 +397,11 @@ def test_build_document_footer_layout_compacta_cotizacion():
     assert layout["bottom_gap"] == 0
 
 
-def test_build_footer_contact_text_formatea_celular_empresa():
-    footer_contact = pdf_generator._build_footer_contact_text(
-        {
-            "phone": "949985395",
-            "email": "papeleragyp@gmail.com",
-        }
-    )
-
-    assert footer_contact == "949 985 395  |  papeleragyp@gmail.com"
-
-
 def test_modern_pdf_header_height_is_5cm():
     assert pdf_generator.MODERN_PDF_HEADER_HEIGHT == 5.0 * pdf_generator.cm
 
 
-def test_modern_pdf_detail_row_padding_is_reduced():
-    assert pdf_generator.MODERN_PDF_DETAIL_VERTICAL_PADDING == 6.8
-    assert pdf_generator.MODERN_QUOTE_DETAIL_VERTICAL_PADDING == 6.12
-
-
-def test_should_pin_footer_to_page_bottom_en_cotizacion_que_cabe():
-    should_pin = pdf_generator._should_pin_footer_to_page_bottom(
-        usable_height=700,
-        consumed_height=320,
-        footer_height=180,
-        is_comprobante=False,
-    )
-
-    assert should_pin is True
-
-
-def test_resolve_footer_spacer_height_limita_cotizacion_en_fallback():
+def test_resolve_footer_spacer_height_ancla_cotizacion_al_margen_inferior():
     spacer_height = pdf_generator._resolve_footer_spacer_height(
         usable_height=700,
         consumed_height=320,
@@ -694,6 +410,47 @@ def test_resolve_footer_spacer_height_limita_cotizacion_en_fallback():
     )
 
     assert spacer_height == 24
+
+
+def test_compartir_cotizacion_usa_contacto_del_snapshot():
+    cotizacion = SimpleNamespace(
+        id=1,
+        uuid_publico="uuid-demo",
+        cliente=_fake_cliente(),
+        cliente_snapshot={
+            "razon_social": "Cliente Snapshot",
+            "tipo_documento": "6",
+            "numero_documento": "20999999991",
+            "email": "snapshot@test.com",
+            "telefono": "987654321",
+            "whatsapp": "987654321",
+        },
+    )
+    tenant = _fake_tenant()
+
+    with patch(
+        "routers.cotizaciones.crud.get_cotizacion",
+        return_value=cotizacion,
+    ), patch(
+        "routers.cotizaciones.comunicacion_service.generar_link_whatsapp",
+        return_value="https://wa.test",
+    ) as whatsapp_link, patch(
+        "routers.cotizaciones.comunicacion_service.generar_link_mailto",
+        return_value="mailto:snapshot@test.com",
+    ) as mailto_link:
+        payload = _run(
+            cotizaciones_router.compartir_cotizacion(
+                1,
+                SimpleNamespace(),
+                SimpleNamespace(tenant=tenant),
+            )
+        )
+
+    whatsapp_link.assert_called_once()
+    assert whatsapp_link.call_args.args[1] == "987654321"
+    mailto_link.assert_called_once()
+    assert mailto_link.call_args.args[1] == "snapshot@test.com"
+    assert payload["whatsapp_link"] == "https://wa.test"
 
 
 def test_resolve_footer_spacer_height_conserva_colchon_en_comprobantes():
@@ -811,6 +568,35 @@ def test_generate_and_upload_pdf_usa_renderer_de_cotizacion(db_session):
     assert cotizacion.sunat_pdf_url == private_ref
     assert quote_renderer.called is True
     assert comprobante_renderer.called is False
+
+
+def test_generate_and_upload_pdf_descarta_resultado_si_la_cotizacion_cambio(db_session):
+    tenant = make_tenant(db_session, "PDFST")
+    user = make_user(db_session, tenant, email="pdf-stale@test.com")
+    cliente = make_cliente(db_session, tenant, "PDFST", numero_documento="20191308868")
+    cotizacion = make_quote_via_crud(db_session, tenant, user, cliente)
+    private_ref = storage_service.build_private_storage_reference(
+        "cotizaciones/tenant_1/cotizacion-stale.pdf"
+    )
+
+    def edit_during_upload(*_args, **_kwargs):
+        cotizacion.items[0].descripcion = "Contenido posterior"
+        db_session.commit()
+        return private_ref
+
+    with patch(
+        "services.pdf_storage_service.pdf_generator.generar_pdf_cotizacion",
+        return_value=BytesIO(b"old-quote-pdf"),
+    ), patch(
+        "services.pdf_storage_service.storage_service.upload_to_storage",
+        side_effect=edit_during_upload,
+    ):
+        result = _run(pdf_storage_service.generate_and_upload_pdf(db_session, cotizacion))
+
+    db_session.refresh(cotizacion)
+    assert result is None
+    assert cotizacion.sunat_pdf_url is None
+    assert cotizacion.items[0].descripcion == "Contenido posterior"
 
 
 def test_generate_and_upload_pdf_usa_renderer_de_comprobante(db_session):
@@ -954,48 +740,327 @@ def test_descargar_pdf_interno_devuelve_url_firmada_para_api():
     assert payload == {"url": "https://signed.test/interno.pdf"}
 
 
-def test_compartir_cotizacion_usa_contacto_del_snapshot():
-    cotizacion = SimpleNamespace(
-        id=1,
-        uuid_publico="uuid-demo",
-        cliente=_fake_cliente(),
-        cliente_snapshot={
-            "razon_social": "Cliente Snapshot",
-            "tipo_documento": "6",
-            "numero_documento": "20999999991",
-            "email": "snapshot@test.com",
-            "telefono": "987654321",
-            "whatsapp": "987654321",
-        },
-    )
-    tenant = _fake_tenant()
-
-    with patch(
-        "routers.cotizaciones.crud.get_cotizacion",
-        return_value=cotizacion,
-    ), patch(
-        "routers.cotizaciones.comunicacion_service.generar_link_whatsapp",
-        return_value="https://wa.test",
-    ) as whatsapp_link, patch(
-        "routers.cotizaciones.comunicacion_service.generar_link_mailto",
-        return_value="mailto:snapshot@test.com",
-    ) as mailto_link:
-        payload = _run(
-            cotizaciones_router.compartir_cotizacion(
-                1,
-                SimpleNamespace(),
-                SimpleNamespace(tenant=tenant),
-            )
-        )
-
-    whatsapp_link.assert_called_once()
-    assert whatsapp_link.call_args.args[1] == "987654321"
-    mailto_link.assert_called_once()
-    assert mailto_link.call_args.args[1] == "snapshot@test.com"
-    assert payload["whatsapp_link"] == "https://wa.test"
-
-
 def _run(awaitable):
     import asyncio
 
     return asyncio.run(awaitable)
+
+
+def _make_png_bytes() -> bytes:
+    from PIL import Image as PillowImage
+
+    buffer = BytesIO()
+    image = PillowImage.new("RGB", (16, 16), color="white")
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+TINY_PNG_BYTES = _make_png_bytes()
+
+
+def _count_pdf_pages(buffer: BytesIO) -> int:
+    return len(re.findall(br"/Type /Page\b", buffer.getvalue()))
+
+
+def test_resolve_document_client_data_prefiere_snapshot_sobre_ficha_actual():
+    document = SimpleNamespace(
+        cliente=_fake_cliente(),
+        cliente_snapshot={
+            "razon_social": "Cliente historico PDF",
+            "tipo_documento": "6",
+            "numero_documento": "20999999991",
+            "direccion": "Jr. Historico 789",
+        },
+    )
+
+    client_data = pdf_generator._resolve_document_client_data(document)
+
+    assert client_data["name"] == "Cliente historico PDF"
+    assert client_data["doc_type_label"] == "RUC"
+    assert client_data["doc_number"] == "20999999991"
+    assert client_data["address"] == "Jr. Historico 789"
+
+
+def test_pdf_customer_data_uses_snapshot_address_when_provider_xml_omits_it():
+    document = SimpleNamespace(
+        cliente=_fake_cliente(),
+        cliente_snapshot={
+            "razon_social": "Cliente historico PDF",
+            "tipo_documento": "6",
+            "numero_documento": "20999999991",
+            "direccion": "Jr. Historico 789",
+        },
+    )
+    parsed_xml = {
+        "customer": {
+            "name": "Cliente XML SAC",
+            "doc_type": "6",
+            "doc_number": "20999999991",
+            "address": None,
+        }
+    }
+
+    customer_data = pdf_generator._resolve_pdf_customer_data(document, parsed_xml)
+
+    assert customer_data["name"] == "Cliente XML SAC"
+    assert customer_data["address"] == "Jr. Historico 789"
+
+
+def test_quote_detail_col_widths_expande_codigo_sin_cambiar_ancho_total():
+    styles = pdf_generator.getSampleStyleSheet()
+    base = styles["Normal"]
+    header_style = pdf_generator.ParagraphStyle(
+        name="TestHeader",
+        parent=base,
+        fontName="Helvetica-Bold",
+        fontSize=7.45,
+    )
+    text_style = pdf_generator.ParagraphStyle(
+        name="TestText",
+        parent=base,
+        fontName="Helvetica",
+        fontSize=7.86,
+    )
+    money_style = pdf_generator.ParagraphStyle(
+        name="TestMoney",
+        parent=text_style,
+        fontSize=8.1,
+    )
+    total_width = 540
+    lines = [
+        {
+            "indice": 1,
+            "codigo": "PROD-8847D4",
+            "descripcion": "Bolsa pastillera",
+            "cantidad": 850,
+            "unidad": "UND",
+            "valor_unitario": 0.81,
+            "p_unit_con_igv": 0.95,
+            "subtotal_item": 684.32,
+            "precio_total_item": 807.50,
+        }
+    ]
+
+    widths = pdf_generator._build_quote_detail_col_widths(
+        lines,
+        total_width,
+        header_style=header_style,
+        text_style=text_style,
+        money_style=money_style,
+        symbol="S/",
+    )
+
+    assert round(sum(widths), 6) == total_width
+    assert widths[2] > total_width * 0.09
+    assert widths[3] >= total_width * 0.22
+
+
+def test_generar_pdf_cotizacion_compacta_permanece_en_una_sola_pagina_con_tres_items():
+    tenant = _fake_tenant()
+    tenant.pdf_note_1 = "TODO TRABAJO SE REALIZA CON EL 50% DE ADELANTO"
+    tenant.pdf_note_2 = "LOS PRECIOS NO INCLUYEN ENVIOS"
+    tenant.bank_accounts = [
+        {
+            "tipo": "payment_qr_image",
+            "url": "https://cdn.test/qr-cobro.png",
+        },
+        {
+            "id": "wallet-yape",
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Papeleria Grafica y Publicitaria SAC.",
+            "numero": "949985395",
+        },
+        {
+            "tipo": "bank",
+            "banco": "BCP",
+            "tipo_cuenta": "Cta Corriente",
+            "moneda": "Soles",
+            "cuenta": "1919870450013",
+            "cci": "00219100987045001355",
+            "mostrar_en_cotizaciones": True,
+        },
+        {
+            "tipo": "bank",
+            "banco": "Banco de la Nacion",
+            "tipo_cuenta": "Cuenta Detraccion",
+            "moneda": "Soles",
+            "cuenta": "00045115666",
+            "cci": "01804500004511566655",
+            "mostrar_en_cotizaciones": True,
+        },
+    ]
+    cotizacion = SimpleNamespace(
+        cliente=SimpleNamespace(
+            razon_social="LOPEZ TITO ROQUE ROGER",
+            tipo_documento="6",
+            numero_documento="10446458243",
+            direccion="JR. MARIANO MELGAR 568 URB. REYNOSO COLEGIO POLITECNICO PROV. CONST. DEL CALLAO PROV. CONST. DEL CALLAO-CARMEN DE LA LEGUA REYNOSO",
+        ),
+        items=[
+            SimpleNamespace(codigo="001", descripcion="bolsa de papel kraft n20 con imp a un color en una cara", cantidad=1000, precio_unitario=0.27),
+            SimpleNamespace(codigo="002", descripcion="bolsa de papel kraft N4 con imp un color en una cara", cantidad=1000, precio_unitario=0.11),
+            SimpleNamespace(codigo="003", descripcion="bolsa de papel kraft N2 con impresion a un color en una cara", cantidad=1000, precio_unitario=0.08),
+        ],
+        moneda="PEN",
+        serie="COT",
+        correlativo=1,
+        created_at=datetime(2026, 6, 17, 9, 30),
+        fecha_emision=datetime(2026, 6, 17, 9, 30),
+        fecha_vencimiento=datetime(2026, 6, 17, 9, 30),
+        usuario=_fake_user(),
+        quote_selected_wallet_id="wallet-yape",
+    )
+
+    with patch("services.pdf_generator._load_remote_logo_bytes", return_value=TINY_PNG_BYTES):
+        buffer = pdf_generator.generar_pdf_cotizacion(cotizacion, tenant)
+
+    assert isinstance(buffer, BytesIO)
+    assert len(buffer.getvalue()) > 0
+    assert _count_pdf_pages(buffer) == 1
+
+
+def test_generar_pdf_cotizacion_usa_qr_subido_en_lugar_de_generar_qr():
+    tenant = _fake_tenant()
+    tenant.bank_accounts = [
+        {"tipo": "payment_qr_image", "url": "https://cdn.test/qr-cobro.png"},
+        {
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Inkora Test SAC",
+            "numero": "999888777",
+            "nota": "Pago inmediato",
+        },
+    ]
+    cotizacion = SimpleNamespace(
+        cliente=_fake_cliente(),
+        items=[_fake_item()],
+        moneda="PEN",
+        serie="COT",
+        correlativo=38,
+        created_at=datetime.now(),
+        usuario=_fake_user(),
+    )
+
+    with (
+        patch("services.pdf_generator._load_remote_logo_bytes", return_value=TINY_PNG_BYTES) as load_image,
+        patch("services.pdf_generator.qrcode.make", wraps=pdf_generator.qrcode.make) as qr_make,
+    ):
+        buffer = pdf_generator.generar_pdf_cotizacion(cotizacion, tenant)
+
+    assert isinstance(buffer, BytesIO)
+    assert len(buffer.getvalue()) > 0
+    load_image.assert_called_with("https://cdn.test/qr-cobro.png")
+    qr_make.assert_not_called()
+
+
+def test_resolve_quote_company_data_respeta_visibilidad_global_y_override_de_cotizacion():
+    tenant = _fake_tenant()
+    user = _fake_user()
+    user.tenant = tenant
+    tenant.bank_accounts = [
+        {
+            "tipo": "bank",
+            "banco": "BCP",
+            "tipo_cuenta": "Cta Corriente",
+            "moneda": "Soles",
+            "cuenta": "1919870450013",
+            "cci": "00219100987045001355",
+            "mostrar_en_cotizaciones": True,
+        },
+        {
+            "tipo": "bank",
+            "banco": "Banco de la Nacion",
+            "tipo_cuenta": "Cuenta Detraccion",
+            "moneda": "Soles",
+            "cuenta": "00045115666",
+            "cci": "01804500004511566655",
+            "mostrar_en_cotizaciones": False,
+        },
+        {
+            "tipo": "wallet",
+            "proveedor": "Yape",
+            "titular": "Inkora Test SAC",
+            "numero": "999888777",
+        },
+    ]
+
+    fallback = pdf_generator._resolve_quote_company_data(
+        SimpleNamespace(usuario=user),
+        tenant,
+    )
+    override = pdf_generator._resolve_quote_company_data(
+        SimpleNamespace(
+            usuario=user,
+            quote_payment_methods=[
+                {
+                    "tipo": "bank",
+                    "banco": "Banco de la Nacion",
+                    "tipo_cuenta": "Cuenta Detraccion",
+                    "moneda": "Soles",
+                    "cuenta": "00045115666",
+                    "cci": "01804500004511566655",
+                }
+            ],
+        ),
+        tenant,
+    )
+
+    assert [method["banco"] for method in fallback["quote_bank_accounts"]] == ["BCP"]
+    assert [method["banco"] for method in override["quote_bank_accounts"]] == ["Banco de la Nacion"]
+    assert any(method["tipo"] == "wallet" for method in override["bank_accounts"])
+
+
+def test_build_quote_client_layout_ancla_bloque_derecho():
+    total_width = 540
+
+    layout = pdf_generator._build_quote_client_layout(total_width)
+
+    assert round(sum(layout["col_widths"]), 6) == total_width
+    assert layout["col_widths"][3] <= total_width * 0.12
+    assert layout["right_block_align"] == "RIGHT"
+    assert layout["right_block_left_padding"] == 0
+    assert layout["detail_vertical_padding"] == pdf_generator.MODERN_QUOTE_DETAIL_VERTICAL_PADDING
+
+
+def test_format_detail_money_preserva_precio_unitario_extendido():
+    assert pdf_generator._format_detail_money("S/", "0.035") == "S/ 0.035"
+    assert pdf_generator._format_detail_money("S/", "118.00") == "S/ 118.00"
+
+
+def test_build_footer_contact_text_formatea_celular_empresa():
+    footer_contact = pdf_generator._build_footer_contact_text(
+        {
+            "phone": "949985395",
+            "email": "papeleragyp@gmail.com",
+        }
+    )
+
+    assert footer_contact == "949 985 395  |  papeleragyp@gmail.com"
+
+
+def test_modern_pdf_detail_row_padding_is_reduced():
+    assert pdf_generator.MODERN_PDF_DETAIL_VERTICAL_PADDING == 6.8
+    assert pdf_generator.MODERN_QUOTE_DETAIL_VERTICAL_PADDING == 6.12
+
+
+def test_should_pin_footer_to_page_bottom_en_cotizacion_que_cabe():
+    should_pin = pdf_generator._should_pin_footer_to_page_bottom(
+        usable_height=700,
+        consumed_height=320,
+        footer_height=180,
+        is_comprobante=False,
+    )
+
+    assert should_pin is True
+
+
+def test_resolve_footer_spacer_height_limita_cotizacion_en_fallback():
+    spacer_height = pdf_generator._resolve_footer_spacer_height(
+        usable_height=700,
+        consumed_height=320,
+        footer_height=180,
+        is_comprobante=False,
+    )
+
+    assert spacer_height == 24

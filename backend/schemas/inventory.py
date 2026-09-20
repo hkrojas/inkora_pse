@@ -93,7 +93,7 @@ class StockPageResponse(BaseModel):
 
 class BulkInventoryLine(BaseModel):
     product_id: int
-    quantity: Decimal = Field(..., ge=0)
+    quantity: Decimal = Field(..., ge=0, max_digits=18, decimal_places=4)
 
 
 class BulkInventoryAdjustmentCreate(BaseModel):

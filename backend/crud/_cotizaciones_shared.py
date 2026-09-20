@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import desc
@@ -16,8 +16,6 @@ from crud._base import (
 )
 from crud.tenants import get_subscription_by_tenant
 from services import calculations
-from services.fiscal_clock import now_in_peru_naive
-from services.client_snapshot_service import build_cliente_snapshot
 from services.document_flow_service import (
     DOCUMENT_KIND_FISCAL_DOCUMENT,
     DOCUMENT_STATUS_PENDING,
@@ -238,8 +236,15 @@ def _resolve_fiscal_series(
             f"La serie {requested} no coincide con la serie fiscal configurada ({configured})."
         )
 
-    is_production = str(getattr(tenant, "smartpse_environment", "") or "").strip().lower() == "produccion"
-    floor_attribute = "fiscal_invoice_series_floor" if tipo_comprobante == "01" else "fiscal_boleta_series_floor"
+    is_production = (
+        str(getattr(tenant, "smartpse_environment", "") or "").strip().lower()
+        == "produccion"
+    )
+    floor_attribute = (
+        "fiscal_invoice_series_floor"
+        if tipo_comprobante == "01"
+        else "fiscal_boleta_series_floor"
+    )
     expected_prefix = "F" if tipo_comprobante == "01" else "B"
     if is_production and not explicitly_configured:
         raise ValueError(
@@ -263,42 +268,15 @@ def _build_fiscal_document(
     tipo_comprobante: str,
     serie: str,
     nuevo_correlativo: int,
-    fiscal_issue_date: datetime | None = None,
 ):
-    source_issue_date = quote.fecha_emision or now_in_peru_naive()
-    resolved_issue_date = fiscal_issue_date or source_issue_date
-    date_shift = timedelta(
-        days=(resolved_issue_date.date() - source_issue_date.date()).days
-    )
-    fecha_vencimiento = (
-        quote.fecha_vencimiento + date_shift
-        if quote.fecha_vencimiento is not None and fiscal_issue_date is not None
-        else quote.fecha_vencimiento
-    )
-    cuotas_pago = quote.cuotas_pago
-    if fiscal_issue_date is not None and quote.cuotas_pago:
-        cuotas_pago = []
-        for cuota in quote.cuotas_pago:
-            shifted_cuota = dict(cuota)
-            date_key = "fecha_pago" if "fecha_pago" in shifted_cuota else "fechaPago"
-            raw_date = shifted_cuota.get(date_key)
-            if raw_date:
-                try:
-                    parsed_date = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
-                    shifted_cuota[date_key] = (parsed_date + date_shift).isoformat()
-                except ValueError:
-                    pass
-            cuotas_pago.append(shifted_cuota)
-
     return models.Cotizacion(
         serie=serie,
         correlativo=nuevo_correlativo,
         cliente_id=quote.cliente_id,
-        cliente_snapshot=quote.cliente_snapshot or build_cliente_snapshot(getattr(quote, "cliente", None)),
         usuario_id=usuario_id,
         tenant_id=quote.tenant_id,
-        fecha_emision=resolved_issue_date,
-        fecha_vencimiento=fecha_vencimiento,
+        fecha_emision=quote.fecha_emision or datetime.now(),
+        fecha_vencimiento=quote.fecha_vencimiento,
         moneda=quote.moneda,
         tipo_comprobante=tipo_comprobante,
         estado=DOCUMENT_STATUS_PENDING,
@@ -308,7 +286,7 @@ def _build_fiscal_document(
         internal_order_number=quote.internal_order_number,
         observaciones=quote.observaciones,
         condicion_pago=quote.condicion_pago,
-        cuotas_pago=cuotas_pago,
+        cuotas_pago=quote.cuotas_pago,
         total_gravada=quote.total_gravada,
         total_exonerada=quote.total_exonerada,
         total_inafecta=quote.total_inafecta,
@@ -387,8 +365,6 @@ def _build_note_document(
         serie=serie_nota,
         correlativo=nuevo_correlativo,
         cliente_id=doc_afectado.cliente_id,
-        cliente_snapshot=doc_afectado.cliente_snapshot
-        or build_cliente_snapshot(getattr(doc_afectado, "cliente", None)),
         usuario_id=usuario_id,
         tenant_id=doc_afectado.tenant_id,
         moneda=doc_afectado.moneda,

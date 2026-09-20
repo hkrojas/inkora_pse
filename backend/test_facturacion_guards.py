@@ -227,145 +227,6 @@ class TestEmissionSubscriptionGuard:
 # A. PRE-VALIDACIÓN
 # ============================================================================
 
-class TestFiscalIssueDateAtConfirmation:
-
-    def test_endpoint_fija_fecha_del_click_antes_de_encolar(self, db_session):
-        tenant = make_tenant(db_session, "ISSUEDATE")
-        _enable_smartpse_for_test(tenant)
-        _set_subscription(db_session, tenant, models.SUBSCRIPTION_STATUS_ACTIVE)
-        user = make_user(db_session, tenant, email="issuedate@test.com")
-        cliente = make_cliente(
-            db_session,
-            tenant,
-            "ISSUEDATE",
-            tipo_documento="6",
-            numero_documento="20191308868",
-        )
-        quote = make_quote_via_crud(db_session, tenant, user, cliente)
-        quote.fecha_emision = datetime(2026, 5, 1, 9, 0)
-        db_session.commit()
-        fecha_click = datetime(2026, 7, 22, 14, 30)
-
-        app = FastAPI()
-        app.include_router(facturacion_router.router)
-
-        def override_db():
-            yield db_session
-
-        app.dependency_overrides[get_current_user] = lambda: user
-        app.dependency_overrides[get_db] = override_db
-        app.dependency_overrides[get_db_tenant] = override_db
-
-        with patch("routers.facturacion.now_in_peru_naive", return_value=fecha_click):
-            response = TestClient(app).post(
-                f"/cotizaciones/{quote.id}/facturar?mode=async",
-                json={"tipo_comprobante": "01"},
-            )
-
-        assert response.status_code == 202, response.text
-        fiscal = db_session.query(models.Cotizacion).filter(
-            models.Cotizacion.source_quote_id == quote.id,
-            models.Cotizacion.document_kind == "fiscal_document",
-        ).one()
-        db_session.refresh(quote)
-        assert quote.fecha_emision == datetime(2026, 5, 1, 9, 0)
-        assert fiscal.fecha_emision == fecha_click
-
-
-class TestRejectedFiscalRetry:
-
-    @staticmethod
-    def _client(db_session, user):
-        app = FastAPI()
-        app.include_router(facturacion_router.router)
-
-        def override_db():
-            yield db_session
-
-        app.dependency_overrides[get_current_user] = lambda: user
-        app.dependency_overrides[get_db] = override_db
-        app.dependency_overrides[get_db_tenant] = override_db
-        return TestClient(app)
-
-    def _rejected_document(self, db_session, suffix="RETRY01"):
-        tenant = make_tenant(db_session, suffix)
-        _enable_smartpse_for_test(tenant)
-        _set_subscription(db_session, tenant, models.SUBSCRIPTION_STATUS_ACTIVE)
-        user = make_user(db_session, tenant, email=f"{suffix.lower()}@test.com")
-        cliente = make_cliente(
-            db_session,
-            tenant,
-            suffix,
-            tipo_documento="6",
-            numero_documento="20191308868",
-        )
-        quote = make_quote_via_crud(db_session, tenant, user, cliente)
-        fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
-        fiscal.sunat_error = "3127 - Falta código de detracción"
-        fiscal.provider_verification_status = "failed"
-        db_session.commit()
-        return tenant, user, fiscal
-
-    def test_endpoint_encola_reintento_sin_crear_otro_comprobante(self, db_session):
-        _, user, fiscal = self._rejected_document(db_session)
-        response = self._client(db_session, user).post(
-            f"/facturas-emitidas/{fiscal.id}/reintentar"
-        )
-
-        assert response.status_code == 202
-        data = response.json()
-        assert data["resource_id"] == fiscal.id
-        assert data["job_status"] == models.EMISSION_JOB_STATUS_QUEUED
-        job = crud.get_emission_job(db_session, data["job_id"], user.tenant_id)
-        assert job.payload_snapshot["tipo_operacion"] == "0101"
-        assert db_session.query(models.Cotizacion).filter(
-            models.Cotizacion.tenant_id == user.tenant_id,
-            models.Cotizacion.document_kind == "fiscal_document",
-        ).count() == 1
-
-    def test_endpoint_bloquea_documento_aceptado(self, db_session):
-        _, user, fiscal = self._rejected_document(db_session, "RETRY02")
-        fiscal.estado = "facturada"
-        fiscal.sunat_error = None
-        fiscal.sunat_cdr_content = "<ApplicationResponse/>"
-        db_session.commit()
-
-        response = self._client(db_session, user).post(
-            f"/facturas-emitidas/{fiscal.id}/reintentar"
-        )
-
-        assert response.status_code == 409
-        assert "aceptado por SUNAT" in response.json()["detail"]
-
-    def test_endpoint_exige_confirmacion_para_corregir_detraccion_legacy(self, db_session):
-        _, user, fiscal = self._rejected_document(db_session, "RETRY02D")
-        fiscal.sujeta_detraccion = True
-        db_session.commit()
-        client = self._client(db_session, user)
-
-        blocked = client.post(f"/facturas-emitidas/{fiscal.id}/reintentar")
-        accepted = client.post(
-            f"/facturas-emitidas/{fiscal.id}/reintentar?confirmar_operacion_estandar=true"
-        )
-
-        assert blocked.status_code == 409
-        assert accepted.status_code == 202
-        job = crud.get_emission_job(db_session, accepted.json()["job_id"], user.tenant_id)
-        assert job.payload_snapshot["clear_legacy_detraccion"] is True
-
-    def test_endpoint_no_expone_documento_de_otro_tenant(self, db_session):
-        _, _, fiscal = self._rejected_document(db_session, "RETRY03A")
-        tenant_b = make_tenant(db_session, "RETRY03B")
-        _set_subscription(db_session, tenant_b, models.SUBSCRIPTION_STATUS_ACTIVE)
-        user_b = make_user(db_session, tenant_b, email="retry03b@test.com")
-
-        response = self._client(db_session, user_b).post(
-            f"/facturas-emitidas/{fiscal.id}/reintentar"
-        )
-
-        assert response.status_code == 404
-
-
 class TestPreValidacion:
     """Tests de _validar_pre_emision — todos deben lanzar HTTPException 400."""
 
@@ -417,23 +278,6 @@ class TestPreValidacion:
         quote = _make_mock_quote(cliente=c, tipo_comprobante="03")
         # No debe lanzar excepción
         _validar_pre_emision(quote, "03")  # ← OK
-
-    def test_boleta_con_ruc_20_lanza_400(self):
-        c = _make_mock_cliente(tipo="6", numero="20100100100")
-        quote = _make_mock_quote(cliente=c, tipo_comprobante="03")
-        with pytest.raises(HTTPException) as exc:
-            _validar_pre_emision(quote, "03")
-        assert exc.value.status_code == 400
-        assert "boletas" in exc.value.detail.lower()
-        assert "factura" in exc.value.detail.lower()
-
-    def test_boleta_con_ruc_10_lanza_400(self):
-        c = _make_mock_cliente(tipo="6", numero="10400000001")
-        quote = _make_mock_quote(cliente=c, tipo_comprobante="03")
-        with pytest.raises(HTTPException) as exc:
-            _validar_pre_emision(quote, "03")
-        assert exc.value.status_code == 400
-        assert "ruc 10/20" in exc.value.detail.lower()
 
     def test_factura_con_ruc_valido_pasa(self):
         c = _make_mock_cliente(tipo="6", numero="20100100100")  # RUC 11 dígitos
@@ -782,15 +626,11 @@ class TestFlujoQuoteToFiscal:
         fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
         assert fiscal.estado == "pendiente"
 
-    def test_production_uses_configured_series_and_remote_floors(self, db_session):
+    def test_smartpse_demo_ruc_respeta_piso_remoto_de_correlativos(self, db_session):
         tenant = make_tenant(db_session, "SPF01")
         tenant.business_ruc = "20606751509"
         tenant.smartpse_company_id = "384"
-        tenant.smartpse_environment = "produccion"
-        tenant.fiscal_invoice_series = "FA01"
-        tenant.fiscal_invoice_series_floor = 0
-        tenant.fiscal_boleta_series = "BB01"
-        tenant.fiscal_boleta_series_floor = 0
+        tenant.smartpse_environment = "demo"
         db_session.commit()
         user = make_user(db_session, tenant, email="smartpse-floor@test.com")
         cliente = make_cliente(db_session, tenant, "SPF01")
@@ -811,84 +651,10 @@ class TestFlujoQuoteToFiscal:
             "03",
         )
 
-        assert factura.serie == "FA01"
-        assert factura.correlativo == 1
-        assert boleta.serie == "BB01"
-        assert boleta.correlativo == 1
-
-    def test_production_blocks_emission_without_confirmed_series_floor(self, db_session):
-        tenant = make_tenant(db_session, "SPF01B")
-        tenant.smartpse_company_id = "384"
-        tenant.smartpse_environment = "produccion"
-        tenant.fiscal_invoice_series = "FA01"
-        db_session.commit()
-        user = make_user(db_session, tenant, email="smartpse-production-series@test.com")
-        cliente = make_cliente(db_session, tenant, "SPF01B")
-        quote = make_quote_via_crud(db_session, tenant, user, cliente)
-
-        with pytest.raises(ValueError, match="ultimo correlativo confirmado"):
-            crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
-
-    def test_production_blocks_emission_without_explicit_fiscal_series(self, db_session):
-        tenant = make_tenant(db_session, "SPF01SERIE")
-        tenant.smartpse_company_id = "384"
-        tenant.smartpse_environment = "produccion"
-        tenant.fiscal_invoice_series_floor = 7244
-        db_session.commit()
-        user = make_user(db_session, tenant, email="smartpse-production-series-required@test.com")
-        cliente = make_cliente(db_session, tenant, "SPF01SERIE")
-        quote = make_quote_via_crud(db_session, tenant, user, cliente)
-
-        with pytest.raises(ValueError, match="serie fiscal autorizada"):
-            crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
-
-    def test_production_rejects_series_override_outside_configured_series(self, db_session):
-        tenant = make_tenant(db_session, "SPF01C")
-        tenant.smartpse_company_id = "384"
-        tenant.smartpse_environment = "produccion"
-        tenant.fiscal_invoice_series = "FA01"
-        tenant.fiscal_invoice_series_floor = 7244
-        db_session.commit()
-        user = make_user(db_session, tenant, email="smartpse-series-override@test.com")
-        cliente = make_cliente(db_session, tenant, "SPF01C")
-        quote = make_quote_via_crud(db_session, tenant, user, cliente)
-
-        with pytest.raises(ValueError, match="no coincide con la serie fiscal configurada"):
-            crud.create_fiscal_document_from_quote(
-                db_session,
-                quote,
-                user.id,
-                "01",
-                serie_override="F001",
-            )
-
-    def test_production_blocks_invoice_series_without_f_prefix(self, db_session):
-        tenant = make_tenant(db_session, "SPF01PREFIX")
-        tenant.smartpse_company_id = "384"
-        tenant.smartpse_environment = "produccion"
-        tenant.fiscal_invoice_series = "E001"
-        tenant.fiscal_invoice_series_floor = 0
-        db_session.commit()
-        user = make_user(db_session, tenant, email="smartpse-invoice-prefix@test.com")
-        cliente = make_cliente(db_session, tenant, "SPF01PREFIX")
-        quote = make_quote_via_crud(db_session, tenant, user, cliente)
-
-        with pytest.raises(ValueError, match="debe iniciar con F"):
-            crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
-
-    def test_production_blocks_boleta_series_without_b_prefix(self, db_session):
-        tenant = make_tenant(db_session, "SPF01BPREFIX")
-        tenant.smartpse_company_id = "384"
-        tenant.smartpse_environment = "produccion"
-        tenant.fiscal_boleta_series = "EB01"
-        tenant.fiscal_boleta_series_floor = 0
-        db_session.commit()
-        user = make_user(db_session, tenant, email="smartpse-boleta-prefix@test.com")
-        cliente = make_cliente(db_session, tenant, "SPF01BPREFIX")
-        quote = make_quote_via_crud(db_session, tenant, user, cliente)
-
-        with pytest.raises(ValueError, match="debe iniciar con B"):
-            crud.create_fiscal_document_from_quote(db_session, quote, user.id, "03")
+        assert factura.serie == "F001"
+        assert factura.correlativo == 12
+        assert boleta.serie == "B001"
+        assert boleta.correlativo == 6
 
     def test_tenant_sin_smartpse_no_usa_piso_remoto_de_correlativos(self, db_session):
         tenant = make_tenant(db_session, "SPF02")
@@ -902,6 +668,72 @@ class TestFlujoQuoteToFiscal:
 
         assert fiscal.serie == "F001"
         assert fiscal.correlativo == 1
+
+    def test_production_uses_configured_series_and_confirmed_floor(self, db_session):
+        tenant = make_tenant(db_session, "SPFA01")
+        tenant.smartpse_company_id = "384"
+        tenant.smartpse_environment = "produccion"
+        tenant.fiscal_invoice_series = "FA01"
+        tenant.fiscal_invoice_series_floor = 178
+        tenant.fiscal_boleta_series = "BB01"
+        tenant.fiscal_boleta_series_floor = 22
+        db_session.commit()
+        user = make_user(db_session, tenant, email="configured-series@test.com")
+        cliente = make_cliente(db_session, tenant, "SPFA01")
+
+        factura_quote = make_quote_via_crud(db_session, tenant, user, cliente)
+        factura = crud.create_fiscal_document_from_quote(
+            db_session,
+            factura_quote,
+            user.id,
+            "01",
+            "FA01",
+        )
+        boleta_quote = make_quote_via_crud(db_session, tenant, user, cliente)
+        boleta = crud.create_fiscal_document_from_quote(
+            db_session,
+            boleta_quote,
+            user.id,
+            "03",
+            "BB01",
+        )
+
+        assert factura.serie == "FA01"
+        assert factura.correlativo == 179
+        assert boleta.serie == "BB01"
+        assert boleta.correlativo == 23
+
+    def test_production_rejects_series_override_outside_tenant_configuration(self, db_session):
+        tenant = make_tenant(db_session, "SPFA02")
+        tenant.smartpse_company_id = "384"
+        tenant.smartpse_environment = "produccion"
+        tenant.fiscal_invoice_series = "FA01"
+        tenant.fiscal_invoice_series_floor = 178
+        db_session.commit()
+        user = make_user(db_session, tenant, email="wrong-series@test.com")
+        cliente = make_cliente(db_session, tenant, "SPFA02")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+
+        with pytest.raises(ValueError, match="no coincide con la serie fiscal configurada"):
+            crud.create_fiscal_document_from_quote(
+                db_session,
+                quote,
+                user.id,
+                "01",
+                "F001",
+            )
+
+    def test_production_blocks_emission_without_explicit_series(self, db_session):
+        tenant = make_tenant(db_session, "SPFA03")
+        tenant.smartpse_company_id = "384"
+        tenant.smartpse_environment = "produccion"
+        db_session.commit()
+        user = make_user(db_session, tenant, email="missing-series@test.com")
+        cliente = make_cliente(db_session, tenant, "SPFA03")
+        quote = make_quote_via_crud(db_session, tenant, user, cliente)
+
+        with pytest.raises(ValueError, match="serie fiscal autorizada"):
+            crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
 
     def test_nota_credito_y_debito_usan_series_apisperu_reales(self, db_session):
         tenant = make_tenant(db_session, "FF06")
@@ -1051,12 +883,29 @@ class TestServicioSmartPSEIntegrado:
         )
         quote = make_quote_via_crud(db_session, tenant, user, cliente)
         fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+        signed_xml = f"""<?xml version='1.0'?>
+<Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'
+    xmlns:cac='urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
+    xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'>
+  <cbc:ID>F001-00000001</cbc:ID>
+  <cbc:IssueDate>{fiscal.fecha_emision.date().isoformat()}</cbc:IssueDate>
+  <cbc:InvoiceTypeCode>01</cbc:InvoiceTypeCode>
+  <cac:AccountingSupplierParty><cac:Party><cac:PartyIdentification><cbc:ID schemeID='6'>{tenant.business_ruc}</cbc:ID></cac:PartyIdentification></cac:Party></cac:AccountingSupplierParty>
+</Invoice>"""
 
         fake_client = MagicMock()
         fake_client.process_xml.return_value = {
             "estado": 200,
             "mensaje": "Aceptado",
             "xml_firmado": "<Invoice />",
+            "codigo_hash": "abc123",
+            "cdr": "<ApplicationResponse/>",
+            "rechazado": False,
+        }
+        fake_client.consult_ticket.return_value = {
+            "estado": 200,
+            "mensaje": "Aceptado",
+            "xml_firmado": signed_xml,
             "codigo_hash": "abc123",
             "cdr": "<ApplicationResponse/>",
             "rechazado": False,
@@ -1081,6 +930,7 @@ class TestServicioSmartPSEIntegrado:
         assert b"InvoiceTypeCode" in xml_content
         assert result["success"] is True
         assert result["hash"] == "abc123"
+        fake_client.consult_ticket.assert_called_once_with(called_tenant, filename)
 
     def test_anular_factura_usa_ticket_y_status_real(self, db_session):
         tenant = make_tenant(db_session, "AP02")

@@ -116,7 +116,11 @@ class _FakeSmartPSEClient:
 
     def consult_ticket(self, tenant, nombre_archivo):
         self.consult_calls.append((tenant, nombre_archivo))
-        return self.consult_responses.pop(0) if self.consult_responses else _smartpse_accepted()
+        if self.consult_responses:
+            return self.consult_responses.pop(0)
+        response = _smartpse_accepted()
+        response["xml_firmado"] = self.process_calls[-1][2].decode("utf-8")
+        return response
 
 
 def _patch_smartpse(fake_client):
@@ -191,25 +195,6 @@ def test_base_payload_incluye_observacion_y_tipo_operacion_override():
     assert payload["observacion"] == "Entrega parcial coordinada con el cliente."
     assert payload["tipoOperacion"] == "0200"
     assert payload["formaPago"]["tipo"] == "Contado"
-
-
-def test_base_payload_prefiere_snapshot_cliente_del_documento():
-    cotizacion = _mock_cotizacion(
-        cliente_snapshot={
-            "tipo_documento": "6",
-            "numero_documento": "20999999991",
-            "razon_social": "Cliente Snapshot Fiscal",
-            "direccion": "Jr. Snapshot Fiscal 321",
-            "ubigeo": "150102",
-        },
-    )
-
-    payload, _ = facturacion_service._base_payload(cotizacion, _mock_user(), "01")
-
-    assert payload["client"]["numDoc"] == "20999999991"
-    assert payload["client"]["rznSocial"] == "Cliente Snapshot Fiscal"
-    assert payload["client"]["address"]["direccion"] == "Jr. Snapshot Fiscal 321"
-    assert payload["client"]["address"]["ubigueo"] == "150102"
 
 
 def test_emitir_factura_respeta_override_de_serie_y_tipo_operacion():
@@ -438,6 +423,26 @@ def test_emitir_reversion_puede_guardar_ticket_sin_polling():
     _, filename, xml_content, _ = fake_client.process_calls[0]
     assert filename == "20100100100-RR-20260502-00001"
     assert b"RR-20260502-00001" in xml_content
+
+
+def test_venta_normal_no_cambia_a_1001_por_el_importe():
+    payload = {
+        "tipoDoc": "01",
+        "tipoOperacion": "0101",
+        "mtoOperGravadas": Decimal("1000.00"),
+        "mtoOperExoneradas": Decimal("0.00"),
+        "mtoOperInafectas": Decimal("0.00"),
+        "mtoIGV": Decimal("180.00"),
+        "mtoImpVenta": Decimal("1180.00"),
+        "mtoImporteTotal": Decimal("1180.00"),
+        "legends": [],
+    }
+    cotizacion = _mock_cotizacion(condicion_pago="contado", total_venta=Decimal("1180.00"))
+
+    result = facturacion_service._aplicar_detraccion(payload, cotizacion, _mock_user(), db=None)
+
+    assert result["tipoOperacion"] == "0101"
+    assert "detraccion" not in result
 
 
 def test_factura_mayor_a_700_no_activa_detraccion_automaticamente():

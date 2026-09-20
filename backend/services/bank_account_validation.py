@@ -22,31 +22,6 @@ def _key(value: Any) -> str:
     return unicodedata.normalize("NFD", _text(value)).encode("ascii", "ignore").decode("ascii").lower()
 
 
-def _bool(value: Any, *, default: bool = True) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    normalized = _key(value)
-    if normalized in {"0", "false", "off", "no"}:
-        return False
-    if normalized in {"1", "true", "on", "si", "yes"}:
-        return True
-    return bool(value)
-
-
-def _normalize_communication_template(raw_method: dict[str, Any]) -> dict[str, Any]:
-    whatsapp_message = _text(raw_method.get("whatsapp_message"))[:1200]
-    email_subject = _text(raw_method.get("email_subject"))[:180]
-    email_body = _text(raw_method.get("email_body"))[:3000]
-    return {
-        "tipo": "communication_templates",
-        "whatsapp_message": whatsapp_message,
-        "email_subject": email_subject,
-        "email_body": email_body,
-    }
-
-
 def _slug_token(value: Any) -> str:
     normalized = _key(value)
     return re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
@@ -104,7 +79,10 @@ def _get_bank_rule(bank_name: Any, account_type: Any) -> dict[str, Any]:
         return {"allowed_lengths": {10, 14}, "description": "10 o 14 digitos para cuentas Scotiabank"}
 
     if _matches_bank(bank_key, "banco de la nacion", "nacion"):
-        return {"min_length": 10, "max_length": 13, "description": "entre 10 y 13 digitos para cuentas del Banco de la Nacion"}
+        return {
+            "allowed_lengths": {10, 11, 13},
+            "description": "10, 11 o 13 digitos para cuentas del Banco de la Nacion",
+        }
 
     if _matches_bank(bank_key, "banbif"):
         return {"allowed_lengths": {10, 12}, "description": "10 o 12 digitos para cuentas BanBif"}
@@ -210,6 +188,7 @@ def validate_and_normalize_bank_accounts(methods: Any) -> Any:
 
 
 def validate_and_normalize_quote_payment_methods(methods: Any) -> Any:
+    """Validate the per-quotation snapshot without accepting wallet data from clients."""
     normalized_methods = validate_and_normalize_bank_accounts(methods)
     if normalized_methods is None:
         return None
@@ -220,7 +199,8 @@ def validate_and_normalize_quote_payment_methods(methods: Any) -> Any:
             continue
         quote_methods.append(
             {
-                "id": _text(method.get("id")) or build_payment_method_id(method, len(quote_methods), "bank"),
+                "id": _text(method.get("id"))
+                or build_payment_method_id(method, len(quote_methods), "bank"),
                 "tipo": "bank",
                 "banco": _text(method.get("banco")),
                 "tipo_cuenta": _text(method.get("tipo_cuenta")) or "Cta Ahorro",
@@ -230,3 +210,28 @@ def validate_and_normalize_quote_payment_methods(methods: Any) -> Any:
             }
         )
     return quote_methods
+
+
+def _bool(value: Any, *, default: bool = True) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = _key(value)
+    if normalized in {"0", "false", "off", "no"}:
+        return False
+    if normalized in {"1", "true", "on", "si", "yes"}:
+        return True
+    return bool(value)
+
+
+def _normalize_communication_template(raw_method: dict[str, Any]) -> dict[str, Any]:
+    whatsapp_message = _text(raw_method.get("whatsapp_message"))[:1200]
+    email_subject = _text(raw_method.get("email_subject"))[:180]
+    email_body = _text(raw_method.get("email_body"))[:3000]
+    return {
+        "tipo": "communication_templates",
+        "whatsapp_message": whatsapp_message,
+        "email_subject": email_subject,
+        "email_body": email_body,
+    }

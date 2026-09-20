@@ -1,10 +1,10 @@
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any, List
+from typing import Annotated, Any, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import desc, func, or_
+from sqlalchemy import String, and_, cast, desc, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 import crud
@@ -14,7 +14,12 @@ from fiscal_catalogs import (
     normalize_sunat_unit_code,
     normalize_tax_affectation_code,
 )
-from services import document_download_service, emission_queue_service, facturacion_service, inventory_service
+from services import emission_queue_service, facturacion_service
+from services import sale_dispatch_service
+from services import inventory_service
+from services import document_actions_service
+from services.fiscal_presentation_service import presentation_status_expression
+from access_control import ROLE_ADMIN, ROLE_SUPERADMIN, get_effective_role
 from services import calculations
 from services import fiscal_provider_service
 from services import beta_feature_flags
@@ -25,12 +30,11 @@ from api_dependencies import (
     get_db_tenant,
     require_document_emitter,
     require_emission_allowed,
+    require_admin,
 )
 from api_utils import raise_internal_server_error
 from rate_limit import limiter
 from services import fiscal_artifact_service, pdf_storage_service
-from services.client_snapshot_service import resolve_document_cliente_snapshot
-from services.fiscal_clock import fiscal_datetime_in_peru, fiscal_today, now_in_peru_naive
 from services.facturacion_background_service import process_direct_sunat_emission_bg
 from models.tenants import (
     USAGE_LIMIT_KIND_BOLETA,
@@ -47,8 +51,152 @@ DOCUMENT_STATUS_FACTURADA = "facturada"
 DOCUMENT_STATUS_ANULADA = "anulada"
 DOCUMENT_STATUS_PENDIENTE = "pendiente"
 DOCUMENT_KIND_QUOTATION = "quotation"
-DOCUMENT_KIND_FISCAL_DOCUMENT = "fiscal_document"
 FISCAL_PAGE_STATUSES = ("sent", "pending", "rejected")
+
+
+def _linked_dispatches(db: Session, tenant_id: int, document_id: int):
+    dispatches = db.query(models.SaleDispatch).options(
+        joinedload(models.SaleDispatch.lines),
+        joinedload(models.SaleDispatch.guides),
+    ).filter(
+        models.SaleDispatch.tenant_id == tenant_id,
+        models.SaleDispatch.fiscal_document_id == document_id,
+    ).order_by(models.SaleDispatch.id.desc()).all()
+    return [
+        {
+            "id": dispatch.id,
+            "source_document_type": dispatch.source_document_type,
+            "status": dispatch.status,
+            "version": dispatch.version,
+            "departure_confirmed_at": dispatch.departure_confirmed_at,
+            "lines": [
+                {
+                    "document_line_id": line.fiscal_document_item_id,
+                    "invoice_line_id": line.fiscal_document_item_id,
+                    "quantity": line.quantity,
+                    "unit": line.unit_code,
+                    "reservation_status": line.reservation_status,
+                }
+                for line in dispatch.lines
+            ],
+            "guides": [
+                {
+                    "id": guide.id,
+                    "type": guide.tipo_documento,
+                    "number": f"{guide.serie}-{str(guide.correlativo).zfill(6)}",
+                    "status": guide.estado,
+                }
+                for guide in dispatch.guides
+            ],
+        }
+        for dispatch in dispatches
+    ]
+
+
+@router.get("/facturacion/comprobantes/{comprobante_id}/despacho-contexto")
+def obtener_contexto_despacho_comprobante(
+    comprobante_id: int,
+    dispatch_id: int | None = Query(default=None),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    try:
+        if dispatch_id is not None:
+            dispatch = sale_dispatch_service.get_dispatch(db, current_user.tenant_id, dispatch_id)
+            if not dispatch or dispatch.fiscal_document_id != comprobante_id:
+                raise HTTPException(404, "Despacho no encontrado para el comprobante.")
+        return sale_dispatch_service.get_sales_document_dispatch_context(
+            db, current_user.tenant_id, comprobante_id, exclude_dispatch_id=dispatch_id
+        )
+    except sale_dispatch_service.DispatchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail())
+
+
+@router.get("/facturacion/comprobantes/{comprobante_id}/guias")
+def listar_guias_de_comprobante(
+    comprobante_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    try:
+        sale_dispatch_service.get_sales_document_dispatch_context(
+            db, current_user.tenant_id, comprobante_id
+        )
+    except sale_dispatch_service.DispatchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail())
+    return _linked_dispatches(db, current_user.tenant_id, comprobante_id)
+
+
+@router.post("/facturacion/comprobantes/{comprobante_id}/conciliar-despacho-historico")
+def conciliar_despacho_historico_comprobante(
+    comprobante_id: int,
+    payload: schemas.HistoricalDispatchReconciliation,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_admin),
+):
+    try:
+        document = sale_dispatch_service.reconcile_historical_document(
+            db, current_user.tenant_id, current_user.id, comprobante_id, payload
+        )
+        return {"document_id": document.id, "document_type": document.tipo_comprobante, "status": document.dispatch_reconciliation_status}
+    except sale_dispatch_service.DispatchError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail())
+
+
+@router.get("/facturacion/facturas/{factura_id}/despacho-contexto")
+def obtener_contexto_despacho_factura(
+    factura_id: int,
+    dispatch_id: int | None = Query(default=None),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    try:
+        if not crud.get_cotizacion(db, factura_id, current_user):
+            raise HTTPException(404, "Factura no encontrada para el usuario autenticado.")
+        if dispatch_id is not None:
+            dispatch = sale_dispatch_service.get_dispatch(db, current_user.tenant_id, dispatch_id)
+            if not dispatch or dispatch.fiscal_document_id != factura_id:
+                raise HTTPException(404, "Despacho no encontrado para la factura.")
+        return sale_dispatch_service.get_invoice_dispatch_context(
+            db, current_user.tenant_id, factura_id, exclude_dispatch_id=dispatch_id
+        )
+    except sale_dispatch_service.DispatchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail())
+
+
+@router.get("/facturacion/facturas/{factura_id}/guias")
+def listar_guias_de_factura(
+    factura_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not crud.get_cotizacion(db, factura_id, current_user):
+        raise HTTPException(404, "Factura no encontrada para el usuario autenticado.")
+    try:
+        sale_dispatch_service.get_invoice_dispatch_context(
+            db, current_user.tenant_id, factura_id
+        )
+    except sale_dispatch_service.DispatchError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail())
+    return _linked_dispatches(db, current_user.tenant_id, factura_id)
+
+
+@router.post("/facturacion/facturas/{factura_id}/conciliar-despacho-historico")
+def conciliar_despacho_historico(
+    factura_id: int,
+    payload: schemas.HistoricalDispatchReconciliation,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_admin),
+):
+    try:
+        invoice = sale_dispatch_service.reconcile_historical_invoice(
+            db, current_user.tenant_id, current_user.id, factura_id, payload
+        )
+        return {"invoice_id": invoice.id, "status": invoice.dispatch_reconciliation_status}
+    except sale_dispatch_service.DispatchError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail())
 
 
 def _parse_date_bounds(desde: str | None, hasta: str | None) -> tuple[datetime | None, datetime | None]:
@@ -69,39 +217,11 @@ def _parse_date_bounds(desde: str | None, hasta: str | None) -> tuple[datetime |
 
 def _fiscal_doc_tab_filter(tab: str | None):
     normalized = (tab or "all").strip().lower()
-    accepted_artifact = or_(
-        models.Cotizacion.sunat_cdr_url.isnot(None),
-        models.Cotizacion.sunat_cdr_content.isnot(None),
-    )
-    provider_verified_or_legacy = or_(
-        models.Cotizacion.provider_verification_status.is_(None),
-        models.Cotizacion.provider_verification_status == "verified",
-    )
-    if normalized == "draft":
-        return models.Cotizacion.estado == "borrador"
-    if normalized == "emitted":
-        return accepted_artifact & provider_verified_or_legacy & models.Cotizacion.sunat_error.is_(None)
+    status = presentation_status_expression(models.Cotizacion)
     if normalized == "pending":
-        return (
-            models.Cotizacion.estado.notin_([
-                "borrador",
-                DOCUMENT_STATUS_ANULADA,
-            ])
-            & ~accepted_artifact
-            & models.Cotizacion.sunat_error.is_(None)
-        ) | (
-            models.Cotizacion.estado.notin_([
-                "borrador",
-                DOCUMENT_STATUS_ANULADA,
-            ])
-            & accepted_artifact
-            & ~provider_verified_or_legacy
-            & models.Cotizacion.sunat_error.is_(None)
-        )
-    if normalized == "rejected":
-        return models.Cotizacion.sunat_error.isnot(None)
-    if normalized == "voided":
-        return models.Cotizacion.estado == DOCUMENT_STATUS_ANULADA
+        return status.in_(['pending', 'pending_confirmation'])
+    if normalized in {'draft', 'emitted', 'rejected', 'voided'}:
+        return status == normalized
     return None
 
 
@@ -332,7 +452,18 @@ def _ensure_note_target_is_facturada(doc_afectado) -> None:
         )
 
 
-def _ensure_document_can_be_voided(comprobante) -> None:
+def _ensure_document_can_be_voided(comprobante, db: Session | None = None) -> None:
+    if db is not None:
+        try:
+            inventory_service.ensure_document_void_inventory_safe(db, comprobante)
+        except ValueError as exc:
+            _raise_bad_request(str(exc))
+    if db is not None and sale_dispatch_service.active_dispatch_allocation_exists(
+        db, comprobante.tenant_id, comprobante.id
+    ):
+        _raise_bad_request(
+            "Operacion bloqueada: la factura tiene cantidades reservadas, una GRE aceptada o una salida confirmada. Resuelva primero la incidencia logística y fiscal."
+        )
     if comprobante.estado == DOCUMENT_STATUS_FACTURADA:
         sunat_error = getattr(comprobante, "sunat_error", None)
         xml_url = getattr(comprobante, "sunat_xml_url", None)
@@ -393,7 +524,12 @@ def _validate_issue_date_not_future(quote) -> None:
     if not fecha_emision:
         return
 
-    if fiscal_datetime_in_peru(fecha_emision).date() > fiscal_today():
+    today = (
+        datetime.now(fecha_emision.tzinfo).date()
+        if fecha_emision.tzinfo is not None
+        else datetime.now().date()
+    )
+    if fecha_emision.date() > today:
         raise HTTPException(
             400,
             "Pre-validacion fallida: La fecha de emision no puede ser futura.",
@@ -553,6 +689,18 @@ def _validate_serie_override(tipo_comprobante: str, serie_override: str | None) 
             "Pre-validacion fallida: La serie debe tener 4 caracteres alfanumericos.",
         )
 
+    if serie.isdigit():
+        return
+    if tipo_comprobante == "01" and not serie.startswith("F"):
+        raise HTTPException(
+            400,
+            "Pre-validacion fallida: Las facturas deben usar serie Fxxx o serie numerica de contingencia.",
+        )
+    if tipo_comprobante == "03" and not serie.startswith("B"):
+        raise HTTPException(
+            400,
+            "Pre-validacion fallida: Las boletas deben usar serie Bxxx o serie numerica de contingencia.",
+        )
 
 
 def _validar_pre_emision(quote, tipo_comprobante: str):
@@ -566,40 +714,22 @@ def _validar_pre_emision(quote, tipo_comprobante: str):
     if not cliente:
         raise HTTPException(400, "Pre-validacion fallida: La cotizacion no tiene cliente asignado.")
 
-    cliente_snapshot = resolve_document_cliente_snapshot(quote)
-    numero_documento = str(cliente_snapshot.get("numero_documento") or "").strip()
-    tipo_documento = str(cliente_snapshot.get("tipo_documento") or "").strip()
-
     # 2. Documento de identidad del cliente
-    if not numero_documento or len(numero_documento) < 8:
+    if not cliente.numero_documento or len(cliente.numero_documento.strip()) < 8:
         raise HTTPException(
             400,
             "Pre-validacion fallida: El cliente no tiene numero de documento valido (minimo 8 digitos).",
         )
 
-    is_ruc = tipo_documento == "6" and len(numero_documento) == 11
-    is_dni = tipo_documento == "1" and len(numero_documento) == 8
-
-    # 3. Factura/boleta deben respetar el tipo de documento del cliente.
+    # 3. Para facturas (tipo 01): el cliente debe tener RUC (11 digitos, tipo 6)
     if tipo_comprobante == "01":
-        if not is_ruc:
+        if cliente.tipo_documento != "6" or len(cliente.numero_documento.strip()) != 11:
             raise HTTPException(
                 400,
                 (
                     "Pre-validacion fallida: Las Facturas (tipo 01) requieren que el cliente "
                     "tenga RUC (11 digitos, tipo_documento='6'). "
-                    f"Documento actual: {numero_documento} (tipo {tipo_documento})."
-                ),
-            )
-    if tipo_comprobante == "03":
-        if not is_dni:
-            raise HTTPException(
-                400,
-                (
-                    "Pre-validacion fallida: Las Boletas (tipo 03) solo se emiten a clientes "
-                    "con DNI (8 digitos, tipo_documento='1') en el flujo beta. "
-                    "Para clientes con RUC 10/20 use Factura (tipo 01). "
-                    f"Documento actual: {numero_documento} (tipo {tipo_documento})."
+                    f"Documento actual: {cliente.numero_documento} (tipo {cliente.tipo_documento})."
                 ),
             )
 
@@ -651,7 +781,6 @@ def emitir_comprobante(
     _emission_check: models.User = Depends(require_emission_allowed),
     mode: str | None = Query(default=None, pattern="^(sync|async)$"),
 ):
-    fiscal_issue_date = now_in_peru_naive()
     quote = _get_quote_or_404(db, cotizacion_id, current_user)
     _ensure_commercial_quote(quote)
 
@@ -683,17 +812,46 @@ def emitir_comprobante(
             current_user.id,
             payload.tipo_comprobante,
             payload.serie_override,
-            fiscal_issue_date,
         )
 
         resolved_mode = emission_queue_service.resolve_emission_mode(mode)
         if resolved_mode == emission_queue_service.EMISSION_MODE_ASYNC:
+            if payload.warehouse_id is not None:
+                fiscal_document.warehouse_id = payload.warehouse_id
+            can_override_stock = get_effective_role(current_user) in {ROLE_ADMIN, ROLE_SUPERADMIN}
+            if payload.allow_negative_stock and not can_override_stock:
+                db.delete(fiscal_document)
+                db.commit()
+                raise HTTPException(403, "Solo un administrador puede autorizar stock negativo.")
+            if payload.allow_negative_stock and not (payload.negative_stock_reason or "").strip():
+                db.delete(fiscal_document)
+                db.commit()
+                raise HTTPException(422, "Indique el motivo para autorizar stock negativo.")
+            try:
+                inventory_service.create_document_holds(
+                    db,
+                    fiscal_document,
+                    current_user.id,
+                    allow_negative=payload.allow_negative_stock and can_override_stock,
+                    override_reason=payload.negative_stock_reason,
+                )
+                db.commit()
+                db.refresh(fiscal_document)
+            except Exception:
+                db.rollback()
+                stale_document = db.query(models.Cotizacion).filter(
+                    models.Cotizacion.id == fiscal_document.id,
+                    models.Cotizacion.tenant_id == current_user.tenant_id,
+                ).first()
+                if stale_document and stale_document.estado == DOCUMENT_STATUS_PENDIENTE:
+                    db.delete(stale_document)
+                    db.commit()
+                raise
             job, _ = emission_queue_service.enqueue_fiscal_document_job(
                 db,
                 fiscal_document,
                 current_user,
                 tipo_comprobante=payload.tipo_comprobante,
-                tipo_operacion=payload.tipo_operacion,
             )
             return _build_async_job_response(
                 job,
@@ -733,6 +891,37 @@ def emitir_comprobante(
             resultado,
             tenant_id=current_user.tenant_id,
         )
+        if payload.warehouse_id is not None:
+            fiscal_document.warehouse_id = payload.warehouse_id
+        can_override_stock = get_effective_role(current_user) in {ROLE_ADMIN, ROLE_SUPERADMIN}
+        if payload.allow_negative_stock and not can_override_stock:
+            db.delete(fiscal_document)
+            db.commit()
+            raise HTTPException(403, "Solo un administrador puede autorizar stock negativo.")
+        if payload.allow_negative_stock and not (payload.negative_stock_reason or "").strip():
+            db.delete(fiscal_document)
+            db.commit()
+            raise HTTPException(422, "Indique el motivo para autorizar stock negativo.")
+        try:
+            inventory_service.create_document_holds(
+                db,
+                fiscal_document,
+                current_user.id,
+                allow_negative=payload.allow_negative_stock and can_override_stock,
+                override_reason=payload.negative_stock_reason,
+            )
+            db.commit()
+            db.refresh(fiscal_document)
+        except Exception:
+            db.rollback()
+            stale_document = db.query(models.Cotizacion).filter(
+                models.Cotizacion.id == fiscal_document.id,
+                models.Cotizacion.tenant_id == current_user.tenant_id,
+            ).first()
+            if stale_document and stale_document.estado == DOCUMENT_STATUS_PENDIENTE:
+                db.delete(stale_document)
+                db.commit()
+            raise
         if resultado.get("cdr_xml"):
             background_tasks.add_task(
                 fiscal_artifact_service.process_cdr_background,
@@ -778,7 +967,6 @@ def emitir_comprobante(
 def emitir_nota(
     request: Request,
     nota_data: schemas.NotaCreate,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(require_document_emitter),
     _emission_check: models.User = Depends(require_emission_allowed),
@@ -791,8 +979,18 @@ def emitir_nota(
         not_found_message="Comprobante afectado no encontrado",
     )
     _ensure_note_target_is_facturada(doc_afectado)
+    if not nota_data.items and not nota_data.legacy_full_adjustment:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "La ruta legacy requiere lineas o un ajuste explicito. "
+                "Use /notas para guardar un borrador calculado antes de emitir."
+            ),
+        )
     try:
         note_feature = beta_feature_flags.feature_for_note_type(nota_data.tipo_nota)
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     _require_beta_fiscal_feature(db, current_user, note_feature)
@@ -816,6 +1014,8 @@ def emitir_nota(
             cod_motivo=nota_data.cod_motivo,
             descripcion_motivo=nota_data.descripcion_motivo,
             items=nota_data.items,
+            inventory_impact=nota_data.inventory_impact,
+            inventory_return_warehouse_id=nota_data.inventory_return_warehouse_id,
         )
 
         resolved_mode = emission_queue_service.resolve_emission_mode(mode)
@@ -921,11 +1121,7 @@ def anular_documento(
         current_user.tenant_id,
         not_found_message="Comprobante no encontrado",
     )
-    _ensure_document_can_be_voided(comprobante)
-    try:
-        inventory_service.ensure_document_void_inventory_safe(db, comprobante)
-    except ValueError as exc:
-        raise HTTPException(409, str(exc)) from exc
+    _ensure_document_can_be_voided(comprobante, db)
 
     try:
         resolved_mode = emission_queue_service.resolve_emission_mode(mode)
@@ -1164,6 +1360,11 @@ def list_facturas_emitidas_page(
     desde: str | None = Query(default=None),
     hasta: str | None = Query(default=None),
     q: str | None = Query(default=None, max_length=80),
+    documento_cliente: Annotated[str | None, Query(max_length=32)] = None,
+    razon_social: Annotated[str | None, Query(max_length=160)] = None,
+    serie: Annotated[str | None, Query(max_length=8)] = None,
+    numero: Annotated[str | None, Query(max_length=16)] = None,
+    forma_pago: Annotated[str | None, Query(pattern="^(contado|credito)$")] = None,
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -1186,14 +1387,32 @@ def list_facturas_emitidas_page(
         base = base.filter(models.Cotizacion.fecha_emision >= desde_dt)
     if hasta_dt:
         base = base.filter(models.Cotizacion.fecha_emision <= hasta_dt)
+    if forma_pago:
+        cash = func.coalesce(models.Cotizacion.condicion_pago, 'contado').in_(['', 'contado'])
+        base = base.filter(cash if forma_pago == 'contado' else ~cash)
+    if serie:
+        base = base.filter(models.Cotizacion.serie.ilike(f'{serie.strip()}%'))
+    if numero:
+        base = base.filter(cast(models.Cotizacion.correlativo, String).contains(numero.strip().lstrip('0') or '0'))
+    if q or documento_cliente or razon_social:
+        base = base.outerjoin(models.Cliente, models.Cotizacion.cliente_id == models.Cliente.id)
+    if documento_cliente:
+        base = base.filter(models.Cliente.numero_documento.contains(documento_cliente.strip()))
+    if razon_social:
+        base = base.filter(models.Cliente.razon_social.ilike(f'%{razon_social.strip()}%'))
     if q:
         term = f"%{q.strip()}%"
-        base = base.outerjoin(models.Cliente, models.Cotizacion.cliente_id == models.Cliente.id).filter(
+        folio = q.strip().rsplit('-', 1)
+        exact_folio = and_(models.Cotizacion.serie.ilike(folio[0]), models.Cotizacion.correlativo == int(folio[1])) if len(folio) == 2 and folio[1].isdigit() and len(folio[1]) <= 10 else False
+        base = base.filter(
             or_(
                 models.Cliente.razon_social.ilike(term),
                 models.Cliente.nombre_comercial.ilike(term),
                 models.Cliente.numero_documento.ilike(term),
                 models.Cotizacion.serie.ilike(term),
+                (models.Cotizacion.serie + '-' + cast(models.Cotizacion.correlativo, String)).ilike(term),
+                exact_folio,
+                cast(models.Cotizacion.correlativo, String).ilike(term),
             )
         )
 
@@ -1205,78 +1424,6 @@ def list_facturas_emitidas_page(
     total = page_query.with_entities(func.count(models.Cotizacion.id)).scalar() or 0
     items = page_query.order_by(desc(models.Cotizacion.id)).offset(skip).limit(limit).all()
     return {"items": items, "total": total, "skip": skip, "limit": limit, "counts": counts}
-
-
-@router.post("/facturas-emitidas/{comprobante_id}/reintentar")
-@limiter.limit("5/minute")
-def retry_rejected_fiscal_document(
-    request: Request,
-    comprobante_id: int,
-    confirmar_operacion_estandar: bool = Query(default=False),
-    db: Session = Depends(get_db_tenant),
-    current_user: models.User = Depends(require_document_emitter),
-    _emission_check: models.User = Depends(require_emission_allowed),
-):
-    comprobante = (
-        db.query(models.Cotizacion)
-        .filter(
-            models.Cotizacion.id == comprobante_id,
-            models.Cotizacion.tenant_id == current_user.tenant_id,
-        )
-        .with_for_update()
-        .first()
-    )
-    if not comprobante:
-        _raise_not_found("Comprobante no encontrado")
-    if comprobante.document_kind != DOCUMENT_KIND_FISCAL_DOCUMENT:
-        raise HTTPException(409, "Solo se pueden reintentar facturas o boletas fiscales.")
-    if comprobante.tipo_comprobante not in {"01", "03"}:
-        raise HTTPException(409, "El tipo de comprobante no admite este reintento.")
-    if comprobante.estado == DOCUMENT_STATUS_ANULADA:
-        raise HTTPException(409, "Un comprobante anulado no puede reenviarse.")
-    if comprobante.sunat_accepted or (
-        comprobante.estado == DOCUMENT_STATUS_FACTURADA and not comprobante.sunat_error
-    ):
-        raise HTTPException(409, "El comprobante ya fue aceptado por SUNAT y no puede reenviarse.")
-    if not str(comprobante.sunat_error or "").strip():
-        raise HTTPException(409, "Solo se pueden reintentar comprobantes rechazados por SUNAT.")
-    if not comprobante.serie or comprobante.correlativo is None:
-        raise HTTPException(409, "El comprobante rechazado no tiene serie y correlativo válidos.")
-    legacy_auto_detraction = comprobante.sujeta_detraccion and "3127" in str(
-        comprobante.sunat_error or ""
-    )
-    if comprobante.sujeta_detraccion and not legacy_auto_detraction:
-        raise HTTPException(409, "La detracción requiere revisión fiscal antes de reenviarse.")
-    if legacy_auto_detraction and not confirmar_operacion_estandar:
-        raise HTTPException(
-            409,
-            "Confirma que el comprobante debe reenviarse como operación estándar sin detracción.",
-        )
-
-    _validar_pre_emision(comprobante, comprobante.tipo_comprobante)
-    _ensure_emission_credentials(db, current_user.tenant_id)
-
-    job, _ = emission_queue_service.enqueue_fiscal_document_job(
-        db,
-        comprobante,
-        current_user,
-        tipo_comprobante=comprobante.tipo_comprobante,
-        tipo_operacion="0101",
-        clear_legacy_detraccion=legacy_auto_detraction,
-    )
-    if job.status == models.EMISSION_JOB_STATUS_SUCCEEDED:
-        raise HTTPException(
-            409,
-            "El historial de emisión indica que este comprobante ya fue procesado. Contacta a soporte antes de reenviarlo.",
-        )
-    return _build_async_job_response(
-        job,
-        message=(
-            "Reintento encolado. Inkora regenerará el XML y conservará la serie y el correlativo."
-        ),
-        resource_id=comprobante.id,
-        internal_order_number=comprobante.internal_order_number,
-    )
 
 
 @router.get("/retenciones/", response_model=List[schemas.RetencionResponse])
@@ -1830,10 +1977,7 @@ def recuperar_archivo_api(
         if tipo_archivo == "cdr":
             media_type = "application/zip"
         ext = tipo_archivo if tipo_archivo != "cdr" else "zip"
-        filename = document_download_service.build_document_download_filename(
-            comprobante,
-            extension=ext,
-        )
+        filename = f"{comprobante.serie}-{comprobante.correlativo}.{ext}"
         return Response(
             content=contenido,
             media_type=media_type,
@@ -1847,56 +1991,6 @@ def recuperar_archivo_api(
             "No se pudo recuperar el archivo solicitado.",
             exc,
         )
-
-
-@router.post("/facturacion/{comprobante_id}/artifacts/retry")
-async def retry_fiscal_artifacts(
-    comprobante_id: int,
-    db: Session = Depends(get_db_tenant),
-    current_user: models.User = Depends(require_document_emitter),
-):
-    comprobante = _resolve_fiscal_document_or_404(
-        db,
-        comprobante_id,
-        current_user.tenant_id,
-        not_found_message="Comprobante no encontrado",
-    )
-
-    if not comprobante.sunat_cdr_content and not comprobante.sunat_cdr_url:
-        raise HTTPException(
-            409,
-            "No hay CDR persistido para reconstruir los artefactos del comprobante.",
-        )
-
-    cdr_reference = comprobante.sunat_cdr_url
-    if comprobante.sunat_cdr_content and not cdr_reference:
-        try:
-            cdr_reference = await fiscal_artifact_service.persist_cdr_artifact(
-                db,
-                comprobante,
-                comprobante.sunat_cdr_content,
-            )
-        except Exception as exc:
-            comprobante.cdr_artifact_status = "failed"
-            db.commit()
-            raise HTTPException(503, "No se pudo reconstruir el CDR en Storage.") from exc
-
-    try:
-        pdf_reference = await pdf_storage_service.generate_and_upload_pdf(db, comprobante)
-    except Exception as exc:
-        comprobante.pdf_artifact_status = "failed"
-        db.commit()
-        raise HTTPException(503, "No se pudo regenerar el PDF del comprobante.") from exc
-
-    db.refresh(comprobante)
-    return {
-        "ok": True,
-        "comprobante_id": comprobante.id,
-        "cdr_artifact_status": comprobante.cdr_artifact_status,
-        "pdf_artifact_status": comprobante.pdf_artifact_status,
-        "has_cdr": bool(cdr_reference or comprobante.sunat_cdr_content),
-        "has_pdf": bool(pdf_reference),
-    }
 
 
 @router.get(
@@ -1913,6 +2007,74 @@ def get_emission_job_endpoint(
     if not job:
         raise HTTPException(404, "Job de emisión no encontrado.")
     return job
+
+
+@router.get('/facturas-emitidas/{comprobante_id}/acciones')
+def fiscal_document_actions(
+    comprobante_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    document = _resolve_fiscal_document_or_404(db, comprobante_id, current_user.tenant_id, not_found_message='Comprobante no encontrado.')
+    return document_actions_service.available_actions(db, document, current_user)
+
+
+@router.post('/facturas-emitidas/{comprobante_id}/reintentar')
+@limiter.limit('5/minute')
+def retry_fiscal_document(
+    request: Request,
+    comprobante_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+    _emission_check: models.User = Depends(require_emission_allowed),
+):
+    document = db.query(models.Cotizacion).filter(
+        models.Cotizacion.id == comprobante_id,
+        models.Cotizacion.tenant_id == current_user.tenant_id,
+    ).with_for_update().first()
+    if not document:
+        raise HTTPException(404, 'Comprobante no encontrado.')
+    actions = document_actions_service.available_actions(db, document, current_user)
+    if not actions['retry_emission']:
+        raise HTTPException(409, actions['retry_block_reason'])
+    _validar_pre_emision(document, document.tipo_comprobante)
+    _ensure_emission_credentials(db, current_user.tenant_id)
+    inventory_service.create_document_holds(db, document, current_user.id)
+    existing = crud.get_emission_job_by_key(db, document.tenant_id, f'emit:fiscal:{document.id}')
+    if existing:
+        existing.max_attempts = max(existing.max_attempts or 0, (existing.attempts or 0) + 1)
+    db.add(models.AuditLog(
+        user_id=current_user.id, action='fiscal_retry_requested',
+        entity_type='cotizacion', entity_id=document.id,
+        details=f'tenant_id={document.tenant_id}; number={document.serie}-{document.correlativo}; same fiscal identity',
+    ))
+    job, _ = emission_queue_service.enqueue_fiscal_document_job(
+        db, document, current_user, tipo_comprobante=document.tipo_comprobante,
+    )
+    return _build_async_job_response(
+        job, message='Reintento encolado conservando serie y correlativo.',
+        resource_id=document.id, internal_order_number=document.internal_order_number,
+    )
+
+
+@router.post('/facturacion/{comprobante_id}/artifacts/retry')
+async def retry_fiscal_artifacts(
+    comprobante_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+):
+    document = _resolve_fiscal_document_or_404(db, comprobante_id, current_user.tenant_id, not_found_message='Comprobante no encontrado.')
+    if not document_actions_service.available_actions(db, document, current_user)['retry_artifacts']:
+        raise HTTPException(409, 'Se requiere un comprobante vigente con CDR persistido para recuperar archivos.')
+    try:
+        if document.sunat_cdr_content:
+            await fiscal_artifact_service.persist_cdr_artifact(db, document, document.sunat_cdr_content)
+        reference = await pdf_storage_service.generate_and_upload_pdf(db, document, force=True)
+    except Exception as exc:
+        raise HTTPException(503, 'No se pudieron recuperar los archivos. La emisión fiscal no se ha repetido.') from exc
+    if not reference:
+        return JSONResponse(status_code=202, content={'message': 'El PDF sigue pendiente. Actualice la lista en unos segundos.'})
+    return {'ok': True, 'comprobante_id': document.id, 'has_pdf': True}
 
 
 @router.get(

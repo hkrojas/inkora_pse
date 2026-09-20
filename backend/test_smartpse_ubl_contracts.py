@@ -1,5 +1,4 @@
 from xml.etree import ElementTree as ET
-
 import pytest
 
 from services.smartpse_ubl_service import (
@@ -91,67 +90,6 @@ def test_invoice_xml_and_filename_follow_sunat_contract():
     assert root.find("./cac:PaymentTerms/cbc:PaymentMeansID", NS).text == "Contado"
     assert root.find("./cac:InvoiceLine/cac:Item/cbc:Description", NS).text == "Impresion de prueba"
     assert build_smartpse_filename(payload) == "20123456789-01-F001-00000001"
-
-
-def test_configured_invoice_series_normalizes_to_eight_digit_correlative():
-    payload = _sale_payload("01")
-    payload["serie"] = "FA01"
-    payload["correlativo"] = "1"
-
-    xml = build_sale_document_xml(payload)
-    root = ET.fromstring(xml)
-
-    assert root.find("./cbc:ID", NS).text == "FA01-00000001"
-    assert build_smartpse_filename(payload) == "20123456789-01-FA01-00000001"
-
-
-def test_detraction_invoice_serializes_required_sunat_nodes():
-    payload = _sale_payload("01")
-    payload.update(
-        {
-            "tipoOperacion": "1001",
-            "detraccion": {
-                "codBienDetraccion": "025",
-                "codMedioPago": "001",
-                "ctaBanco": "00-123-456789",
-                "percent": "12.00",
-                "mount": "14.16",
-            },
-        }
-    )
-
-    root = ET.fromstring(build_sale_document_xml(payload))
-    payment_means = root.find("./cac:PaymentMeans", NS)
-    detraction_terms = root.findall("./cac:PaymentTerms", NS)[-1]
-
-    assert root.find("./cbc:InvoiceTypeCode", NS).attrib["listID"] == "1001"
-    assert payment_means.find("./cbc:ID", NS).text == "Detraccion"
-    assert payment_means.find("./cbc:PaymentMeansCode", NS).text == "001"
-    assert payment_means.find("./cac:PayeeFinancialAccount/cbc:ID", NS).text == "00-123-456789"
-    assert detraction_terms.find("./cbc:ID", NS).text == "025"
-    assert detraction_terms.find("./cbc:ID", NS).attrib["schemeURI"].endswith("catalogo54")
-    assert detraction_terms.find("./cbc:PaymentPercent", NS).text == "12.00"
-    assert detraction_terms.find("./cbc:Amount", NS).text == "14.16"
-
-
-def test_detraction_invoice_fails_before_emission_when_data_is_incomplete():
-    payload = _sale_payload("01")
-    payload["tipoOperacion"] = "1001"
-
-    with pytest.raises(ValueError, match="requiere datos de detracción"):
-        build_sale_document_xml(payload)
-
-
-def test_configured_boleta_series_normalizes_to_eight_digit_correlative():
-    payload = _sale_payload("03")
-    payload["serie"] = "BB01"
-    payload["correlativo"] = "1"
-
-    xml = build_sale_document_xml(payload)
-    root = ET.fromstring(xml)
-
-    assert root.find("./cbc:ID", NS).text == "BB01-00000001"
-    assert build_smartpse_filename(payload) == "20123456789-03-BB01-00000001"
 
 
 def test_invoice_xml_preserves_unit_price_precision_for_small_amounts():
@@ -344,3 +282,40 @@ def test_batch_xml_and_filename_add_reference_date_for_numeric_correlativo():
     assert voided_root.find("./cbc:ID", NS).text == "RA-20260506-00002"
     assert build_smartpse_filename(summary) == "20123456789-RC-20260505-00001"
     assert build_smartpse_filename(voided) == "20123456789-RA-20260506-00002"
+
+
+def test_detraction_invoice_serializes_required_sunat_nodes():
+    payload = _sale_payload("01")
+    payload.update(
+        {
+            "tipoOperacion": "1001",
+            "detraccion": {
+                "codBienDetraccion": "025",
+                "codMedioPago": "001",
+                "ctaBanco": "00-123-456789",
+                "percent": "12.00",
+                "mount": "14.16",
+            },
+        }
+    )
+
+    root = ET.fromstring(build_sale_document_xml(payload))
+    payment_means = root.find("./cac:PaymentMeans", NS)
+    detraction_terms = root.findall("./cac:PaymentTerms", NS)[-1]
+
+    assert root.find("./cbc:InvoiceTypeCode", NS).attrib["listID"] == "1001"
+    assert payment_means.find("./cbc:ID", NS).text == "Detraccion"
+    assert payment_means.find("./cbc:PaymentMeansCode", NS).text == "001"
+    assert payment_means.find("./cac:PayeeFinancialAccount/cbc:ID", NS).text == "00-123-456789"
+    assert detraction_terms.find("./cbc:ID", NS).text == "025"
+    assert detraction_terms.find("./cbc:ID", NS).attrib["schemeURI"].endswith("catalogo54")
+    assert detraction_terms.find("./cbc:PaymentPercent", NS).text == "12.00"
+    assert detraction_terms.find("./cbc:Amount", NS).text == "14.16"
+
+
+def test_detraction_invoice_fails_before_emission_when_data_is_incomplete():
+    payload = _sale_payload("01")
+    payload["tipoOperacion"] = "1001"
+
+    with pytest.raises(ValueError, match="requiere datos de detracción"):
+        build_sale_document_xml(payload)

@@ -22,8 +22,9 @@ else
 fi
 
 # ── 2. Validar entorno ────────────────────────────────────────────────────────
-if [ "${ENVIRONMENT:-}" != "staging" ] && [ "${ENVIRONMENT:-}" != "production" ]; then
-    echo "[deploy] ADVERTENCIA: ENVIRONMENT='${ENVIRONMENT:-}' — esperado 'staging' o 'production'"
+if [ "${ENVIRONMENT:-}" != "staging" ]; then
+    echo "[deploy] ERROR: este script solo admite ENVIRONMENT=staging"
+    exit 1
 fi
 
 if [ -z "${DATABASE_URL:-}" ]; then
@@ -31,17 +32,105 @@ if [ -z "${DATABASE_URL:-}" ]; then
     exit 1
 fi
 
+if [ "${STAGING_DEPLOY_CONFIRMATION:-}" != "INKORA_STAGING" ]; then
+    echo "[deploy] ERROR: define STAGING_DEPLOY_CONFIRMATION=INKORA_STAGING para esta ejecucion"
+    exit 1
+fi
+
+if [ -z "${STAGING_BACKUP_ID:-}" ]; then
+    echo "[deploy] ERROR: crea un snapshot y define STAGING_BACKUP_ID con su identificador"
+    exit 1
+fi
+
+if [ -z "${STAGING_TARGET_ID:-}" ]; then
+    echo "[deploy] ERROR: define STAGING_TARGET_ID con el project ref/identificador exclusivo de staging"
+    exit 1
+fi
+
+if [ -z "${RELEASE_ID:-}" ]; then
+    echo "[deploy] ERROR: define RELEASE_ID con la huella comun de backend, worker y frontend"
+    exit 1
+fi
+
+if [ -n "${PRODUCTION_DATABASE_URL:-}" ] && [ "$DATABASE_URL" = "$PRODUCTION_DATABASE_URL" ]; then
+    echo "[deploy] ERROR: DATABASE_URL coincide con PRODUCTION_DATABASE_URL"
+    exit 1
+fi
+
+python - "$DATABASE_URL" "$STAGING_TARGET_ID" <<'PY'
+import sys
+from urllib.parse import urlparse
+
+database_url, target_id = sys.argv[1], sys.argv[2].strip().lower()
+if len(target_id) < 6 or target_id in {"staging", "production", "postgres"}:
+    raise SystemExit("[deploy] ERROR: STAGING_TARGET_ID debe ser un identificador concreto de al menos 6 caracteres")
+parsed = urlparse(database_url)
+identity = f"{parsed.username or ''}@{parsed.hostname or ''}/{parsed.path.lstrip('/')}".lower()
+if target_id not in identity:
+    raise SystemExit("[deploy] ERROR: DATABASE_URL no contiene el STAGING_TARGET_ID declarado")
+PY
+
 echo "[deploy] ENVIRONMENT=${ENVIRONMENT}"
 echo "[deploy] DATABASE_URL=***"
+echo "[deploy] STAGING_BACKUP_ID=${STAGING_BACKUP_ID}"
+echo "[deploy] STAGING_TARGET_ID=${STAGING_TARGET_ID}"
+echo "[deploy] RELEASE_ID=${RELEASE_ID}"
 
 # ── 3. Migraciones en orden ───────────────────────────────────────────────────
 echo ""
-echo "[deploy] === Ejecutando migraciones ==="
-python run_launch_migrations.py
+echo "[deploy] === Validando cadena launch ==="
+python run_launch_migrations.py --dry-run --strict
+
+echo "[deploy] === Verificando grafo y baseline Alembic antes de escribir ==="
+if ! ALEMBIC_HEADS="$(python -m alembic -c alembic.ini heads 2>&1)"; then
+    printf '%s\n' "$ALEMBIC_HEADS"
+    echo "[deploy] ERROR: no se pudo resolver el grafo Alembic"
+    exit 1
+fi
+HEAD_COUNT="$(printf '%s\n' "$ALEMBIC_HEADS" | grep -Ec '\(head\)$' || true)"
+if [ "$HEAD_COUNT" -ne 1 ]; then
+    printf '%s\n' "$ALEMBIC_HEADS"
+    echo "[deploy] ERROR: se esperaba exactamente un head Alembic y se encontraron $HEAD_COUNT"
+    exit 1
+fi
+printf '%s\n' "$ALEMBIC_HEADS"
+EXPECTED_ALEMBIC_HEAD="0022_gre_sales_documents"
+if ! printf '%s\n' "$ALEMBIC_HEADS" | grep -Eq "^${EXPECTED_ALEMBIC_HEAD} \(head\)$"; then
+    echo "[deploy] ERROR: la cabeza esperada es ${EXPECTED_ALEMBIC_HEAD}"
+    exit 1
+fi
+
+if ! ALEMBIC_CURRENT="$(python -m alembic -c alembic.ini current 2>&1)"; then
+    printf '%s\n' "$ALEMBIC_CURRENT"
+    echo "[deploy] ERROR: no se pudo consultar la revision Alembic de staging"
+    exit 1
+fi
+if ! printf '%s' "$ALEMBIC_CURRENT" | grep -Eq '[0-9]{4}_[a-z0-9_]+'; then
+    echo "[deploy] ERROR: base sin revision Alembic. Ejecuta el bootstrap manual del runbook; no se aplicara stamp automaticamente."
+    exit 1
+fi
+printf '%s\n' "$ALEMBIC_CURRENT"
+
+echo "[deploy] === Ejecutando cadena launch ==="
+python run_launch_migrations.py --strict
 # El runner mantiene la cadena canonica launch/staging y omite dominios congelados.
 
-
 # migrate_broker.py y migrate_mrp.py son dominios congelados — omitidos
+
+echo "[deploy] === Verificando integridad beta ==="
+python migrate_beta_integrity.py --dry-run
+python migrate_beta_integrity.py --apply
+python migrate_beta_integrity.py --dry-run
+
+echo "[deploy] === Aplicando revisiones Alembic ==="
+python -m alembic -c alembic.ini upgrade head
+ALEMBIC_CURRENT_AFTER="$(python -m alembic -c alembic.ini current)"
+printf '%s\n' "$ALEMBIC_CURRENT_AFTER"
+if ! printf '%s\n' "$ALEMBIC_CURRENT_AFTER" | grep -Eq "^${EXPECTED_ALEMBIC_HEAD} \(head\)$"; then
+    echo "[deploy] ERROR: staging no quedo en ${EXPECTED_ALEMBIC_HEAD}"
+    exit 1
+fi
+python -m alembic -c alembic.ini heads
 
 echo "[deploy] === Migraciones completadas ==="
 

@@ -75,7 +75,7 @@ def access_request_status(
 def list_access_requests(
     status_filter: str | None = Query(default="pending", alias="status"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(25, ge=1, le=100),
+    limit: int = Query(15, ge=1, le=100),
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_superadmin),
 ):

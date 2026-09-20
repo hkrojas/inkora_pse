@@ -1,0 +1,62 @@
+{
+  "schema_version": "phase-0-design-1",
+  "notice": "Ejemplos anonimizados de análisis. No son datos de un tenant, no deben importarse y no confirman si los importes son costo o venta.",
+  "samples": [
+    {
+      "sample_id": "P0-001",
+      "status": "design_sample",
+      "family": "autocopiativo",
+      "base_unit": "millar",
+      "currency": null,
+      "amount_kind": "pending_confirmation",
+      "patterns": ["composition", "quantity_tier"],
+      "components": [
+        {"size": "A12", "layer": "CB", "amount": "25.000000"},
+        {"size": "A12", "layer": "CFB", "amount": "26.000000"},
+        {"size": "A12", "layer": "CF", "amount": "24.000000"},
+        {"size": "A4", "layer": "CB", "amount": "31.000000"},
+        {"size": "A4", "layer": "CFB", "amount": "32.000000"},
+        {"size": "A4", "layer": "CF", "amount": "30.000000"},
+        {"size": "OFICIO", "layer": "CB", "amount": "36.000000"},
+        {"size": "OFICIO", "layer": "CFB", "amount": "38.000000"},
+        {"size": "OFICIO", "layer": "CF", "amount": "35.000000"}
+      ],
+      "observed_totals": [
+        {"size": "A12", "copies": 1, "amount": "49.000000"},
+        {"size": "A12", "copies": 2, "amount": "75.000000"},
+        {"size": "A12", "copies": 3, "amount": "101.000000"},
+        {"size": "A12", "copies": 4, "amount": "127.000000"}
+      ],
+      "ambiguities": ["Moneda y tipo de importe no visibles.", "Confirmar si el total observado incluye recargos, merma o redondeo."]
+    },
+    {
+      "sample_id": "P0-002",
+      "status": "design_sample",
+      "family": "sobre",
+      "base_unit": "millar",
+      "currency": null,
+      "amount_kind": "pending_confirmation",
+      "patterns": ["dimension_matrix", "direct_lookup"],
+      "rows": [
+        {"description": "PAGO", "width_cm": "10.8", "height_cm": "18", "material": "BOND", "amount": "13.000000", "confidence": "legible_sin_confirmar"},
+        {"description": "PAGO", "width_cm": "10.8", "height_cm": "18", "material": "MANILA", "amount": "11.200000", "confidence": "legible_sin_confirmar"},
+        {"description": "1/2 OFICIO", "width_cm": "19", "height_cm": "26", "material": "BOND", "amount": "29.000000", "confidence": "legible_sin_confirmar"},
+        {"description": "1/2 OFICIO", "width_cm": "19", "height_cm": "26", "material": "MANILA", "amount": "29.700000", "confidence": "legible_sin_confirmar"}
+      ],
+      "ambiguities": ["Existen celdas tachadas o borrosas en la fuente; no se transcriben como precio definitivo.", "Confirmar moneda, naturaleza costo/venta y vigencia."]
+    },
+    {
+      "sample_id": "P0-UPDATE-001",
+      "status": "design_scenario",
+      "scenario": "Aumento masivo de 10 %",
+      "expected": "Una nueva versión en borrador recibe los importes recalculados; la versión publicada anterior no cambia."
+    },
+    {
+      "sample_id": "P0-COMPOSITION-001",
+      "status": "design_scenario",
+      "scenario": "Cálculo por composición",
+      "inputs": {"size": "A12", "layers": ["CB", "CFB", "CF"], "quantity": 1000},
+      "expected": "El resultado conserva el desglose por componente y las reglas comerciales aplicadas."
+    }
+  ]
+}

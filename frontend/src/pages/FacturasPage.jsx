@@ -9,6 +9,7 @@ export default function FacturasPage() {
         subtitle="Comprobantes tipo 01 emitidos ante SUNAT"
         newLabel="+ Nueva factura"
         newHref="/comprobantes/nuevo?tipo=01"
+        allowGuides
       />
     </div>
   );

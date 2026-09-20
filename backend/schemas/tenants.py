@@ -3,11 +3,15 @@ from datetime import datetime
 import re
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from schemas._base import StrictInputModel
 from services.bank_account_validation import validate_and_normalize_bank_accounts
 from services.phone_validation import normalize_and_validate_optional_peru_mobile
+
+
+FISCAL_SERIE_RE = re.compile(r"^[A-Z0-9]{4}$")
+HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 class TenantBase(StrictInputModel):
@@ -23,21 +27,6 @@ class TenantCreate(TenantBase):
     @classmethod
     def validate_business_phone(cls, value: Optional[str]) -> Optional[str]:
         return normalize_and_validate_optional_peru_mobile(value, "Telefono de contacto")
-
-
-HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
-FISCAL_SERIE_RE = re.compile(r"^[A-Z0-9]{4}$")
-
-
-def _normalize_optional_hex_color(value: Optional[str]) -> Optional[str]:
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    if not normalized:
-        return None
-    if not HEX_COLOR_RE.fullmatch(normalized):
-        raise ValueError("El color debe usar formato hexadecimal #RRGGBB.")
-    return normalized.upper()
 
 
 class TenantUpdate(StrictInputModel):
@@ -331,6 +320,28 @@ class EmissionErrorResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FiscalContingencyUpdate(StrictInputModel):
+    enabled: bool
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def require_reason_when_enabling(self):
+        if self.enabled and not (self.reason or "").strip():
+            raise ValueError("El motivo es obligatorio al activar la contingencia fiscal.")
+        return self
+
+
+class FiscalContingencyResponse(BaseModel):
+    tenant_id: int
+    enabled: bool
+    reason: Optional[str] = None
+    started_at: Optional[datetime] = None
+    held_jobs: int = 0
+    released_jobs: int = 0
+    processing_jobs: int = 0
+    pending_confirmation_jobs: int = 0
+
+
 class TokenHealthResponse(BaseModel):
     tenant_id: int
     status: str
@@ -371,6 +382,103 @@ class SmartPSEProvisionRequest(StrictInputModel):
     environment: str = "demo"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+
+
+class SmartPSEGreCredentialsUpdate(StrictInputModel):
+    sol_username: str = Field(..., min_length=1, max_length=80)
+    sol_password: str = Field(..., min_length=1, max_length=250)
+    client_id: str = Field(..., min_length=1, max_length=120)
+    client_secret: str = Field(..., min_length=1, max_length=500)
+
+    @field_validator("sol_username")
+    @classmethod
+    def normalize_sol_username(cls, value: str) -> str:
+        return " ".join(value.strip().upper().split())
+
+    @field_validator("sol_password", "client_id", "client_secret")
+    @classmethod
+    def normalize_secret_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class SmartPSEGreCredentialsValidationResponse(BaseModel):
+    valid: bool
+    message: str
+    provider_status_code: Optional[int] = None
+    provider_detail: Optional[str] = None
+
+
+class SuperadminTenantResponse(TenantResponse):
+    plan_start_date: Optional[datetime] = None
+    plan_end_date: Optional[datetime] = None
+    sunat_usuario_sol_secret: Optional[str] = Field(
+        default=None, alias="sunat_usuario_sol", exclude=True, repr=False
+    )
+    sunat_clave_sol_secret: Optional[str] = Field(
+        default=None, alias="sunat_clave_sol", exclude=True, repr=False
+    )
+    sunat_cert_password_secret: Optional[str] = Field(
+        default=None, alias="sunat_cert_password", exclude=True, repr=False
+    )
+    sunat_cert_url_secret: Optional[str] = Field(
+        default=None, alias="sunat_cert_url", exclude=True, repr=False
+    )
+
+    @computed_field(return_type=bool)
+    @property
+    def has_sunat_usuario_sol(self) -> bool:
+        return bool(self.sunat_usuario_sol_secret)
+
+    @computed_field(return_type=bool)
+    @property
+    def has_sunat_clave_sol(self) -> bool:
+        return bool(self.sunat_clave_sol_secret)
+
+    @computed_field(return_type=bool)
+    @property
+    def has_sunat_cert_password(self) -> bool:
+        return bool(self.sunat_cert_password_secret)
+
+    @computed_field(return_type=bool)
+    @property
+    def has_sunat_cert_url(self) -> bool:
+        return bool(self.sunat_cert_url_secret)
+
+    @computed_field(return_type=bool)
+    @property
+    def has_sunat_credentials(self) -> bool:
+        return (
+            self.has_sunat_usuario_sol
+            and self.has_sunat_clave_sol
+            and self.has_sunat_cert_password
+            and self.has_sunat_cert_url
+        )
+
+
+class SuperadminTenantPageMetrics(BaseModel):
+    total: int
+    active: int
+    smartpse_gre: int
+    smartpse_gre_pending: int
+
+
+class SuperadminTenantPageResponse(BaseModel):
+    items: List[SuperadminTenantResponse]
+    total: int
+    skip: int
+    limit: int
+    metrics: SuperadminTenantPageMetrics
+
+
+def _normalize_optional_hex_color(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+    if not HEX_COLOR_RE.fullmatch(normalized):
+        raise ValueError("El color debe usar formato hexadecimal #RRGGBB.")
+    return normalized.upper()
 
 
 class SmartPSECompanyCreate(StrictInputModel):
@@ -486,89 +594,3 @@ class SmartPSESyncAllResponse(BaseModel):
 class SmartPSEDeleteResponse(BaseModel):
     deleted: bool
     company_id: Optional[str] = None
-
-
-class SmartPSEGreCredentialsUpdate(StrictInputModel):
-    sol_username: str = Field(..., min_length=1, max_length=80)
-    sol_password: str = Field(..., min_length=1, max_length=250)
-    client_id: str = Field(..., min_length=1, max_length=120)
-    client_secret: str = Field(..., min_length=1, max_length=500)
-
-    @field_validator("sol_username")
-    @classmethod
-    def normalize_sol_username(cls, value: str) -> str:
-        return " ".join(value.strip().upper().split())
-
-    @field_validator("sol_password", "client_id", "client_secret")
-    @classmethod
-    def normalize_secret_text(cls, value: str) -> str:
-        return value.strip()
-
-
-class SmartPSEGreCredentialsValidationResponse(BaseModel):
-    valid: bool
-    message: str
-    provider_status_code: Optional[int] = None
-    provider_detail: Optional[str] = None
-
-
-class SuperadminTenantResponse(TenantResponse):
-    plan_start_date: Optional[datetime] = None
-    plan_end_date: Optional[datetime] = None
-    sunat_usuario_sol_secret: Optional[str] = Field(
-        default=None, alias="sunat_usuario_sol", exclude=True, repr=False
-    )
-    sunat_clave_sol_secret: Optional[str] = Field(
-        default=None, alias="sunat_clave_sol", exclude=True, repr=False
-    )
-    sunat_cert_password_secret: Optional[str] = Field(
-        default=None, alias="sunat_cert_password", exclude=True, repr=False
-    )
-    sunat_cert_url_secret: Optional[str] = Field(
-        default=None, alias="sunat_cert_url", exclude=True, repr=False
-    )
-
-    @computed_field(return_type=bool)
-    @property
-    def has_sunat_usuario_sol(self) -> bool:
-        return bool(self.sunat_usuario_sol_secret)
-
-    @computed_field(return_type=bool)
-    @property
-    def has_sunat_clave_sol(self) -> bool:
-        return bool(self.sunat_clave_sol_secret)
-
-    @computed_field(return_type=bool)
-    @property
-    def has_sunat_cert_password(self) -> bool:
-        return bool(self.sunat_cert_password_secret)
-
-    @computed_field(return_type=bool)
-    @property
-    def has_sunat_cert_url(self) -> bool:
-        return bool(self.sunat_cert_url_secret)
-
-    @computed_field(return_type=bool)
-    @property
-    def has_sunat_credentials(self) -> bool:
-        return (
-            self.has_sunat_usuario_sol
-            and self.has_sunat_clave_sol
-            and self.has_sunat_cert_password
-            and self.has_sunat_cert_url
-        )
-
-
-class SuperadminTenantPageMetrics(BaseModel):
-    total: int
-    active: int
-    smartpse_gre: int
-    smartpse_gre_pending: int
-
-
-class SuperadminTenantPageResponse(BaseModel):
-    items: List[SuperadminTenantResponse]
-    total: int
-    skip: int
-    limit: int
-    metrics: SuperadminTenantPageMetrics

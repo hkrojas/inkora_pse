@@ -9,6 +9,7 @@ export default function BoletasPage() {
         subtitle="Comprobantes tipo 03 emitidos ante SUNAT"
         newLabel="+ Nueva boleta"
         newHref="/comprobantes/nuevo?tipo=03"
+        allowGuides
       />
     </div>
   );

@@ -18,12 +18,14 @@ function getApiErrorMessage(detail, fallback) {
 function buildApiError(message, {
   status = null,
   path = '',
+  detail = null,
   isTimeout = false,
   isCanceled = false,
 } = {}) {
   const error = new Error(message);
   error.status = status;
   error.path = path;
+  error.detail = detail;
   error.isTimeout = isTimeout;
   error.isCanceled = isCanceled;
   return error;
@@ -113,7 +115,7 @@ async function request(path, options = {}) {
       }
     }
 
-    throw buildApiError(message, { status: response.status, path });
+    throw buildApiError(message, { status: response.status, path, detail: errorData.detail });
   }
 
   return response.json();
@@ -176,9 +178,9 @@ async function requestBlob(path, options = {}) {
 
 export const api = {
   get: (path, options) => request(path, { ...options, method: 'GET' }),
-  getBlob: (path, options) => requestBlob(path, { ...options, method: 'GET' }),
   post: (path, body, options) => request(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
   blob: (path, body, options) => requestBlob(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
+  getBlob: (path, options) => requestBlob(path, { ...options, method: 'GET' }),
   download: (path, options) => requestBlob(path, { ...options, method: 'GET' }),
   postForm: (path, formData, options) => request(path, { ...options, method: 'POST', body: formData }),
   put: (path, body, options) => request(path, { ...options, method: 'PUT', body: JSON.stringify(body) }),

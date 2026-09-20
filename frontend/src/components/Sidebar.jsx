@@ -23,7 +23,9 @@ import {
   XCircle,
   X,
   PlusCircle,
+  FilePlus,
   ArrowLeftRight,
+  FileDown,
   RotateCcw,
   HandCoins,
   Eye,
@@ -31,19 +33,6 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { cn } from '../lib/utils/cn';
-import { ENABLE_ADVANCED_FISCAL } from '../lib/utils/config';
-
-const ADVANCED_FISCAL_GROUP = {
-  id: 'fiscal',
-  label: 'Fiscal',
-  items: [
-    { route: '/resumen-diario', label: 'Resumen diario', icon: BarChart3 },
-    { route: '/bajas', label: 'Bajas', icon: XCircle },
-    { route: '/reversiones', label: 'Reversiones', icon: RotateCcw },
-    { route: '/retenciones', label: 'Retenciones', icon: HandCoins },
-    { route: '/percepciones', label: 'Percepciones', icon: Eye },
-  ],
-};
 
 const GROUPS = [
   {
@@ -69,7 +58,17 @@ const GROUPS = [
       { to: '/notas', label: 'Notas créd./déb.', icon: ArrowLeftRight },
     ],
   },
-  ...(ENABLE_ADVANCED_FISCAL ? [ADVANCED_FISCAL_GROUP] : []),
+  {
+    id: 'fiscal',
+    label: 'Fiscal',
+    items: [
+      { to: '/resumen-diario', label: 'Resumen diario', icon: BarChart3 },
+      { to: '/bajas', label: 'Bajas', icon: XCircle },
+      { to: '/reversiones', label: 'Reversiones', icon: RotateCcw },
+      { to: '/retenciones', label: 'Retenciones', icon: HandCoins },
+      { to: '/percepciones', label: 'Percepciones', icon: Eye },
+    ],
+  },
   {
     id: 'sistema',
     label: 'Sistema',
@@ -245,9 +244,7 @@ export default function Sidebar() {
                 {showCollapsed ? '·' : group.label}
               </div>
 
-              {group.items.map((item) => {
-                const { label, icon: Icon, accent } = item;
-                const to = item.to || item.route;
+              {group.items.map(({ to, label, icon: Icon, accent }) => {
                 const isActive = location.pathname === to || location.pathname.startsWith(`${to}/`);
                 return (
                   <NavLink

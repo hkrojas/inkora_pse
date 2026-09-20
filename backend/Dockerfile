@@ -8,11 +8,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc pkg-config libcairo2-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia el archivo de requerimientos primero para aprovechar el cache de Docker
-COPY ./requirements.txt /code/requirements.txt
+# Copia el lock reproducible primero para aprovechar el cache de Docker
+COPY ./requirements-lock.txt /code/requirements-lock.txt
 
 # Instala las dependencias
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /code/requirements-lock.txt
 
 # Copia todo el código de tu backend al contenedor
 COPY ./ /code/

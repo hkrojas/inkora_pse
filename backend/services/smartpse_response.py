@@ -142,6 +142,62 @@ def extract_sale_document_identity(xml_text: str | None) -> dict:
     }
 
 
+def extract_gre_document_identity(xml_text: str | None) -> dict:
+    """Read the immutable identity of a signed UBL DespatchAdvice."""
+    if not xml_text:
+        return {}
+    try:
+        root = ET.fromstring(xml_text.encode("utf-8") if isinstance(xml_text, str) else xml_text)
+    except Exception:
+        return {}
+    if root.tag.rsplit("}", 1)[-1] != "DespatchAdvice":
+        return {}
+    document_id = root.findtext("cbc:ID", namespaces=NS)
+    series = number = None
+    if document_id and "-" in document_id:
+        series, number = document_id.split("-", 1)
+    issuer_ruc = root.findtext(
+        "cac:DespatchSupplierParty/cac:Party/cac:PartyIdentification/cbc:ID",
+        namespaces=NS,
+    )
+    document_type = root.findtext("cbc:DespatchAdviceTypeCode", namespaces=NS)
+    return {
+        "document_id": document_id,
+        "series": series,
+        "number": number,
+        "issuer_ruc": str(issuer_ruc or "").strip() or None,
+        "document_type": str(document_type or "").strip() or None,
+    }
+
+
+def validate_gre_cdr(cdr_xml: str, payload: dict) -> None:
+    """Require a readable, matching, accepted CDR before a GRE becomes accepted."""
+    try:
+        root = ET.fromstring(cdr_xml)
+    except Exception as exc:
+        raise SmartPSEException("El CDR GRE no es XML legible; requiere conciliación.") from exc
+
+    response_code = root.findtext(".//cbc:ResponseCode", namespaces=NS)
+    reference_id = root.findtext(".//cac:DocumentReference/cbc:ID", namespaces=NS)
+    expected = f"{payload.get('serie')}-{payload.get('correlativo')}"
+    if not reference_id:
+        raise SmartPSEException("El CDR GRE no identifica el documento; requiere conciliación.")
+    def normalize(value):
+        series, _, number = str(value or "").partition("-")
+        return series.upper(), str(int(number)) if number.isdigit() else number
+    if normalize(reference_id) != normalize(expected):
+        raise SmartPSEException(
+            f"El CDR corresponde a {reference_id} y no a {expected}; requiere conciliación."
+        )
+    if str(response_code or "").strip() != "0":
+        from services.smartpse_client import SmartPSEDefinitiveRejection
+        description = root.findtext(".//cbc:Description", namespaces=NS)
+        raise SmartPSEDefinitiveRejection(
+            f"SUNAT rechazó la GRE con código {response_code}: {description or 'sin descripción'}",
+            {"cdr": cdr_xml, "estado": response_code, "mensaje": description},
+        )
+
+
 def _is_pending(data: dict) -> bool:
     estado = str(data.get("estado") or "").strip()
     return bool(data.get("ticket")) and not data.get("cdr") and estado != "202"
@@ -170,13 +226,21 @@ def build_smartpse_result(
             data.get("observaciones"),
             data.get("error"),
         )
+        if _provider_rejected(data) and status_code < 400:
+            from services.smartpse_client import SmartPSEDefinitiveRejection
+            raise SmartPSEDefinitiveRejection(
+                detail or "Smart PSE rechazo definitivamente el documento.", data
+            )
         raise SmartPSEException(detail or "Smart PSE rechazo el documento.")
 
     resolved_ticket = ticket or data.get("ticket")
     signed_xml = extract_xml_from_signed_zip(data.get("xml_firmado") or data.get("xml"))
     cdr_xml = _decode_base64_text(data.get("cdr"))
+    if cdr_xml and str(payload.get("tipoDoc") or "") in {"09", "31"}:
+        validate_gre_cdr(cdr_xml, payload)
     pending = str(data.get("estado") or "").strip() == "202" or _is_pending(data)
-    if require_cdr and not cdr_xml:
+    explicitly_pending = str(data.get("estado") or "").strip() == "202"
+    if require_cdr and not cdr_xml and not pending:
         raise SmartPSEException(
             "Smart PSE no devolvio CDR de aceptacion; el documento no puede marcarse como aceptado."
         )

@@ -200,14 +200,19 @@ def test_factura_download_payload_contract_subset_is_stable(db_session):
     assert payload["ublVersion"] == "2.1"
     assert payload["tipoDoc"] == "01"
     assert payload["serie"] == fiscal.serie
-    assert payload["correlativo"] == str(fiscal.correlativo).zfill(6)
+    assert payload["correlativo"] == str(fiscal.correlativo).zfill(8)
     assert payload["tipoMoneda"] == "PEN"
     assert payload["tipoOperacion"] == "0101"
     assert payload["company"]["ruc"] == tenant.business_ruc
     assert payload["client"]["tipoDoc"] == "6"
     assert payload["client"]["numDoc"] == "20191308868"
-    assert payload["formaPago"] == {"moneda": "PEN", "tipo": "Contado"}
-    assert "cuotas" not in payload
+    assert payload["formaPago"] == {
+        "moneda": "PEN",
+        "tipo": "Credito",
+        "monto": Decimal("118.00"),
+    }
+    assert len(payload["cuotas"]) == 1
+    assert payload["cuotas"][0]["monto"] == Decimal("118.00")
     assert payload["details"][0]["unidad"] == "NIU"
     assert payload["details"][0]["cantidad"] == Decimal("1.00")
     assert payload["details"][0]["mtoValorUnitario"] == Decimal("100.00")
@@ -265,7 +270,7 @@ def test_nota_download_payload_contract_subset_is_stable(db_session):
     assert payload["ublVersion"] == "2.1"
     assert payload["tipoDoc"] == "07"
     assert payload["serie"] == "FF01"
-    assert payload["correlativo"] == str(nota.correlativo).zfill(6)
+    assert payload["correlativo"] == str(nota.correlativo).zfill(8)
     assert payload["company"]["ruc"] == fiscal.tenant.business_ruc
     assert payload["client"]["tipoDoc"] == "6"
     assert payload["tipDocAfectado"] == "01"

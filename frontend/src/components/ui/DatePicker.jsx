@@ -8,7 +8,7 @@ const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 
 function parseDate(val) {
   if (!val) return null;
   const d = new Date(val + 'T00:00:00');
-  return Number.isNaN(d) ? null : d;
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function toISO(d) {
@@ -31,14 +31,19 @@ function getFirstWeekday(year, month) {
 }
 
 export default function DatePicker({
+  id,
   value,
   onChange,
   placeholder = 'dd/mm/aaaa',
   disabled = false,
   required = false,
   compact = false,
+  min,
+  ariaLabel,
+  ariaLabelledby,
 }) {
   const selected = parseDate(value);
+  const minDate = parseDate(min);
   const today = new Date();
 
   const [open, setOpen] = useState(false);
@@ -144,10 +149,15 @@ export default function DatePicker({
   return (
     <>
       <button
+        id={id}
         ref={triggerRef}
         type="button"
         disabled={disabled}
         aria-required={required}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledby}
         onClick={open ? () => setOpen(false) : openCalendar}
         className={`ink-date-trigger ${compact ? 'ink-date-trigger--compact' : ''} ${open ? 'is-open' : ''}`}
       >
@@ -164,6 +174,9 @@ export default function DatePicker({
         <div
           ref={calendarRef}
           className="ink-date-popover"
+          role="dialog"
+          aria-modal="false"
+          aria-label="Seleccionar fecha"
           style={{
             top: pos.top,
             left: pos.left,
@@ -172,13 +185,13 @@ export default function DatePicker({
           }}
         >
           <div className="ink-date-header">
-            <button type="button" onMouseDown={(e) => { e.preventDefault(); prevMonth(); }} className="ink-date-nav">
+            <button type="button" aria-label="Mes anterior" onMouseDown={(e) => { e.preventDefault(); prevMonth(); }} className="ink-date-nav">
               <ChevronLeft size={14} />
             </button>
             <span className="ink-date-title">
               {MONTHS[viewMonth]} {viewYear}
             </span>
-            <button type="button" onMouseDown={(e) => { e.preventDefault(); nextMonth(); }} className="ink-date-nav">
+            <button type="button" aria-label="Mes siguiente" onMouseDown={(e) => { e.preventDefault(); nextMonth(); }} className="ink-date-nav">
               <ChevronRight size={14} />
             </button>
           </div>
@@ -196,22 +209,30 @@ export default function DatePicker({
               if (!day) return <div key={`e-${index}`} />;
               const selectedDay = isSelected(day);
               const todayDay = isToday(day);
+              const candidate = new Date(viewYear, viewMonth, day);
+              const isDisabled = minDate && candidate < minDate;
               return (
-                <div
+                <button
+                  type="button"
                   key={day}
                   onMouseDown={(e) => { e.preventDefault(); selectDay(day); }}
                   className={`ink-date-day ${selectedDay ? 'is-selected' : ''} ${todayDay ? 'is-today' : ''}`}
+                  aria-label={candidate.toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  aria-pressed={Boolean(selectedDay)}
+                  disabled={isDisabled}
                 >
                   {day}
-                </div>
+                </button>
               );
             })}
           </div>
 
           <div className="ink-date-footer">
-            <button type="button" onMouseDown={(e) => { e.preventDefault(); onChange(''); setOpen(false); }} className="ink-date-link">
-              Borrar
-            </button>
+            {required ? <span /> : (
+              <button type="button" onMouseDown={(e) => { e.preventDefault(); onChange(''); setOpen(false); }} className="ink-date-link">
+                Borrar
+              </button>
+            )}
             <button
               type="button"
               onMouseDown={(e) => {

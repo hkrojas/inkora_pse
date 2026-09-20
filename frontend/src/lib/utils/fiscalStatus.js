@@ -12,6 +12,17 @@ export function getGuideStatusMeta(item = {}) {
     };
   }
 
+  if (status === 'cancelled' || status === 'cancelada' || status === 'cancelado') {
+    return {
+      tabKey: 'cancelled',
+      label: 'Borrador cancelado',
+      tone: 'neutral',
+      badgeVariant: 'cancelled',
+      provider: null,
+      helper: 'Las cantidades reservadas fueron liberadas.',
+    };
+  }
+
   if (status.includes('anulad')) {
     return {
       tabKey: 'voided',
@@ -53,6 +64,34 @@ export function getGuideStatusMeta(item = {}) {
     provider: null,
     helper: '',
   };
+}
+
+const RESERVATION_STATUS_LABELS = {
+  provisional: 'Provisional',
+  active: 'Activa',
+  covered: 'Cubierta por GRE',
+  released: 'Liberada',
+};
+
+const DISPATCH_STATUS_LABELS = {
+  provisional: 'Preparación provisional',
+  draft: 'Borrador con reserva',
+  guide_pending: 'GRE pendiente de resultado',
+  guide_accepted: 'GRE aceptada',
+  guide_rejected: 'GRE rechazada',
+  departed: 'Salida confirmada',
+  cancelled: 'Borrador cancelado',
+  blocked: 'Bloqueado',
+};
+
+export function getDispatchReservationLabel(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  return RESERVATION_STATUS_LABELS[normalized] || 'No aplica';
+}
+
+export function getDispatchStatusLabel(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  return DISPATCH_STATUS_LABELS[normalized] || 'Sin estado operativo';
 }
 
 export function getSmartPseGreStatusMeta(tenant = {}) {

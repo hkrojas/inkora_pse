@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_serializer, field_validator, model_validator
 
 from fiscal_catalogs import (
     PRODUCT_INTERNAL_CODE_MAX_LENGTH,
@@ -94,7 +94,6 @@ class ClienteSnapshot(BaseModel):
 
 class CotizacionCreate(BaseModel):
     cliente_id: int
-    warehouse_id: Optional[int] = None
     cliente_snapshot: Optional[ClienteSnapshot] = None
     quote_payment_methods: Optional[List[dict]] = None
     fecha_emision: Optional[datetime] = None
@@ -106,6 +105,7 @@ class CotizacionCreate(BaseModel):
     quote_selected_wallet_id: Optional[str] = None
     cuotas_pago: List[CuotaPagoCreate] = Field(default_factory=list)
     items: List[CotizacionItemCreate]
+    warehouse_id: Optional[int] = None
 
     @field_validator("cuotas_pago", mode="before")
     @classmethod
@@ -144,7 +144,17 @@ class PagoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class CotizacionResponse(BaseModel):
+class FiscalPresentationResponse(BaseModel):
+    @computed_field
+    @property
+    def fiscal_status(self) -> str | None:
+        if getattr(self, 'document_kind', None) == 'quotation':
+            return None
+        from services.fiscal_presentation_service import presentation_status
+        return presentation_status(self)
+
+
+class CotizacionResponse(FiscalPresentationResponse):
     id: int
     uuid_publico: Optional[str] = None
     serie: str
@@ -155,8 +165,8 @@ class CotizacionResponse(BaseModel):
     estado: str
     document_kind: str = "quotation"
     source_quote_id: Optional[int] = None
-    internal_order_number: Optional[str] = None
     warehouse_id: Optional[int] = None
+    internal_order_number: Optional[str] = None
     document_number: Optional[str] = None
     linked_fiscal_document_id: Optional[int] = None
     linked_fiscal_document_number: Optional[str] = None
@@ -166,8 +176,8 @@ class CotizacionResponse(BaseModel):
     condicion_pago: Optional[str] = None
     quote_payment_methods: Optional[List[dict]] = None
     quote_selected_wallet_id: Optional[str] = None
-    cuotas_pago: List[CuotaPagoCreate] = Field(default_factory=list)
     cliente_snapshot: Optional[ClienteSnapshot] = None
+    cuotas_pago: List[CuotaPagoCreate] = Field(default_factory=list)
     cliente: Optional[ClienteResponse] = None
     usuario: Optional[UserResponse] = None
     items: List[CotizacionItemResponse]
@@ -176,15 +186,18 @@ class CotizacionResponse(BaseModel):
     total_venta: Decimal
 
     tipo_comprobante: str
+    has_sunat_xml: bool = False
+    has_sunat_cdr: bool = False
     sunat_xml_url: Optional[str] = None
     sunat_pdf_url: Optional[str] = None
     sunat_cdr_url: Optional[str] = None
     sunat_error: Optional[str] = None
+    provider_endpoint: Optional[str] = None
+    provider_status_code: Optional[int] = None
     provider_document_name: Optional[str] = None
-    provider_verified_at: Optional[datetime] = None
     provider_verification_status: Optional[str] = None
-    cdr_artifact_status: Optional[str] = None
-    pdf_artifact_status: Optional[str] = None
+    provider_verified_at: Optional[datetime] = None
+    provider_verification_error: Optional[str] = None
 
     monto_pagado: Decimal = Decimal("0.00")
     saldo_pendiente: Decimal = Decimal("0.00")
@@ -230,7 +243,6 @@ class CotizacionListResponse(BaseModel):
     observaciones: Optional[str] = None
     condicion_pago: Optional[str] = None
     cuotas_pago: List[CuotaPagoCreate] = Field(default_factory=list)
-    cliente_snapshot: Optional[ClienteSnapshot] = None
     cliente: Optional[ClienteResponse] = None
     total_gravada: Decimal
     total_igv: Decimal
@@ -243,10 +255,9 @@ class CotizacionListResponse(BaseModel):
     provider_endpoint: Optional[str] = None
     provider_status_code: Optional[int] = None
     provider_document_name: Optional[str] = None
-    provider_verified_at: Optional[datetime] = None
     provider_verification_status: Optional[str] = None
-    cdr_artifact_status: Optional[str] = None
-    pdf_artifact_status: Optional[str] = None
+    provider_verified_at: Optional[datetime] = None
+    provider_verification_error: Optional[str] = None
     sunat_accepted: bool = False
     has_sunat_xml: bool = False
     has_sunat_cdr: bool = False
@@ -261,6 +272,13 @@ class CotizacionListResponse(BaseModel):
         return value or []
 
 
+class CotizacionPageResponse(BaseModel):
+    items: List[CotizacionListResponse]
+    total: int
+    skip: int
+    limit: int
+
+
 class ClienteDocumentoListResponse(BaseModel):
     id: int
     tipo_documento: Optional[str] = None
@@ -272,7 +290,7 @@ class ClienteDocumentoListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class FiscalDocumentListResponse(BaseModel):
+class FiscalDocumentListResponse(FiscalPresentationResponse):
     id: int
     uuid_publico: Optional[str] = None
     serie: str
@@ -293,7 +311,6 @@ class FiscalDocumentListResponse(BaseModel):
     total_igv: Decimal
     total_venta: Decimal
     tipo_comprobante: str
-    sujeta_detraccion: bool = False
     sunat_xml_url: Optional[str] = None
     sunat_pdf_url: Optional[str] = None
     sunat_cdr_url: Optional[str] = None
@@ -301,10 +318,9 @@ class FiscalDocumentListResponse(BaseModel):
     provider_endpoint: Optional[str] = None
     provider_status_code: Optional[int] = None
     provider_document_name: Optional[str] = None
-    provider_verified_at: Optional[datetime] = None
     provider_verification_status: Optional[str] = None
-    cdr_artifact_status: Optional[str] = None
-    pdf_artifact_status: Optional[str] = None
+    provider_verified_at: Optional[datetime] = None
+    provider_verification_error: Optional[str] = None
     sunat_accepted: bool = False
     has_sunat_xml: bool = False
     has_sunat_cdr: bool = False
@@ -344,7 +360,7 @@ class NoteReferenceDocumentListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class FiscalNoteListResponse(BaseModel):
+class FiscalNoteListResponse(FiscalPresentationResponse):
     id: int
     uuid_publico: Optional[str] = None
     serie: str
@@ -371,6 +387,7 @@ class FiscalNoteListResponse(BaseModel):
     sunat_pdf_url: Optional[str] = None
     sunat_cdr_url: Optional[str] = None
     sunat_error: Optional[str] = None
+    provider_verification_status: Optional[str] = None
     provider_endpoint: Optional[str] = None
     provider_status_code: Optional[int] = None
     sunat_accepted: bool = False
@@ -442,6 +459,9 @@ class FacturarPayload(StrictInputModel):
     tipo_comprobante: str
     tipo_operacion: Optional[str] = None
     serie_override: Optional[str] = None
+    warehouse_id: Optional[int] = None
+    allow_negative_stock: bool = False
+    negative_stock_reason: Optional[str] = Field(default=None, max_length=500)
 
     @field_validator("tipo_comprobante")
     @classmethod
@@ -475,8 +495,8 @@ _NOTE_TYPE_ALIASES = {
 }
 
 _NOTE_MOTIVES = {
-    "credito": {"01", "02", "03", "04", "05", "06", "07", "08", "09", "13"},
-    "debito": {"01", "02", "03"},
+    "credito": {"01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13"},
+    "debito": {"01", "02", "03", "13"},
 }
 
 
@@ -486,6 +506,17 @@ class NotaCreate(StrictInputModel):
     cod_motivo: str = Field(..., min_length=2, max_length=2)
     descripcion_motivo: str = Field(..., min_length=3, max_length=250)
     items: Optional[List[CotizacionItemCreate]] = None
+    legacy_full_adjustment: bool = False
+    inventory_impact: str = "none"
+    inventory_return_warehouse_id: Optional[int] = None
+
+    @field_validator("inventory_impact")
+    @classmethod
+    def validate_inventory_impact(cls, value: str) -> str:
+        normalized = str(value or "none").strip().lower()
+        if normalized not in {"none", "undelivered", "physical_return"}:
+            raise ValueError("Impacto de inventario invalido")
+        return normalized
 
     @field_validator("tipo_nota")
     @classmethod
@@ -519,6 +550,10 @@ class NotaCreate(StrictInputModel):
             raise ValueError(
                 "Motivo SUNAT invalido para el tipo de nota seleccionado."
             )
+        if self.tipo_nota != "credito" and self.inventory_impact != "none":
+            raise ValueError("Las notas de debito no afectan inventario.")
+        if self.inventory_impact == "physical_return" and not self.inventory_return_warehouse_id:
+            raise ValueError("Seleccione el almacen que recibira la devolucion fisica.")
         return self
 
 
