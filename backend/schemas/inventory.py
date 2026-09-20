@@ -18,6 +18,16 @@ class WarehouseFiscalLocation(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class WarehouseEstablishmentSyncResponse(BaseModel):
+    provider: str = "factiliza"
+    ruc: str
+    establishments_created: int
+    establishments_updated: int
+    warehouses_created: int
+    warehouses_linked: int
+    establishments: List[WarehouseFiscalLocation]
+
+
 class WarehouseFiscalFields(BaseModel):
     """SUNAT location managed together with its operational warehouse."""
 

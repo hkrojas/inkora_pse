@@ -2,6 +2,8 @@ import { api } from '../lib/utils/api';
 
 export const inventory = {
   warehouses: () => api.get('/inventario/almacenes'),
+  fiscalEstablishments: () => api.get('/inventario/establecimientos-fiscales'),
+  syncSunatEstablishments: () => api.post('/inventario/almacenes/sincronizar-establecimientos-sunat', {}),
   createWarehouse: (data) => api.post('/inventario/almacenes', data),
   updateWarehouse: (id, data) => api.patch(`/inventario/almacenes/${id}`, data),
   verifyWarehouseFiscalLocation: (id, note) => api.post(`/inventario/almacenes/${id}/verificar-datos-fiscales`, { note }),

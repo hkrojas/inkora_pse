@@ -119,7 +119,11 @@ def create_tenant(
     _: None = Depends(require_internal_provisioning_token),
 ):
     try:
-        return crud.create_tenant(db, tenant)
+        from services import factiliza_lookup_service
+        locations = factiliza_lookup_service.fetch_company_locations_for_onboarding(
+            tenant.business_ruc
+        )
+        return crud.create_tenant(db, tenant, factiliza_locations=locations)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:

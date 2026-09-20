@@ -400,6 +400,75 @@ def transport_requirements_catalog() -> dict:
     }
 
 
+def _source_location_context(db: Session, tenant_id: int, warehouse_id: int | None) -> dict:
+    establishment_rules_enabled = db.query(models.TenantEstablishment.id).filter(
+        models.TenantEstablishment.tenant_id == tenant_id,
+        models.TenantEstablishment.is_active.is_(True),
+        models.TenantEstablishment.verified_at.isnot(None),
+    ).first() is not None
+    if not warehouse_id:
+        return {
+            "ready": False,
+            "enforced": establishment_rules_enabled,
+            "reason": "El comprobante no tiene un almacén de origen asociado.",
+            "warehouse": None,
+            "establishment": None,
+        }
+    warehouse = db.query(models.Warehouse).options(
+        joinedload(models.Warehouse.establishment)
+    ).filter(
+        models.Warehouse.id == warehouse_id,
+        models.Warehouse.tenant_id == tenant_id,
+        models.Warehouse.is_active.is_(True),
+    ).first()
+    if not warehouse:
+        return {
+            "ready": False,
+            "enforced": establishment_rules_enabled,
+            "reason": "El almacén de origen ya no está disponible.",
+            "warehouse": None,
+            "establishment": None,
+        }
+    establishment = warehouse.establishment
+    complete = bool(
+        establishment
+        and establishment.is_active
+        and establishment.verified_at
+        and re.fullmatch(r"\d{4}", str(establishment.sunat_code or ""))
+        and re.fullmatch(r"\d{6}", str(establishment.ubigeo or ""))
+        and str(establishment.address or "").strip()
+    )
+    return {
+        "ready": complete,
+        "enforced": establishment_rules_enabled,
+        "reason": None if complete else "Vincula y sincroniza el almacén con un establecimiento SUNAT antes de emitir.",
+        "warehouse": {
+            "id": warehouse.id,
+            "code": warehouse.code,
+            "name": warehouse.name,
+            "location": warehouse.location,
+        },
+        "establishment": None if not establishment else {
+            "id": establishment.id,
+            "sunat_code": establishment.sunat_code,
+            "name": establishment.name,
+            "ubigeo": establishment.ubigeo,
+            "address": establishment.address,
+            "verified_at": establishment.verified_at,
+        },
+    }
+
+
+def _apply_persisted_source_location(db: Session, tenant_id: int, warehouse_id: int | None, guide) -> None:
+    source = _source_location_context(db, tenant_id, warehouse_id)
+    if not source["ready"]:
+        return
+    establishment = source["establishment"]
+    guide.partida_codigo_local = establishment["sunat_code"]
+    guide.partida_ubigeo = establishment["ubigeo"]
+    guide.partida_direccion = establishment["address"]
+
+
 def get_sales_document_dispatch_context(db: Session, tenant_id: int, invoice_id: int, *, lock=False, exclude_dispatch_id=None, allowed_types=SUPPORTED_SALES_DOCUMENT_TYPES) -> dict:
     invoice = _get_sales_document(db, tenant_id, invoice_id, lock=lock, allowed_types=allowed_types)
     eligibility = document_eligibility(db, invoice)
@@ -428,6 +497,7 @@ def get_sales_document_dispatch_context(db: Session, tenant_id: int, invoice_id:
         },
         "eligibility": eligibility,
         "transport_requirements": transport_requirements_catalog(),
+        "source_location": _source_location_context(db, tenant_id, invoice.warehouse_id),
         "source_document": {
             "id": invoice.id,
             "type": invoice.tipo_comprobante,
@@ -555,6 +625,7 @@ def _new_guide_from_dispatch(db: Session, tenant, invoice, dispatch, data, resol
         **_guide_fields(data),
     )
     db.add(guide)
+    _apply_persisted_source_location(db, tenant.id, invoice.warehouse_id, guide)
     _apply_carrier_agreement(guide, data, user_id)
     db.flush()
     for line_context, selected, quantity in resolved_lines:
@@ -691,6 +762,7 @@ def update_dispatch(db: Session, tenant_id: int, dispatch_id: int, payload, *, u
         ))
     for key, value in _guide_fields(payload).items():
         setattr(guide, key, value)
+    _apply_persisted_source_location(db, tenant_id, dispatch.warehouse_id, guide)
     _apply_carrier_agreement(guide, payload, user_id or guide.usuario_id)
     db.flush()
     for line_context, selected, quantity in resolved:
@@ -802,6 +874,7 @@ def _transport_validation_errors(guide) -> list[dict]:
 
 def validate_guide_for_emission(db: Session, guide) -> dict:
     errors = []
+    warnings = []
     dispatch = guide.dispatch or guide.internal_transfer_dispatch
     tenant = db.query(models.Tenant).filter(models.Tenant.id == guide.tenant_id).first()
     try:
@@ -837,6 +910,39 @@ def validate_guide_for_emission(db: Session, guide) -> dict:
                 errors.append({"field": "dispatch", "code": "PROVISIONAL_DISPATCH", "message": "Confirma nuevamente el borrador después de la aceptación del comprobante."})
             if any(line.reservation_status != models.DISPATCH_RESERVATION_ACTIVE for line in dispatch.lines):
                 errors.append({"field": "lines", "code": "RESERVATION_REQUIRED", "message": "Todas las cantidades deben tener una reserva activa."})
+            source_location = context["source_location"]
+            if not source_location["ready"]:
+                issue = {
+                    "field": "partida_codigo_local",
+                    "code": "SOURCE_ESTABLISHMENT_REQUIRED",
+                    "message": (
+                        source_location["reason"]
+                        if source_location["enforced"]
+                        else f"{source_location['reason']} El borrador conserva la ruta manual por compatibilidad."
+                    ),
+                }
+                if source_location["enforced"]:
+                    errors.append(issue)
+                else:
+                    warnings.append(issue)
+            else:
+                establishment = source_location["establishment"]
+                current_identity = (
+                    guide.partida_codigo_local,
+                    guide.partida_ubigeo,
+                    str(guide.partida_direccion or "").strip(),
+                )
+                expected_identity = (
+                    establishment["sunat_code"],
+                    establishment["ubigeo"],
+                    str(establishment["address"] or "").strip(),
+                )
+                if current_identity != expected_identity:
+                    errors.append({
+                        "field": "partida_codigo_local",
+                        "code": "SOURCE_ESTABLISHMENT_CHANGED",
+                        "message": "Los datos SUNAT del origen cambiaron. Actualiza el borrador antes de emitir.",
+                    })
             source = dispatch.fiscal_document
             if source and source.tipo_comprobante == "03":
                 document_number = str(guide.destinatario_nro_doc or "").strip()
@@ -887,7 +993,7 @@ def validate_guide_for_emission(db: Session, guide) -> dict:
         errors.append({"field": "vehiculo_placa", "code": "INVALID_PLATE", "message": "La placa debe tener entre 6 y 8 caracteres alfanuméricos."})
     if guide.conductor_licencia and not re.fullmatch(r"[A-Z0-9]{9,10}", guide.conductor_licencia.upper()):
         errors.append({"field": "conductor_licencia", "code": "INVALID_LICENSE", "message": "La licencia debe tener entre 9 y 10 caracteres alfanuméricos."})
-    return {"valid": not errors, "errors": errors, "warnings": []}
+    return {"valid": not errors, "errors": errors, "warnings": warnings}
 
 
 def mark_guide_pending(db: Session, guide):

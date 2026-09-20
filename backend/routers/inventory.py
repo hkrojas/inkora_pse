@@ -16,10 +16,10 @@ from schemas.inventory import (
     BulkInventoryAdjustmentCreate, BulkInventoryAdjustmentResponse,
     InventoryAdjustmentCreate, MovementPageResponse, MovementResponse, ProductInventoryConfig,
     StockPageResponse, StockResponse, TransferCreate, WarehouseCreate, WarehouseFiscalVerify,
-    WarehouseResponse, WarehouseUpdate,
+    WarehouseEstablishmentSyncResponse, WarehouseFiscalLocation, WarehouseResponse, WarehouseUpdate,
     ReturnReceiptCreate,
 )
-from services import inventory_service
+from services import factiliza_lookup_service, inventory_service
 from services.import_service import parse_inventory_stock
 
 router = APIRouter(prefix="/inventario", tags=["Inventario"])
@@ -38,6 +38,44 @@ def warehouses(db: Session = Depends(get_db_tenant), user: models.User = Depends
         models.Warehouse.tenant_id == user.tenant_id,
         models.Warehouse.is_active.is_(True),
     ).order_by(models.Warehouse.is_default.desc(), models.Warehouse.name).all()
+
+
+@router.get("/establecimientos-fiscales", response_model=List[WarehouseFiscalLocation])
+def fiscal_establishments(
+    db: Session = Depends(get_db_tenant),
+    user: models.User = Depends(get_current_user),
+):
+    return inventory_service.list_fiscal_establishments(db, user.tenant_id)
+
+
+@router.post(
+    "/almacenes/sincronizar-establecimientos-sunat",
+    response_model=WarehouseEstablishmentSyncResponse,
+)
+def sync_sunat_establishments(
+    db: Session = Depends(get_db_tenant),
+    user: models.User = Depends(require_admin),
+):
+    tenant = db.query(models.Tenant).filter(models.Tenant.id == user.tenant_id).first()
+    if not tenant:
+        raise HTTPException(404, "Empresa no encontrada.")
+    try:
+        # No row lock is held while Factiliza is called. The returned snapshot
+        # is applied atomically by inventory_service afterwards.
+        locations = factiliza_lookup_service.fetch_company_locations(tenant.business_ruc)
+        return inventory_service.sync_factiliza_establishments(
+            db,
+            user.tenant_id,
+            tenant.business_ruc,
+            locations,
+            user_id=user.id,
+        )
+    except factiliza_lookup_service.FactilizaLookupError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
 
 
 @router.post("/almacenes", response_model=WarehouseResponse, status_code=201)

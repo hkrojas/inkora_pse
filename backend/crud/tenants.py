@@ -62,7 +62,12 @@ def get_tenant_by_ruc(db: Session, business_ruc: str):
     return db.query(models.Tenant).filter(models.Tenant.business_ruc == business_ruc).first()
 
 
-def create_tenant(db: Session, tenant: schemas.TenantCreate):
+def create_tenant(
+    db: Session,
+    tenant: schemas.TenantCreate,
+    *,
+    factiliza_locations: list[dict] | None = None,
+):
     if get_tenant_by_ruc(db, tenant.business_ruc):
         raise ValueError("Ya existe una empresa registrada con ese RUC.")
 
@@ -74,13 +79,25 @@ def create_tenant(db: Session, tenant: schemas.TenantCreate):
     try:
         db.add(db_tenant)
         db.flush()
-        db.add(models.Warehouse(
+        warehouse = models.Warehouse(
             tenant_id=db_tenant.id,
             code="PRINCIPAL",
             name="Almacén principal",
+            location=tenant.business_address,
             is_default=True,
             is_active=True,
-        ))
+        )
+        db.add(warehouse)
+        db.flush()
+        if factiliza_locations:
+            from services import inventory_service
+            inventory_service.sync_factiliza_establishments(
+                db,
+                db_tenant.id,
+                db_tenant.business_ruc,
+                factiliza_locations,
+                commit=False,
+            )
         sub = models.Subscription(tenant_id=db_tenant.id)
         db.add(sub)
         db.commit()
