@@ -57,6 +57,9 @@ jobs:
           --ignore=test_cotizaciones_postgres.py
           --ignore=test_inventory_recovery_postgres.py
 
+      - name: Build API container from the canonical root
+        run: docker build --file Dockerfile --tag inkora-api-ci:${{ github.sha }} .
+
       - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
