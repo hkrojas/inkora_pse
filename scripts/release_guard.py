@@ -6,6 +6,7 @@ This tool does not deploy, modify a database, or read environment secrets.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 from pathlib import Path
@@ -26,7 +27,7 @@ CONFIG_FILES = ('Dockerfile', '.dockerignore', 'railway.json',
 BACKEND_ROOT_FILES = {
     '__init__.py', 'access_control.py', 'api_dependencies.py', 'api_utils.py',
     'config.py', 'database.py', 'fiscal_catalogs.py', 'launch_migrations.py',
-    'logging_utils.py', 'main.py', 'migrate_analytics.py',
+    'http_security.py', 'logging_utils.py', 'main.py', 'migrate_analytics.py',
     'migrate_auth_passwords.py', 'migrate_beta_integrity.py',
     'migrate_cobranza_indexes.py', 'migrate_cotizacion_cuotas_pago.py',
     'migrate_cotizacion_item_codigo_producto.py',
@@ -151,6 +152,38 @@ def source_files(root, *, hash_mode=CURRENT_HASH_MODE):
     return {rel: digest(root / rel, hash_mode=hash_mode) for rel in sorted(files)}
 
 
+def validate_backend_import_closure(root, files):
+    """Ensure every local backend module imported by the package is shipped.
+
+    The release remains a positive allowlist, but an imported root module can no
+    longer be omitted silently. Package imports such as ``services.foo`` are
+    already covered by BACKEND_DIRS and are checked through their root package.
+    """
+    included = set(files)
+    backend = root / 'backend'
+    errors = set()
+    for relative in sorted(included):
+        if not relative.startswith('backend/') or not relative.endswith('.py'):
+            continue
+        path = root / relative
+        try:
+            tree = ast.parse(path.read_text(encoding='utf-8'), filename=relative)
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+            raise ValueError(f'No se pudo analizar {relative}: {exc}') from exc
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split('.', 1)[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                imported.add(node.module.split('.', 1)[0])
+        for module in imported:
+            candidate = f'backend/{module}.py'
+            if (backend / f'{module}.py').is_file() and candidate not in included:
+                errors.add(f'{relative} importa {candidate}, pero el paquete lo omite')
+    if errors:
+        raise ValueError('\n'.join(sorted(errors)))
+
+
 def validate_features(root, *, hash_mode=CURRENT_HASH_MODE):
     errors = []
     for rel, markers in FEATURES.items():
@@ -170,6 +203,7 @@ def manifest(root):
     require_clean_release_tree(root)
     validate_features(root, hash_mode=CURRENT_HASH_MODE)
     files = source_files(root, hash_mode=CURRENT_HASH_MODE)
+    validate_backend_import_closure(root, files)
     value = manifest_digest(files, hash_mode=CURRENT_HASH_MODE)
     revision = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
     return {
@@ -183,6 +217,7 @@ def manifest(root):
 def verify(package):
     data = json.loads((package / 'release-manifest.json').read_text(encoding='utf-8'))
     files = data['files']
+    validate_backend_import_closure(package, files)
     legacy_manifest = 'hash_mode' not in data
     hash_mode = data.get('hash_mode', HASH_MODE_RAW_V1)
     if hash_mode not in SUPPORTED_HASH_MODES:

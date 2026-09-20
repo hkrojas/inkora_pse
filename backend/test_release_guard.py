@@ -40,6 +40,7 @@ def test_packager_excludes_secrets_auxiliary_versions_and_fixtures():
     files = guard.source_files(ROOT)
     assert files
     assert 'backend/main.py' in files
+    assert 'backend/http_security.py' in files
     assert 'frontend/static/favicon.svg' in files
     assert not any('/.env' in name or '_release' in name or '/e2e/' in name or 'conftest' in name for name in files)
     assert 'backend/seed_demo_tenant.py' not in files
@@ -51,6 +52,21 @@ def test_packager_excludes_secrets_auxiliary_versions_and_fixtures():
     assert 'backend/requirements.in' in files
     assert 'backend/Dockerfile' in files
     assert 'backend/.dockerignore' in files
+
+
+def test_packager_rejects_missing_local_backend_import(tmp_path):
+    backend = tmp_path / 'backend'
+    backend.mkdir()
+    (backend / 'main.py').write_text('from http_security import apply\n', encoding='utf-8')
+    (backend / 'http_security.py').write_text('def apply(): pass\n', encoding='utf-8')
+
+    with pytest.raises(ValueError, match='http_security.py'):
+        guard.validate_backend_import_closure(tmp_path, {'backend/main.py': 'digest'})
+
+    guard.validate_backend_import_closure(
+        tmp_path,
+        {'backend/main.py': 'digest', 'backend/http_security.py': 'digest'},
+    )
 
 
 def test_packager_keeps_every_launch_migration_but_no_root_test_or_admin_tool():
