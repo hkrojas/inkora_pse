@@ -3,8 +3,9 @@
 Railway applies the worker service's ``rootDirectory=backend`` to the build
 context, while it reads ``railway.json`` and its Dockerfile path from the
 uploaded bundle root.  The adapter files generated here deliberately point to
-the backend-scoped Dockerfile; the worker's remote start command and
-environment remain unchanged.
+the backend-scoped Dockerfile and declare the worker command explicitly.
+Relying on an inherited Railway command is unsafe for CLI uploads because the
+uploaded ``railway.json`` can otherwise fall back to the API command.
 """
 import argparse
 import json
@@ -12,6 +13,13 @@ from pathlib import Path
 import shutil
 
 from release_guard import ROOT, digest, verify
+
+
+WORKER_START_COMMAND = (
+    "sh -c 'mkdir -p /tmp/worker-health && printf ok > /tmp/worker-health/health "
+    "&& (cd /tmp/worker-health && python -m http.server ${PORT:-8080} --bind 0.0.0.0) "
+    "& exec python run_emission_worker.py'"
+)
 
 
 def project_worker_release(source: Path, destination: Path) -> dict:
@@ -43,19 +51,20 @@ def project_worker_release(source: Path, destination: Path) -> dict:
     # lives outside delivery["files"], but it must travel with the worker.
     shutil.copy2(source / 'backend/release.json', destination / 'backend/release.json')
 
-    adapters = {
-        'Dockerfile': 'backend/Dockerfile',
-        'railway.json': 'railway.json',
-    }
-    adapter_hashes = {}
-    for target_name, source_name in adapters.items():
-        target = destination / target_name
-        shutil.copy2(source / source_name, target)
-        expected = delivery['files'][source_name]
-        actual = digest(target, hash_mode=hash_mode)
-        if actual != expected:
-            raise ValueError(f'Adaptador worker divergente: {target_name}')
-        adapter_hashes[target_name] = actual
+    dockerfile_target = destination / 'Dockerfile'
+    shutil.copy2(source / 'backend/Dockerfile', dockerfile_target)
+    dockerfile_hash = digest(dockerfile_target, hash_mode=hash_mode)
+    if dockerfile_hash != delivery['files']['backend/Dockerfile']:
+        raise ValueError('Adaptador worker divergente: Dockerfile')
+
+    railway_config = json.loads((source / 'railway.json').read_text(encoding='utf-8'))
+    railway_config.setdefault('deploy', {})['startCommand'] = WORKER_START_COMMAND
+    railway_target = destination / 'railway.json'
+    railway_target.write_text(
+        json.dumps(railway_config, indent=2) + '\n',
+        encoding='utf-8',
+    )
+    railway_hash = digest(railway_target, hash_mode=hash_mode)
 
     projection = {
         'content_sha256': delivery['content_sha256'],
@@ -67,7 +76,15 @@ def project_worker_release(source: Path, destination: Path) -> dict:
         'railway_root_directory': 'backend',
         'builder': 'DOCKERFILE',
         'dockerfile_source': 'backend/Dockerfile',
-        'adapter_hashes': adapter_hashes,
+        'adapter_hashes': {
+            'Dockerfile': dockerfile_hash,
+            'railway.json': railway_hash,
+        },
+        'adapter_source_hashes': {
+            'Dockerfile': delivery['files']['backend/Dockerfile'],
+            'railway.json': delivery['files']['railway.json'],
+        },
+        'start_command': WORKER_START_COMMAND,
     }
     (destination / 'worker-projection.json').write_text(
         json.dumps(projection, indent=2),

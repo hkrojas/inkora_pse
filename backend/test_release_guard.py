@@ -282,13 +282,19 @@ def test_worker_projection_uses_verified_backend_docker_adapter(tmp_path, monkey
     projection = worker_release.project_worker_release(source, destination)
 
     assert (destination / 'Dockerfile').read_text(encoding='utf-8') == backend_dockerfile
-    assert json.loads((destination / 'railway.json').read_text(encoding='utf-8')) == json.loads(railway_config)
+    projected_railway = json.loads((destination / 'railway.json').read_text(encoding='utf-8'))
+    assert projected_railway['build'] == json.loads(railway_config)['build']
+    assert projected_railway['deploy']['startCommand'] == worker_release.WORKER_START_COMMAND
+    assert 'run_emission_worker.py' in projected_railway['deploy']['startCommand']
+    assert 'uvicorn' not in projected_railway['deploy']['startCommand']
     assert (destination / 'backend/main.py').read_text(encoding='utf-8') == payloads['backend/main.py']
     assert projection['builder'] == 'DOCKERFILE'
     assert projection['railway_root_directory'] == 'backend'
     assert projection['dockerfile_source'] == 'backend/Dockerfile'
     assert projection['adapter_hashes']['Dockerfile'] == delivery['files']['backend/Dockerfile']
-    assert projection['adapter_hashes']['railway.json'] == delivery['files']['railway.json']
+    assert projection['adapter_source_hashes']['railway.json'] == delivery['files']['railway.json']
+    assert projection['adapter_hashes']['railway.json'] == guard.digest(destination / 'railway.json')
+    assert projection['start_command'] == worker_release.WORKER_START_COMMAND
 
 
 def test_worker_projection_rejects_package_without_verified_dockerfile(tmp_path, monkeypatch):
