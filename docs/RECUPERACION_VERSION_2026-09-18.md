@@ -131,6 +131,15 @@ Rollback previo registrado: API `258df439-0ba4-427c-89db-c55df745d952`; worker `
 
 ### Entrega ampliada publicada y comprobación final
 
+> **Registro histórico, posteriormente sustituido.** La entrega descrita en esta
+> sección (`173e56…`) fue reemplazada ese mismo día por la entrega de acciones
+> documentales registrada en
+> [CIERRE_ACCIONES_DOCUMENTALES_2026-09-18.md](CIERRE_ACCIONES_DOCUMENTALES_2026-09-18.md).
+> La identidad productiva comprobada el 19/09/2026 mediante
+> `/health.delivery` y `/release.json` es `1755dc0ee9a6e22395b991f51e185b0c2437826c42ff94326643abab01a74a73`.
+> No utilizar los identificadores de esta sección como despliegue actual ni como
+> destino de rollback sin revisar primero el registro posterior.
+
 | Componente | Despliegue actual | Resultado |
 |---|---|---|
 | Railway API | `e69c1933-68b1-47b2-a01c-79dfa69ce38b` | SUCCESS; salud `ok`; 223/223 contratos operativos presentes |
