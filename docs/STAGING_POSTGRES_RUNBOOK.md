@@ -92,6 +92,13 @@ base no tiene el prefijo `inkora_gre_`. `INKORA_REQUIRE_POSTGRES_TESTS=1`
 convierte la ausencia de conexión en error; no permite omitir estos casos en la
 homologación.
 
+La homologación local puede ejecutarse con un clúster PostgreSQL temporal
+inicializado fuera del repositorio. Debe escuchar solo en loopback, usar bases
+separadas con prefijos `inkora_gre_` e `inkora_quote_`, detenerse al terminar y
+eliminarse únicamente después de verificar su ruta temporal exacta. Arrancar el
+servicio PostgreSQL persistente del equipo o reutilizar una base Supabase no es
+equivalente a una prueba desechable.
+
 Alternativamente, `bash deploy_staging.sh` ejecuta esta secuencia y se niega a continuar sin confirmación de staging, snapshot y revisión Alembic previa.
 
 ## 6. Verificación posterior

@@ -40,6 +40,8 @@ try {
   npm run build
   if ($LASTEXITCODE -ne 0) { throw 'Build falló.' }
 } finally { Pop-Location }
+& $PythonPath (Join-Path $PSScriptRoot 'run_e2e_local.py')
+if ($LASTEXITCODE -ne 0) { throw 'Pruebas E2E locales aisladas fallaron.' }
 & $PythonPath (Join-Path $PSScriptRoot 'release_guard.py') check
 if ($LASTEXITCODE -ne 0) { throw 'Manifiesto o contratos inválidos.' }
 Write-Output 'Validación local concluida. No publica ni migra. Exige además revisión visual, esquema remoto y aprobación del paquete.'

@@ -19,7 +19,28 @@ BACKEND_DIRS = {'crud', 'models', 'routers', 'schemas', 'services', 'alembic'}
 CONFIG_FILES = ('Dockerfile', '.dockerignore', 'railway.json', 'frontend/package.json',
                 'frontend/package-lock.json', 'frontend/index.html', 'frontend/vite.config.js',
                 'frontend/tailwind.config.js', 'frontend/postcss.config.js', 'frontend/vercel.json',
-                'backend/requirements.txt', 'backend/alembic.ini')
+                'backend/requirements.in', 'backend/requirements.txt',
+                'backend/requirements-lock.txt', 'backend/alembic.ini')
+BACKEND_ROOT_FILES = {
+    '__init__.py', 'access_control.py', 'api_dependencies.py', 'api_utils.py',
+    'config.py', 'database.py', 'fiscal_catalogs.py', 'launch_migrations.py',
+    'logging_utils.py', 'main.py', 'migrate_analytics.py',
+    'migrate_auth_passwords.py', 'migrate_beta_integrity.py',
+    'migrate_cobranza_indexes.py', 'migrate_cotizacion_cuotas_pago.py',
+    'migrate_cotizacion_item_codigo_producto.py',
+    'migrate_document_flow_phase4.py', 'migrate_emission_jobs.py',
+    'migrate_emission_reliability.py', 'migrate_fases_1_7.py',
+    'migrate_fiscal_pdf_artifacts.py', 'migrate_gre_credentials.py',
+    'migrate_gre_extended_fields.py', 'migrate_guias_cliente_id.py',
+    'migrate_multitenancy.py', 'migrate_note_reason_fields.py',
+    'migrate_pagos.py', 'migrate_percepciones_fiscales.py',
+    'migrate_phase6_launch_polish.py', 'migrate_phase8_onboarding.py',
+    'migrate_phase9_beta.py', 'migrate_productos_moneda.py',
+    'migrate_resumenes_diarios.py', 'migrate_retenciones_fiscales.py',
+    'migrate_reversiones_fiscales.py', 'migrate_saas_phase5.py',
+    'rate_limit.py', 'run_emission_worker.py', 'run_launch_migrations.py',
+    'security.py', 'supabase_client.py', 'tenant_access.py',
+}
 FEATURES = {
     'frontend/src/components/documents/FiscalDocumentActions.jsx': ['retry_artifacts', 'retry_emission', 'ActionMenu', 'useFiscalTracking', 'credit_note', 'debit_note'],
     'frontend/src/pages/CotizacionesPage.jsx': ['ActionMenu', 'FiscalDocumentActions', 'buildFiscalListQuery'],
@@ -66,6 +87,49 @@ def manifest_digest(files, *, hash_mode):
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _is_release_file(relative: str) -> bool:
+    relative = relative.replace('\\', '/').strip('/')
+    if relative in CONFIG_FILES:
+        return True
+    parts = Path(relative).parts
+    if not parts or any(part in EXCLUDED or part.startswith('.') for part in parts):
+        return False
+    if parts[0] == 'backend':
+        if len(parts) == 2:
+            return parts[1] in BACKEND_ROOT_FILES
+        return len(parts) > 2 and parts[1] in BACKEND_DIRS and Path(relative).suffix == '.py'
+    return tuple(parts[0:2]) in {('frontend', 'src'), ('frontend', 'static')}
+
+
+def dirty_release_paths(root):
+    dirty = set()
+    commands = (
+        ['git', '-C', str(root), 'diff', '--name-only', '-z'],
+        ['git', '-C', str(root), 'diff', '--cached', '--name-only', '-z'],
+        ['git', '-C', str(root), 'ls-files', '--others', '--exclude-standard', '-z'],
+    )
+    for command in commands:
+        completed = subprocess.run(command, capture_output=True, check=True)
+        for raw_path in completed.stdout.split(b'\0'):
+            if not raw_path:
+                continue
+            path = raw_path.decode('utf-8', errors='strict')
+            if _is_release_file(path):
+                dirty.add(path)
+    return sorted(dirty)
+
+
+def require_clean_release_tree(root):
+    dirty = dirty_release_paths(root)
+    if dirty:
+        formatted = '\n'.join(f'- {path}' for path in dirty)
+        raise ValueError(
+            'El contenido publicable tiene cambios sin commit. '
+            'Confirma primero el commit exacto antes de congelar la entrega:\n'
+            f'{formatted}'
+        )
+
+
 def source_files(root, *, hash_mode=CURRENT_HASH_MODE):
     files = set()
     for rel in CONFIG_FILES:
@@ -77,13 +141,8 @@ def source_files(root, *, hash_mode=CURRENT_HASH_MODE):
             if not path.is_file() or path.is_symlink():
                 continue
             rel = path.relative_to(root)
-            if any(part in EXCLUDED or part.startswith('.') for part in rel.parts):
+            if not _is_release_file(rel.as_posix()):
                 continue
-            if base == 'backend':
-                if path.suffix != '.py' or path.name.startswith(('test_', 'conftest', 'audit_', 'preflight_')):
-                    continue
-                if len(rel.parts) > 2 and rel.parts[1] not in BACKEND_DIRS:
-                    continue
             if path.suffix.lower() in {'.pem', '.key', '.pfx', '.p12', '.db', '.sqlite', '.log'}:
                 raise ValueError(f'Archivo privado no permitido: {rel}')
             files.add(rel.as_posix())
@@ -106,6 +165,7 @@ def validate_features(root, *, hash_mode=CURRENT_HASH_MODE):
 
 
 def manifest(root):
+    require_clean_release_tree(root)
     validate_features(root, hash_mode=CURRENT_HASH_MODE)
     files = source_files(root, hash_mode=CURRENT_HASH_MODE)
     value = manifest_digest(files, hash_mode=CURRENT_HASH_MODE)

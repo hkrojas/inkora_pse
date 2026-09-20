@@ -1,7 +1,7 @@
 /* ================================================================
    Inkora Design System — Design Tokens (Siohioma Edition)
    Palette: Forest Green (#1C2D1C) + Lime (#8DC63F) + Orange (#E8A23A)
-   Font: Inter
+   Font: Inkora Mona (self-hosted)
    ================================================================ */
 
 :root {
@@ -76,8 +76,8 @@
   --shadow-primary: 0 4px 16px rgba(31, 77, 39, 0.25);
 
   /* === Typography === */
-  --font-display: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-body: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Inkora Mona', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-body: 'Inkora Mona', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-heading: var(--font-display);
 

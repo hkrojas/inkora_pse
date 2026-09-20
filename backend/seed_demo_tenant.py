@@ -6,6 +6,8 @@ Script de siembra de datos de demostración para un tenant nuevo.
 
 Uso:
     cd backend
+    # Definir una contraseña sintética de al menos 12 caracteres.
+    # PowerShell: $env:INKORA_DEMO_ADMIN_PASSWORD = "..."
     python seed_demo_tenant.py
 
 El script crea (si no existe):
@@ -15,7 +17,7 @@ El script crea (si no existe):
   - 8 productos/servicios de ejemplo
   - 1 cotización de muestra
 
-Nota: Solo para desarrollo/testing. No ejecutar en producción.
+Nota: El propio script bloquea entornos no locales y bases que no sean SQLite.
 """
 
 import os
@@ -25,6 +27,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
 from database import SessionLocal, engine, Base
+from config import settings
 from security import get_password_hash
 import models
 import schemas
@@ -36,8 +39,8 @@ import crud
 
 DEMO_RUC = "20999999999"
 DEMO_BUSINESS_NAME = "Imprenta Demo Inkora SAC"
-DEMO_ADMIN_EMAIL = "admin@demo.inkora.pe"
-DEMO_ADMIN_PASSWORD = "demo1234"
+DEMO_ADMIN_EMAIL = os.getenv("INKORA_DEMO_ADMIN_EMAIL", "admin@demo.inkora.pe")
+DEMO_ADMIN_PASSWORD = os.getenv("INKORA_DEMO_ADMIN_PASSWORD", "")
 
 DEMO_CLIENTES = [
     {
@@ -47,7 +50,7 @@ DEMO_CLIENTES = [
         "nombre_comercial": "Corp SAC",
         "direccion": "Av. Javier Prado 1234, San Isidro",
         "email": "compras@corporativo.pe",
-        "telefono": "01-2345678",
+        "telefono": "987654310",
         "whatsapp": "987654321",
         "contacto": "Carlos Mendes",
         "condicion_pago": "credito_30",
@@ -60,7 +63,7 @@ DEMO_CLIENTES = [
         "nombre_comercial": "DistriNorte",
         "direccion": "Jr. Callao 567, Breña",
         "email": "norte@distribuidora.pe",
-        "telefono": "01-3456789",
+        "telefono": "987654311",
         "condicion_pago": "contado",
     },
     {
@@ -160,7 +163,25 @@ DEMO_PRODUCTOS = [
 # Ejecución
 # ---------------------------------------------------------------------------
 
+def validate_demo_seed_target(environment: str, database_url: str, password: str) -> None:
+    normalized_environment = str(environment or "").strip().lower()
+    normalized_database_url = str(database_url or "").strip().lower()
+    if normalized_environment not in {"local", "development", "dev", "test"}:
+        raise RuntimeError("El seed demo solo puede ejecutarse en un entorno local o test.")
+    if not normalized_database_url.startswith("sqlite"):
+        raise RuntimeError("El seed demo solo admite una base SQLite local y desechable.")
+    if len(password) < 12:
+        raise RuntimeError(
+            "INKORA_DEMO_ADMIN_PASSWORD es obligatoria y debe tener al menos 12 caracteres."
+        )
+
+
 def main():
+    validate_demo_seed_target(
+        settings.ENVIRONMENT,
+        settings.DATABASE_URL,
+        DEMO_ADMIN_PASSWORD,
+    )
     print("=== Seed Demo Tenant — Inkora Fase 8 ===\n")
 
     # Crear tablas si no existen (solo para dev)
@@ -178,7 +199,7 @@ def main():
                 business_name=DEMO_BUSINESS_NAME,
                 business_ruc=DEMO_RUC,
                 business_address="Av. Demo 123, Lima, Lima",
-                business_phone="01-9999999",
+                business_phone="999999999",
             )
             tenant = crud.create_tenant(db, tenant_data)
             print(f"[CREADO] Tenant: {tenant.business_name} (id={tenant.id})")
@@ -199,7 +220,7 @@ def main():
             db.add(user)
             db.commit()
             db.refresh(user)
-            print(f"[CREADO] Usuario admin: {user.email} / contraseña: {DEMO_ADMIN_PASSWORD}")
+            print(f"[CREADO] Usuario admin sintético: {user.email}")
 
         # 3. Clientes
         clientes_creados = 0
@@ -294,7 +315,7 @@ def main():
         print("\n=== Seed completado ===")
         print(f"  Tenant ID  : {tenant.id}")
         print(f"  Email      : {DEMO_ADMIN_EMAIL}")
-        print(f"  Contraseña : {DEMO_ADMIN_PASSWORD}")
+        print("  Contraseña : configurada mediante variable de entorno")
         print(f"  RUC        : {DEMO_RUC}")
 
     finally:

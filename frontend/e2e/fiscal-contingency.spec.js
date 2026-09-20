@@ -103,6 +103,10 @@ async function createMockedSuperadminContext(browser, baseURL, options = {}) {
           smartpse_gre_pending: 1,
         },
       };
+    } else if (path === '/superadmin/access-requests' && method === 'GET') {
+      payload = { items: [], total: 0, skip: 0, limit: 15 };
+    } else if (path === '/superadmin/smartpse/companies' && method === 'GET') {
+      payload = { items: [], total: 0, page: 1, per_page: 10 };
     } else if (path === `/superadmin/tenants/${tenant.id}/fiscal-contingency` && method === 'GET') {
       payload = state.status;
     } else if (path === `/superadmin/tenants/${tenant.id}/fiscal-contingency` && method === 'PATCH') {
@@ -140,7 +144,7 @@ function assertSafeNetworkAndConsole(state, criticalErrors) {
 
 async function openContingencyModal(page) {
   await page.goto('/superadmin');
-  await expect(page.getByRole('heading', { name: /^Superadmin$/i, level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Superadmin operativo$/i, level: 2 })).toBeVisible();
   await page.getByRole('button', { name: /^Contingencia$/i }).click();
   await expect(page.getByRole('heading', { name: /Contingencia fiscal/i })).toBeVisible();
 }

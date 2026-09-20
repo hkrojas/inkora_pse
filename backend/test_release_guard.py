@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from launch_migrations import LAUNCH_MIGRATION_SCRIPTS
 from main import app
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +34,39 @@ def test_packager_excludes_secrets_auxiliary_versions_and_fixtures():
     assert 'backend/main.py' in files
     assert 'frontend/static/favicon.svg' in files
     assert not any('/.env' in name or '_release' in name or '/e2e/' in name or 'conftest' in name for name in files)
+    assert 'backend/seed_demo_tenant.py' not in files
+    assert 'backend/reset_db.py' not in files
+    assert 'backend/reset_superadmin_password.py' not in files
+    assert 'backend/set_fake_token.py' not in files
+    assert 'backend/debug_emit.py' not in files
+    assert 'backend/requirements-lock.txt' in files
+    assert 'backend/requirements.in' in files
+
+
+def test_packager_keeps_every_launch_migration_but_no_root_test_or_admin_tool():
+    files = set(guard.source_files(ROOT))
+    expected_migrations = {f'backend/{name}' for name in LAUNCH_MIGRATION_SCRIPTS}
+
+    assert expected_migrations <= files
+    assert not any(Path(name).name.startswith('test_') for name in files)
+    assert 'backend/fix_superadmin.py' not in files
+    assert 'backend/cleanup_beta_test_data.py' not in files
+
+
+def test_dirty_runtime_files_block_release_but_support_files_do_not(monkeypatch):
+    class Result:
+        stdout = (
+            b'backend/main.py\0'
+            b'frontend/e2e/navigation.spec.js\0'
+            b'backend/seed_demo_tenant.py\0'
+            b'docs/RELEASE_CANONICO.md\0'
+        )
+
+    monkeypatch.setattr(guard.subprocess, 'run', lambda *args, **kwargs: Result())
+
+    assert guard.dirty_release_paths(ROOT) == ['backend/main.py']
+    with pytest.raises(ValueError, match='cambios sin commit'):
+        guard.require_clean_release_tree(ROOT)
 
 
 def test_missing_ui_feature_blocks_publication(tmp_path):
@@ -159,6 +193,25 @@ def test_release_gate_workflow_cannot_silently_drop_critical_checks():
         'npm test',
         'npm run lint',
         'npm run build',
+        'backend/requirements-test.txt',
+        'python -m pip check',
+        'playwright install --with-deps chromium',
+        'python scripts/run_e2e_local.py',
         'release_guard.py check',
     ):
         assert marker in workflow
+
+
+def test_production_images_install_the_pinned_runtime_lock():
+    for path in (ROOT / 'Dockerfile', ROOT / 'backend/Dockerfile'):
+        dockerfile = path.read_text(encoding='utf-8')
+        assert 'requirements-lock.txt' in dockerfile
+        assert 'pip install --no-cache-dir --upgrade -r /code/requirements-lock.txt' in dockerfile
+    assert (ROOT / 'backend/requirements.txt').read_text(encoding='utf-8').strip() == '-r requirements-lock.txt'
+
+
+def test_playwright_configuration_has_no_remote_execution_bypass():
+    config = (ROOT / 'frontend/playwright.config.js').read_text(encoding='utf-8')
+    assert 'E2E_ALLOW_REMOTE' not in config
+    assert "assertSafeLocalUrl(baseURL" in config
+    assert "assertSafeLocalUrl(apiURL" in config
