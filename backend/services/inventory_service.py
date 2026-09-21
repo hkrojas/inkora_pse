@@ -77,6 +77,7 @@ def sync_factiliza_establishments(
     locations: list[dict],
     *,
     user_id: int | None = None,
+    create_missing_warehouses: bool = True,
     commit: bool = True,
 ) -> dict:
     """Persist one Factiliza snapshot without deleting operational locations.
@@ -151,6 +152,11 @@ def sync_factiliza_establishments(
                     linked_warehouse.location = establishment.address
                 warehouses_linked += 1
                 continue
+        if not create_missing_warehouses:
+            # A refresh for an existing tenant only updates the fiscal catalog.
+            # The administrator links an operational warehouse explicitly so a
+            # similar address can never create or select the wrong stock scope.
+            continue
         db.add(models.Warehouse(
             tenant_id=tenant_id,
             establishment_id=establishment.id,

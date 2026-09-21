@@ -55,12 +55,18 @@ def _request(client: httpx.Client, path: str, *, empty_annexes_on_not_found: boo
 
     if response.status_code >= 400 or payload.get("success") is False:
         message = str(payload.get("message") or "Factiliza rechazó la consulta.").strip()
-        if (
-            empty_annexes_on_not_found
-            and response.status_code == 404
+        missing_annexes = (
+            response.status_code == 404
             and message.lower().startswith("no hay anexos registrados")
-        ):
-            return []
+        )
+        if missing_annexes:
+            if empty_annexes_on_not_found:
+                return []
+            raise FactilizaLookupError(
+                "Factiliza no pudo confirmar los establecimientos anexos. Vuelve a intentar la actualización.",
+                code="FACTILIZA_ANNEXES_UNCONFIRMED",
+                status_code=503,
+            )
         raise FactilizaLookupError(
             message,
             code="FACTILIZA_LOOKUP_REJECTED",
@@ -93,7 +99,7 @@ def _normalized_location(raw: dict, *, code: str, name: str, is_main: bool) -> d
     }
 
 
-def fetch_company_locations(ruc: str) -> list[dict]:
+def fetch_company_locations(ruc: str, *, require_annex_confirmation: bool = False) -> list[dict]:
     """Fetch the main fiscal domicile plus every registered SUNAT annex."""
     normalized_ruc = _validate_ruc(ruc)
     if not is_configured():
@@ -111,7 +117,7 @@ def fetch_company_locations(ruc: str) -> list[dict]:
         annexes = _request(
             client,
             f"/ruc/anexo/{normalized_ruc}",
-            empty_annexes_on_not_found=True,
+            empty_annexes_on_not_found=not require_annex_confirmation,
         )
 
     if not isinstance(company, dict):
