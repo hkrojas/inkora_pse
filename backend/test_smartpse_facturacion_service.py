@@ -183,11 +183,54 @@ def test_emitir_factura_rechaza_smartpse_sin_verificacion_remota(db_session):
         "Documento no encontrado"
     )
 
-    with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client):
+    with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=fake_client), patch(
+        "services.facturacion_service.time.sleep"
+    ) as sleep_mock:
         with pytest.raises(facturacion_service.FacturacionException) as exc:
             facturacion_service.emitir_factura(fiscal, db_session, user)
 
     assert "remote verification missing" in str(exc.value)
+    assert fake_client.process_xml.call_count == 1
+    assert fake_client.consult_ticket.call_count == facturacion_service.ASYNC_STATUS_MAX_ATTEMPTS
+    assert sleep_mock.call_count == facturacion_service.ASYNC_STATUS_MAX_ATTEMPTS - 1
+
+
+def test_emitir_factura_reintenta_solo_consulta_hasta_obtener_cdr(db_session):
+    tenant, user, fiscal = _make_smartpse_fiscal_document(db_session)
+    signed_xml = _sale_xml(tenant, issue_date=fiscal.fecha_emision.date().isoformat())
+    accepted_response = {
+        "estado": 200,
+        "mensaje": "Aceptado por SUNAT",
+        "xml_firmado": _zip_b64("signed.xml", signed_xml),
+        "codigo_hash": "hash-smart-delayed",
+        "cdr": "<ApplicationResponse/>",
+        "rechazado": False,
+    }
+    fake_client = MagicMock()
+    fake_client.process_xml.return_value = {
+        "estado": 200,
+        "mensaje": "Documento recibido",
+        "xml_firmado": _zip_b64("signed.xml", signed_xml),
+        "codigo_hash": "hash-smart-delayed",
+        "rechazado": False,
+    }
+    missing = facturacion_service.smartpse_client.SmartPSEException(
+        "Documento o ticket no encontrado"
+    )
+    fake_client.consult_ticket.side_effect = [missing, missing, accepted_response]
+
+    with patch(
+        "services.facturacion_service.smartpse_client.get_default_client",
+        return_value=fake_client,
+    ), patch("services.facturacion_service.time.sleep") as sleep_mock:
+        result = facturacion_service.emitir_factura(fiscal, db_session, user)
+
+    assert result["success"] is True
+    assert result["cdr_xml"] == "<ApplicationResponse/>"
+    assert result["provider_verification_status"] == "verified"
+    assert fake_client.process_xml.call_count == 1
+    assert fake_client.consult_ticket.call_count == 3
+    assert sleep_mock.call_count == 2
 
 
 def test_emitir_factura_acepta_cdr_desde_verificacion_remota(db_session):

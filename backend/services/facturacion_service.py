@@ -1080,32 +1080,56 @@ def _verify_smartpse_remote_document(
     process_response: dict,
     process_endpoint: str,
 ) -> dict:
-    try:
-        verification_response = client.consult_ticket(tenant, nombre_archivo)
-    except smartpse_client.SmartPSEException as exc:
-        logger.warning(
-            "smartpse.verify.result tenant_id=%s nombre_archivo=%s status=failed reason=missing",
-            getattr(tenant, "id", None),
-            nombre_archivo,
-        )
-        raise FacturacionException(f"Smart PSE remote verification missing: {exc}") from exc
+    verification_response = None
+    verification_result = None
+    last_error = None
+    for attempt in range(1, ASYNC_STATUS_MAX_ATTEMPTS + 1):
+        try:
+            verification_response = client.consult_ticket(tenant, nombre_archivo)
+            verification_result = smartpse_response.build_smartpse_result(
+                payload,
+                verification_response,
+                endpoint=f"/api/cpe/consultar/{nombre_archivo}",
+                status_code=200,
+                ticket=process_result.get("ticket"),
+                require_cdr=require_cdr,
+            )
+            break
+        except smartpse_client.SmartPSEException as exc:
+            last_error = exc
+            normalized_error = str(exc).lower()
+            retryable_verification = any(
+                fragment in normalized_error
+                for fragment in (
+                    "documento o ticket no encontrado",
+                    "documento no encontrado",
+                    "ticket no encontrado",
+                    "no devolvio cdr",
+                )
+            )
+            if retryable_verification and attempt < ASYNC_STATUS_MAX_ATTEMPTS:
+                logger.info(
+                    "smartpse.verify.retry tenant_id=%s nombre_archivo=%s attempt=%s max_attempts=%s",
+                    getattr(tenant, "id", None),
+                    nombre_archivo,
+                    attempt,
+                    ASYNC_STATUS_MAX_ATTEMPTS,
+                )
+                time.sleep(ASYNC_STATUS_RETRY_SECONDS)
+                continue
+            reason = "missing" if retryable_verification else "response"
+            logger.warning(
+                "smartpse.verify.result tenant_id=%s nombre_archivo=%s status=failed reason=%s",
+                getattr(tenant, "id", None),
+                nombre_archivo,
+                reason,
+            )
+            raise FacturacionException(f"Smart PSE remote verification missing: {exc}") from exc
 
-    try:
-        verification_result = smartpse_response.build_smartpse_result(
-            payload,
-            verification_response,
-            endpoint=f"/api/cpe/consultar/{nombre_archivo}",
-            status_code=200,
-            ticket=process_result.get("ticket"),
-            require_cdr=require_cdr,
+    if verification_result is None:
+        raise FacturacionException(
+            f"Smart PSE remote verification missing: {last_error or 'sin resultado verificable'}"
         )
-    except smartpse_client.SmartPSEException as exc:
-        logger.warning(
-            "smartpse.verify.result tenant_id=%s nombre_archivo=%s status=failed reason=response",
-            getattr(tenant, "id", None),
-            nombre_archivo,
-        )
-        raise FacturacionException(f"Smart PSE remote verification missing: {exc}") from exc
 
     identity = smartpse_response.extract_sale_document_identity(verification_result.get("xml"))
     mismatches = _smartpse_identity_mismatches(_smartpse_expected_identity(payload), identity)
