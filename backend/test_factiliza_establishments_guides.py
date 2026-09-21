@@ -92,6 +92,35 @@ def test_factiliza_lookup_treats_missing_annexes_as_empty():
     assert result == []
 
 
+def test_factiliza_lookup_can_require_annex_confirmation():
+    class FakeResponse:
+        status_code = 404
+
+        @staticmethod
+        def json():
+            return {
+                "message": "No hay anexos registrados con el número de RUC 20606751509",
+                "data": None,
+            }
+
+    class FakeClient:
+        @staticmethod
+        def get(_path):
+            return FakeResponse()
+
+    try:
+        factiliza_lookup_service._request(
+            FakeClient(),
+            "/ruc/anexo/20606751509",
+            empty_annexes_on_not_found=False,
+        )
+    except factiliza_lookup_service.FactilizaLookupError as exc:
+        assert exc.code == "FACTILIZA_ANNEXES_UNCONFIRMED"
+        assert exc.status_code == 503
+    else:
+        raise AssertionError("La actualización explícita no debe ocultar un 404 de anexos")
+
+
 def test_sync_is_idempotent_and_shared_warehouse_does_not_mutate_fiscal_identity(db_session):
     tenant = make_tenant(db_session, "90001")
     user = make_user(db_session, tenant, email="factiliza-sync@test.pe")
@@ -146,6 +175,48 @@ def test_sync_is_idempotent_and_shared_warehouse_does_not_mutate_fiscal_identity
     assert main.name == "Establecimiento principal"
     assert main.address == "AV. PRINCIPAL 100, LIMA - LIMA - LIMA"
     assert main.verified_at is not None
+
+
+def test_existing_tenant_refresh_adds_annex_option_without_duplicate_warehouse(db_session):
+    tenant = make_tenant(db_session, "90011")
+    user = make_user(db_session, tenant, email="factiliza-existing@test.pe")
+    principal = models.Warehouse(
+        tenant_id=tenant.id,
+        code="PRINCIPAL",
+        name="Almacén principal",
+        is_default=True,
+        is_active=True,
+    )
+    existing = models.Warehouse(
+        tenant_id=tenant.id,
+        code="PUENTE-PIEDRA",
+        name="Casa",
+        location="Asoc. de Viv. Las Torres 2 de Copacabana Mz. B Lt. 11",
+        is_default=False,
+        is_active=True,
+    )
+    db_session.add_all([principal, existing])
+    db_session.commit()
+
+    result = inventory_service.sync_factiliza_establishments(
+        db_session,
+        tenant.id,
+        tenant.business_ruc,
+        _snapshot(),
+        user_id=user.id,
+        create_missing_warehouses=False,
+    )
+
+    assert result["establishments_created"] == 2
+    assert result["warehouses_created"] == 0
+    assert result["warehouses_linked"] == 1
+    assert db_session.query(models.Warehouse).filter_by(tenant_id=tenant.id).count() == 2
+    assert db_session.query(models.TenantEstablishment).filter_by(
+        tenant_id=tenant.id,
+        sunat_code="0002",
+    ).one().verified_at is not None
+    db_session.refresh(existing)
+    assert existing.establishment_id is None
 
 
 def test_tenant_onboarding_persists_factiliza_snapshot_in_same_transaction(db_session):

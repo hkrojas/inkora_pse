@@ -62,13 +62,17 @@ def sync_sunat_establishments(
     try:
         # No row lock is held while Factiliza is called. The returned snapshot
         # is applied atomically by inventory_service afterwards.
-        locations = factiliza_lookup_service.fetch_company_locations(tenant.business_ruc)
+        locations = factiliza_lookup_service.fetch_company_locations(
+            tenant.business_ruc,
+            require_annex_confirmation=True,
+        )
         return inventory_service.sync_factiliza_establishments(
             db,
             user.tenant_id,
             tenant.business_ruc,
             locations,
             user_id=user.id,
+            create_missing_warehouses=False,
         )
     except factiliza_lookup_service.FactilizaLookupError as exc:
         db.rollback()
