@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import crud
+import fiscal_time
 import models
 import schemas
 from api_dependencies import (
@@ -222,6 +223,24 @@ def test_emitir_guia_solo_acepta_cola_asincrona_e_idempotente(db_session):
     assert first.status_code == 202
     assert second.status_code == 202
     assert first.json()["job_id"] == second.json()["job_id"]
+
+
+def test_emitir_guia_congela_fecha_de_lima_durante_noche_utc(db_session, monkeypatch):
+    user, guia = _make_user_and_guia(db_session, "GLIMA01")
+    fixed_lima = datetime(2026, 9, 20, 21, 24, tzinfo=fiscal_time.LIMA_TZ)
+    monkeypatch.setattr(fiscal_time, "now_lima", lambda: fixed_lima)
+
+    response = _client_for_user(db_session, user).post(
+        f"/guias-remision/{guia.id}/emitir",
+        params={"mode": "async"},
+    )
+
+    assert response.status_code == 202
+    db_session.refresh(guia)
+    assert guia.fecha_emision == datetime(2026, 9, 20, 21, 24)
+    assert guia.frozen_payload["fechaEmision"] == "2026-09-20T21:24:00-05:00"
+    assert "<cbc:IssueDate>2026-09-20</cbc:IssueDate>" in guia.frozen_xml
+    assert "<cbc:IssueTime>21:24:00</cbc:IssueTime>" in guia.frozen_xml
 
 
 def test_detalle_guia_expone_acciones_y_recupera_job(db_session):

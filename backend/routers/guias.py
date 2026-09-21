@@ -5,6 +5,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 import crud
+import fiscal_time
 from services import emission_queue_service, facturacion_service, fiscal_provider_service, smartpse_response
 from services import gre_ubl_service
 from services import guide_pdf_service
@@ -628,7 +629,7 @@ def emitir_guia_remision_endpoint(
                 raise HTTPException(status_code=422, detail=validation)
             # Fiscal data is immutable from this point forward. The worker must
             # send this exact snapshot, never rebuild it from mutable masters.
-            guia.fecha_emision = datetime.now()
+            guia.fecha_emision = fiscal_time.now_lima_naive()
             frozen_payload = jsonable_encoder(
                 facturacion_service._base_payload_gre(guia, current_user)
             )

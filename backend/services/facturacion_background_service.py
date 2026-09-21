@@ -1,6 +1,5 @@
-from datetime import datetime
-
 import crud
+import fiscal_time
 from services import facturacion_service
 import models
 from config import settings
@@ -102,7 +101,7 @@ def process_direct_sunat_emission_bg(
             "serie": cotizacion.serie
             or ("F001" if cotizacion.tipo_comprobante == "01" else "B001"),
             "correlativo": str(cotizacion.correlativo or cotizacion.id).zfill(8),
-            "fecha_emision": datetime.now().strftime("%Y-%m-%d"),
+            "fecha_emision": fiscal_time.today_lima().isoformat(),
             "tipo_comprobante": cotizacion.tipo_comprobante or "01",
             "monto_letras": facturacion_service.numero_a_letras(cotizacion.total_venta),
             "emisor": emisor_data,

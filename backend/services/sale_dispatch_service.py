@@ -15,6 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 import models
+import fiscal_time
 from access_control import DOCUMENT_EMITTER_ROLES, TENANT_ADMIN_ROLES, get_effective_role
 from services.document_flow_service import (
     DOCUMENT_KIND_CREDIT_NOTE,
@@ -607,7 +608,7 @@ def _new_guide_from_dispatch(db: Session, tenant, invoice, dispatch, data, resol
         serie=series,
         correlativo=_next_guide_number(db, tenant.id, "09", series),
         emission_environment=environment,
-        fecha_emision=datetime.now(),
+        fecha_emision=fiscal_time.now_lima_naive(),
         estado="pendiente",
         tenant_id=tenant.id,
         usuario_id=user_id,
@@ -1267,7 +1268,7 @@ def create_transport_guide(db: Session, tenant_id: int, user_id: int, payload):
         serie=series,
         correlativo=_next_guide_number(db, tenant_id, "31", series),
         emission_environment=environment,
-        fecha_emision=datetime.now(),
+        fecha_emision=fiscal_time.now_lima_naive(),
         estado="pendiente",
         tenant_id=tenant_id,
         usuario_id=user_id,

@@ -10,6 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 import models
+import fiscal_time
 from services import beta_feature_flags, inventory_service
 from services.guide_series_service import guide_series, next_guide_correlativo
 
@@ -494,7 +495,7 @@ def create_guide(db: Session, tenant_id: int, user_id: int, data):
         serie=series,
         correlativo=next_guide_correlativo(db, tenant_id, "09", series),
         emission_environment=environment,
-        fecha_emision=datetime.now(),
+        fecha_emision=fiscal_time.now_lima_naive(),
         estado="pendiente",
         tenant_id=tenant_id,
         usuario_id=user_id,

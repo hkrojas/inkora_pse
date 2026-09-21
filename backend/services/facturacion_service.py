@@ -3,12 +3,13 @@ import decimal
 import json
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import requests
 from sqlalchemy.orm import Session
 
 import models
+import fiscal_time
 from config import settings
 from fiscal_catalogs import tax_affectation_bucket
 from services import calculations
@@ -342,28 +343,15 @@ def _build_client_payload(cliente) -> dict:
 
 
 def _current_issue_datetime(value: datetime | None = None, *, plus_minutes: int = 0) -> str:
-    issued_at = value or datetime.now().astimezone()
-    if issued_at.tzinfo is None:
-        issued_at = issued_at.astimezone()
-    if plus_minutes:
-        issued_at = issued_at + timedelta(minutes=plus_minutes)
-    return issued_at.replace(microsecond=0).isoformat()
+    return fiscal_time.iso_lima_wall_time(value, plus_minutes=plus_minutes)
 
 
 def _gre_datetime(value: datetime | None = None) -> str:
-    # Peru uses UTC-05:00 year-round. A fixed offset avoids depending on an
-    # optional IANA tzdata package in minimal deployment images.
-    lima = timezone(timedelta(hours=-5))
-    issued_at = value or datetime.now(lima)
-    if issued_at.tzinfo is None:
-        issued_at = issued_at.replace(tzinfo=lima)
-    else:
-        issued_at = issued_at.astimezone(lima)
-    return issued_at.replace(microsecond=0).isoformat()
+    return fiscal_time.iso_lima(value)
 
 
 def _build_batch_correlativo(reference_datetime=None) -> str:
-    now = datetime.now()
+    now = fiscal_time.now_lima()
     seconds_of_day = now.hour * 3600 + now.minute * 60 + now.second
     reference = reference_datetime or now.isoformat()
     return smartpse_ubl_service.normalize_batch_correlativo(
