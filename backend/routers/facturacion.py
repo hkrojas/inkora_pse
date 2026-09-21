@@ -8,6 +8,7 @@ from sqlalchemy import String, and_, cast, desc, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 import crud
+import fiscal_time
 from config import settings
 from fiscal_catalogs import (
     normalize_internal_product_code,
@@ -524,11 +525,7 @@ def _validate_issue_date_not_future(quote) -> None:
     if not fecha_emision:
         return
 
-    today = (
-        datetime.now(fecha_emision.tzinfo).date()
-        if fecha_emision.tzinfo is not None
-        else datetime.now().date()
-    )
+    today = fiscal_time.today_lima()
     if fecha_emision.date() > today:
         raise HTTPException(
             400,

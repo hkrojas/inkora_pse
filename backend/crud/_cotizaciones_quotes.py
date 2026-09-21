@@ -8,6 +8,7 @@ from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session, joinedload
 
 import models
+import fiscal_time
 import schemas
 from access_control import can_access_all_tenant_resources
 from crud._base import _retry_on_correlativo_conflict, get_cliente_for_tenant
@@ -262,7 +263,7 @@ def _create_cotizacion_inner(
     )
     nuevo_correlativo, internal_order_number = _next_quote_identity(db, tenant_id)
 
-    fecha_emision = cotizacion.fecha_emision or datetime.now()
+    fecha_emision = cotizacion.fecha_emision or fiscal_time.now_lima_naive()
     condicion_pago = (
         getattr(cotizacion, "condicion_pago", None)
         or getattr(db_cliente, "condicion_pago", None)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi.encoders import jsonable_encoder
@@ -8,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 import models
+import fiscal_time
 from crud._cotizaciones_shared import _next_note_correlativo, _resolve_note_series
 from schemas.notes import FiscalNoteDraftCreate
 from services import calculations
@@ -331,7 +331,7 @@ def calculate_adjustment(db: Session, tenant_id: int, payload: FiscalNoteDraftCr
 def _apply_draft(note, document, payload, items, totals, user_id, idempotency_key=None):
     note.serie = None
     note.correlativo = None
-    note.fecha_emision = datetime.now()
+    note.fecha_emision = fiscal_time.now_lima_naive()
     note.cliente_id = document.cliente_id
     note.usuario_id = user_id
     note.tenant_id = document.tenant_id
@@ -438,7 +438,7 @@ def assign_number_for_emission(db, tenant_id, note_id):
             raise ValueError(f"La nota excede el maximo fiscal disponible ({available}).")
     note.serie = _resolve_note_series(source.serie)
     note.correlativo = _next_note_correlativo(db, tenant_id, note.serie)
-    note.fecha_emision = datetime.now()
+    note.fecha_emision = fiscal_time.now_lima_naive()
     note.estado = DOCUMENT_STATUS_PENDING
     note.sunat_error = None
     db.commit()

@@ -8,6 +8,7 @@ from functools import lru_cache
 from types import SimpleNamespace
 
 import models
+import fiscal_time
 import qrcode
 import requests
 from dateutil.relativedelta import relativedelta
@@ -1142,9 +1143,9 @@ _QUOTE_CREDIT_TERM_DAYS = {
 def _resolve_quote_due_date_display(document_data) -> tuple[str, str]:
     raw_issue = (
         _value_from_obj(document_data, "fecha_emision", None)
-        or _value_from_obj(document_data, "created_at", datetime.now())
+        or _value_from_obj(document_data, "created_at", fiscal_time.now_lima_naive())
     )
-    issue_dt = _parse_datetime_like(raw_issue) or datetime.now()
+    issue_dt = _parse_datetime_like(raw_issue) or fiscal_time.now_lima_naive()
     issue_label = issue_dt.strftime("%d/%m/%Y")
 
     raw_due = _value_from_obj(document_data, "fecha_vencimiento", None)
@@ -1685,16 +1686,19 @@ def create_pdf_buffer(document_data, tenant: models.Tenant, document_type: str):
     raw_fecha = (
         (parsed_xml or {}).get("issue_date")
         or _value_from_obj(document_data, "fecha_emision", None)
-        or _value_from_obj(document_data, "created_at", datetime.now())
+        or _value_from_obj(document_data, "created_at", fiscal_time.now_lima_naive())
     )
-    fecha_emision = _format_date_ddmmyyyy(raw_fecha, default=datetime.now().strftime("%d/%m/%Y"))
+    fecha_emision = _format_date_ddmmyyyy(
+        raw_fecha,
+        default=fiscal_time.now_lima().strftime("%d/%m/%Y"),
+    )
 
     raw_venc = _value_from_obj(document_data, "fecha_vencimiento", None)
     if raw_venc:
         parsed_venc = _parse_datetime_like(raw_venc)
         fecha_vencimiento = parsed_venc.strftime("%d/%m/%Y") if parsed_venc else fecha_emision
     else:
-        base_fecha = _parse_datetime_like(raw_fecha) or datetime.now()
+        base_fecha = _parse_datetime_like(raw_fecha) or fiscal_time.now_lima_naive()
         fecha_vencimiento = (base_fecha + relativedelta(months=1)).strftime("%d/%m/%Y")
 
     supplier = (parsed_xml or {}).get("supplier") or {}
@@ -2142,9 +2146,12 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
     raw_fecha = (
         (parsed_xml or {}).get("issue_date")
         or _value_from_obj(document_data, "fecha_emision", None)
-        or _value_from_obj(document_data, "created_at", datetime.now())
+        or _value_from_obj(document_data, "created_at", fiscal_time.now_lima_naive())
     )
-    fecha_emision = _format_date_ddmmyyyy(raw_fecha, default=datetime.now().strftime("%d/%m/%Y"))
+    fecha_emision = _format_date_ddmmyyyy(
+        raw_fecha,
+        default=fiscal_time.now_lima().strftime("%d/%m/%Y"),
+    )
     fecha_vencimiento = ""
     if not is_comprobante:
         fecha_emision, fecha_vencimiento = _resolve_quote_due_date_display(document_data)

@@ -1,11 +1,11 @@
 """models/cotizaciones.py — Cotizacion, CotizacionItem."""
 import uuid
-from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import backref, relationship
 
 from database import Base
+import fiscal_time
 
 
 class Cotizacion(Base):
@@ -27,7 +27,7 @@ class Cotizacion(Base):
     id = Column(Integer, primary_key=True, index=True)
     serie = Column(String, default="COT")
     correlativo = Column(Integer)
-    fecha_emision = Column(DateTime, default=datetime.now)
+    fecha_emision = Column(DateTime, default=fiscal_time.now_lima_naive)
     fecha_vencimiento = Column(DateTime, nullable=True)
     moneda = Column(String, default="PEN")
     estado = Column(String, default="pendiente")

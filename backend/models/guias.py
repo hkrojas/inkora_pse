@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, I
 from sqlalchemy.orm import relationship
 
 from database import Base
+import fiscal_time
 
 
 DISPATCH_STATUS_PROVISIONAL = "provisional"
@@ -136,7 +137,7 @@ class GuiaRemision(Base):
     tipo_documento = Column(String, nullable=False, default="09", server_default="09")
     serie = Column(String, default="T001")
     correlativo = Column(Integer)
-    fecha_emision = Column(DateTime, default=datetime.now)
+    fecha_emision = Column(DateTime, default=fiscal_time.now_lima_naive)
     fecha_traslado = Column(DateTime)
     estado = Column(String, default="pendiente")
 

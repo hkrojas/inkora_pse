@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session, joinedload
 
 import models
+import fiscal_time
 import schemas
 from access_control import can_access_all_tenant_resources
 from crud._base import (
@@ -283,7 +283,7 @@ def _build_fiscal_document(
         cliente_id=quote.cliente_id,
         usuario_id=usuario_id,
         tenant_id=quote.tenant_id,
-        fecha_emision=quote.fecha_emision or datetime.now(),
+        fecha_emision=quote.fecha_emision or fiscal_time.now_lima_naive(),
         fecha_vencimiento=quote.fecha_vencimiento,
         moneda=quote.moneda,
         tipo_comprobante=tipo_comprobante,

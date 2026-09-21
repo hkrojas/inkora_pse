@@ -48,6 +48,7 @@ from conftest import (
     make_quote_via_crud,
 )
 import crud
+import fiscal_time
 import models
 import schemas
 from api_dependencies import (
@@ -92,7 +93,7 @@ def _make_mock_quote(
     quote.estado = estado
     quote.tipo_comprobante = tipo_comprobante
     quote.total_venta = total_venta
-    quote.fecha_emision = datetime.now(timezone.utc)
+    quote.fecha_emision = fiscal_time.now_lima_naive()
     quote.fecha_vencimiento = None
     quote.condicion_pago = "contado"
     quote.cuotas_pago = []
@@ -347,6 +348,18 @@ class TestPreValidacion:
             _validar_pre_emision(quote, "01")
         assert exc.value.status_code == 400
         assert "fecha" in exc.value.detail.lower()
+
+    def test_fecha_futura_se_evalua_con_calendario_de_lima(self, monkeypatch):
+        fixed_lima = datetime(2026, 9, 20, 21, 24, tzinfo=fiscal_time.LIMA_TZ)
+        monkeypatch.setattr(fiscal_time, "now_lima", lambda: fixed_lima)
+        quote = _make_mock_quote()
+        quote.fecha_emision = datetime(2026, 9, 21)
+
+        with pytest.raises(HTTPException) as exc:
+            _validar_pre_emision(quote, "01")
+
+        assert exc.value.status_code == 400
+        assert "fecha de emision no puede ser futura" in exc.value.detail.lower()
 
     def test_unidad_sunat_invalida_lanza_400(self):
         quote = _make_mock_quote()

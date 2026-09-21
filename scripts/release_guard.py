@@ -26,7 +26,8 @@ CONFIG_FILES = ('Dockerfile', '.dockerignore', 'railway.json',
                 'backend/requirements-lock.txt', 'backend/alembic.ini')
 BACKEND_ROOT_FILES = {
     '__init__.py', 'access_control.py', 'api_dependencies.py', 'api_utils.py',
-    'config.py', 'database.py', 'fiscal_catalogs.py', 'launch_migrations.py',
+    'config.py', 'database.py', 'fiscal_catalogs.py', 'fiscal_time.py',
+    'launch_migrations.py',
     'http_security.py', 'logging_utils.py', 'main.py', 'migrate_analytics.py',
     'migrate_auth_passwords.py', 'migrate_beta_integrity.py',
     'migrate_cobranza_indexes.py', 'migrate_cotizacion_cuotas_pago.py',
