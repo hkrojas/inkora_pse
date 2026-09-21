@@ -233,6 +233,46 @@ def test_emitir_factura_reintenta_solo_consulta_hasta_obtener_cdr(db_session):
     assert sleep_mock.call_count == 2
 
 
+def test_consultar_documento_fiscal_recupera_aceptacion_sin_reenviar(db_session):
+    tenant, user, fiscal = _make_smartpse_fiscal_document(db_session)
+    signed_xml = _sale_xml(
+        tenant,
+        doc_id=f"{fiscal.serie}-{int(fiscal.correlativo):08d}",
+        issue_date=fiscal.fecha_emision.date().isoformat(),
+    )
+    fake_client = MagicMock()
+    fake_client.consult_ticket.return_value = {
+        "estado": 200,
+        "mensaje": "Aceptado por SUNAT",
+        "xml_firmado": _zip_b64("signed.xml", signed_xml),
+        "codigo_hash": "hash-smart-reconciled",
+        "cdr": "<ApplicationResponse/>",
+        "rechazado": False,
+    }
+
+    with patch(
+        "services.facturacion_service.smartpse_client.get_default_client",
+        return_value=fake_client,
+    ):
+        result = facturacion_service.consultar_documento_fiscal(
+            fiscal,
+            user,
+            tipo_doc_override="01",
+        )
+
+    assert result["success"] is True
+    assert result["cdr_xml"] == "<ApplicationResponse/>"
+    assert result["provider_verification_status"] == "verified"
+    assert result["provider_document_name"].endswith(
+        f"-01-{fiscal.serie}-{int(fiscal.correlativo):08d}"
+    )
+    fake_client.consult_ticket.assert_called_once_with(
+        tenant,
+        result["provider_document_name"],
+    )
+    fake_client.process_xml.assert_not_called()
+
+
 def test_emitir_factura_acepta_cdr_desde_verificacion_remota(db_session):
     tenant, user, fiscal = _make_smartpse_fiscal_document(db_session)
     signed_xml = _sale_xml(tenant, issue_date=fiscal.fecha_emision.date().isoformat())

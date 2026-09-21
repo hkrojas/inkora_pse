@@ -183,6 +183,131 @@ def test_process_emission_job_schedules_retry_for_timeout(db_session):
     assert attempts[0].error_classification == emission_queue_service.EMISSION_ERROR_TRANSIENT
 
 
+def test_remote_verification_missing_switches_to_consult_and_never_resends(db_session):
+    _, user, fiscal = _make_fiscal_document(db_session, "EQ03R")
+    job, _ = emission_queue_service.enqueue_fiscal_document_job(
+        db_session,
+        fiscal,
+        user,
+        tipo_comprobante="01",
+    )
+    crud.claim_next_emission_job(db_session)
+
+    with patch(
+        "services.emission_queue_service.facturacion_service.emitir_factura",
+        side_effect=facturacion_service.FacturacionException(
+            "Smart PSE remote verification missing: Documento o ticket no encontrado"
+        ),
+    ) as send_call:
+        processed = emission_queue_service.process_emission_job(
+            job.id,
+            db_session=db_session,
+        )
+
+    assert processed is False
+    assert send_call.call_count == 1
+    db_session.expire_all()
+    retry_job = crud.get_emission_job(db_session, job.id)
+    assert retry_job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    assert retry_job.status == models.EMISSION_JOB_STATUS_RETRY
+    retry_job.available_at = datetime.now() - timedelta(seconds=1)
+    db_session.commit()
+    claimed = crud.claim_next_emission_job(db_session)
+    assert claimed.id == job.id
+
+    result = {
+        "success": True,
+        "serie": fiscal.serie,
+        "correlativo": f"{int(fiscal.correlativo):08d}",
+        "provider_endpoint": "/api/cpe/consultar/documento",
+        "provider_status_code": 200,
+        "provider_document_name": (
+            f"20600000000-01-{fiscal.serie}-{int(fiscal.correlativo):08d}"
+        ),
+        "provider_verification_status": "verified",
+        "provider_verified_at": "2026-09-21T12:00:00+00:00",
+        "cdr_xml": "<ApplicationResponse/>",
+    }
+    with patch(
+        "services.emission_queue_service.facturacion_service.consultar_documento_fiscal",
+        return_value=result,
+    ) as consult_call, patch(
+        "services.emission_queue_service.facturacion_service.emitir_factura",
+    ) as unexpected_send, patch(
+        "services.emission_queue_service.fiscal_artifact_service.persist_cdr_artifact",
+        side_effect=_noop_async,
+    ), patch(
+        "services.emission_queue_service.pdf_storage_service.process_pdf_background",
+        side_effect=_noop_async,
+    ):
+        processed = emission_queue_service.process_emission_job(
+            job.id,
+            db_session=db_session,
+        )
+
+    assert processed is True
+    consult_call.assert_called_once()
+    unexpected_send.assert_not_called()
+    db_session.expire_all()
+    updated_job = crud.get_emission_job(db_session, job.id)
+    updated_doc = crud.get_cotizacion(db_session, fiscal.id, user)
+    assert updated_job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    assert updated_job.status == models.EMISSION_JOB_STATUS_SUCCEEDED
+    assert updated_job.attempts == 2
+    assert updated_doc.estado == "facturada"
+
+
+def test_worker_recovers_only_missing_remote_verification_as_consult_job(db_session):
+    _, user, fiscal = _make_fiscal_document(db_session, "EQ03OLD")
+    job, _ = emission_queue_service.enqueue_fiscal_document_job(
+        db_session,
+        fiscal,
+        user,
+        tipo_comprobante="01",
+    )
+    crud.mark_emission_job_pending_confirmation(
+        db_session,
+        job.id,
+        error_message=(
+            "Smart PSE remote verification missing: Documento o ticket no encontrado"
+        ),
+        error_classification=emission_queue_service.EMISSION_ERROR_AMBIGUOUS,
+    )
+
+    recovered = crud.recover_pending_fiscal_reconciliations(db_session)
+
+    db_session.expire_all()
+    recovered_job = crud.get_emission_job(db_session, job.id)
+    assert recovered == 1
+    assert recovered_job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    assert recovered_job.status == models.EMISSION_JOB_STATUS_RETRY
+    assert recovered_job.attempts == 0
+
+
+def test_worker_does_not_recover_provider_policy_as_consult_job(db_session):
+    _, user, fiscal = _make_fiscal_document(db_session, "EQ03POL")
+    job, _ = emission_queue_service.enqueue_fiscal_document_job(
+        db_session,
+        fiscal,
+        user,
+        tipo_comprobante="01",
+    )
+    crud.mark_emission_job_pending_confirmation(
+        db_session,
+        job.id,
+        error_message="[0111] Rejected by policy",
+        error_classification=emission_queue_service.EMISSION_ERROR_PROVIDER_POLICY,
+    )
+
+    recovered = crud.recover_pending_fiscal_reconciliations(db_session)
+
+    db_session.expire_all()
+    untouched_job = crud.get_emission_job(db_session, job.id)
+    assert recovered == 0
+    assert untouched_job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL
+    assert untouched_job.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION
+
+
 def test_process_emission_job_holds_0111_for_confirmation(db_session):
     _, user, fiscal = _make_fiscal_document(db_session, "EQ03P")
     job, _ = emission_queue_service.enqueue_fiscal_document_job(
@@ -294,6 +419,48 @@ def test_exhausted_guide_consult_stays_pending_confirmation(db_session):
 
     assert processed is False
     assert updated_job.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION
+    assert updated_job.attempts == 1
+    assert len(attempts) == 1
+    assert attempts[0].status == models.EMISSION_ATTEMPT_STATUS_PENDING_CONFIRMATION
+    assert attempts[0].error_classification == emission_queue_service.EMISSION_ERROR_TRANSIENT
+
+
+def test_exhausted_fiscal_consult_stays_pending_confirmation(db_session):
+    tenant, user, fiscal = _make_fiscal_document(db_session, "EQ03FISC")
+    job = crud.create_emission_job(
+        db_session,
+        tenant_id=tenant.id,
+        created_by_user_id=user.id,
+        resource_type=models.EMISSION_JOB_RESOURCE_COTIZACION,
+        resource_id=fiscal.id,
+        action=models.EMISSION_JOB_ACTION_CONSULT_FISCAL,
+        provider="smartpse",
+        idempotency_key=f"consult:fiscal:{fiscal.id}",
+        payload_snapshot={"tipo_comprobante": "01"},
+        max_attempts=1,
+    )
+    crud.claim_next_emission_job(db_session)
+
+    with patch(
+        "services.emission_queue_service.facturacion_service.consultar_documento_fiscal",
+        side_effect=facturacion_service.FacturacionException(
+            "Documento o ticket no encontrado"
+        ),
+    ), patch(
+        "services.emission_queue_service.facturacion_service.emitir_factura",
+    ) as unexpected_send:
+        processed = emission_queue_service.process_emission_job(
+            job.id,
+            db_session=db_session,
+        )
+
+    assert processed is False
+    unexpected_send.assert_not_called()
+    db_session.expire_all()
+    updated_job = crud.get_emission_job(db_session, job.id)
+    attempts = crud.get_emission_attempts(db_session, job.id)
+    assert updated_job.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION
+    assert updated_job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
     assert updated_job.attempts == 1
     assert len(attempts) == 1
     assert attempts[0].status == models.EMISSION_ATTEMPT_STATUS_PENDING_CONFIRMATION

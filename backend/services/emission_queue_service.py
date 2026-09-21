@@ -424,7 +424,10 @@ def _must_hold_exhausted_consultation(
 ) -> bool:
     """Keep an inconclusive GRE query out of the definitive failure state."""
     return (
-        job.action == models.EMISSION_JOB_ACTION_CONSULT_GUIDE
+        job.action in {
+            models.EMISSION_JOB_ACTION_CONSULT_FISCAL,
+            models.EMISSION_JOB_ACTION_CONSULT_GUIDE,
+        }
         and error_classification == EMISSION_ERROR_TRANSIENT
         and (job.attempts or 0) >= (job.max_attempts or settings.EMISSION_MAX_ATTEMPTS)
     )
@@ -749,6 +752,65 @@ def _process_emit_fiscal_job(
     return result
 
 
+def _process_consult_fiscal_job(
+    db: Session,
+    job: models.DocumentEmissionJob,
+    user: models.User,
+) -> dict:
+    """Reconcile an already submitted sale document without sending it again."""
+    fiscal_document = _get_tenant_cotizacion(db, job.tenant_id, job.resource_id)
+    if not fiscal_document:
+        raise RuntimeError("No se encontró el documento fiscal a conciliar.")
+
+    payload_snapshot = job.payload_snapshot or {}
+    db.commit()  # never hold an SQL transaction during provider consultation
+    result = facturacion_service.consultar_documento_fiscal(
+        fiscal_document,
+        user,
+        tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
+    )
+    persisted_document = crud.guardar_respuesta_sunat(
+        db,
+        fiscal_document.id,
+        result,
+        tenant_id=job.tenant_id,
+    )
+
+    if result.get("cdr_xml") and persisted_document:
+        try:
+            _run_async_syncsafe(
+                fiscal_artifact_service.persist_cdr_artifact(
+                    db,
+                    persisted_document,
+                    result.get("cdr_xml"),
+                )
+            )
+        except Exception as cdr_err:
+            logger.warning(
+                "cdr_artifact_persist_failed_but_reconciliation_ok",
+                extra={
+                    "event": "cdr_artifact_persist_failed_but_reconciliation_ok",
+                    "context": f"document_id={fiscal_document.id}",
+                    "error": str(cdr_err),
+                },
+            )
+
+    try:
+        _run_async_syncsafe(
+            pdf_storage_service.process_pdf_background(fiscal_document.id, job.tenant_id)
+        )
+    except Exception as pdf_err:
+        logger.error(
+            "pdf_generation_failed_but_reconciliation_ok",
+            extra={
+                "event": "pdf_generation_failed_but_reconciliation_ok",
+                "context": f"document_id={fiscal_document.id}",
+                "error": str(pdf_err),
+            },
+        )
+    return result
+
+
 def _process_emit_note_job(
     db: Session,
     job: models.DocumentEmissionJob,
@@ -939,6 +1001,8 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
 
         if job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL:
             result = _process_emit_fiscal_job(db, job, user)
+        elif job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL:
+            result = _process_consult_fiscal_job(db, job, user)
         elif job.action == models.EMISSION_JOB_ACTION_EMIT_NOTE:
             result = _process_emit_note_job(db, job, user)
         elif job.action == models.EMISSION_JOB_ACTION_VOID_FISCAL:
@@ -994,7 +1058,29 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
         job = crud.get_emission_job(db, job_id)
         if job:
             error_classification = _classify_emission_error(message)
-            if (
+            should_reconcile_fiscal = (
+                job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL
+                and error_classification == EMISSION_ERROR_AMBIGUOUS
+                and "smart pse remote verification missing" in message.lower()
+            )
+            if should_reconcile_fiscal:
+                retry_in = _retry_delay_seconds(job.attempts or 1)
+                crud.mark_emission_job_retry(
+                    db,
+                    job.id,
+                    error_message=message,
+                    retry_in_seconds=retry_in,
+                    error_classification=error_classification,
+                    action=models.EMISSION_JOB_ACTION_CONSULT_FISCAL,
+                )
+                logger.warning(
+                    "emission_job_reconciliation_scheduled",
+                    extra={
+                        "event": "emission_job_reconciliation_scheduled",
+                        "context": f"job_id={job.id} retry_in={retry_in}s",
+                    },
+                )
+            elif (
                 error_classification in {
                     EMISSION_ERROR_AMBIGUOUS,
                     EMISSION_ERROR_PROVIDER_POLICY,
@@ -1075,6 +1161,7 @@ def process_next_available_job(*, db_session: Session | None = None) -> bool:
             seconds=max(settings.EMISSION_PROCESSING_TIMEOUT_SECONDS, 30)
         )
         crud.recover_stale_processing_jobs(db, stale_before=stale_before)
+        crud.recover_pending_fiscal_reconciliations(db)
         job = crud.claim_next_emission_job(db)
         if not job:
             return False
@@ -1103,6 +1190,15 @@ def _recover_stale_jobs_if_due(
         return next_recovery_at
 
     _recover_stale_jobs(db)
+    recovered = crud.recover_pending_fiscal_reconciliations(db)
+    if recovered:
+        logger.info(
+            "pending_fiscal_reconciliations_requeued",
+            extra={
+                "event": "pending_fiscal_reconciliations_requeued",
+                "context": f"count={recovered}",
+            },
+        )
     return now_monotonic + recovery_interval_seconds
 
 

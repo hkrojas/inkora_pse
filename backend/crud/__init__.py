@@ -139,6 +139,7 @@ from crud.emission_jobs import (
     set_tenant_fiscal_contingency,
     get_tenant_fiscal_contingency_status,
     recover_stale_processing_jobs,
+    recover_pending_fiscal_reconciliations,
     mark_emission_job_failed,
 )
 
