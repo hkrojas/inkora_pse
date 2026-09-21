@@ -1354,6 +1354,61 @@ def emitir_factura(
     return _attach_sale_artifacts(result, user)
 
 
+def consultar_documento_fiscal(
+    cotizacion: models.Cotizacion,
+    user: models.User,
+    *,
+    tipo_doc_override: str | None = None,
+):
+    """Reconcile a submitted invoice/receipt without invoking the send endpoint."""
+    tenant = getattr(user, "tenant", None)
+    if not tenant or tenant.id != cotizacion.tenant_id:
+        raise FacturacionException("El documento fiscal no pertenece al tenant autenticado.")
+
+    tipo_comprobante = (
+        tipo_doc_override
+        or cotizacion.tipo_comprobante
+        or ("01" if obtener_tipo_documento_codigo(cotizacion.cliente.tipo_documento) == "6" else "03")
+    )
+    payload, _ = _base_payload(cotizacion, user, tipo_comprobante)
+    payload["serie"] = cotizacion.serie
+    payload["correlativo"] = _provider_correlativo(cotizacion.correlativo or cotizacion.id)
+    nombre_archivo = smartpse_ubl_service.build_smartpse_filename(payload)
+    client = smartpse_client.get_default_client()
+
+    try:
+        response = client.consult_ticket(tenant, nombre_archivo)
+        result = smartpse_response.build_smartpse_result(
+            payload,
+            response,
+            endpoint=f"/api/cpe/consultar/{nombre_archivo}",
+            status_code=200,
+            require_cdr=True,
+        )
+    except smartpse_client.SmartPSEDefinitiveRejection as exc:
+        raise FacturacionRejectedException(str(exc), exc.response_data) from exc
+    except smartpse_client.SmartPSEException as exc:
+        raise FacturacionException(str(exc)) from exc
+
+    if result.get("pending"):
+        raise FacturacionException(
+            f"Smart PSE mantiene {nombre_archivo} en proceso; se consultara nuevamente."
+        )
+
+    identity = smartpse_response.extract_sale_document_identity(result.get("xml"))
+    mismatches = _smartpse_identity_mismatches(_smartpse_expected_identity(payload), identity)
+    if mismatches:
+        raise FacturacionException(
+            "Smart PSE remote verification mismatch: " + "; ".join(mismatches)
+        )
+
+    result["provider_document_name"] = nombre_archivo
+    result["provider_verification_status"] = "verified"
+    result["provider_verified_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    result["provider_verification_error"] = None
+    return _attach_sale_artifacts(result, user)
+
+
 def emitir_nota(
     nota: models.Cotizacion,
     doc_afectado: models.Cotizacion,

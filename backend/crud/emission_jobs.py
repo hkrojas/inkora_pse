@@ -233,12 +233,15 @@ def mark_emission_job_retry(
     error_message: str,
     retry_in_seconds: int,
     error_classification: str | None = None,
+    action: str | None = None,
 ):
     job = get_emission_job(db, job_id)
     if not job:
         return None
     now = datetime.now()
     job.status = models.EMISSION_JOB_STATUS_RETRY
+    if action is not None:
+        job.action = action
     job.last_error = error_message
     job.locked_at = None
     job.finished_at = None
@@ -254,6 +257,32 @@ def mark_emission_job_retry(
     db.commit()
     db.refresh(job)
     return job
+
+
+def recover_pending_fiscal_reconciliations(db: Session):
+    """Convert old ambiguous sends into consult-only jobs without resending XML."""
+    jobs = db.query(models.DocumentEmissionJob).filter(
+        models.DocumentEmissionJob.provider == "smartpse",
+        models.DocumentEmissionJob.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL,
+        models.DocumentEmissionJob.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION,
+        models.DocumentEmissionJob.last_error.ilike(
+            "%Smart PSE remote verification missing:%"
+        ),
+    ).all()
+
+    now = datetime.now()
+    for job in jobs:
+        job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+        job.status = models.EMISSION_JOB_STATUS_RETRY
+        job.available_at = now
+        job.finished_at = None
+        job.locked_at = None
+        job.processing_started_at = None
+        job.updated_at = now
+
+    if jobs:
+        db.commit()
+    return len(jobs)
 
 
 def requeue_emission_job(
