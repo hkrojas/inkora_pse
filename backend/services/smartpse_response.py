@@ -170,6 +170,62 @@ def extract_gre_document_identity(xml_text: str | None) -> dict:
     }
 
 
+def _normalize_document_id(value: str | None) -> tuple[str, str]:
+    series, separator, number = str(value or "").strip().partition("-")
+    if not separator:
+        return series.upper(), ""
+    normalized_number = str(int(number)) if number.isdigit() else number
+    return series.upper(), normalized_number
+
+
+def validate_sale_cdr(cdr_xml: str, payload: dict) -> None:
+    """Require a readable, matching, accepted CDR for invoices and notes."""
+    try:
+        root = ET.fromstring(cdr_xml)
+    except Exception as exc:
+        raise SmartPSEException(
+            "El CDR del comprobante no es XML legible; requiere conciliación."
+        ) from exc
+
+    response_code = root.findtext(".//cbc:ResponseCode", namespaces=NS)
+    reference_id = root.findtext(".//cbc:ReferenceID", namespaces=NS)
+    if not reference_id:
+        reference_id = root.findtext(".//cac:DocumentReference/cbc:ID", namespaces=NS)
+    expected = f"{payload.get('serie')}-{payload.get('correlativo')}"
+    if response_code is None:
+        raise SmartPSEException(
+            "El CDR del comprobante no contiene resultado SUNAT; requiere conciliación."
+        )
+    if not reference_id:
+        raise SmartPSEException(
+            "El CDR del comprobante no identifica el documento; requiere conciliación."
+        )
+    if _normalize_document_id(reference_id) != _normalize_document_id(expected):
+        raise SmartPSEException(
+            f"El CDR corresponde a {reference_id} y no a {expected}; requiere conciliación."
+        )
+
+    expected_ruc = str((payload.get("company") or {}).get("ruc") or "").strip()
+    receiver_ruc = root.findtext(
+        ".//cac:ReceiverParty/cac:PartyIdentification/cbc:ID",
+        namespaces=NS,
+    )
+    if expected_ruc and receiver_ruc and str(receiver_ruc).strip() != expected_ruc:
+        raise SmartPSEException(
+            "El CDR corresponde a otro RUC emisor; requiere conciliación."
+        )
+
+    if str(response_code).strip() != "0":
+        from services.smartpse_client import SmartPSEDefinitiveRejection
+
+        description = root.findtext(".//cbc:Description", namespaces=NS)
+        raise SmartPSEDefinitiveRejection(
+            f"SUNAT rechazó el comprobante con código {response_code}: "
+            f"{description or 'sin descripción'}",
+            {"cdr": cdr_xml, "estado": response_code, "mensaje": description},
+        )
+
+
 def validate_gre_cdr(cdr_xml: str, payload: dict) -> None:
     """Require a readable, matching, accepted CDR before a GRE becomes accepted."""
     try:
@@ -182,10 +238,7 @@ def validate_gre_cdr(cdr_xml: str, payload: dict) -> None:
     expected = f"{payload.get('serie')}-{payload.get('correlativo')}"
     if not reference_id:
         raise SmartPSEException("El CDR GRE no identifica el documento; requiere conciliación.")
-    def normalize(value):
-        series, _, number = str(value or "").partition("-")
-        return series.upper(), str(int(number)) if number.isdigit() else number
-    if normalize(reference_id) != normalize(expected):
+    if _normalize_document_id(reference_id) != _normalize_document_id(expected):
         raise SmartPSEException(
             f"El CDR corresponde a {reference_id} y no a {expected}; requiere conciliación."
         )
@@ -236,8 +289,11 @@ def build_smartpse_result(
     resolved_ticket = ticket or data.get("ticket")
     signed_xml = extract_xml_from_signed_zip(data.get("xml_firmado") or data.get("xml"))
     cdr_xml = _decode_base64_text(data.get("cdr"))
-    if cdr_xml and str(payload.get("tipoDoc") or "") in {"09", "31"}:
+    document_type = str(payload.get("tipoDoc") or "").zfill(2)
+    if cdr_xml and document_type in {"09", "31"}:
         validate_gre_cdr(cdr_xml, payload)
+    elif cdr_xml and document_type in {"01", "03", "07", "08"}:
+        validate_sale_cdr(cdr_xml, payload)
     pending = str(data.get("estado") or "").strip() == "202" or _is_pending(data)
     explicitly_pending = str(data.get("estado") or "").strip() == "202"
     if require_cdr and not cdr_xml and not pending:

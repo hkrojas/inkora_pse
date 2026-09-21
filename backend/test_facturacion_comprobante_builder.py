@@ -88,7 +88,6 @@ def _smartpse_accepted(*, tag: str = "Invoice", description: str = "Aceptado"):
         "mensaje": description,
         "xml_firmado": f"<{tag} />",
         "codigo_hash": "abc123",
-        "cdr": "<ApplicationResponse/>",
         "rechazado": False,
     }
 
@@ -120,6 +119,14 @@ class _FakeSmartPSEClient:
             return self.consult_responses.pop(0)
         response = _smartpse_accepted()
         response["xml_firmado"] = self.process_calls[-1][2].decode("utf-8")
+        filename_parts = nombre_archivo.split("-")
+        document_id = "-".join(filename_parts[-2:])
+        response["cdr"] = f"""<ApplicationResponse
+            xmlns:cac='urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
+            xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'>
+          <cac:ReceiverParty><cac:PartyIdentification><cbc:ID>{filename_parts[0]}</cbc:ID></cac:PartyIdentification></cac:ReceiverParty>
+          <cac:DocumentResponse><cac:Response><cbc:ReferenceID>{document_id}</cbc:ReferenceID><cbc:ResponseCode>0</cbc:ResponseCode></cac:Response></cac:DocumentResponse>
+        </ApplicationResponse>"""
         return response
 
 

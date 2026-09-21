@@ -85,6 +85,16 @@ class _FakeSmartPSEClient:
         response = self.process_responses.pop(0)
         if isinstance(response, Exception):
             raise response
+        if response.get("cdr"):
+            filename_parts = nombre_archivo.split("-")
+            document_id = "-".join(filename_parts[-2:])
+            response = dict(response)
+            response["xml_firmado"] = xml_content.decode("utf-8")
+            response["cdr"] = f"""<ApplicationResponse
+                xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'>
+              <cbc:ReferenceID>{document_id}</cbc:ReferenceID>
+              <cbc:ResponseCode>0</cbc:ResponseCode>
+            </ApplicationResponse>"""
         return response
 
     def consult_ticket(self, tenant, nombre_archivo):
@@ -94,6 +104,13 @@ class _FakeSmartPSEClient:
         else:
             response = _smartpse_accepted()
             response["xml_firmado"] = self.process_calls[-1][2].decode("utf-8")
+            filename_parts = nombre_archivo.split("-")
+            document_id = "-".join(filename_parts[-2:])
+            response["cdr"] = f"""<ApplicationResponse
+                xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'>
+              <cbc:ReferenceID>{document_id}</cbc:ReferenceID>
+              <cbc:ResponseCode>0</cbc:ResponseCode>
+            </ApplicationResponse>"""
         if isinstance(response, Exception):
             raise response
         return response

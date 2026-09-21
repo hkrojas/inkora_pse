@@ -4,7 +4,7 @@ from io import BytesIO
 
 import pytest
 
-from services.smartpse_client import SmartPSEException
+from services.smartpse_client import SmartPSEDefinitiveRejection, SmartPSEException
 from services.smartpse_response import build_smartpse_result
 
 
@@ -15,15 +15,30 @@ def _zip_b64(filename: str, content: str) -> str:
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
+def _sale_cdr(*, document_id="F001-00000001", response_code="0", ruc="20123456789"):
+    return f"""<ApplicationResponse
+    xmlns='urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2'
+    xmlns:cac='urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
+    xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'>
+  <cac:ReceiverParty><cac:PartyIdentification><cbc:ID>{ruc}</cbc:ID></cac:PartyIdentification></cac:ReceiverParty>
+  <cac:DocumentResponse><cac:Response><cbc:ReferenceID>{document_id}</cbc:ReferenceID><cbc:ResponseCode>{response_code}</cbc:ResponseCode><cbc:Description>Resultado SUNAT</cbc:Description></cac:Response></cac:DocumentResponse>
+</ApplicationResponse>"""
+
+
 def test_accepted_response_extracts_signed_xml_and_matches_internal_shape():
-    payload = {"serie": "F001", "correlativo": "00000001", "tipoDoc": "01"}
+    payload = {
+        "serie": "F001",
+        "correlativo": "00000001",
+        "tipoDoc": "01",
+        "company": {"ruc": "20123456789"},
+    }
     signed_xml = "<?xml version='1.0'?><Invoice><cbc>ID</cbc:ID></Invoice>"
     data = {
         "estado": 200,
         "mensaje": "Aceptado por SUNAT",
         "xml_firmado": _zip_b64("20123456789-01-F001-00000001.xml", signed_xml),
         "codigo_hash": "hash-abc",
-        "cdr": "<ApplicationResponse/>",
+        "cdr": _sale_cdr(),
         "rechazado": False,
         "observaciones": None,
         "errores": None,
@@ -41,7 +56,7 @@ def test_accepted_response_extracts_signed_xml_and_matches_internal_shape():
     assert result["correlativo"] == "00000001"
     assert result["hash"] == "hash-abc"
     assert result["xml"] == signed_xml
-    assert result["cdr_xml"] == "<ApplicationResponse/>"
+    assert result["cdr_xml"] == _sale_cdr()
     assert result["provider_endpoint"] == "/api/cpe/procesar-demo"
     assert result["sunat_response"]["success"] is True
     assert result["sunat_response"]["cdrResponse"]["description"] == "Aceptado por SUNAT"
@@ -105,8 +120,13 @@ def test_consult_response_with_cdr_completes_ticket_flow():
 
 
 def test_cdr_zip_base64_is_normalized_to_xml_content():
-    payload = {"serie": "F001", "correlativo": "00000001", "tipoDoc": "01"}
-    cdr_xml = "<ApplicationResponse><Response>0</Response></ApplicationResponse>"
+    payload = {
+        "serie": "F001",
+        "correlativo": "00000001",
+        "tipoDoc": "01",
+        "company": {"ruc": "20123456789"},
+    }
+    cdr_xml = _sale_cdr()
     data = {
         "estado": 200,
         "mensaje": "Procesado",
@@ -123,6 +143,56 @@ def test_cdr_zip_base64_is_normalized_to_xml_content():
     )
 
     assert result["cdr_xml"] == cdr_xml
+
+
+@pytest.mark.parametrize(
+    ("cdr_xml", "expected_message"),
+    [
+        (_sale_cdr(document_id="F001-00000999"), "corresponde a F001-00000999"),
+        (_sale_cdr(ruc="20999999999"), "otro RUC emisor"),
+        ("<ApplicationResponse/>", "no contiene resultado SUNAT"),
+    ],
+)
+def test_sale_cdr_requires_matching_document_and_issuer(cdr_xml, expected_message):
+    payload = {
+        "serie": "F001",
+        "correlativo": "00000001",
+        "tipoDoc": "01",
+        "company": {"ruc": "20123456789"},
+    }
+
+    with pytest.raises(SmartPSEException) as exc_info:
+        build_smartpse_result(
+            payload,
+            {"estado": 200, "xml_firmado": "<Invoice/>", "cdr": cdr_xml},
+            endpoint="/api/cpe/procesar",
+            status_code=200,
+        )
+
+    assert expected_message in str(exc_info.value)
+
+
+def test_sale_cdr_with_nonzero_response_is_definitive_rejection():
+    payload = {
+        "serie": "F001",
+        "correlativo": "00000001",
+        "tipoDoc": "01",
+        "company": {"ruc": "20123456789"},
+    }
+
+    with pytest.raises(SmartPSEDefinitiveRejection) as exc_info:
+        build_smartpse_result(
+            payload,
+            {
+                "estado": 200,
+                "xml_firmado": "<Invoice/>",
+                "cdr": _sale_cdr(response_code="2335"),
+            },
+            endpoint="/api/cpe/procesar",
+            status_code=200,
+        )
+
+    assert "2335" in str(exc_info.value)
 
 
 def test_sale_response_without_cdr_is_not_accepted_when_cdr_required():

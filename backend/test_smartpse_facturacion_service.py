@@ -35,6 +35,20 @@ def _sale_xml(tenant, *, doc_id="F001-00000001", issue_date="2026-05-05", tipo_d
 </Invoice>"""
 
 
+def _sale_cdr(tenant, *, doc_id="F001-00000001", response_code="0"):
+    description = "Aceptado" if response_code == "0" else "Rechazado"
+    return f"""<?xml version='1.0'?>
+<ApplicationResponse xmlns='urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2'
+    xmlns:cac='urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
+    xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'>
+  <cac:ReceiverParty><cac:PartyIdentification><cbc:ID>{tenant.business_ruc}</cbc:ID></cac:PartyIdentification></cac:ReceiverParty>
+  <cac:DocumentResponse>
+    <cac:Response><cbc:ReferenceID>{doc_id}</cbc:ReferenceID><cbc:ResponseCode>{response_code}</cbc:ResponseCode><cbc:Description>{description}</cbc:Description></cac:Response>
+    <cac:DocumentReference><cbc:ID>{doc_id}</cbc:ID></cac:DocumentReference>
+  </cac:DocumentResponse>
+</ApplicationResponse>"""
+
+
 def _make_smartpse_fiscal_document(db_session):
     tenant = make_tenant(db_session, "9001")
     tenant.smartpse_company_id = "77"
@@ -58,7 +72,7 @@ def test_emitir_factura_uses_smartpse_xml_flow_without_apisperu_http(db_session)
         "mensaje": "Aceptado por SUNAT",
         "xml_firmado": _zip_b64("signed.xml", signed_xml),
         "codigo_hash": "hash-smart",
-        "cdr": "<ApplicationResponse/>",
+        "cdr": _sale_cdr(tenant),
         "rechazado": False,
     }
     fake_client.consult_ticket.return_value = {
@@ -87,7 +101,7 @@ def test_emitir_factura_uses_smartpse_xml_flow_without_apisperu_http(db_session)
     assert filename.endswith("-00000001")
     assert b"<ns0:Invoice" in xml_content or b"<Invoice" in xml_content
     assert fake_client.process_xml.call_args.kwargs["demo"] is True
-    fake_client.consult_ticket.assert_called_once_with(called_tenant, filename)
+    fake_client.consult_ticket.assert_not_called()
     assert result["provider_document_name"] == filename
     assert result["provider_verification_status"] == "verified"
     assert result["provider_verified_at"]
@@ -147,7 +161,7 @@ def test_emitir_factura_usa_endpoint_produccion_si_tenant_y_runtime_son_producci
         "mensaje": "Aceptado por SUNAT",
         "xml_firmado": _zip_b64("signed.xml", signed_xml),
         "codigo_hash": "hash-smart-prod",
-        "cdr": "<ApplicationResponse/>",
+        "cdr": _sale_cdr(tenant),
         "rechazado": False,
     }
     fake_client.consult_ticket.return_value = {
@@ -176,7 +190,6 @@ def test_emitir_factura_rechaza_smartpse_sin_verificacion_remota(db_session):
         "mensaje": "Aceptado por SUNAT",
         "xml_firmado": _zip_b64("signed.xml", signed_xml),
         "codigo_hash": "hash-smart",
-        "cdr": "<ApplicationResponse/>",
         "rechazado": False,
     }
     fake_client.consult_ticket.side_effect = facturacion_service.smartpse_client.SmartPSEException(
@@ -203,7 +216,7 @@ def test_emitir_factura_reintenta_solo_consulta_hasta_obtener_cdr(db_session):
         "mensaje": "Aceptado por SUNAT",
         "xml_firmado": _zip_b64("signed.xml", signed_xml),
         "codigo_hash": "hash-smart-delayed",
-        "cdr": "<ApplicationResponse/>",
+        "cdr": _sale_cdr(tenant),
         "rechazado": False,
     }
     fake_client = MagicMock()
@@ -226,7 +239,7 @@ def test_emitir_factura_reintenta_solo_consulta_hasta_obtener_cdr(db_session):
         result = facturacion_service.emitir_factura(fiscal, db_session, user)
 
     assert result["success"] is True
-    assert result["cdr_xml"] == "<ApplicationResponse/>"
+    assert result["cdr_xml"] == _sale_cdr(tenant)
     assert result["provider_verification_status"] == "verified"
     assert fake_client.process_xml.call_count == 1
     assert fake_client.consult_ticket.call_count == 3
@@ -246,7 +259,7 @@ def test_consultar_documento_fiscal_recupera_aceptacion_sin_reenviar(db_session)
         "mensaje": "Aceptado por SUNAT",
         "xml_firmado": _zip_b64("signed.xml", signed_xml),
         "codigo_hash": "hash-smart-reconciled",
-        "cdr": "<ApplicationResponse/>",
+        "cdr": _sale_cdr(tenant),
         "rechazado": False,
     }
 
@@ -261,7 +274,7 @@ def test_consultar_documento_fiscal_recupera_aceptacion_sin_reenviar(db_session)
         )
 
     assert result["success"] is True
-    assert result["cdr_xml"] == "<ApplicationResponse/>"
+    assert result["cdr_xml"] == _sale_cdr(tenant)
     assert result["provider_verification_status"] == "verified"
     assert result["provider_document_name"].endswith(
         f"-01-{fiscal.serie}-{int(fiscal.correlativo):08d}"
@@ -289,7 +302,7 @@ def test_emitir_factura_acepta_cdr_desde_verificacion_remota(db_session):
         "mensaje": "Aceptado por SUNAT",
         "xml_firmado": _zip_b64("signed.xml", signed_xml),
         "codigo_hash": "hash-smart",
-        "cdr": "<ApplicationResponse/>",
+        "cdr": _sale_cdr(tenant),
         "rechazado": False,
     }
 
@@ -297,7 +310,7 @@ def test_emitir_factura_acepta_cdr_desde_verificacion_remota(db_session):
         result = facturacion_service.emitir_factura(fiscal, db_session, user)
 
     assert result["success"] is True
-    assert result["cdr_xml"] == "<ApplicationResponse/>"
+    assert result["cdr_xml"] == _sale_cdr(tenant)
     assert result["provider_verification_status"] == "verified"
     fake_client.consult_ticket.assert_called_once()
 
@@ -312,7 +325,6 @@ def test_emitir_factura_rechaza_identidad_remota_distinta(db_session):
         "mensaje": "Aceptado por SUNAT",
         "xml_firmado": _zip_b64("signed.xml", signed_xml),
         "codigo_hash": "hash-smart",
-        "cdr": "<ApplicationResponse/>",
         "rechazado": False,
     }
     fake_client.consult_ticket.return_value = {
@@ -320,7 +332,7 @@ def test_emitir_factura_rechaza_identidad_remota_distinta(db_session):
         "mensaje": "Aceptado por SUNAT",
         "xml_firmado": _zip_b64("signed.xml", stale_xml),
         "codigo_hash": "hash-old",
-        "cdr": "<ApplicationResponse/>",
+        "cdr": _sale_cdr(tenant),
         "rechazado": False,
     }
 
