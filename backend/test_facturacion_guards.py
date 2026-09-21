@@ -912,7 +912,6 @@ class TestServicioSmartPSEIntegrado:
             "mensaje": "Aceptado",
             "xml_firmado": "<Invoice />",
             "codigo_hash": "abc123",
-            "cdr": "<ApplicationResponse/>",
             "rechazado": False,
         }
         fake_client.consult_ticket.return_value = {
@@ -920,7 +919,12 @@ class TestServicioSmartPSEIntegrado:
             "mensaje": "Aceptado",
             "xml_firmado": signed_xml,
             "codigo_hash": "abc123",
-            "cdr": "<ApplicationResponse/>",
+            "cdr": f"""<ApplicationResponse
+                xmlns:cac='urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
+                xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'>
+              <cac:ReceiverParty><cac:PartyIdentification><cbc:ID>{tenant.business_ruc}</cbc:ID></cac:PartyIdentification></cac:ReceiverParty>
+              <cac:DocumentResponse><cac:Response><cbc:ReferenceID>F001-00000001</cbc:ReferenceID><cbc:ResponseCode>0</cbc:ResponseCode></cac:Response></cac:DocumentResponse>
+            </ApplicationResponse>""",
             "rechazado": False,
         }
 

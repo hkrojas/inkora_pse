@@ -1080,6 +1080,50 @@ def _verify_smartpse_remote_document(
     process_response: dict,
     process_endpoint: str,
 ) -> dict:
+    if (
+        process_result.get("cdr_xml")
+        and process_result.get("xml")
+        and not process_result.get("pending")
+    ):
+        try:
+            smartpse_response.validate_sale_cdr(process_result["cdr_xml"], payload)
+        except smartpse_client.SmartPSEDefinitiveRejection as exc:
+            raise FacturacionRejectedException(str(exc), exc.response_data) from exc
+        except smartpse_client.SmartPSEException as exc:
+            raise FacturacionException(str(exc)) from exc
+
+        identity = smartpse_response.extract_sale_document_identity(process_result.get("xml"))
+        mismatches = _smartpse_identity_mismatches(_smartpse_expected_identity(payload), identity)
+        if mismatches:
+            logger.warning(
+                "smartpse.verify.result tenant_id=%s nombre_archivo=%s status=failed reason=mismatch",
+                getattr(tenant, "id", None),
+                nombre_archivo,
+            )
+            raise FacturacionException(
+                "Smart PSE process verification mismatch: " + "; ".join(mismatches)
+            )
+
+        process_result["provider_endpoint"] = process_endpoint
+        process_result["provider_response"] = {
+            "process": process_response,
+            "verification": None,
+        }
+        process_result["provider_document_name"] = nombre_archivo
+        process_result["provider_verification_status"] = "verified"
+        process_result["provider_verified_at"] = datetime.now(timezone.utc).isoformat(
+            timespec="seconds"
+        )
+        process_result["provider_verification_error"] = None
+        logger.info(
+            "smartpse.verify.result tenant_id=%s nombre_archivo=%s "
+            "status=verified source=process_response hash=%s has_xml=true has_cdr=true",
+            getattr(tenant, "id", None),
+            nombre_archivo,
+            process_result.get("hash"),
+        )
+        return process_result
+
     verification_response = None
     verification_result = None
     last_error = None
@@ -1255,8 +1299,8 @@ def _enviar_a_smartpse(
             data,
             endpoint=provider_endpoint,
             status_code=200,
-            # Facturas y notas se validan inmediatamente contra el documento
-            # remoto; esa consulta puede ser la que entregue el CDR definitivo.
+            # Facturas y notas aceptan el CDR síncrono cuando está completo;
+            # si falta evidencia, el flujo posterior consulta sin reenviar.
             require_cdr=endpoint == "/despatch/send",
         )
         result["provider_document_name"] = nombre_archivo
@@ -1394,6 +1438,13 @@ def consultar_documento_fiscal(
         raise FacturacionException(
             f"Smart PSE mantiene {nombre_archivo} en proceso; se consultara nuevamente."
         )
+
+    try:
+        smartpse_response.validate_sale_cdr(result.get("cdr_xml") or "", payload)
+    except smartpse_client.SmartPSEDefinitiveRejection as exc:
+        raise FacturacionRejectedException(str(exc), exc.response_data) from exc
+    except smartpse_client.SmartPSEException as exc:
+        raise FacturacionException(str(exc)) from exc
 
     identity = smartpse_response.extract_sale_document_identity(result.get("xml"))
     mismatches = _smartpse_identity_mismatches(_smartpse_expected_identity(payload), identity)
