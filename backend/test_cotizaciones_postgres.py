@@ -110,4 +110,7 @@ def test_edit_and_fiscal_creation_share_the_quote_lock(pg_session_factory):
         ).one()
         assert fiscal.source_quote_id == quote_id
         assert fiscal.total_venta == quote.total_venta
+        assert [(item.descripcion, item.cantidad) for item in fiscal.items] == [
+            (item.descripcion, item.cantidad) for item in quote.items
+        ]
         assert fiscal.total_venta in {Decimal("118.00"), Decimal("236.00")}

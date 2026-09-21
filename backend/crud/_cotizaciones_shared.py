@@ -182,6 +182,10 @@ def _lock_quote_for_fiscal_creation(db: Session, quote: models.Cotizacion):
             models.Cotizacion.id == quote.id,
             models.Cotizacion.tenant_id == quote.tenant_id,
         )
+        # The caller may already have loaded the quote before waiting for this
+        # row lock. Refresh the identity-map object after the lock is acquired
+        # so a concurrent edit cannot be cloned from a stale snapshot.
+        .populate_existing()
         .with_for_update()
         .first()
     )
@@ -189,6 +193,10 @@ def _lock_quote_for_fiscal_creation(db: Session, quote: models.Cotizacion):
         raise ValueError(
             "La cotizacion de origen no existe o no pertenece al tenant actual."
         )
+    # Items may also have been eagerly loaded before the lock. Expire only the
+    # collection so the fiscal copy reads the committed rows under this same
+    # transaction, without releasing the quote lock.
+    db.expire(locked_quote, ["items"])
     return locked_quote
 
 
