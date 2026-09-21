@@ -350,11 +350,20 @@ def _build_header(guide, tenant, width: float, styles: dict, palette: dict, fisc
         if guide.tipo_documento == "09"
         else "GUÍA DE REMISIÓN<br/>TRANSPORTISTA ELECTRÓNICA"
     )
+    # The guide denomination is longer than the invoice/receipt titles that use
+    # this box. Keep it on the two intentional lines without changing the shared
+    # document-box geometry used by the other fiscal PDFs.
+    title_style = ParagraphStyle(
+        f"GuideDocumentTitle{guide.tipo_documento or '09'}",
+        parent=styles["document_title"],
+        fontSize=9.4 if guide.tipo_documento == "09" else 7.7,
+        leading=11.0 if guide.tipo_documento == "09" else 9.2,
+    )
     document_box = pdf_generator._RoundedDocumentBox(
         width=4.9 * cm,
         height=3.45 * cm,
         stroke_color=palette["primary"],
-        title_paragraph=Paragraph(title, styles["document_title"]),
+        title_paragraph=Paragraph(title, title_style),
         number_paragraph=Paragraph(_guide_number(guide), styles["document_number"]),
         footer_paragraph=Paragraph(f"RUC: {_text(company_data.get('ruc'))}", styles["document_footer"]),
         radius=4.5,
@@ -665,6 +674,8 @@ def build_guide_pdf(guide, tenant) -> bytes:
         "footer_title": ParagraphStyle("GuideFooterTitle", parent=base, fontName="Helvetica-Bold", fontSize=10.5, leading=14, textColor=primary),
         "link": ParagraphStyle("GuideLink", parent=base, fontName="Helvetica-Bold", fontSize=9, leading=11, textColor=primary),
         "status": ParagraphStyle("GuideStatus", parent=base, fontName="Helvetica-Bold", fontSize=9.0, leading=11, alignment=TA_CENTER, textColor=primary),
+        "summary": ParagraphStyle("GuideSummary", parent=base, fontName="Helvetica", fontSize=8.7, leading=10.2, textColor=palette["text"]),
+        "summary_right": ParagraphStyle("GuideSummaryRight", parent=base, fontName="Helvetica", fontSize=8.7, leading=10.2, alignment=TA_RIGHT, textColor=palette["text"]),
         "continuation_number": ParagraphStyle("GuideContinuationNumber", parent=base, fontName="Helvetica", fontSize=8.5, leading=14, alignment=TA_RIGHT, textColor=primary),
     }
 
@@ -677,7 +688,7 @@ def build_guide_pdf(guide, tenant) -> bytes:
         bottomMargin=0.58 * cm,
         title=f"GRE {_guide_number(guide)}",
     )
-    status_label, watermark = _STATUS_META.get(
+    _, watermark = _STATUS_META.get(
         str(guide.estado or "").lower(), (str(guide.estado or "SIN ESTADO").upper(), None)
     )
 
@@ -710,25 +721,20 @@ def build_guide_pdf(guide, tenant) -> bytes:
 
     summary = Table(
         [[
-            Paragraph("<b>Fecha de emisión:</b>", styles["label"]),
-            Paragraph(f"<nobr>{_format_date(issue_date)}</nobr>", styles["body"]),
-            Paragraph("<b>Hora:</b>", styles["label"]),
-            Paragraph(f"<nobr>{_format_time(issue_time)}</nobr>", styles["body"]),
-            Paragraph("<b>Fecha de traslado:</b>", styles["label"]),
-            Paragraph(f"<nobr>{_format_date(guide.fecha_traslado)}</nobr>", styles["body"]),
-            Paragraph("<b>Estado:</b>", styles["label"]),
-            Paragraph(escape(status_label), styles["status"]),
+            Paragraph(
+                "<b>Fecha de emisión:</b> "
+                f"<nobr>{_format_date(issue_date)}</nobr>"
+                "&nbsp;&nbsp;&nbsp;&nbsp;<b>Hora:</b> "
+                f"<nobr>{_format_time(issue_time)}</nobr>",
+                styles["summary"],
+            ),
+            Paragraph(
+                "<b>Fecha de traslado:</b> "
+                f"<nobr>{_format_date(guide.fecha_traslado)}</nobr>",
+                styles["summary_right"],
+            ),
         ]],
-        colWidths=[
-            width * 0.13,
-            width * 0.105,
-            width * 0.065,
-            width * 0.075,
-            width * 0.14,
-            width * 0.105,
-            width * 0.075,
-            width * 0.305,
-        ],
+        colWidths=[width * 0.56, width * 0.44],
     )
     summary.setStyle(
         TableStyle(
