@@ -3,6 +3,8 @@ import re
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from reportlab.lib.units import cm
+
 from services import guide_pdf_service
 
 
@@ -121,6 +123,55 @@ def test_pdf_guia_pendiente_usa_diseno_inkora_y_estado_humano():
         "PENDIENTE DE ACEPTACIÓN",
     )
     assert guide_pdf_service._invoice_reference(_guide()) == "FA01-000178"
+
+
+def test_pdf_resumen_omite_estado_interno_y_mantiene_fechas_en_una_fila():
+    captured = {}
+
+    class FakeDocument:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def build(self, elements, **kwargs):
+            captured["elements"] = elements
+
+    guide = _guide(estado="emitida")
+
+    with patch("services.guide_pdf_service.SimpleDocTemplate", FakeDocument):
+        guide_pdf_service.build_guide_pdf(guide, _tenant())
+
+    summary = captured["elements"][2]
+    summary_cells = summary._cellvalues[0]
+    summary_text = " ".join(cell.getPlainText() for cell in summary_cells)
+
+    assert len(summary._cellvalues) == 1
+    assert len(summary_cells) == 2
+    assert "Fecha de emisión:" in summary_text
+    assert "Hora:" in summary_text
+    assert "Fecha de traslado:" in summary_text
+    assert "Estado:" not in summary_text
+    assert "ACEPTADA POR SUNAT" not in summary_text
+
+
+def test_pdf_titulos_gre_09_y_31_caben_en_dos_lineas_del_recuadro():
+    captured_titles = []
+    document_box = guide_pdf_service.pdf_generator._RoundedDocumentBox
+
+    def capture_document_box(*args, **kwargs):
+        captured_titles.append(kwargs["title_paragraph"])
+        return document_box(*args, **kwargs)
+
+    with patch(
+        "services.guide_pdf_service.pdf_generator._RoundedDocumentBox",
+        side_effect=capture_document_box,
+    ):
+        guide_pdf_service.build_guide_pdf(_guide(tipo_documento="09"), _tenant())
+        guide_pdf_service.build_guide_pdf(_guide(tipo_documento="31"), _tenant())
+
+    assert len(captured_titles) == 2
+    for title in captured_titles:
+        title.wrap((4.9 * cm) - 12, 100)
+        assert len(title.blPara.lines) == 2
 
 
 def test_pdf_traslado_interno_muestra_transferencia_y_codigos_locales_sin_factura():
