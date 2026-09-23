@@ -25,6 +25,7 @@ import CustomSelect from '../components/ui/CustomSelect';
 import Pagination from '../components/ui/Pagination';
 import { PageError } from '../components/ui/PageState';
 import { useToast } from '../components/ui/Toast';
+import { useInkoraDialog } from '../components/ui/InkoraDialogProvider';
 import useDebouncedValue from '../hooks/useDebouncedValue';
 import OperationalPageHeader from '../components/ui/OperationalPageHeader';
 import InventoryInitialFields from '../components/inventory/InventoryInitialFields';
@@ -389,6 +390,7 @@ function ProductoForm({ initial = EMPTY_FORM, onSave, onCancel, saving, onGenera
 
 export default function ProductosPage() {
   const toast = useToast();
+  const { confirmAction } = useInkoraDialog();
   const [searchParams] = useSearchParams();
   const [list, setList] = useState([]);
   const [total, setTotal] = useState(0);
@@ -541,7 +543,18 @@ export default function ProductosPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Eliminar este producto?')) return;
+    const product = list.find((item) => item.id === id);
+    const confirmed = await confirmAction({
+      title: 'Eliminar producto',
+      eyebrow: 'Catálogo',
+      description: 'El producto dejará de estar disponible para nuevas operaciones.',
+      subjectLabel: 'Producto',
+      subject: product?.nombre || product?.name || `Producto #${id}`,
+      detail: 'Esta acción no se puede deshacer. Los documentos históricos conservarán la descripción registrada.',
+      confirmLabel: 'Eliminar producto',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     setDeleting(id);
     try {
       await svc.remove(id);

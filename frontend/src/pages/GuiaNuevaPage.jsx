@@ -19,6 +19,7 @@ import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
 import FormField from '../components/ui/FormField';
 import { useToast } from '../components/ui/Toast';
+import { useInkoraDialog } from '../components/ui/InkoraDialogProvider';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const isoDate = (value) => new Date(`${value}T12:00:00-05:00`).toISOString();
@@ -43,6 +44,7 @@ export default function GuiaNuevaPage() {
   const { id: editingGuideId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { confirmAction } = useInkoraDialog();
   const [documents, setDocuments] = useState([]);
   const [documentTotal, setDocumentTotal] = useState(0);
   const [documentQuery, setDocumentQuery] = useState('');
@@ -155,9 +157,19 @@ export default function GuiaNuevaPage() {
     value.conductor_nro_doc || value.conductor_nombres || value.conductor_apellidos || value.conductor_licencia,
   );
 
-  const setM1L = (event) => {
+  const setM1L = async (event) => {
     const checked = event.target.checked;
-    if (checked && hasDriverData(form) && !window.confirm('Al activar M1/L se quitarán los datos del conductor. ¿Deseas continuar?')) return;
+    if (checked && hasDriverData(form)) {
+      const confirmed = await confirmAction({
+        title: 'Activar vehículo M1/L',
+        eyebrow: 'Datos de transporte',
+        description: 'Este escenario no utiliza los datos del conductor registrados actualmente.',
+        detail: 'Al continuar se borrarán el documento, nombres, apellidos y licencia del conductor.',
+        confirmLabel: 'Activar M1/L',
+        tone: 'warning',
+      });
+      if (!confirmed) return;
+    }
     setForm((current) => ({
       ...current,
       indicador_m1_l: checked,
@@ -171,9 +183,19 @@ export default function GuiaNuevaPage() {
     }));
   };
 
-  const setCarrierFleet = (event) => {
+  const setCarrierFleet = async (event) => {
     const checked = event.target.checked;
-    if (!checked && hasDriverData(form) && !window.confirm('Al desactivar esta opción se quitarán los datos del vehículo y conductor del transportista. ¿Deseas continuar?')) return;
+    if (!checked && hasDriverData(form)) {
+      const confirmed = await confirmAction({
+        title: 'Quitar vehículo y conductor',
+        eyebrow: 'Transporte público',
+        description: 'La guía dejará de registrar la flota del transportista.',
+        detail: 'Al continuar se borrarán la placa y los datos del conductor ingresados.',
+        confirmLabel: 'Quitar datos',
+        tone: 'warning',
+      });
+      if (!confirmed) return;
+    }
     setForm((current) => ({
       ...current,
       registrar_vehiculo_transportista: checked,
@@ -186,13 +208,23 @@ export default function GuiaNuevaPage() {
     }));
   };
 
-  const setTransportMode = (value) => {
+  const setTransportMode = async (value) => {
     const changingToPublic = value === '01' && form.modalidad_traslado !== '01';
     const changingToPrivate = value === '02' && form.modalidad_traslado !== '02';
     const incompatible = changingToPublic
       ? hasDriverData(form) || form.vehiculo_placa
       : form.transportista_ruc || form.transportista_razon_social || form.transportista_nro_mtc;
-    if (incompatible && !window.confirm('Cambiar la modalidad quitará datos que ya no corresponden al escenario. ¿Deseas continuar?')) return;
+    if (incompatible) {
+      const confirmed = await confirmAction({
+        title: 'Cambiar modalidad de transporte',
+        eyebrow: 'Datos de transporte',
+        description: `Cambiarás a transporte ${value === '01' ? 'público' : 'privado'}.`,
+        detail: 'Los datos incompatibles con la nueva modalidad se borrarán para evitar una guía inconsistente.',
+        confirmLabel: 'Cambiar modalidad',
+        tone: 'warning',
+      });
+      if (!confirmed) return;
+    }
     setForm((current) => ({
       ...current,
       modalidad_traslado: value,
