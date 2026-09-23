@@ -82,7 +82,7 @@ echo "[deploy] === Validando cadena launch ==="
 python run_launch_migrations.py --dry-run --strict
 
 echo "[deploy] === Verificando grafo y baseline Alembic antes de escribir ==="
-if ! ALEMBIC_HEADS="$(python -m alembic -c alembic.ini heads 2>&1)"; then
+if ! ALEMBIC_HEADS="$(alembic -c alembic.ini heads 2>&1)"; then
     printf '%s\n' "$ALEMBIC_HEADS"
     echo "[deploy] ERROR: no se pudo resolver el grafo Alembic"
     exit 1
@@ -94,13 +94,13 @@ if [ "$HEAD_COUNT" -ne 1 ]; then
     exit 1
 fi
 printf '%s\n' "$ALEMBIC_HEADS"
-EXPECTED_ALEMBIC_HEAD="0022_gre_sales_documents"
+EXPECTED_ALEMBIC_HEAD="0025_emission_worker_events"
 if ! printf '%s\n' "$ALEMBIC_HEADS" | grep -Eq "^${EXPECTED_ALEMBIC_HEAD} \(head\)$"; then
     echo "[deploy] ERROR: la cabeza esperada es ${EXPECTED_ALEMBIC_HEAD}"
     exit 1
 fi
 
-if ! ALEMBIC_CURRENT="$(python -m alembic -c alembic.ini current 2>&1)"; then
+if ! ALEMBIC_CURRENT="$(alembic -c alembic.ini current 2>&1)"; then
     printf '%s\n' "$ALEMBIC_CURRENT"
     echo "[deploy] ERROR: no se pudo consultar la revision Alembic de staging"
     exit 1
@@ -123,14 +123,14 @@ python migrate_beta_integrity.py --apply
 python migrate_beta_integrity.py --dry-run
 
 echo "[deploy] === Aplicando revisiones Alembic ==="
-python -m alembic -c alembic.ini upgrade head
-ALEMBIC_CURRENT_AFTER="$(python -m alembic -c alembic.ini current)"
+alembic -c alembic.ini upgrade head
+ALEMBIC_CURRENT_AFTER="$(alembic -c alembic.ini current)"
 printf '%s\n' "$ALEMBIC_CURRENT_AFTER"
 if ! printf '%s\n' "$ALEMBIC_CURRENT_AFTER" | grep -Eq "^${EXPECTED_ALEMBIC_HEAD} \(head\)$"; then
     echo "[deploy] ERROR: staging no quedo en ${EXPECTED_ALEMBIC_HEAD}"
     exit 1
 fi
-python -m alembic -c alembic.ini heads
+alembic -c alembic.ini heads
 
 echo "[deploy] === Migraciones completadas ==="
 

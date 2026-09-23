@@ -179,15 +179,24 @@ def mark_emission_job_attempt_started(
     db: Session,
     job_id: int,
 ):
-    job = get_emission_job(db, job_id)
+    from services import emission_leases
+    emission_leases.check(db)
+    job = db.query(models.DocumentEmissionJob).filter(
+        models.DocumentEmissionJob.id == job_id,
+    ).populate_existing().first()
     if not job:
         return None
+    if job.lease_token:
+        if db.info.get("emission_lease") != (job.id, job.lease_token) or job.execution_started_at:
+            raise emission_leases.LeaseLost()
+        job.execution_started_at = emission_leases.db_now(db)
     job.attempts = (job.attempts or 0) + 1
     db.add(
         models.DocumentEmissionAttempt(
             job_id=job.id,
             tenant_id=job.tenant_id,
             attempt_number=job.attempts,
+            lease_token=job.lease_token,
             status=models.EMISSION_ATTEMPT_STATUS_PROCESSING,
         )
     )
@@ -431,6 +440,7 @@ def recover_stale_processing_jobs(
 ):
     jobs = db.query(models.DocumentEmissionJob).filter(
         models.DocumentEmissionJob.status == models.EMISSION_JOB_STATUS_PROCESSING,
+        models.DocumentEmissionJob.lease_token.is_(None),
         (
             (models.DocumentEmissionJob.processing_started_at.isnot(None))
             & (models.DocumentEmissionJob.processing_started_at <= stale_before)
@@ -439,7 +449,7 @@ def recover_stale_processing_jobs(
             & (models.DocumentEmissionJob.locked_at.isnot(None))
             & (models.DocumentEmissionJob.locked_at <= stale_before)
         ),
-    ).all()
+    ).with_for_update(skip_locked=True).all()
 
     now = datetime.now()
     recovered = 0
