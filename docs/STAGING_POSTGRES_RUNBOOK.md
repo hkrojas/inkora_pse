@@ -37,8 +37,8 @@ Desde `backend/`:
 ```bash
 python run_launch_migrations.py --dry-run --strict
 python migrate_beta_integrity.py --dry-run
-python -m alembic -c alembic.ini heads
-python -m alembic -c alembic.ini current
+alembic -c alembic.ini heads
+alembic -c alembic.ini current
 ```
 
 Criterios para continuar:
@@ -46,7 +46,7 @@ Criterios para continuar:
 - La cadena launch no tiene scripts faltantes.
 - Integridad no reporta bloqueantes.
 - `alembic heads` devuelve una sola cabeza.
-- La cabeza esperada para la entrega de traslados internos es `0024_internal_transfer_gre`.
+- La cabeza esperada para esta entrega es `0025_emission_worker_events`.
 
 ## 4. Bootstrap Alembic excepcional
 
@@ -57,8 +57,8 @@ python run_launch_migrations.py --strict
 python migrate_beta_integrity.py --dry-run
 python migrate_beta_integrity.py --apply
 python migrate_beta_integrity.py --dry-run
-python -m alembic -c alembic.ini stamp 0001_prebeta_baseline
-python -m alembic -c alembic.ini current
+alembic -c alembic.ini stamp 0001_prebeta_baseline
+alembic -c alembic.ini current
 ```
 
 No ejecutar `stamp` si `alembic current` ya muestra una revisión. Nunca usarlo para ocultar una migración fallida.
@@ -72,9 +72,9 @@ python run_launch_migrations.py --strict
 python migrate_beta_integrity.py --dry-run
 python migrate_beta_integrity.py --apply
 python migrate_beta_integrity.py --dry-run
-python -m alembic -c alembic.ini upgrade head
-python -m alembic -c alembic.ini current
-python -m alembic -c alembic.ini heads
+alembic -c alembic.ini upgrade head
+alembic -c alembic.ini current
+alembic -c alembic.ini heads
 ```
 
 Antes de aplicar `0024_internal_transfer_gre` en el staging compartido, ejecutar
@@ -109,7 +109,8 @@ python -m pytest test_fiscal_contingency.py test_emission_queue.py test_migrate_
 
 Verificar además:
 
-- `alembic current` coincide con `alembic heads`.
+- `alembic current` coincide con `alembic heads` (`0025_emission_worker_events`).
+- El trigger `inkora_emission_jobs_changed` y las columnas de lease están presentes; una señal se recibe sólo tras commit y la renovación del lease no la genera.
 - La tabla `document_emission_attempts` existe.
 - Las tablas `sale_dispatches`, `sale_dispatch_lines` y
   `guide_external_references` existen.
@@ -157,7 +158,7 @@ Verificar además:
 5. Volver a desplegar la versión anterior del backend y frontend.
 6. Ejecutar pruebas de lectura y mantener la emisión fiscal deshabilitada hasta confirmar consistencia.
 
-Las revisiones `0019`, `0020`, `0021`, `0022`, `0023` y `0024` crean estructuras nuevas; el rollback
+Las revisiones `0019`, `0020`, `0021`, `0022`, `0023`, `0024` y `0025` crean estructuras nuevas; el rollback
 recomendado es restaurar snapshot y código anterior, no borrar columnas,
 reservas ni historial de intentos manualmente. Restaurar la base no revierte
 documentos que ya hayan sido aceptados por Smart PSE/SUNAT; esos documentos se
