@@ -9,7 +9,6 @@ const browserGlobals = {
   sessionStorage: 'readonly',
   setTimeout: 'readonly',
   clearTimeout: 'readonly',
-  confirm: 'readonly',
   URL: 'readonly',
   Blob: 'readonly',
   FormData: 'readonly',
@@ -47,6 +46,18 @@ export default [
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'off',
       'no-unused-vars': 'off',
+      'no-restricted-globals': [
+        'error',
+        { name: 'alert', message: 'Usa los diálogos propios de Inkora.' },
+        { name: 'confirm', message: 'Usa useInkoraDialog().confirmAction().' },
+        { name: 'prompt', message: 'Usa los diálogos propios de Inkora.' },
+      ],
+      'no-restricted-properties': [
+        'error',
+        { object: 'window', property: 'alert', message: 'Usa los diálogos propios de Inkora.' },
+        { object: 'window', property: 'confirm', message: 'Usa useInkoraDialog().confirmAction().' },
+        { object: 'window', property: 'prompt', message: 'Usa los diálogos propios de Inkora.' },
+      ],
     },
   },
 ];

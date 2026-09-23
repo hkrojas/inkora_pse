@@ -10,7 +10,7 @@ const sizeClasses = {
   xl: 'max-w-4xl',
 };
 
-export default function Modal({ open, onClose, title, subtitle, icon: Icon, children, size = 'md', footer }) {
+export default function Modal({ open, onClose, title, subtitle, icon: Icon, iconTone = 'primary', children, size = 'md', footer, initialFocus }) {
   const dialogRef = useRef(null);
   const titleId = useId();
 
@@ -47,7 +47,8 @@ export default function Modal({ open, onClose, title, subtitle, icon: Icon, chil
     ].join(',');
 
     const focusFirstElement = () => {
-      const firstElement = dialog?.querySelector(focusableSelector);
+      const preferredElement = initialFocus ? dialog?.querySelector(initialFocus) : null;
+      const firstElement = preferredElement || dialog?.querySelector(focusableSelector);
       (firstElement || dialog)?.focus();
     };
 
@@ -77,7 +78,7 @@ export default function Modal({ open, onClose, title, subtitle, icon: Icon, chil
       document.removeEventListener('keydown', keepFocusInDialog);
       if (previousFocus instanceof HTMLElement) previousFocus.focus();
     };
-  }, [open]);
+  }, [initialFocus, open]);
 
   if (!open) return null;
 
@@ -102,7 +103,7 @@ export default function Modal({ open, onClose, title, subtitle, icon: Icon, chil
         <div className="shrink-0 flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-6 py-5">
           <div className="flex items-center gap-3">
             {Icon && (
-              <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+              <div className={`modal-header-icon modal-header-icon--${iconTone}`}>
                 <Icon className="h-5 w-5" />
               </div>
             )}

@@ -4,6 +4,7 @@ import { MemoryRouter, Routes, Route, Link } from 'react-router-dom';
 import { ThemeProvider } from '../src/context/ThemeContext';
 import { AuthProvider } from '../src/context/AuthContext';
 import { ToastProvider } from '../src/components/ui/Toast';
+import { InkoraDialogProvider } from '../src/components/ui/InkoraDialogProvider';
 import FacturasPage from '../src/pages/FacturasPage';
 import CotizacionesPage from '../src/pages/CotizacionesPage';
 import '../src/app.css';
@@ -57,7 +58,7 @@ window.fetch = async (input, options = {}) => {
 };
 localStorage.setItem('token', 'isolated-fixture-only');
 localStorage.setItem('inkora-theme', new URL(location.href).searchParams.get('theme') || 'light');
-createRoot(document.getElementById('root')).render(<ThemeProvider><AuthProvider><ToastProvider><MemoryRouter initialEntries={['/facturas']}>
+createRoot(document.getElementById('root')).render(<ThemeProvider><AuthProvider><ToastProvider><InkoraDialogProvider><MemoryRouter initialEntries={['/facturas']}>
   <nav style={{ padding: 12 }}><strong>SIMULADOR AISLADO · SIN ENVÍOS REALES</strong> · <Link to="/facturas">Facturas</Link> · <Link to="/cotizaciones?view=history">Cotizaciones</Link> · <Link to="/cotizaciones?view=fiscal">Emitidas SUNAT</Link></nav>
   <Routes><Route path="/facturas" element={<FacturasPage />} /><Route path="/cotizaciones" element={<CotizacionesPage />} /></Routes>
-</MemoryRouter></ToastProvider></AuthProvider></ThemeProvider>);
+</MemoryRouter></InkoraDialogProvider></ToastProvider></AuthProvider></ThemeProvider>);

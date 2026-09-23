@@ -6,6 +6,7 @@ import { internalTransfers } from '../services/internalTransfers';
 import Spinner from '../components/ui/Spinner';
 import Badge from '../components/ui/Badge';
 import { useToast } from '../components/ui/Toast';
+import { useInkoraDialog } from '../components/ui/InkoraDialogProvider';
 import { getDispatchReservationLabel, getGuideStatusMeta } from '../lib/utils/fiscalStatus';
 import { getGuideEmissionJobCompletion, getGuideEmissionJobLabel } from '../lib/utils/emissionJobs';
 
@@ -31,6 +32,7 @@ const transportScenarioLabel = (guide) => {
 export default function GuiaDetalle() {
   const { id } = useParams();
   const toast = useToast();
+  const { confirmAction } = useInkoraDialog();
   const [guia, setGuia] = useState(null);
   const [loading, setLoading] = useState(true);
   const [emissionJob, setEmissionJob] = useState(null);
@@ -111,7 +113,17 @@ export default function GuiaDetalle() {
   };
 
   const handleCancel = async () => {
-    if (!window.confirm('Se cancelará el borrador y se liberarán sus cantidades. ¿Deseas continuar?')) return;
+    const confirmed = await confirmAction({
+      title: 'Cancelar borrador de guía',
+      eyebrow: 'Guías de remisión',
+      description: 'La guía dejará de estar disponible para edición o emisión.',
+      subjectLabel: 'Guía',
+      subject: guia?.numero_completo || guia?.numero || `Borrador #${id}`,
+      detail: 'Las cantidades reservadas por este borrador quedarán liberadas.',
+      confirmLabel: 'Cancelar borrador',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     await runAction('cancel', () => svc.cancelDraft(id), 'Borrador cancelado y cantidades liberadas.');
   };
 
@@ -120,7 +132,17 @@ export default function GuiaDetalle() {
   };
 
   const handleDeparture = async () => {
-    if (!window.confirm('¿Confirmas que los bienes salieron físicamente? Esta acción es operativa e idempotente.')) return;
+    const confirmed = await confirmAction({
+      title: 'Confirmar salida física',
+      eyebrow: 'Despacho',
+      description: 'Confirma que los bienes ya salieron del punto de partida.',
+      subjectLabel: 'Guía',
+      subject: guia?.numero_completo || guia?.numero || `Guía #${id}`,
+      detail: 'Esta acción registra la salida operativa una sola vez y no equivale a la recepción del destinatario.',
+      confirmLabel: 'Confirmar salida',
+      tone: 'warning',
+    });
+    if (!confirmed) return;
     await runAction(
       'departure',
       () => guia.internal_transfer_dispatch_id
@@ -152,7 +174,17 @@ export default function GuiaDetalle() {
   };
 
   const handleEmit = async () => {
-    if (!window.confirm('La guía se enviará a SUNAT y no podrá editarse. ¿Deseas continuar?')) return;
+    const confirmed = await confirmAction({
+      title: 'Emitir guía de remisión',
+      eyebrow: 'Emisión fiscal',
+      description: 'La guía será enviada para validación fiscal y sus datos quedarán congelados.',
+      subjectLabel: 'Guía',
+      subject: guia?.numero_completo || guia?.numero || `Borrador #${id}`,
+      detail: 'Después de encolarla no podrás editarla. Una respuesta pendiente deberá conciliarse antes de cualquier reintento.',
+      confirmLabel: 'Emitir guía',
+      tone: 'warning',
+    });
+    if (!confirmed) return;
     setEmitting(true);
     try {
       const queued = await svc.emitir(id);

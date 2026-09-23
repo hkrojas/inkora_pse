@@ -29,6 +29,7 @@ import FormField from '../components/ui/FormField';
 import Pagination from '../components/ui/Pagination';
 import { PageError } from '../components/ui/PageState';
 import { useToast } from '../components/ui/Toast';
+import { useInkoraDialog } from '../components/ui/InkoraDialogProvider';
 import useDebouncedValue from '../hooks/useDebouncedValue';
 import { normalizePeruMobileInput, validatePeruMobilePhone } from '../lib/utils/peruPhoneValidation';
 import {
@@ -535,6 +536,7 @@ function ClienteForm({ initial = EMPTY_FORM, onSave, onCancel, saving }) {
 
 export default function ClientesPage() {
   const toast = useToast();
+  const { confirmAction } = useInkoraDialog();
   const [searchParams] = useSearchParams();
   const [list, setList] = useState([]);
   const [total, setTotal] = useState(0);
@@ -623,7 +625,18 @@ export default function ClientesPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Eliminar este cliente?')) return;
+    const client = list.find((item) => item.id === id);
+    const confirmed = await confirmAction({
+      title: 'Eliminar cliente',
+      eyebrow: 'Clientes',
+      description: 'El cliente dejará de estar disponible para nuevas operaciones.',
+      subjectLabel: 'Cliente',
+      subject: client ? getClientDisplayName(client) : `Cliente #${id}`,
+      detail: 'Esta acción no se puede deshacer. Los documentos históricos conservarán sus datos.',
+      confirmLabel: 'Eliminar cliente',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     setDeleting(id);
     try {
       await svc.remove(id);

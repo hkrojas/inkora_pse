@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/ui/Toast';
+import { InkoraDialogProvider } from './components/ui/InkoraDialogProvider';
 import AppLayout from './layouts/AppLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -52,8 +53,9 @@ export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <BrowserRouter>
-          <Routes>
+        <InkoraDialogProvider>
+          <BrowserRouter>
+            <Routes>
             <Route path="/" element={<LazyRoute><LandingPage /></LazyRoute>} />
             <Route path="/presentacion" element={<LazyRoute><LandingPage /></LazyRoute>} />
             <Route path="/login" element={<Login />} />
@@ -92,8 +94,9 @@ export default function App() {
               <Route path="/reversiones" element={<LazyRoute><ReversionesPage /></LazyRoute>} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </BrowserRouter>
+            </Routes>
+          </BrowserRouter>
+        </InkoraDialogProvider>
       </ToastProvider>
     </AuthProvider>
   );

@@ -27,6 +27,7 @@ import Spinner from '../components/ui/Spinner';
 import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
 import { useToast } from '../components/ui/Toast';
+import { useInkoraDialog } from '../components/ui/InkoraDialogProvider';
 import CustomSelect from '../components/ui/CustomSelect';
 import Pagination from '../components/ui/Pagination';
 import ActionMenu from '../components/ui/ActionMenu';
@@ -293,6 +294,7 @@ function SmartPseCreateDrawer({
 
 function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
   const toast = useToast();
+  const { confirmAction } = useInkoraDialog();
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -573,9 +575,16 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
   };
 
   const handleDelete = async () => {
-    const confirmed = window.confirm(
-      `Se eliminará la empresa "${tenant.business_name}". Esta acción no se puede deshacer.`,
-    );
+    const confirmed = await confirmAction({
+      title: 'Eliminar empresa',
+      eyebrow: 'Administración de empresas',
+      description: 'La empresa y su acceso dejarán de estar disponibles en Inkora.',
+      subjectLabel: 'Empresa',
+      subject: tenant.business_name,
+      detail: 'Esta acción no se puede deshacer. Revisa que no existan operaciones que deban conservarse activas.',
+      confirmLabel: 'Eliminar empresa',
+      tone: 'danger',
+    });
 
     if (!confirmed) return;
 
@@ -1481,6 +1490,7 @@ const ACTION_LABELS = {
 
 function TenantUsersModal({ tenant, onClose }) {
   const toast = useToast();
+  const { confirmAction } = useInkoraDialog();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [resettingId, setResettingId] = useState(null);
@@ -1516,7 +1526,16 @@ function TenantUsersModal({ tenant, onClose }) {
   };
 
   const handleResetPassword = async (u) => {
-    const confirmed = window.confirm(`¿Resetear la contraseña de ${u.email}? Se generará una contraseña temporal.`);
+    const confirmed = await confirmAction({
+      title: 'Restablecer contraseña',
+      eyebrow: 'Usuarios de la empresa',
+      description: 'Se generará una contraseña temporal para este usuario.',
+      subjectLabel: 'Usuario',
+      subject: u.email,
+      detail: 'La contraseña actual dejará de funcionar cuando se complete la operación.',
+      confirmLabel: 'Generar contraseña',
+      tone: 'warning',
+    });
     if (!confirmed) return;
     setResettingId(u.id);
     try {
@@ -1688,6 +1707,7 @@ const LIMIT_PERIODS = ['month', 'day', 'total'];
 
 function TenantLimitsModal({ tenant, onClose }) {
   const toast = useToast();
+  const { confirmAction } = useInkoraDialog();
   const [limits, setLimits] = useState([]);
   const [usage, setUsage] = useState([]);
   const [users, setUsers] = useState([]);
@@ -1757,7 +1777,19 @@ function TenantLimitsModal({ tenant, onClose }) {
   };
 
   const handleDelete = async (limitId) => {
-    const confirmed = window.confirm('¿Eliminar este límite?');
+    const limit = limits.find((item) => item.id === limitId);
+    const confirmed = await confirmAction({
+      title: 'Eliminar límite',
+      eyebrow: 'Límites de uso',
+      description: 'La restricción dejará de aplicarse a las nuevas operaciones.',
+      subjectLabel: 'Límite',
+      subject: limit
+        ? `${ACTION_LABELS[limit.document_kind] || limit.document_kind} · ${LIMIT_PERIOD_LABELS[limit.period] || limit.period}`
+        : `Límite #${limitId}`,
+      detail: 'El consumo ya registrado se conservará en el historial.',
+      confirmLabel: 'Eliminar límite',
+      tone: 'danger',
+    });
     if (!confirmed) return;
     setSaving(true);
     try {

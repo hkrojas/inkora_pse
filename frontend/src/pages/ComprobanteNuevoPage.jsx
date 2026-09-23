@@ -31,6 +31,7 @@ import { FieldError } from '../components/ui/FieldError';
 import { DocumentTypeSwitcher } from '../components/documents/DocumentType';
 import ConfirmEmitDialog from '../components/documents/ConfirmEmitDialog';
 import { useToast } from '../components/ui/Toast';
+import { useInkoraDialog } from '../components/ui/InkoraDialogProvider';
 import { getEmissionOutcome } from '../lib/utils/emissionJobs';
 import {
   IGV_FACTOR,
@@ -461,6 +462,7 @@ function ValidationSummary({ errors }) {
 
 export default function ComprobanteNuevoPage() {
   const toast = useToast();
+  const { confirmAction, chooseAction } = useInkoraDialog();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialType = searchParams.get('tipo') || '01';
@@ -722,14 +724,24 @@ export default function ComprobanteNuevoPage() {
   };
 
   const handleImportCsv = async (event) => {
-    const file = event.target.files?.[0];
+    const fileInput = event.target;
+    const file = fileInput.files?.[0];
     if (!file) return;
 
     const hasData = form.items.some((item) => item.descripcion.trim());
     if (hasData) {
-      const ok = window.confirm(`Vas a reemplazar ${form.items.length} línea(s) con el contenido del CSV. ¿Sí, reemplazar?`);
+      const ok = await confirmAction({
+        title: 'Reemplazar líneas del comprobante',
+        eyebrow: 'Importación CSV',
+        description: `El archivo reemplazará las ${form.items.length} línea${form.items.length === 1 ? '' : 's'} cargadas actualmente.`,
+        subjectLabel: 'Archivo seleccionado',
+        subject: file.name,
+        detail: 'Los datos actuales del detalle se perderán si continúas.',
+        confirmLabel: 'Reemplazar líneas',
+        tone: 'warning',
+      });
       if (!ok) {
-        event.target.value = '';
+        fileInput.value = '';
         return;
       }
     }
@@ -821,13 +833,20 @@ export default function ComprobanteNuevoPage() {
     setSaving(true);
     try {
       const catalogOverrides = getCatalogProductOverrides(form.items);
-      const shouldSyncCatalog = catalogOverrides.length > 0
-        ? window.confirm(
-            `Modificaste ${catalogOverrides.length} producto${catalogOverrides.length === 1 ? '' : 's'} del catalogo en este comprobante. `
-            + 'Por defecto esos cambios solo afectan este documento. '
-            + '¿Deseas actualizar tambien el catalogo de productos?',
-          )
-        : false;
+      const catalogChoice = catalogOverrides.length > 0
+        ? await chooseAction({
+            title: '¿Dónde guardar los cambios?',
+            eyebrow: 'Catálogo de productos',
+            description: `Modificaste ${catalogOverrides.length} producto${catalogOverrides.length === 1 ? '' : 's'} del catálogo al preparar este comprobante.`,
+            detail: 'El comprobante se guardará en ambos casos. Elige si también deseas actualizar los productos para futuras operaciones.',
+            dismissValue: 'document',
+            options: [
+              { value: 'document', label: 'Solo este comprobante', className: 'btn-secondary' },
+              { value: 'catalog', label: 'Actualizar catálogo', className: 'btn-primary' },
+            ],
+          })
+        : 'document';
+      const shouldSyncCatalog = catalogChoice === 'catalog';
 
       const clienteId = await upsertCliente({
         id: form.cliente_id,

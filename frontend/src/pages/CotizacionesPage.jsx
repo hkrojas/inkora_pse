@@ -29,6 +29,7 @@ import InventoryInitialFields from '../components/inventory/InventoryInitialFiel
 import SectionNavigation from '../components/ui/SectionNavigation';
 import { FieldError } from '../components/ui/FieldError';
 import { useToast } from '../components/ui/Toast';
+import { useInkoraDialog } from '../components/ui/InkoraDialogProvider';
 import '../styles/cotizacionesHistory.css';
 import OperationalPageHeader from '../components/ui/OperationalPageHeader';
 import {
@@ -2117,6 +2118,7 @@ return (
 
 export default function CotizacionesPage() {
   const toast = useToast();
+  const { confirmAction, showCopyLink } = useInkoraDialog();
   const [searchParams] = useSearchParams();
   const initialSearch = searchParams.get('q') || '';
   const initialViewParam = searchParams.get('view');
@@ -2401,12 +2403,26 @@ export default function CotizacionesPage() {
         toast('No se pudo generar el enlace publico', 'error');
         return;
       }
+      let copied = false;
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
+        try {
+          await navigator.clipboard.writeText(url);
+          copied = true;
+        } catch {
+          copied = await showCopyLink({
+            title: 'Copiar enlace de cotización',
+            description: 'El navegador bloqueó la copia automática. Puedes copiar el enlace desde este campo.',
+            value: url,
+          });
+        }
       } else {
-        window.prompt('Copia el enlace:', url);
+        copied = await showCopyLink({
+          title: 'Copiar enlace de cotización',
+          description: 'Copia este enlace para compartir la cotización con el cliente.',
+          value: url,
+        });
       }
-      toast('Enlace publico copiado');
+      if (copied) toast('Enlace público copiado');
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -2489,9 +2505,16 @@ export default function CotizacionesPage() {
   };
 
   const handleDeleteQuote = async (item) => {
-    const confirmed = window.confirm(
-      `Eliminar la cotizacion ${item.internal_order_number || `#${item.id}`}?`,
-    );
+    const confirmed = await confirmAction({
+      title: 'Eliminar cotización',
+      eyebrow: 'Cotizaciones',
+      description: 'La cotización dejará de estar disponible en el historial operativo.',
+      subjectLabel: 'Cotización',
+      subject: getDocumentDisplayNumber(item),
+      detail: 'Esta acción no se puede deshacer. Solo las cotizaciones que cumplan las reglas del backend podrán eliminarse.',
+      confirmLabel: 'Eliminar cotización',
+      tone: 'danger',
+    });
     if (!confirmed) return;
     try {
       await svc.remove(item.id);

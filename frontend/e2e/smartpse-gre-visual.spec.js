@@ -244,8 +244,10 @@ test.describe('Smart PSE GRE QA visual', () => {
       await page.goto('/guias/6');
       const emitButton = page.getByRole('button', { name: /emitir a SUNAT/i });
       await expect(emitButton).toBeVisible();
-      page.once('dialog', (dialog) => dialog.accept());
       await emitButton.click();
+      const emitDialog = page.getByRole('dialog', { name: 'Emitir guía de remisión' });
+      await expect(emitDialog).toBeVisible();
+      await emitDialog.getByRole('button', { name: 'Emitir guía' }).click();
       await expect(page.getByText(/Guía encolada para emisión fiscal/i)).toBeVisible();
       await expect(page.getByText('Emitida', { exact: true }).first()).toBeVisible({ timeout: 5000 });
       await expect(page.getByRole('button', { name: /emitir a SUNAT/i })).toHaveCount(0);

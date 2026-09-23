@@ -18,6 +18,7 @@ import Drawer from "../components/ui/Drawer";
 import Spinner from "../components/ui/Spinner";
 import { PageError } from "../components/ui/PageState";
 import { useToast } from "../components/ui/Toast";
+import { useInkoraDialog } from "../components/ui/InkoraDialogProvider";
 import { internalTransfers } from "../services/internalTransfers";
 
 const qty = (value) =>
@@ -53,6 +54,7 @@ const guideDefaults = {
 export default function InternalTransferDetailPage() {
   const { id } = useParams();
   const toast = useToast();
+  const { confirmAction } = useInkoraDialog();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -260,12 +262,17 @@ export default function InternalTransferDetailPage() {
     }
   };
   const cancelTransfer = async () => {
-    if (
-      !window.confirm(
-        "Se cancelará el saldo liberable y sus reservas. La evidencia fiscal existente se conservará. ¿Continuar?",
-      )
-    )
-      return;
+    const confirmed = await confirmAction({
+      title: "Cancelar traslado interno",
+      eyebrow: "Traslados internos",
+      description: "Se cancelará únicamente el saldo que todavía pueda liberarse.",
+      subjectLabel: "Traslado",
+      subject: data?.transfer_number || data?.number || `#${data?.id || id}`,
+      detail: "Las reservas liberables se devolverán y toda evidencia fiscal existente se conservará.",
+      confirmLabel: "Cancelar traslado",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     setSaving(true);
     try {
       await internalTransfers.cancel(data.id);

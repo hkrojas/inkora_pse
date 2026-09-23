@@ -11640,6 +11640,101 @@ textarea.input:focus,
   gap: 10px;
 }
 
+/* --- Shared operational dialogs --- */
+.inkora-dialog {
+  display: grid;
+  gap: 16px;
+}
+
+.modal-header-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 12px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.modal-header-icon--danger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.modal-header-icon--warning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.modal-header-icon--info {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.modal-header-icon--success {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.inkora-dialog__description {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.inkora-dialog__subject {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface-soft);
+}
+
+.inkora-dialog__subject span,
+.inkora-dialog__copy-field > span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.inkora-dialog__subject strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.inkora-dialog__copy-field {
+  display: grid;
+  gap: 8px;
+}
+
+.inkora-dialog__copy-field .form-input {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.inkora-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 520px) {
+  .inkora-dialog__actions > button {
+    flex: 1 1 150px;
+  }
+}
+
 /* --- Crear Comprobante classes --- */
 .doc-type-row {
   display: flex;
