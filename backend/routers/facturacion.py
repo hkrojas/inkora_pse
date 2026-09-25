@@ -4,7 +4,7 @@ from typing import Annotated, Any, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import String, and_, cast, desc, func, or_
+from sqlalchemy import String, and_, case, cast, desc, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 import crud
@@ -242,6 +242,137 @@ def _fiscal_doc_counts(base_query) -> dict[str, int]:
         "rejected": count_for("rejected"),
         "voided": count_for("voided"),
     }
+
+
+def _fiscal_doc_counts_aggregate(base_query) -> dict[str, int]:
+    """Return all fiscal list tab counts in one database round trip."""
+    status = presentation_status_expression(models.Cotizacion)
+    row = base_query.with_entities(
+        func.count(models.Cotizacion.id).label("all_count"),
+        func.sum(case((status == "draft", 1), else_=0)).label("draft_count"),
+        func.sum(case((status == "emitted", 1), else_=0)).label("emitted_count"),
+        func.sum(
+            case((status.in_(["pending", "pending_confirmation"]), 1), else_=0)
+        ).label("pending_count"),
+        func.sum(case((status == "rejected", 1), else_=0)).label("rejected_count"),
+        func.sum(case((status == "voided", 1), else_=0)).label("voided_count"),
+    ).one()
+    values = row._mapping
+    return {
+        "all": int(values["all_count"] or 0),
+        "draft": int(values["draft_count"] or 0),
+        "emitted": int(values["emitted_count"] or 0),
+        "pending": int(values["pending_count"] or 0),
+        "rejected": int(values["rejected_count"] or 0),
+        "voided": int(values["voided_count"] or 0),
+    }
+
+
+def _fiscal_doc_list_columns():
+    has_xml = or_(
+        func.coalesce(models.Cotizacion.sunat_xml_url, "") != "",
+        func.coalesce(models.Cotizacion.sunat_xml_content, "") != "",
+    )
+    has_cdr = or_(
+        func.coalesce(models.Cotizacion.sunat_cdr_url, "") != "",
+        func.coalesce(models.Cotizacion.sunat_cdr_content, "") != "",
+    )
+    return (
+        models.Cotizacion.id.label("id"),
+        models.Cotizacion.uuid_publico.label("uuid_publico"),
+        models.Cotizacion.serie.label("serie"),
+        models.Cotizacion.correlativo.label("correlativo"),
+        models.Cotizacion.fecha_emision.label("fecha_emision"),
+        models.Cotizacion.fecha_vencimiento.label("fecha_vencimiento"),
+        models.Cotizacion.moneda.label("moneda"),
+        models.Cotizacion.estado.label("estado"),
+        models.Cotizacion.document_kind.label("document_kind"),
+        models.Cotizacion.source_quote_id.label("source_quote_id"),
+        models.Cotizacion.internal_order_number.label("internal_order_number"),
+        models.Cotizacion.observaciones.label("observaciones"),
+        models.Cotizacion.condicion_pago.label("condicion_pago"),
+        models.Cotizacion.total_gravada.label("total_gravada"),
+        models.Cotizacion.total_igv.label("total_igv"),
+        models.Cotizacion.total_venta.label("total_venta"),
+        models.Cotizacion.tipo_comprobante.label("tipo_comprobante"),
+        models.Cotizacion.sunat_xml_url.label("sunat_xml_url"),
+        models.Cotizacion.sunat_pdf_url.label("sunat_pdf_url"),
+        models.Cotizacion.sunat_cdr_url.label("sunat_cdr_url"),
+        models.Cotizacion.sunat_error.label("sunat_error"),
+        models.Cotizacion.provider_endpoint.label("provider_endpoint"),
+        models.Cotizacion.provider_status_code.label("provider_status_code"),
+        models.Cotizacion.provider_document_name.label("provider_document_name"),
+        models.Cotizacion.provider_verification_status.label("provider_verification_status"),
+        models.Cotizacion.provider_verified_at.label("provider_verified_at"),
+        models.Cotizacion.provider_verification_error.label("provider_verification_error"),
+        models.Cotizacion.monto_pagado.label("monto_pagado"),
+        models.Cotizacion.saldo_pendiente.label("saldo_pendiente"),
+        has_xml.label("has_sunat_xml"),
+        has_cdr.label("has_sunat_cdr"),
+        models.Cliente.id.label("cliente_id"),
+        models.Cliente.tipo_documento.label("cliente_tipo_documento"),
+        models.Cliente.numero_documento.label("cliente_numero_documento"),
+        models.Cliente.razon_social.label("cliente_razon_social"),
+        models.Cliente.nombre_comercial.label("cliente_nombre_comercial"),
+    )
+
+
+def _fiscal_doc_list_response(row) -> schemas.FiscalDocumentListResponse:
+    values = dict(row._mapping)
+    total = values["total_venta"] or 0
+    paid = values["monto_pagado"] or 0
+    if paid >= total and total > 0:
+        payment_status = "pagado"
+    elif values["fecha_vencimiento"] is not None and datetime.now() > values["fecha_vencimiento"]:
+        payment_status = "vencido"
+    elif paid > 0:
+        payment_status = "parcial"
+    else:
+        payment_status = "pendiente"
+
+    verification = values["provider_verification_status"]
+    sunat_accepted = bool(
+        (not verification or verification == "verified")
+        and values["has_sunat_cdr"]
+        and not values["sunat_error"]
+    )
+    cliente = None
+    if values["cliente_id"] is not None:
+        cliente = {
+            "id": values["cliente_id"],
+            "tipo_documento": values["cliente_tipo_documento"],
+            "numero_documento": values["cliente_numero_documento"],
+            "razon_social": values["cliente_razon_social"],
+            "nombre_comercial": values["cliente_nombre_comercial"],
+            "nombre": None,
+        }
+
+    correlativo = values["correlativo"]
+    document_number = None
+    if values["serie"] and correlativo is not None:
+        document_number = f'{values["serie"]}-{str(correlativo).zfill(6)}'
+
+    payload = {
+        key: values[key]
+        for key in (
+            "id", "uuid_publico", "serie", "correlativo", "fecha_emision",
+            "fecha_vencimiento", "moneda", "estado", "document_kind",
+            "source_quote_id", "internal_order_number", "observaciones",
+            "condicion_pago", "total_gravada", "total_igv", "total_venta",
+            "tipo_comprobante", "sunat_xml_url", "sunat_pdf_url", "sunat_cdr_url",
+            "sunat_error", "provider_endpoint", "provider_status_code",
+            "provider_document_name", "provider_verification_status",
+            "provider_verified_at", "provider_verification_error", "monto_pagado",
+            "saldo_pendiente", "has_sunat_xml", "has_sunat_cdr",
+        )
+    }
+    payload.update(
+        cliente=cliente,
+        document_number=document_number,
+        payment_status=payment_status,
+        sunat_accepted=sunat_accepted,
+    )
+    return schemas.FiscalDocumentListResponse(**payload)
 
 
 def _status_counts(base_query, model) -> dict[str, int]:
@@ -1370,7 +1501,7 @@ def list_facturas_emitidas_page(
     desde_dt, hasta_dt = _parse_date_bounds(desde, hasta)
     base = (
         db.query(models.Cotizacion)
-        .options(joinedload(models.Cotizacion.cliente))
+        .outerjoin(models.Cliente, models.Cotizacion.cliente_id == models.Cliente.id)
         .filter(models.Cotizacion.document_kind == DOCUMENT_KIND_FISCAL_DOCUMENT)
         .filter(models.Cotizacion.tenant_id == current_user.tenant_id)
     )
@@ -1391,8 +1522,6 @@ def list_facturas_emitidas_page(
         base = base.filter(models.Cotizacion.serie.ilike(f'{serie.strip()}%'))
     if numero:
         base = base.filter(cast(models.Cotizacion.correlativo, String).contains(numero.strip().lstrip('0') or '0'))
-    if q or documento_cliente or razon_social:
-        base = base.outerjoin(models.Cliente, models.Cotizacion.cliente_id == models.Cliente.id)
     if documento_cliente:
         base = base.filter(models.Cliente.numero_documento.contains(documento_cliente.strip()))
     if razon_social:
@@ -1413,13 +1542,21 @@ def list_facturas_emitidas_page(
             )
         )
 
-    counts = _fiscal_doc_counts(base)
+    counts = _fiscal_doc_counts_aggregate(base)
     page_query = base
     tab_filter = _fiscal_doc_tab_filter(tab)
     if tab_filter is not None:
         page_query = page_query.filter(tab_filter)
-    total = page_query.with_entities(func.count(models.Cotizacion.id)).scalar() or 0
-    items = page_query.order_by(desc(models.Cotizacion.id)).offset(skip).limit(limit).all()
+    normalized_tab = (tab or "all").strip().lower()
+    total = counts.get(normalized_tab, counts["all"])
+    rows = (
+        page_query.with_entities(*_fiscal_doc_list_columns())
+        .order_by(desc(models.Cotizacion.id))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    items = [_fiscal_doc_list_response(row) for row in rows]
     return {"items": items, "total": total, "skip": skip, "limit": limit, "counts": counts}
 
 

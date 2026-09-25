@@ -1,6 +1,7 @@
 from conftest import make_cliente, make_cotizacion, make_tenant, make_user
 from routers import facturacion as facturacion_router
 import schemas
+from sqlalchemy import event
 from services.document_flow_service import (
     DOCUMENT_KIND_CREDIT_NOTE,
     DOCUMENT_KIND_FISCAL_DOCUMENT,
@@ -119,6 +120,66 @@ def test_facturas_emitidas_page_no_cuenta_xml_sin_cdr_como_aceptada(db_session):
     assert page["counts"]["emitted"] == 0
     assert page["counts"]["pending"] == 1
     assert page["items"][0].sunat_accepted is False
+
+
+def test_facturas_emitidas_page_usa_dos_consultas_y_preserva_contrato(db_session):
+    tenant = make_tenant(db_session, "FP15")
+    user = make_user(db_session, tenant, email="fiscal-projection@test.com")
+    cliente = make_cliente(db_session, tenant, "FP15", numero_documento="20612345678")
+    doc = _numbered(db_session, make_cotizacion(
+        db_session,
+        tenant,
+        user,
+        cliente,
+        document_kind=DOCUMENT_KIND_FISCAL_DOCUMENT,
+        tipo_comprobante="01",
+        estado="facturada",
+    ), "F015", 15)
+    doc.sunat_xml_content = "<Invoice>" + ("x" * 100_000) + "</Invoice>"
+    doc.sunat_cdr_content = "<ApplicationResponse>" + ("x" * 100_000) + "</ApplicationResponse>"
+    doc.provider_response = {"payload": "x" * 100_000}
+    doc.sunat_qr_svg = "<svg>" + ("x" * 100_000) + "</svg>"
+    doc.provider_verification_status = "verified"
+    doc.provider_status_code = 200
+    doc.condicion_pago = "credito_15"
+    db_session.commit()
+    db_session.refresh(doc)
+    expected = schemas.FiscalDocumentListResponse.model_validate(doc).model_dump()
+    _ = user.tenant_id  # Authentication resolves the user before the endpoint query budget starts.
+
+    statements = []
+
+    def capture_statement(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    event.listen(db_session.bind, "before_cursor_execute", capture_statement)
+    try:
+        page = facturacion_router.list_facturas_emitidas_page(
+            skip=0,
+            limit=15,
+            tipo_comprobante="01",
+            tab="all",
+            estado=None,
+            moneda=None,
+            desde=None,
+            hasta=None,
+            q=None,
+            db=db_session,
+            current_user=user,
+        )
+        serialized = schemas.FiscalDocumentPageResponse.model_validate(page).model_dump()
+    finally:
+        event.remove(db_session.bind, "before_cursor_execute", capture_statement)
+
+    assert len(statements) == 2
+    assert serialized["items"] == [expected]
+    item_select = statements[1].lower().split(" from ", 1)[0]
+    assert "provider_response" not in item_select
+    assert "sunat_qr_payload" not in item_select
+    assert "sunat_qr_svg" not in item_select
+    assert "sunat_xml_content as sunat_xml_content" not in item_select
+    assert "sunat_cdr_content as sunat_cdr_content" not in item_select
 
 
 def test_guardar_respuesta_sunat_persiste_trazabilidad_smartpse(db_session):
