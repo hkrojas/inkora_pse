@@ -3,7 +3,11 @@ from datetime import datetime
 import pytest
 import models
 import schemas
-from routers.facturacion import _fiscal_doc_counts, _fiscal_doc_tab_filter
+from routers.facturacion import (
+    _fiscal_doc_counts,
+    _fiscal_doc_counts_aggregate,
+    _fiscal_doc_tab_filter,
+)
 from services.fiscal_presentation_service import presentation_status
 from services.document_actions_service import available_actions
 from test_document_actions_recovery import client_for
@@ -29,6 +33,7 @@ def test_filter_schema_and_actions_agree(db_session, state, error, verification,
     db_session.commit()
     base = db_session.query(models.Cotizacion).filter_by(id=doc.id)
     counts = _fiscal_doc_counts(base)
+    assert _fiscal_doc_counts_aggregate(base) == counts
     assert counts['all'] == sum(value for key, value in counts.items() if key != 'all') == 1
     tab = 'pending' if expected == 'pending_confirmation' else expected
     assert base.filter(_fiscal_doc_tab_filter(tab)).count() == 1

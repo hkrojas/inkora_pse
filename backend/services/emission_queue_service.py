@@ -2,12 +2,9 @@
 import asyncio
 import signal
 import threading
-import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from threading import Thread
 
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 import crud
@@ -17,6 +14,7 @@ from config import settings
 from database import SessionLocal, apply_tenant_context, reset_tenant_context
 from logging_utils import get_logger
 from services import (
+    emission_leases,
     beta_feature_flags,
     facturacion_service,
     fiscal_artifact_service,
@@ -49,6 +47,7 @@ EMISSION_ERROR_TERMINAL = "terminal"
 
 # Graceful shutdown flag
 _shutdown_requested = threading.Event()
+_worker_wakeup = None
 
 
 class NonRetryableEmissionValidationError(RuntimeError):
@@ -58,6 +57,8 @@ class NonRetryableEmissionValidationError(RuntimeError):
 def request_worker_shutdown() -> None:
     """Senala al worker que termine el ciclo actual."""
     _shutdown_requested.set()
+    if _worker_wakeup is not None:
+        _worker_wakeup.pulse()
     logger.info("worker_shutdown_requested", extra={"event": "worker_shutdown_requested"})
 
 
@@ -705,12 +706,14 @@ def _process_emit_fiscal_job(
         raise RuntimeError("No se encontró el documento fiscal a emitir.")
 
     payload_snapshot = job.payload_snapshot or {}
+    emission_leases.before_provider(db)
     result = facturacion_service.emitir_factura(
         fiscal_document,
         db,
         user,
         tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
     )
+    emission_leases.check(db, result)
     persisted_document = crud.guardar_respuesta_sunat(
         db,
         fiscal_document.id,
@@ -764,11 +767,13 @@ def _process_consult_fiscal_job(
 
     payload_snapshot = job.payload_snapshot or {}
     db.commit()  # never hold an SQL transaction during provider consultation
+    emission_leases.before_provider(db)
     result = facturacion_service.consultar_documento_fiscal(
         fiscal_document,
         user,
         tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
     )
+    emission_leases.check(db, result)
     persisted_document = crud.guardar_respuesta_sunat(
         db,
         fiscal_document.id,
@@ -830,6 +835,7 @@ def _process_emit_note_job(
         crud.guardar_error_sunat(db, nota.id, str(exc), tenant_id=job.tenant_id)
         _raise_non_retryable_validation(str(exc))
 
+    emission_leases.before_provider(db)
     result = facturacion_service.emitir_nota(
         nota=nota,
         doc_afectado=doc_afectado,
@@ -838,6 +844,7 @@ def _process_emit_note_job(
         descripcion=payload_snapshot.get("descripcion_motivo"),
         tipo_nota=payload_snapshot.get("tipo_nota"),
     )
+    emission_leases.check(db, result)
     updated_note = crud.guardar_respuesta_sunat(db, nota.id, result, tenant_id=job.tenant_id)
     if result.get("cdr_xml") and updated_note:
         try:
@@ -896,11 +903,13 @@ def _process_void_fiscal_job(
             raise ValueError("La baja requiere resolver antes las reservas o cobertura GRE.")
     except ValueError as exc:
         _raise_non_retryable_validation(str(exc))
+    emission_leases.before_provider(db)
     result = facturacion_service.anular_comprobante(
         comprobante,
         payload_snapshot.get("motivo") or "ANULACION EN COLA",
         user,
     )
+    emission_leases.check(db, result)
     crud.anular_cotizacion(db, comprobante.id, tenant_id=job.tenant_id)
     return result
 
@@ -923,9 +932,11 @@ def _process_emit_guide_job(
             _raise_non_retryable_validation("La guía no tiene payload/XML congelado antes del encolado.")
         # End the short validation locks before the external HTTP call.
         db.commit()
+        emission_leases.before_provider(db)
         result = facturacion_service.emitir_guia_remision(
             guia, user, prepared_payload=guia.frozen_payload, prepared_xml=guia.frozen_xml
         )
+        emission_leases.check(db, result)
         sale_dispatch_service.lock_guide_result_scope(db, guia)
         persisted = crud.guardar_respuesta_sunat_gre(
             db, guia.id, result, tenant_id=job.tenant_id, commit=False
@@ -937,6 +948,7 @@ def _process_emit_guide_job(
         db.commit()
         return result
     except facturacion_service.FacturacionRejectedException as exc:
+        emission_leases.check(db, exc.provider_response)
         sale_dispatch_service.lock_guide_result_scope(db, guia)
         guia.estado = "rechazada"
         guia.sunat_error = str(exc)
@@ -945,7 +957,10 @@ def _process_emit_guide_job(
         sale_dispatch_service.apply_guide_result(db, guia, accepted=False, rejected=True)
         db.commit()
         raise
+    except emission_leases.LeaseLost:
+        raise
     except Exception as exc:
+        emission_leases.check(db)
         crud.guardar_error_sunat_gre(db, guia.id, str(exc), tenant_id=job.tenant_id)
         raise
 
@@ -957,8 +972,10 @@ def _process_consult_guide_job(db: Session, job: models.DocumentEmissionJob, use
         raise RuntimeError("No se encontró la guía a conciliar.")
     db.commit()  # never keep an SQL transaction open during provider consultation
     try:
+        emission_leases.before_provider(db)
         result = facturacion_service.consultar_guia_remision(guia, user)
     except facturacion_service.FacturacionRejectedException as exc:
+        emission_leases.check(db, exc.provider_response)
         sale_dispatch_service.lock_guide_result_scope(db, guia)
         guia.estado = "rechazada"
         guia.sunat_error = str(exc)
@@ -967,6 +984,7 @@ def _process_consult_guide_job(db: Session, job: models.DocumentEmissionJob, use
         sale_dispatch_service.apply_guide_result(db, guia, accepted=False, rejected=True)
         db.commit()
         raise
+    emission_leases.check(db, result)
     sale_dispatch_service.lock_guide_result_scope(db, guia)
     persisted = crud.guardar_respuesta_sunat_gre(
         db, guia.id, result, tenant_id=job.tenant_id, commit=False
@@ -977,7 +995,7 @@ def _process_consult_guide_job(db: Session, job: models.DocumentEmissionJob, use
     return result
 
 
-def process_emission_job(job_id: int, *, db_session: Session | None = None) -> bool:
+def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> bool:
     db = db_session or SessionLocal()
     owns_session = db_session is None
     tenant_token = None
@@ -990,6 +1008,8 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
             )
             return False
 
+        if job.lease_token and db.info.get("emission_lease") != (job.id, job.lease_token):
+            raise emission_leases.LeaseLost()
         tenant_token = _apply_optional_tenant_context(db, job.tenant_id)
         user = _load_job_user(db, job)
         if not user:
@@ -1035,7 +1055,10 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
             extra={"event": "emission_job_succeeded", "context": f"job_id={job.id} action={job.action}"},
         )
         return True
+    except emission_leases.LeaseLost:
+        raise
     except NonRetryableEmissionValidationError as exc:
+        emission_leases.check(db)
         message = str(exc)
         job = crud.get_emission_job(db, job_id)
         if job:
@@ -1054,6 +1077,7 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
             )
         return False
     except Exception as exc:
+        emission_leases.check(db)
         message = str(exc)
         job = crud.get_emission_job(db, job_id)
         if job:
@@ -1153,6 +1177,26 @@ def process_emission_job(job_id: int, *, db_session: Session | None = None) -> b
             db.close()
 
 
+def process_emission_job(job_id: int, *, db_session: Session | None = None, lease_token: str | None = None) -> bool:
+    db = db_session or SessionLocal()
+    try:
+        if lease_token:
+            emission_leases.attach(db, job_id, lease_token)
+        return _process_emission_job(job_id, db_session=db)
+    except emission_leases.LeaseLost as exc:
+        db.rollback()
+        emission_leases.detach(db)
+        if lease_token:
+            snapshot = _build_job_result_snapshot(exc.result) if isinstance(exc.result, dict) else None
+            emission_leases.record_late_result(db, job_id, lease_token, snapshot)
+        logger.warning("emission_lease_lost", extra={"event": "emission_lease_lost", "context": f"job_id={job_id}"})
+        return False
+    finally:
+        emission_leases.detach(db)
+        if db_session is None:
+            db.close()
+
+
 def process_next_available_job(*, db_session: Session | None = None) -> bool:
     db = db_session or SessionLocal()
     owns_session = db_session is None
@@ -1202,10 +1246,10 @@ def _recover_stale_jobs_if_due(
     return now_monotonic + recovery_interval_seconds
 
 
-def _process_single_job(job_id: int) -> None:
+def _process_single_job(job_id: int, lease_token: str | None = None) -> None:
     """Wrapper para ejecutar un job en un thread del pool."""
     try:
-        process_emission_job(job_id)
+        process_emission_job(job_id, lease_token=lease_token)
     except Exception:
         logger.exception(
             "worker_thread_unexpected_error",
@@ -1214,76 +1258,5 @@ def _process_single_job(job_id: int) -> None:
 
 
 def run_worker_loop() -> None:
-    """Loop principal del worker con concurrencia configurable y graceful shutdown."""
-    poll_seconds = max(settings.EMISSION_WORKER_POLL_SECONDS, 1)
-    concurrency = max(settings.EMISSION_WORKER_CONCURRENCY, 1)
-    stale_recovery_interval_seconds = max(
-        settings.EMISSION_STALE_RECOVERY_INTERVAL_SECONDS,
-        1,
-    )
-    next_recovery_at = 0.0
-
-    _install_signal_handlers()
-
-    logger.info(
-        "emission_worker_started",
-        extra={
-            "event": "emission_worker_started",
-            "context": (
-                f"poll={poll_seconds}s stale_recovery_interval={stale_recovery_interval_seconds}s "
-                f"concurrency={concurrency} mode_default={settings.EMISSION_MODE_DEFAULT}"
-            ),
-        },
-    )
-
-    with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="emission-worker") as executor:
-        while not is_shutdown_requested():
-            # Claim jobs at the normal cadence. Recover stale jobs separately
-            # so an idle worker does not duplicate that query on every poll.
-            db = None
-            try:
-                db = SessionLocal()
-                next_recovery_at = _recover_stale_jobs_if_due(
-                    db,
-                    now_monotonic=time.monotonic(),
-                    next_recovery_at=next_recovery_at,
-                    recovery_interval_seconds=stale_recovery_interval_seconds,
-                )
-
-                # Claim up to `concurrency` jobs and submit them to the executor
-                submitted = 0
-                while submitted < concurrency:
-                    job = crud.claim_next_emission_job(db)
-                    if not job:
-                        break
-                    executor.submit(_process_single_job, job.id)
-                    submitted += 1
-
-                if submitted == 0:
-                    # No work available — sleep briefly and retry
-                    _shutdown_requested.wait(timeout=poll_seconds)
-            except SQLAlchemyError:
-                if db is not None:
-                    try:
-                        db.rollback()
-                    except Exception:
-                        logger.exception(
-                            "emission_worker_db_rollback_failed",
-                            extra={"event": "emission_worker_db_rollback_failed"},
-                        )
-                logger.exception(
-                    "emission_worker_database_error",
-                    extra={
-                        "event": "emission_worker_database_error",
-                        "context": "retrying_after_database_error",
-                    },
-                )
-                _shutdown_requested.wait(timeout=poll_seconds)
-            finally:
-                if db is not None:
-                    db.close()
-
-    logger.info(
-        "emission_worker_stopped",
-        extra={"event": "emission_worker_stopped"},
-    )
+    from services.emission_worker_runtime import run
+    run()

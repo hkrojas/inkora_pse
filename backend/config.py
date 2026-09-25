@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     EMISSION_RETRY_BASE_SECONDS: int = 15
     EMISSION_PROCESSING_TIMEOUT_SECONDS: int = 300
     EMISSION_WORKER_CONCURRENCY: int = 1
+    EMISSION_WORKER_WAKE_MODE: str = "poll"
+    EMISSION_LISTEN_DATABASE_URL: str = ""
+    EMISSION_EVENT_TENANT_IDS: str = ""
+    EMISSION_WORKER_FALLBACK_SECONDS: int = Field(default=60, ge=1)
+    EMISSION_GLOBAL_CONCURRENCY: int = Field(default=1, ge=1)
+    EMISSION_TENANT_CONCURRENCY: int = Field(default=1, ge=1)
+    EMISSION_LEASE_SECONDS: int = Field(default=300, ge=60)
+    EMISSION_HEARTBEAT_SECONDS: int = Field(default=30, ge=1)
     FISCAL_ENV: str = Field(
         default="",
         validation_alias=AliasChoices("FISCAL_ENV", "FISCAL_ENVIRONMENT"),
@@ -119,7 +127,25 @@ class Settings(BaseSettings):
             raise ValueError("FISCAL_ENV debe ser 'beta' o 'production'.")
         return normalized
 
+    @field_validator("EMISSION_WORKER_WAKE_MODE")
+    @classmethod
+    def validate_worker_wake_mode(cls, value: str) -> str:
+        if value not in {"poll", "notify"}:
+            raise ValueError("EMISSION_WORKER_WAKE_MODE debe ser poll o notify")
+        return value
+
+    @field_validator("EMISSION_EVENT_TENANT_IDS")
+    @classmethod
+    def validate_event_tenants(cls, value: str) -> str:
+        value = value.strip()
+        if value and value != "*":
+            if any(not part.strip().isdigit() or int(part) < 1 for part in value.split(",")):
+                raise ValueError("EMISSION_EVENT_TENANT_IDS requiere IDs positivos separados por coma o *")
+        return value
+
     def model_post_init(self, __context) -> None:
+        if self.EMISSION_HEARTBEAT_SECONDS * 3 >= self.EMISSION_LEASE_SECONDS:
+            raise ValueError("El lease debe superar tres intervalos de heartbeat")
         if not self.DATABASE_URL.strip():
             raise ValueError("DATABASE_URL es obligatoria.")
 

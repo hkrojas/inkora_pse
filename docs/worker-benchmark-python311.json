@@ -1,0 +1,20 @@
+{
+  "idle": {
+    "seconds": 60,
+    "baseline_sql": 32,
+    "notify_sql": 6,
+    "reduction_percent": 81.25
+  },
+  "load": {
+    "jobs": 1000,
+    "tenants": 20,
+    "replicas": 4,
+    "seconds": 7.045999999972992,
+    "peak_processing": 4,
+    "attempts_per_job": 1
+  },
+  "capacity_available_latency": {
+    "probes": 30,
+    "p95_seconds": 0.2029999999795109
+  }
+}
