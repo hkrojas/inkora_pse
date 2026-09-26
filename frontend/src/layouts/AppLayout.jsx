@@ -377,7 +377,7 @@ export default function AppLayout() {
             isContentScrolled && 'shadow-[0_8px_20px_rgba(18,30,24,0.08)]',
           )}
         >
-          <div className="flex min-w-0 flex-col pl-10 lg:pl-0">
+          <div className="app-topbar__title flex min-w-0 flex-col pl-10 lg:pl-0">
             <div className="flex items-center gap-2.5">
               <TopbarTitle className="m-0 truncate text-[18px] font-extrabold leading-tight tracking-[-0.04em] text-[var(--color-text)]">
                 {meta.title}
@@ -394,7 +394,7 @@ export default function AppLayout() {
             </span>
           </div>
 
-          <div ref={searchRef} className="relative hidden sm:block">
+          <div ref={searchRef} className="app-topbar__search relative hidden sm:block">
             <form
               onSubmit={handleSearchSubmit}
               className={cn(
@@ -478,7 +478,7 @@ export default function AppLayout() {
             )}
           </div>
 
-          <div className="flex flex-shrink-0 items-center gap-2">
+          <div className="app-topbar__actions flex flex-shrink-0 items-center gap-2">
             <SunatStatus />
 
             <div ref={notificationsRef} className="relative">
@@ -609,12 +609,12 @@ export default function AppLayout() {
             </div>
 
             <button
-              className="hidden items-center gap-2 rounded-[18px] bg-[var(--color-dark-btn)] px-4 py-3 text-[14px] font-extrabold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 sm:flex lg:px-6 lg:text-[16px]"
+              className="app-topbar__create hidden items-center gap-2 rounded-[18px] bg-[var(--color-dark-btn)] px-4 py-3 text-[14px] font-extrabold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 sm:flex lg:px-6 lg:text-[16px]"
               type="button"
               onClick={() => navigate('/comprobantes/nuevo')}
               aria-label="Crear comprobante"
             >
-              Crear comprobante
+              <span className="app-topbar__create-label">Crear comprobante</span>
               <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/15">
                 <Plus size={11} strokeWidth={2.5} />
               </span>
