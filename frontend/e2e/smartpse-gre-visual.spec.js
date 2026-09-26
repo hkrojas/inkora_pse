@@ -296,16 +296,158 @@ test.describe('Smart PSE GRE QA visual', () => {
       await expect(tenantPages.page.getByText(/Pendiente Smart PSE/i).first()).toBeVisible();
       await expectPageWithoutHorizontalOverflow(tenantPages.page);
 
+      for (const width of [320, 390, 768, 1024]) {
+        await tenantPages.page.setViewportSize({ width, height: 844 });
+        const titleOverflow = await tenantPages.page.locator('.app-topbar h1').evaluate(
+          (title) => title.scrollWidth - title.clientWidth,
+        );
+        expect(titleOverflow).toBeLessThanOrEqual(2);
+        const guideLayout = await tenantPages.page.locator('.guide-table-list').evaluate((card) => {
+          const table = card.querySelector('.guide-document-table');
+          const row = table.querySelector('tbody tr');
+          const action = row.querySelector('td:last-child a');
+          return {
+            cardWidth: card.getBoundingClientRect().width,
+            tableWidth: table.getBoundingClientRect().width,
+            rowHeight: row.getBoundingClientRect().height,
+            actionRight: action.getBoundingClientRect().right,
+          };
+        });
+        expect(guideLayout.tableWidth).toBeLessThanOrEqual(guideLayout.cardWidth + 2);
+        expect(guideLayout.rowHeight).toBeLessThan(800);
+        expect(guideLayout.actionRight).toBeLessThanOrEqual(width);
+        if (process.env.RESPONSIVE_CAPTURE === '1' && [390, 1024].includes(width)) {
+          await tenantPages.page.locator('.guide-table-list').screenshot({ path: `test-results/responsive-guides-${width}.png` });
+        }
+      }
+
+      await tenantPages.page.setViewportSize(viewport);
+
       await tenantPages.page.goto('/guias/6');
       await expect(tenantPages.page.locator('.smartpse-evidence-state', { hasText: 'CDR pendiente' })).toBeVisible();
       await expectPageWithoutHorizontalOverflow(tenantPages.page);
 
       await tenantPages.page.goto('/configuracion');
+      await expect(tenantPages.page.locator('.settings-command-card')).toBeVisible();
+      const settingsLayout = await tenantPages.page.locator('main').evaluate((main) => {
+        const right = main.getBoundingClientRect().left + main.clientWidth;
+        const overflowing = [...main.querySelectorAll('*')]
+          .filter((element) => element.getBoundingClientRect().right > right + 2)
+          .slice(0, 8)
+          .map((element) => ({
+            tag: element.tagName,
+            className: typeof element.className === 'string' ? element.className : '',
+            excess: Math.round(element.getBoundingClientRect().right - right),
+          }));
+        return {
+          overflow: main.scrollWidth - main.clientWidth,
+          clientWidth: main.clientWidth,
+          offsetWidth: main.offsetWidth,
+          scrollWidth: main.scrollWidth,
+          overflowing,
+        };
+      });
+      expect(settingsLayout.overflow, JSON.stringify(settingsLayout)).toBeLessThanOrEqual(2);
+      if (process.env.RESPONSIVE_CAPTURE === '1') {
+        await tenantPages.page.screenshot({ path: 'test-results/responsive-settings-390.png' });
+      }
       await tenantPages.page.getByRole('tab', { name: /Config\. Fiscal/i }).click();
       await expect(tenantPages.page.getByText(/Credenciales fiscales gestionadas/i)).toBeVisible();
       await expectPageWithoutHorizontalOverflow(tenantPages.page);
     } finally {
       await tenantPages.context.close();
+    }
+  });
+
+  test('montos y acciones operativas caben en pantallas pequeñas', async ({ browser, baseURL }) => {
+    const { context, page } = await createVisualContext(browser, baseURL);
+    const debt = {
+      id: 42,
+      cotizacion_id: 42,
+      cliente_nombre: 'Cliente de prueba',
+      internal_order_number: 'ORD-0001-000042',
+      fecha_vencimiento: '2026-09-01',
+      saldo_pendiente: 57484.01,
+      dias_vencido: 25,
+    };
+    const stock = {
+      product_id: 1,
+      product_name: 'Producto de prueba',
+      product_code: 'P-001',
+      warehouse_id: 1,
+      warehouse_name: 'Almacén central',
+      unit: 'NIU',
+      on_hand: 2872622.9996,
+      committed: 0,
+      available: 2872622.9996,
+      status: 'ok',
+      minimum_stock: 0,
+    };
+    const responses = {
+      '/analytics/dashboard': { ingresos_totales: 19454.32 },
+      '/cobranza/resumen': {
+        total_pagado_mes: 314.83,
+        total_por_cobrar: 57484.01,
+        total_vencido: 26515.24,
+        documentos_pendientes: 1,
+        clientes_con_deuda: 1,
+      },
+      '/cobranza/vencidas': [debt],
+      '/inventario/existencias': [stock],
+      '/inventario/kardex/page': { items: [], total: 0 },
+      '/inventario/almacenes': [{ id: 1, name: 'Almacén central', code: 'CENTRAL' }],
+      '/inventario/establecimientos-fiscales': [],
+      '/inventario/devoluciones': [],
+    };
+
+    await page.route(`${API_ORIGIN}/**`, async (route) => {
+      const path = new URL(route.request().url()).pathname.replace(/\/$/, '');
+      if (!(path in responses)) return route.fallback();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(responses[path]),
+      });
+    });
+
+    try {
+      for (const width of [1024, 390, 320]) {
+        await page.setViewportSize({ width, height: 850 });
+
+        await page.goto('/dashboard');
+        await expect(page.locator('.dashboard-page .metric-value').first()).toBeVisible();
+        const dashboardOverflow = await page.locator('.dashboard-page .metric-value').evaluateAll(
+          (values) => values.map((value) => value.scrollWidth - value.clientWidth),
+        );
+        expect(Math.max(...dashboardOverflow)).toBeLessThanOrEqual(2);
+        if (process.env.RESPONSIVE_CAPTURE === '1' && width === 390) {
+          await page.locator('.dashboard-page .metric-card').first().screenshot({ path: 'test-results/responsive-dashboard-390.png' });
+        }
+
+        await page.goto('/inventario');
+        await expect(page.locator('.inventory-metric__value').last()).toBeVisible();
+        const inventoryOverflow = await page.locator('.inventory-metric__value').last().evaluate(
+          (value) => value.scrollWidth - value.clientWidth,
+        );
+        expect(inventoryOverflow).toBeLessThanOrEqual(2);
+        if (process.env.RESPONSIVE_CAPTURE === '1' && width === 390) {
+          await page.locator('.inventory-metric').last().screenshot({ path: 'test-results/responsive-inventory-390.png' });
+        }
+
+        await page.goto('/cobranza');
+        await expect(page.locator('.cobranza-row').first()).toBeVisible();
+        const collectionLayout = await page.locator('.cobranza-list').evaluate((list) => ({
+          overflow: list.scrollWidth - list.clientWidth,
+          actionRight: list.querySelector('.cobranza-row .actions-col').getBoundingClientRect().right,
+        }));
+        expect(collectionLayout.overflow).toBeLessThanOrEqual(2);
+        expect(collectionLayout.actionRight).toBeLessThanOrEqual(width);
+        if (process.env.RESPONSIVE_CAPTURE === '1' && width === 390) {
+          await page.locator('.cobranza-list').screenshot({ path: 'test-results/responsive-collections-390.png' });
+        }
+      }
+    } finally {
+      await context.close();
     }
   });
 });
