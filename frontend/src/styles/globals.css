@@ -25712,6 +25712,7 @@ body:has(.auth-expedition) {
 .configuracion-page {
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
+  overflow-x: clip;
 }
 
 .configuracion-page > *,
