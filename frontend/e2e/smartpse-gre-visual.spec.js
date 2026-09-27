@@ -411,7 +411,7 @@ test.describe('Smart PSE GRE QA visual', () => {
     });
 
     try {
-      for (const width of [1024, 390, 320]) {
+      for (const width of [1024, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 850 });
 
         await page.goto('/dashboard');
@@ -426,10 +426,31 @@ test.describe('Smart PSE GRE QA visual', () => {
 
         await page.goto('/inventario');
         await expect(page.locator('.inventory-metric__value').last()).toBeVisible();
+        const inventoryHeader = await page.locator('.inventory-page .operational-page-header').evaluate((header) => {
+          const copy = header.querySelector('.operational-page-header__copy');
+          const actions = header.querySelector('.operational-page-header__actions');
+          const headerRect = header.getBoundingClientRect();
+          const copyRect = copy.getBoundingClientRect();
+          const actionsRect = actions.getBoundingClientRect();
+          return {
+            overflow: header.scrollWidth - header.clientWidth,
+            copyWidth: copyRect.width,
+            actionsRight: actionsRect.right,
+            actionsBelowCopy: actionsRect.top >= copyRect.bottom - 2,
+            headerRight: headerRect.right,
+          };
+        });
+        expect(inventoryHeader.overflow).toBeLessThanOrEqual(2);
+        expect(inventoryHeader.copyWidth).toBeGreaterThanOrEqual(Math.min(360, width - 48));
+        expect(inventoryHeader.actionsRight).toBeLessThanOrEqual(inventoryHeader.headerRight + 2);
+        expect(inventoryHeader.actionsBelowCopy).toBe(true);
         const inventoryOverflow = await page.locator('.inventory-metric__value').last().evaluate(
           (value) => value.scrollWidth - value.clientWidth,
         );
         expect(inventoryOverflow).toBeLessThanOrEqual(2);
+        if (process.env.RESPONSIVE_CAPTURE === '1' && [390, 768, 1024].includes(width)) {
+          await page.locator('.inventory-page .operational-page-header').screenshot({ path: `test-results/responsive-inventory-header-${width}.png` });
+        }
         if (process.env.RESPONSIVE_CAPTURE === '1' && width === 390) {
           await page.locator('.inventory-metric').last().screenshot({ path: 'test-results/responsive-inventory-390.png' });
         }
