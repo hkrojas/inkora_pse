@@ -526,11 +526,9 @@ export default function InventarioPage() {
   return (
     <main className="inventory-page mx-auto w-full max-w-[1500px] space-y-5 pb-10">
       <OperationalPageHeader
-        eyebrow="Control operativo"
         title="Inventario"
-        description="Supervisa existencias por almacén y conserva la trazabilidad de cada entrada, salida y devolución."
+        description="Revisa qué productos tienes disponibles y registra sus entradas, salidas y devoluciones."
         variant="monitoring"
-        meta={<span className="operational-page-header__scope">Stock disponible · Kardex · Almacenes</span>}
         actions={<>
           <Button variant="secondary" onClick={load}><RefreshCw size={15} />Actualizar</Button>
           {isAdmin && warehouses.length > 0 && <Button variant="secondary" onClick={() => setModal('config')}><PackageCheck size={15} />Configurar producto</Button>}
