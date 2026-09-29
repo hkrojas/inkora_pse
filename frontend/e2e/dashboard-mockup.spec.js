@@ -25,6 +25,16 @@ test.describe('Mockup comercial del dashboard', () => {
       try {
         const overflow = await page.locator('main').evaluate((element) => element.scrollWidth > element.clientWidth + 1);
         expect(overflow).toBe(false);
+        const chartLayout = await page.locator('.business-chart__viewport').evaluate((element) => {
+          const viewport = element.getBoundingClientRect();
+          const svg = element.querySelector('svg').getBoundingClientRect();
+          return {
+            overflowX: getComputedStyle(element).overflowX,
+            svgFits: svg.left >= viewport.left - 1 && svg.right <= viewport.right + 1,
+          };
+        });
+        expect(chartLayout.overflowX).toBe('hidden');
+        expect(chartLayout.svgFits).toBe(true);
         await expect(page.getByRole('heading', { name: 'Tu negocio, de un vistazo' })).toBeVisible();
         await expect(page.getByRole('heading', { name: 'Resumen', level: 1 })).toBeVisible();
         await expect(page.getByText('S/ 10,000')).toBeVisible();
@@ -70,11 +80,20 @@ test.describe('Mockup comercial del dashboard', () => {
       await expect(quoted).toBeChecked();
       await quoted.uncheck();
       await expect(quoted).not.toBeChecked();
+      await quoted.check();
+      await expect(quoted).toBeChecked();
 
       const augustPoint = page.getByRole('button', { name: /Agosto: ventas S\/ 16,300/ });
+      const augustHitArea = await augustPoint.evaluate((element) => element.getBoundingClientRect().height);
+      expect(augustHitArea).toBeGreaterThan(200);
       await augustPoint.hover();
       await expect(page.getByRole('tooltip')).toContainText('Ventas registradas');
       await expect(page.getByRole('tooltip')).toContainText('S/ 16,300');
+      await expect(page.getByRole('tooltip')).toContainText('Importe cotizado');
+      await expect(page.getByRole('tooltip')).toContainText('S/ 14,500');
+      if (process.env.MOCKUP_TOOLTIP_SCREENSHOT_PATH) {
+        await page.screenshot({ path: process.env.MOCKUP_TOOLTIP_SCREENSHOT_PATH });
+      }
       await augustPoint.focus();
       await expect(page.getByRole('tooltip')).toBeVisible();
 

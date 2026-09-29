@@ -310,6 +310,7 @@
 }
 
 .business-panel { padding: 16px; }
+.business-sales { margin-top: 12px; }
 
 .business-panel__heading {
   display: flex;
@@ -360,9 +361,9 @@
 .business-toggle input:focus-visible + .business-toggle__track { outline: 3px solid rgba(141, 198, 63, 0.35); outline-offset: 2px; }
 
 .business-chart { position: relative; }
-.business-chart__viewport { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
-.business-chart__canvas { position: relative; min-width: 620px; height: 320px; }
-.business-chart__svg { display: block; width: 100%; height: 320px; overflow: visible; }
+.business-chart__viewport { overflow: hidden; }
+.business-chart__canvas { position: relative; width: 100%; min-width: 0; height: 320px; }
+.business-chart__svg { display: block; width: 100%; height: 320px; overflow: hidden; }
 .business-chart__grid { stroke: var(--color-border); stroke-width: 1; stroke-dasharray: 3 4; }
 .business-chart__axis-label,
 .business-chart__month,
@@ -385,19 +386,19 @@
   position: absolute;
   z-index: 2;
   left: var(--point-x);
-  top: var(--point-y);
-  width: 44px;
-  height: 44px;
+  top: 14px;
+  width: 10.5%;
+  height: calc(100% - 48px);
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: 9px;
   background: transparent;
   cursor: crosshair;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
 }
 .business-chart__hotspot:focus-visible {
   outline: 3px solid rgba(141, 198, 63, 0.38);
-  outline-offset: -9px;
+  outline-offset: -4px;
 }
 .business-chart__tooltip {
   position: absolute;
@@ -636,11 +637,12 @@
   .business-dashboard__critical { grid-template-columns: auto minmax(0, 1fr); }
   .business-dashboard__critical button { grid-column: 2; justify-self: flex-start; min-height: 32px; padding: 0; }
   .business-panel { padding: 15px; }
+  .business-sales { margin-top: 10px; }
   .business-panel__heading { flex-direction: column; gap: 12px; }
   .business-sales__controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .business-sales__range-label { grid-column: 1 / -1; }
   .business-toggle { grid-column: 1 / -1; }
-  .business-chart__canvas { min-width: 560px; height: 300px; }
+  .business-chart__canvas { min-width: 0; height: 300px; }
   .business-chart__svg { height: 300px; }
   .business-chart__month:nth-of-type(even) { opacity: 0; }
   .business-sales__conversion { grid-template-columns: 1fr; gap: 10px; }
