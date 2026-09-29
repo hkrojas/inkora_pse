@@ -126,6 +126,7 @@ function isEmptyDashboard(data) {
   return asNumber(summary.sales_amount) === 0
     && asNumber(summary.pending_sunat_amount) === 0
     && asNumber(summary.overdue_amount) === 0
+    && !(data.history || []).some((point) => asNumber(point.sales_amount) !== 0)
     && (data.products || []).length === 0
     && (data.clients || []).length === 0
     && asNumber(followUp.declining?.count) === 0

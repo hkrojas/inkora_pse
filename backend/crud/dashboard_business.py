@@ -435,7 +435,7 @@ def get_business_dashboard(
             else_=ZERO,
         )
     )
-    product_rows = (
+    product_totals = (
         db.query(
             models.CotizacionItem.producto_id.label("id"),
             product_name.label("name"),
@@ -473,8 +473,40 @@ def get_business_dashboard(
             product_name,
             models.CotizacionItem.unidad_medida,
         )
-        .order_by(current_item_amount.desc())
-        .limit(50)
+        .subquery("dashboard_product_totals")
+    )
+    product_decline_order = case(
+        (
+            and_(
+                product_totals.c.previous_amount > ZERO,
+                product_totals.c.amount < product_totals.c.previous_amount,
+            ),
+            (product_totals.c.amount - product_totals.c.previous_amount)
+            / product_totals.c.previous_amount,
+        ),
+        else_=Decimal("1000000"),
+    )
+    product_ranked = (
+        db.query(
+            product_totals,
+            func.row_number()
+            .over(order_by=(product_totals.c.amount.desc(), product_totals.c.id.asc()))
+            .label("sales_rank"),
+            func.row_number()
+            .over(order_by=(product_decline_order.asc(), product_totals.c.id.asc()))
+            .label("decline_rank"),
+        )
+        .subquery("dashboard_product_ranked")
+    )
+    product_rows = (
+        db.query(product_ranked)
+        .filter(
+            or_(
+                product_ranked.c.sales_rank <= 10,
+                product_ranked.c.decline_rank <= 10,
+            )
+        )
+        .order_by(product_ranked.c.sales_rank.asc())
         .all()
     )
     products = []
@@ -501,7 +533,7 @@ def get_business_dashboard(
     previous_client_amount = func.sum(
         case((and_(in_comparison, _recognized_sales_filter()), signed_total), else_=ZERO)
     )
-    client_rows = (
+    client_totals = (
         db.query(
             models.Cotizacion.cliente_id.label("id"),
             client_name.label("name"),
@@ -530,8 +562,40 @@ def get_business_dashboard(
             models.Cotizacion.cliente_id.isnot(None),
         )
         .group_by(models.Cotizacion.cliente_id, client_name)
-        .order_by(current_client_amount.desc())
-        .limit(50)
+        .subquery("dashboard_client_totals")
+    )
+    client_decline_order = case(
+        (
+            and_(
+                client_totals.c.previous_amount > ZERO,
+                client_totals.c.amount < client_totals.c.previous_amount,
+            ),
+            (client_totals.c.amount - client_totals.c.previous_amount)
+            / client_totals.c.previous_amount,
+        ),
+        else_=Decimal("1000000"),
+    )
+    client_ranked = (
+        db.query(
+            client_totals,
+            func.row_number()
+            .over(order_by=(client_totals.c.amount.desc(), client_totals.c.id.asc()))
+            .label("sales_rank"),
+            func.row_number()
+            .over(order_by=(client_decline_order.asc(), client_totals.c.id.asc()))
+            .label("decline_rank"),
+        )
+        .subquery("dashboard_client_ranked")
+    )
+    client_rows = (
+        db.query(client_ranked)
+        .filter(
+            or_(
+                client_ranked.c.sales_rank <= 10,
+                client_ranked.c.decline_rank <= 10,
+            )
+        )
+        .order_by(client_ranked.c.sales_rank.asc())
         .all()
     )
     clients = []
@@ -579,11 +643,41 @@ def get_business_dashboard(
     ]
 
     inactive_cutoff = _day_start(today - timedelta(days=60))
-    inactive_query = (
+    inactive_ranked = (
         db.query(
             models.Cotizacion.cliente_id.label("client_id"),
-            func.max(models.Cotizacion.fecha_emision).label("last_purchase"),
-            func.sum(signed_total).label("amount"),
+            models.Cotizacion.fecha_emision.label("last_purchase"),
+            models.Cotizacion.total_venta.label("amount"),
+            func.row_number()
+            .over(
+                partition_by=models.Cotizacion.cliente_id,
+                order_by=(
+                    models.Cotizacion.fecha_emision.desc(),
+                    models.Cotizacion.id.desc(),
+                ),
+            )
+            .label("purchase_rank"),
+        )
+        .filter(
+            *common_filters,
+            _base_sale_filter(),
+            models.Cotizacion.cliente_id.isnot(None),
+        )
+        .subquery("dashboard_inactive_ranked")
+    )
+    inactive_latest = (
+        db.query(inactive_ranked)
+        .filter(
+            inactive_ranked.c.purchase_rank == 1,
+            inactive_ranked.c.last_purchase < inactive_cutoff,
+        )
+        .subquery("dashboard_inactive_latest")
+    )
+    inactive_query = (
+        db.query(
+            inactive_latest.c.client_id,
+            inactive_latest.c.last_purchase,
+            inactive_latest.c.amount,
             models.Cliente.razon_social.label("client_name"),
             models.Cliente.nombre_comercial.label("client_alt"),
             func.count().over().label("total_count"),
@@ -591,23 +685,12 @@ def get_business_dashboard(
         .join(
             models.Cliente,
             and_(
-                models.Cliente.id == models.Cotizacion.cliente_id,
+                models.Cliente.id == inactive_latest.c.client_id,
                 models.Cliente.tenant_id == tenant_id,
             ),
         )
-        .filter(
-            *common_filters,
-            _recognized_sales_filter(),
-            models.Cotizacion.cliente_id.isnot(None),
-        )
-        .group_by(
-            models.Cotizacion.cliente_id,
-            models.Cliente.razon_social,
-            models.Cliente.nombre_comercial,
-        )
-        .having(func.max(models.Cotizacion.fecha_emision) < inactive_cutoff)
     )
-    inactive_rows = inactive_query.order_by(func.max(models.Cotizacion.fecha_emision).asc()).limit(3).all()
+    inactive_rows = inactive_query.order_by(inactive_latest.c.last_purchase.asc()).limit(3).all()
     inactive_count = int(inactive_rows[0].total_count) if inactive_rows else 0
     inactive_follow_rows = [
         {
@@ -662,8 +745,8 @@ def get_business_dashboard(
             "linked_sales_count": None,
             "rate_percent": None,
         },
-        "products": products[:10],
-        "clients": clients[:10],
+        "products": products,
+        "clients": clients,
         "follow_up": {
             "quotes": {
                 "available": False,

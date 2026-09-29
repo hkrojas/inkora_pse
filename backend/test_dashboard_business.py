@@ -2,12 +2,13 @@
 
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import models
+import fiscal_time
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -336,6 +337,86 @@ def test_business_dashboard_isolates_tenants(db_session):
     assert payload["summary"]["sales_amount"] == Decimal("120.00")
     assert payload["summary"]["sales_count"] == 1
     assert payload["summary"]["customers_count"] == 1
+
+
+def test_business_dashboard_keeps_true_declines_and_ignores_recent_notes_for_inactivity(
+    db_session,
+):
+    tenant = make_tenant(db_session, "DASH04")
+    user = make_user(db_session, tenant, email="ranking@test.com")
+    active_client = make_cliente(db_session, tenant, "ACTIVE")
+    inactive_client = make_cliente(db_session, tenant, "INACTIVE")
+    today = fiscal_time.today_lima()
+    current_day = min(today.day, 10)
+    current_at = datetime(today.year, today.month, current_day, 10, 0)
+    previous_last_day = today.replace(day=1) - timedelta(days=1)
+    previous_at = datetime(
+        previous_last_day.year,
+        previous_last_day.month,
+        min(current_day, previous_last_day.day),
+        10,
+        0,
+    )
+
+    declining_product = None
+    for index in range(11):
+        product = make_producto(db_session, tenant, f"RANK{index:02d}")
+        previous = _document(
+            db_session,
+            tenant,
+            user,
+            active_client,
+            issued_at=previous_at,
+            amount="100.00",
+        )
+        _item(db_session, previous, product, amount="100.00", quantity="1")
+        current_amount = "1.00" if index == 10 else str(200 + index)
+        current = _document(
+            db_session,
+            tenant,
+            user,
+            active_client,
+            issued_at=current_at,
+            amount=current_amount,
+        )
+        _item(db_session, current, product, amount=current_amount, quantity="1")
+        if index == 10:
+            declining_product = product
+
+    old_sale = _document(
+        db_session,
+        tenant,
+        user,
+        inactive_client,
+        issued_at=datetime.combine(today - timedelta(days=75), datetime.min.time()),
+        amount="300.00",
+    )
+    recent_credit = _document(
+        db_session,
+        tenant,
+        user,
+        inactive_client,
+        issued_at=datetime.combine(today - timedelta(days=2), datetime.min.time()),
+        amount="50.00",
+        kind=DOCUMENT_KIND_CREDIT_NOTE,
+        type_code="07",
+        reference_id=old_sale.id,
+    )
+    assert recent_credit.id
+
+    payload = get_business_dashboard(db_session, tenant.id)
+
+    product_ids = {row["id"] for row in payload["products"]}
+    assert declining_product.id in product_ids
+    declining = next(
+        row for row in payload["products"] if row["id"] == declining_product.id
+    )
+    assert declining["change_percent"] == Decimal("-99.0")
+
+    inactive_rows = payload["follow_up"]["inactive"]["rows"]
+    inactive = next(row for row in inactive_rows if row["client_id"] == inactive_client.id)
+    assert inactive["amount"] == Decimal("300.00")
+    assert inactive["age_days"] >= 60
 
 
 def _dashboard_http_client(db_session, user) -> TestClient:

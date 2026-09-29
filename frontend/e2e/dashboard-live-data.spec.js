@@ -239,6 +239,21 @@ test.describe('Dashboard conectado al contrato business', () => {
     }
   });
 
+  test('conserva el historial cuando el periodo actual no tiene ventas', async ({ browser, baseURL }) => {
+    const payload = emptyDashboardPayload();
+    payload.history[0] = { ...payload.history[0], sales_amount: '750.00' };
+    const { context, page } = await createDashboardContext(browser, baseURL, { payload });
+    try {
+      await page.goto('/dashboard');
+
+      await expect(page.getByRole('heading', { name: 'Ventas' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Aún no hay actividad para mostrar' })).toHaveCount(0);
+      await expect(page.getByText(/Enero 2026: S\/ 750/)).toBeAttached();
+    } finally {
+      await context.close();
+    }
+  });
+
   test('muestra el fallo y recupera la vista con una nueva solicitud', async ({ browser, baseURL }) => {
     const { context, page, state } = await createDashboardContext(browser, baseURL, {
       failRequests: 1,
