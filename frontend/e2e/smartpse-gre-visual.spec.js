@@ -415,13 +415,14 @@ test.describe('Smart PSE GRE QA visual', () => {
         await page.setViewportSize({ width, height: 850 });
 
         await page.goto('/dashboard');
-        await expect(page.locator('.dashboard-page .metric-value').first()).toBeVisible();
-        const dashboardOverflow = await page.locator('.dashboard-page .metric-value').evaluateAll(
+        const dashboardValues = page.locator('[data-testid="dashboard-business-mockup"] .business-metric__value');
+        await expect(dashboardValues.first()).toBeVisible();
+        const dashboardOverflow = await dashboardValues.evaluateAll(
           (values) => values.map((value) => value.scrollWidth - value.clientWidth),
         );
         expect(Math.max(...dashboardOverflow)).toBeLessThanOrEqual(2);
         if (process.env.RESPONSIVE_CAPTURE === '1' && width === 390) {
-          await page.locator('.dashboard-page .metric-card').first().screenshot({ path: 'test-results/responsive-dashboard-390.png' });
+          await page.locator('[data-testid="dashboard-business-mockup"] .business-metric').first().screenshot({ path: 'test-results/responsive-dashboard-390.png' });
         }
 
         await page.goto('/inventario');

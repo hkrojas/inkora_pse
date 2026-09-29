@@ -1,14 +1,17 @@
 import { expect, test } from '@playwright/test';
+import { TENANT_STORAGE_STATE } from './helpers/auth';
 
 async function openDashboardMockup(browser, baseURL, viewport) {
   const context = await browser.newContext({
     baseURL,
     viewport,
-    storageState: { cookies: [], origins: [] },
+    storageState: process.env.E2E_TENANT_EMAIL
+      ? TENANT_STORAGE_STATE
+      : { cookies: [], origins: [] },
     reducedMotion: 'no-preference',
   });
   const page = await context.newPage();
-  await page.goto('/dashboard');
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('dashboard-business-mockup')).toBeVisible();
   await page.waitForTimeout(1100);
   return { context, page };
