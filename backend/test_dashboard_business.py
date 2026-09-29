@@ -2,7 +2,7 @@
 
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -21,9 +21,15 @@ from services.document_flow_service import (
     DOCUMENT_KIND_CREDIT_NOTE,
     DOCUMENT_KIND_DEBIT_NOTE,
     DOCUMENT_KIND_FISCAL_DOCUMENT,
+    DOCUMENT_KIND_QUOTATION,
     DOCUMENT_STATUS_ISSUED,
     DOCUMENT_STATUS_PENDING,
 )
+
+
+@pytest.fixture(autouse=True)
+def dashboard_clock(monkeypatch):
+    monkeypatch.setattr(fiscal_time, "today_lima", lambda: date(2026, 9, 28))
 
 
 def _document(
@@ -42,12 +48,14 @@ def _document(
     sunat_error: str | None = None,
     series: str | None = None,
     correlative: int | None = None,
+    source_quote_id: int | None = None,
 ):
     if series is None:
         series = {
             DOCUMENT_KIND_FISCAL_DOCUMENT: "F001",
             DOCUMENT_KIND_CREDIT_NOTE: "FC01",
             DOCUMENT_KIND_DEBIT_NOTE: "FD01",
+            DOCUMENT_KIND_QUOTATION: "COT",
         }[kind]
     if correlative is None:
         correlative = (
@@ -72,6 +80,7 @@ def _document(
         document_kind=kind,
         tipo_comprobante=type_code,
         nota_referencia_id=reference_id,
+        source_quote_id=source_quote_id,
         total_gravada=Decimal(amount),
         total_igv=Decimal("0.00"),
         total_venta=Decimal(amount),
@@ -281,12 +290,14 @@ def test_business_dashboard_uses_real_fiscal_semantics(db_session):
         "low_stock_products": 1,
         "fiscal_documents_with_errors": 1,
     }
-    assert payload["conversion"]["available"] is False
-    assert payload["follow_up"]["quotes"]["available"] is False
+    assert payload["conversion"]["available"] is True
+    assert payload["conversion"]["quote_count"] == 0
+    assert payload["conversion"]["rate_percent"] is None
+    assert payload["follow_up"]["quotes"]["available"] is True
     assert all(row["quoted_amount"] == Decimal("0.00") for row in payload["history"])
     assert payload["meta"]["period"]["label"] == "1–28 sep 2026"
     assert payload["meta"]["comparison"]["label"] == "1–28 ago 2026"
-    assert len(capture.statements) <= 5
+    assert len(capture.statements) <= 6
 
     ink_id = ink.id
     with _SelectCapture(db_session) as filtered_capture:
@@ -299,7 +310,7 @@ def test_business_dashboard_uses_real_fiscal_semantics(db_session):
         )
     assert product_filtered["summary"]["overdue_amount"] == Decimal("450.00")
     assert product_filtered["summary"]["overdue_customers_count"] == 1
-    assert len(filtered_capture.statements) <= 5
+    assert len(filtered_capture.statements) <= 6
 
 
 def test_business_dashboard_isolates_tenants(db_session):
@@ -676,3 +687,134 @@ def test_business_dashboard_http_requires_authentication():
     response = TestClient(app).get("/analytics/dashboard/business")
 
     assert response.status_code == 401
+
+
+def test_quote_conversion_uses_distinct_tenant_safe_links_and_real_followup(db_session):
+    tenant = make_tenant(db_session, "QUOTES01")
+    user = make_user(db_session, tenant, email="quotes@test.com")
+    client = make_cliente(db_session, tenant, "QUOTES01")
+    other = make_tenant(db_session, "QUOTES02")
+    other_user = make_user(db_session, other, email="other-quotes@test.com")
+    other_client = make_cliente(db_session, other, "QUOTES02")
+    product = make_producto(db_session, tenant, "QUOTEPRODUCT")
+
+    quotes = [
+        _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, day),
+                  amount="100.00", kind=DOCUMENT_KIND_QUOTATION, type_code="00",
+                  state=DOCUMENT_STATUS_PENDING)
+        for day in range(1, 7)
+    ]
+    _item(db_session, quotes[0], product, amount="100.00", quantity="1")
+    # Multiple sales for one quotation must still count as one converted quotation.
+    for state in (DOCUMENT_STATUS_ISSUED, DOCUMENT_STATUS_PENDING):
+        _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 20),
+                  amount="100.00", source_quote_id=quotes[0].id, state=state)
+    quotes[0].estado = DOCUMENT_STATUS_ISSUED
+    db_session.commit()
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 20),
+              amount="100.00", type_code="03", source_quote_id=quotes[1].id,
+              state=DOCUMENT_STATUS_PENDING)
+    for quote, state in ((quotes[2], "anulada"), (quotes[3], "borrador")):
+        _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 20),
+                  amount="100.00", source_quote_id=quote.id, state=state)
+    # Even a corrupt cross-tenant source ID must not mark our quote as converted.
+    _document(db_session, other, other_user, other_client, issued_at=datetime(2026, 9, 20),
+              amount="9999.00", source_quote_id=quotes[4].id)
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 10, 1),
+              amount="100.00", source_quote_id=quotes[5].id)
+    # Quote status alone is not proof of a linked sale.
+    previously_invoiced_quote = _document(
+        db_session, tenant, user, client, issued_at=datetime(2026, 9, 7),
+        amount="100.00", kind=DOCUMENT_KIND_QUOTATION, type_code="00",
+    )
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 20),
+              amount="100.00", source_quote_id=previously_invoiced_quote.id, state="anulada")
+    for state in ("anulada", "borrador"):
+        _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 8),
+                  amount="100.00", kind=DOCUMENT_KIND_QUOTATION, type_code="00", state=state)
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 10, 1),
+              amount="100.00", kind=DOCUMENT_KIND_QUOTATION, type_code="00")
+    _document(db_session, other, other_user, other_client, issued_at=datetime(2026, 9, 1),
+              amount="9999.00", kind=DOCUMENT_KIND_QUOTATION, type_code="00")
+    older_quote = _document(db_session, tenant, user, client, issued_at=datetime(2026, 8, 10),
+                            amount="150.00", kind=DOCUMENT_KIND_QUOTATION, type_code="00")
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 20),
+              amount="150.00", source_quote_id=older_quote.id)
+
+    tenant_id = tenant.id
+    with _SelectCapture(db_session) as capture:
+        payload = get_business_dashboard(db_session, tenant_id)
+    assert payload["conversion"] == {
+        "available": True, "reason": None, "quote_count": 7,
+        "linked_sales_count": 2, "rate_percent": Decimal("28.6"),
+    }
+    assert payload["history"][-1]["quoted_amount"] == Decimal("700.00")
+    followup = payload["follow_up"]["quotes"]
+    assert followup["count"] == 5
+    assert [row["quote_id"] for row in followup["rows"]] == [quote.id for quote in quotes[2:5]]
+    assert followup["rows"][0]["reference"] == "COT-000003"
+    assert followup["rows"][0]["age_days"] == 25
+    assert len(capture.statements) == 6
+    filtered = get_business_dashboard(db_session, tenant_id, product_id=product.id)
+    assert filtered["conversion"]["quote_count"] == 1
+    assert filtered["conversion"]["linked_sales_count"] == 1
+    assert filtered["follow_up"]["quotes"]["count"] == 0
+    older_cohort = get_business_dashboard(db_session, tenant_id, start=date(2026, 8, 1), end=date(2026, 8, 31))
+    assert older_cohort["conversion"]["quote_count"] == 1
+    assert older_cohort["conversion"]["linked_sales_count"] == 1
+    assert older_cohort["conversion"]["rate_percent"] == Decimal("100.0")
+    assert older_cohort["follow_up"]["quotes"]["count"] == 0
+    # A quote marked invoiced can need follow-up again when its only sale was voided.
+    annulled_sale_cohort = get_business_dashboard(
+        db_session, tenant_id, start=date(2026, 9, 7), end=date(2026, 9, 7),
+    )
+    assert annulled_sale_cohort["conversion"]["linked_sales_count"] == 0
+    assert annulled_sale_cohort["follow_up"]["quotes"]["count"] == 1
+    assert annulled_sale_cohort["follow_up"]["quotes"]["rows"][0]["quote_id"] == previously_invoiced_quote.id
+    # API schema must retain the direct-navigation ID.
+    body = _dashboard_http_client(db_session, user).get("/analytics/dashboard/business").json()
+    assert body["follow_up"]["quotes"]["rows"][0]["quote_id"] == quotes[2].id
+
+
+def test_history_starts_at_real_activity_and_compares_matching_days_independently(db_session):
+    tenant = make_tenant(db_session, "HISTORY01")
+    user = make_user(db_session, tenant, email="history@test.com")
+    client = make_cliente(db_session, tenant, "HISTORY01")
+    other = make_tenant(db_session, "HISTORY02")
+    other_user = make_user(db_session, other, email="history-other@test.com")
+    other_client = make_cliente(db_session, other, "HISTORY02")
+    _document(db_session, other, other_user, other_client, issued_at=datetime(2020, 1, 1), amount="9000")
+    for kind in (DOCUMENT_KIND_QUOTATION, DOCUMENT_KIND_FISCAL_DOCUMENT):
+        for state in ("borrador", "anulada"):
+            _document(db_session, tenant, user, client, issued_at=datetime(2021, 1, 1),
+                      amount="9000", kind=kind, state=state)
+    _document(db_session, tenant, user, client, issued_at=datetime(2024, 12, 15),
+              amount="300", kind=DOCUMENT_KIND_QUOTATION, type_code="00",
+              state=DOCUMENT_STATUS_PENDING)
+    for issued_at, amount in ((datetime(2026, 8, 10), "100"),
+                              (datetime(2026, 8, 31), "900"),
+                              (datetime(2026, 9, 10), "200")):
+        _document(db_session, tenant, user, client, issued_at=issued_at, amount=amount)
+
+    payload = get_business_dashboard(db_session, tenant.id, start=date(2026, 8, 1), end=date(2026, 8, 31))
+    assert payload["meta"]["history"]["start"] == date(2024, 12, 15)
+    assert payload["meta"]["history"]["end"] == date(2026, 9, 28)
+    assert len(payload["history"]) == 22
+    assert payload["history"][0]["quoted_amount"] == Decimal("300.00")
+    assert payload["history"][1]["sales_amount"] == Decimal("0.00")
+    assert payload["history"][-2]["sales_amount"] == Decimal("1000.00")
+    assert payload["history"][-2]["is_partial"] is False
+    assert payload["history"][-1]["sales_amount"] == Decimal("200.00")
+    assert payload["history"][-1]["previous_matched_sales"] == Decimal("100.00")
+    assert payload["history"][-1]["cutoff_day"] == 28
+    assert payload["summary"]["sales_amount"] == Decimal("1000.00")
+
+
+def test_empty_business_history_has_no_invented_months(db_session):
+    tenant = make_tenant(db_session, "HISTORYEMPTY")
+    payload = get_business_dashboard(db_session, tenant.id)
+    assert payload["history"] == []
+    assert payload["meta"]["history"]["start"] == date(2026, 9, 28)
+    assert payload["meta"]["history"]["end"] == date(2026, 9, 28)
+    assert payload["conversion"]["quote_count"] == 0
+    assert payload["conversion"]["rate_percent"] is None
