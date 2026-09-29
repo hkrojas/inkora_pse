@@ -102,7 +102,9 @@ export async function loginTenantByUi(page) {
   await assertOkResponse(meResponse, 'GET /users/me/');
 
   await expect(page).toHaveURL(/\/dashboard(?:$|[?#])/, { timeout: AUTH_TIMEOUT_MS });
-  await expect(page.getByText(/dashboard/i).first()).toBeVisible({ timeout: AUTH_TIMEOUT_MS });
+  await expect(page.getByRole('heading', { name: /^(Dashboard|Resumen)$/i }).first()).toBeVisible({
+    timeout: AUTH_TIMEOUT_MS,
+  });
 }
 
 export async function saveTenantStorageState(page) {
