@@ -15,6 +15,7 @@ from services.document_flow_service import (
     DOCUMENT_KIND_CREDIT_NOTE,
     DOCUMENT_KIND_DEBIT_NOTE,
     DOCUMENT_KIND_FISCAL_DOCUMENT,
+    DOCUMENT_KIND_QUOTATION,
     DOCUMENT_STATUS_ISSUED,
     DOCUMENT_STATUS_PENDING,
 )
@@ -102,6 +103,14 @@ def _recognized_sales_filter():
             ),
             models.Cotizacion.estado == DOCUMENT_STATUS_ISSUED,
         ),
+    )
+
+
+def _registered_quote_filter():
+    # Registered quotes remain pending until their derived invoice is accepted.
+    return and_(
+        models.Cotizacion.document_kind == DOCUMENT_KIND_QUOTATION,
+        models.Cotizacion.estado.in_((DOCUMENT_STATUS_PENDING, DOCUMENT_STATUS_ISSUED)),
     )
 
 
@@ -197,6 +206,39 @@ def get_business_dashboard(
     in_comparison = and_(
         models.Cotizacion.fecha_emision >= comparison_start_dt,
         models.Cotizacion.fecha_emision < comparison_end_dt,
+    )
+    history_end = today
+    history_end_dt = _day_after(history_end)
+    linked_document = aliased(models.Cotizacion)
+    has_linked_sale = (
+        db.query(linked_document.id)
+        .filter(
+            linked_document.tenant_id == tenant_id,
+            linked_document.source_quote_id == models.Cotizacion.id,
+            linked_document.document_kind == DOCUMENT_KIND_FISCAL_DOCUMENT,
+            linked_document.tipo_comprobante.in_(("01", "03")),
+            linked_document.estado.in_((DOCUMENT_STATUS_PENDING, DOCUMENT_STATUS_ISSUED)),
+            linked_document.fecha_emision < history_end_dt,
+        )
+        .correlate(models.Cotizacion)
+        .exists()
+    )
+    quote_summary = (
+        db.query(
+            func.count(models.Cotizacion.id).label("quote_count"),
+            func.sum(case((has_linked_sale, 1), else_=0)).label("converted_count"),
+        )
+        .filter(*common_filters, in_period, _registered_quote_filter())
+        .subquery("dashboard_quote_summary")
+    )
+    first_activity_query = (
+        db.query(func.min(models.Cotizacion.fecha_emision))
+        .filter(
+            models.Cotizacion.tenant_id == tenant_id,
+            models.Cotizacion.fecha_emision < history_end_dt,
+            or_(_registered_quote_filter(), _recognized_sales_filter()),
+        )
+        .scalar_subquery()
     )
     signed_total = _signed_total()
     sales_summary = (
@@ -359,9 +401,13 @@ def get_business_dashboard(
             func.coalesce(overdue_metrics.c.customers, 0).label("overdue_customers"),
             func.coalesce(low_stock_count_query, 0).label("low_stock_count"),
             func.coalesce(fiscal_error_count_query, 0).label("fiscal_error_count"),
+            quote_summary.c.quote_count,
+            func.coalesce(quote_summary.c.converted_count, 0).label("converted_count"),
+            first_activity_query.label("first_activity"),
         )
         .select_from(sales_summary)
         .join(overdue_metrics, true())
+        .join(quote_summary, true())
         .one()
     )
 
@@ -371,43 +417,50 @@ def get_business_dashboard(
     customers_count = int(summary_row.customers_count or 0)
     new_customers_count = int(summary_row.new_customers_count or 0)
 
-    history_start = date(period_end.year, 1, 1)
-    if history_start > period_start:
-        history_start = period_start.replace(day=1)
+    history_start = summary_row.first_activity.date() if summary_row.first_activity else today
     history_start_dt = _day_start(history_start)
+    matched_start, matched_end = _comparison_period(history_end.replace(day=1), history_end)
+    in_history_comparison = and_(
+        models.Cotizacion.fecha_emision >= _day_start(matched_start),
+        models.Cotizacion.fecha_emision < _day_after(matched_end),
+    )
     year_expr = func.extract("year", models.Cotizacion.fecha_emision)
     month_expr = func.extract("month", models.Cotizacion.fecha_emision)
     sales_history_rows = (
         db.query(
             year_expr.label("year"),
             month_expr.label("month"),
-            func.sum(signed_total).label("amount"),
+            func.sum(case((_recognized_sales_filter(), signed_total), else_=ZERO)).label("amount"),
+            func.sum(case((_registered_quote_filter(), models.Cotizacion.total_venta), else_=ZERO)).label("quoted_amount"),
+            func.sum(case((and_(_recognized_sales_filter(), in_history_comparison), signed_total), else_=ZERO)).label("matched_amount"),
         )
         .filter(
             *common_filters,
             models.Cotizacion.fecha_emision >= history_start_dt,
-            models.Cotizacion.fecha_emision < period_end_dt,
-            _recognized_sales_filter(),
+            models.Cotizacion.fecha_emision < history_end_dt,
+            or_(_recognized_sales_filter(), _registered_quote_filter()),
         )
         .group_by(year_expr, month_expr)
         .all()
     )
     sales_history = {(int(row.year), int(row.month)): _money(row.amount) for row in sales_history_rows}
+    quoted_history = {(int(row.year), int(row.month)): _money(row.quoted_amount) for row in sales_history_rows}
+    previous_matched_sales = _money(sum((row.matched_amount or ZERO for row in sales_history_rows), ZERO))
     history = []
-    cursor = history_start
-    while cursor <= period_end:
+    cursor = history_start.replace(day=1)
+    while summary_row.first_activity and cursor <= history_end:
         key = (cursor.year, cursor.month)
         last_day = calendar.monthrange(cursor.year, cursor.month)[1]
-        partial = key == (period_end.year, period_end.month) and period_end.day < last_day
+        partial = key == (history_end.year, history_end.month) and history_end.day < last_day
         history.append(
             {
                 "year": cursor.year,
                 "month": cursor.month,
                 "sales_amount": sales_history.get(key, ZERO),
-                "quoted_amount": ZERO,
+                "quoted_amount": quoted_history.get(key, ZERO),
                 "is_partial": partial,
-                "cutoff_day": period_end.day if partial else None,
-                "previous_matched_sales": previous_sales_amount if partial else None,
+                "cutoff_day": history_end.day if partial else None,
+                "previous_matched_sales": previous_matched_sales if partial else None,
             }
         )
         if cursor.month == 12:
@@ -621,6 +674,35 @@ def get_business_dashboard(
 
     now = fiscal_time.now_lima()
 
+    quote_follow_rows = (
+        db.query(
+            models.Cotizacion.id,
+            models.Cotizacion.cliente_id,
+            models.Cotizacion.serie,
+            models.Cotizacion.correlativo,
+            models.Cotizacion.total_venta,
+            models.Cotizacion.fecha_emision,
+            models.Cliente.razon_social.label("client_name"),
+            models.Cliente.nombre_comercial.label("client_alt"),
+            func.count().over().label("total_count"),
+        )
+        .outerjoin(models.Cliente, and_(
+            models.Cliente.id == models.Cotizacion.cliente_id,
+            models.Cliente.tenant_id == tenant_id,
+        ))
+        .filter(
+            *common_filters,
+            in_period,
+            _registered_quote_filter(),
+            ~has_linked_sale,
+        )
+        .order_by(models.Cotizacion.fecha_emision.asc(), models.Cotizacion.id.asc())
+        .limit(3)
+        .all()
+    )
+    quote_count = int(summary_row.quote_count or 0)
+    converted_count = int(summary_row.converted_count or 0)
+
     declining_clients = sorted(
         [
             row
@@ -719,8 +801,8 @@ def get_business_dashboard(
             },
             "history": {
                 "start": history_start,
-                "end": period_end,
-                "label": _period_label(history_start, period_end),
+                "end": history_end,
+                "label": _period_label(history_start, history_end),
             },
             "client_id": client_id,
             "product_id": product_id,
@@ -739,20 +821,30 @@ def get_business_dashboard(
         },
         "history": history,
         "conversion": {
-            "available": False,
-            "reason": "quote_origin_not_recorded",
-            "quote_count": None,
-            "linked_sales_count": None,
-            "rate_percent": None,
+            "available": True,
+            "reason": None,
+            "quote_count": quote_count,
+            "linked_sales_count": converted_count,
+            "rate_percent": (Decimal(converted_count) / quote_count * 100).quantize(PERCENT, rounding=ROUND_HALF_UP) if quote_count else None,
         },
         "products": products,
         "clients": clients,
         "follow_up": {
             "quotes": {
-                "available": False,
-                "reason": "quote_origin_not_recorded",
-                "count": 0,
-                "rows": [],
+                "available": True,
+                "reason": None,
+                "count": int(quote_follow_rows[0].total_count) if quote_follow_rows else 0,
+                "rows": [
+                    {
+                        "quote_id": row.id,
+                        "client_id": row.cliente_id,
+                        "client": _client_name(row.client_name, row.client_alt),
+                        "reference": f"{row.serie or 'COT'}-{row.correlativo:06d}" if row.correlativo is not None else f"COT-{row.id}",
+                        "amount": _money(row.total_venta),
+                        "age_days": max((today - row.fecha_emision.date()).days, 0),
+                    }
+                    for row in quote_follow_rows
+                ],
             },
             "declining": {"count": len(declining_clients), "rows": declining_follow_rows},
             "inactive": {"count": inactive_count, "rows": inactive_follow_rows},

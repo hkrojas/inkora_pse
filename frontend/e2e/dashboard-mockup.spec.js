@@ -8,7 +8,7 @@ const visualPayload = {
     currency: 'PEN',
     period: { start: '2026-09-01', end: '2026-09-28', label: '1–28 sep 2026' },
     comparison: { start: '2026-08-01', end: '2026-08-28', label: '1–28 ago 2026' },
-    history: { start: '2026-01-01', end: '2026-09-28', label: '1 ene – 28 sep 2026' },
+    history: { start: '2026-07-12', end: '2026-09-28', label: '12 jul – 28 sep 2026' },
     client_id: null,
     product_id: null,
   },
@@ -25,17 +25,11 @@ const visualPayload = {
     overdue_customers_count: 2,
   },
   history: [
-    { year: 2026, month: 1, sales_amount: '1100.00', quoted_amount: '0.00', is_partial: false, cutoff_day: null, previous_matched_sales: null },
-    { year: 2026, month: 2, sales_amount: '2100.00', quoted_amount: '0.00', is_partial: false, cutoff_day: null, previous_matched_sales: null },
-    { year: 2026, month: 3, sales_amount: '3100.00', quoted_amount: '0.00', is_partial: false, cutoff_day: null, previous_matched_sales: null },
-    { year: 2026, month: 4, sales_amount: '4100.00', quoted_amount: '0.00', is_partial: false, cutoff_day: null, previous_matched_sales: null },
-    { year: 2026, month: 5, sales_amount: '5100.00', quoted_amount: '0.00', is_partial: false, cutoff_day: null, previous_matched_sales: null },
-    { year: 2026, month: 6, sales_amount: '6100.00', quoted_amount: '0.00', is_partial: false, cutoff_day: null, previous_matched_sales: null },
-    { year: 2026, month: 7, sales_amount: '7100.00', quoted_amount: '0.00', is_partial: false, cutoff_day: null, previous_matched_sales: null },
-    { year: 2026, month: 8, sales_amount: '10004.00', quoted_amount: '0.00', is_partial: false, cutoff_day: null, previous_matched_sales: null },
-    { year: 2026, month: 9, sales_amount: '12345.00', quoted_amount: '0.00', is_partial: true, cutoff_day: 28, previous_matched_sales: '10004.00' },
+    { year: 2026, month: 7, sales_amount: '7100.00', quoted_amount: '8500.00', is_partial: false, cutoff_day: null, previous_matched_sales: null },
+    { year: 2026, month: 8, sales_amount: '10004.00', quoted_amount: '11500.00', is_partial: false, cutoff_day: null, previous_matched_sales: null },
+    { year: 2026, month: 9, sales_amount: '12345.00', quoted_amount: '14000.00', is_partial: true, cutoff_day: 28, previous_matched_sales: '10004.00' },
   ],
-  conversion: { available: false, reason: 'quote_origin_not_recorded', quote_count: null, linked_sales_count: null, rate_percent: null },
+  conversion: { available: true, reason: null, quote_count: 5, linked_sales_count: 2, rate_percent: '40.0' },
   products: [
     { id: 911, name: 'Resma API Única', unit: 'NIU', quantity: '7.00', amount: '7777.00', previous_amount: '7000.00', change_percent: '11.1' },
     { id: 912, name: 'Tinta API Azul', unit: 'NIU', quantity: '4.00', amount: '4568.00', previous_amount: '5000.00', change_percent: '-8.6' },
@@ -45,7 +39,7 @@ const visualPayload = {
     { id: 732, name: 'Cliente API Dos', amount: '4345.00', purchases: 1, last_purchase: '2026-09-20', share_percent: '35.2', previous_amount: '3004.00', change_percent: '44.6' },
   ],
   follow_up: {
-    quotes: { available: false, reason: 'quote_origin_not_recorded', count: 0, rows: [] },
+    quotes: { available: true, reason: null, count: 3, rows: [{ quote_id: 300, client_id: 733, client: 'Cliente por cotización', reference: 'COT-000300', amount: '800.00', age_days: 6 }] },
     declining: { available: true, reason: null, count: 1, rows: [{ client_id: 732, client: 'Cliente API Dos', reference: 'Ventas del periodo', amount: '4345.00', age_days: 8 }] },
     inactive: { available: true, reason: null, count: 1, rows: [{ client_id: 733, client: 'Cliente API Inactivo', reference: 'Última compra', amount: '900.00', age_days: 68 }] },
   },
@@ -56,6 +50,8 @@ async function openDashboardMockup(browser, baseURL, viewport) {
   const context = await browser.newContext({
     baseURL,
     viewport,
+    hasTouch: viewport.width < 600,
+    isMobile: viewport.width < 600,
     storageState: { cookies: [], origins: [] },
     reducedMotion: 'no-preference',
   });
@@ -120,7 +116,7 @@ test.describe('Mockup comercial del dashboard', () => {
           expect(visibleChartHeight).toBeGreaterThan(150);
         }
         if (viewport.width === 390 && process.env.MOCKUP_MOBILE_SCREENSHOT_PATH) {
-          await page.screenshot({ path: process.env.MOCKUP_MOBILE_SCREENSHOT_PATH });
+          await page.locator('.business-sales').screenshot({ path: process.env.MOCKUP_MOBILE_SCREENSHOT_PATH });
         }
         if (viewport.width === 390) {
           await page.getByRole('button', { name: 'Resma API Única', exact: true }).click();
@@ -129,7 +125,7 @@ test.describe('Mockup comercial del dashboard', () => {
           await expect(page.getByText('Resma API Única')).toBeVisible();
         }
         if (viewport.width === 1440 && process.env.MOCKUP_SCREENSHOT_PATH) {
-          await page.screenshot({ path: process.env.MOCKUP_SCREENSHOT_PATH });
+          await page.locator('.business-sales').screenshot({ path: process.env.MOCKUP_SCREENSHOT_PATH });
         }
       } finally {
         await context.close();
@@ -149,8 +145,13 @@ test.describe('Mockup comercial del dashboard', () => {
       expect(hoverTransform).not.toBe('none');
 
       const quoted = page.getByRole('checkbox');
-      await expect(quoted).toBeDisabled();
-      await expect(page.getByText('Importe cotizado no disponible')).toBeVisible();
+      await expect(quoted).toBeEnabled();
+      await expect(quoted).toBeChecked();
+      await expect(page.getByText('2 de 5 cotizaciones', { exact: false })).toBeVisible();
+      await quoted.uncheck();
+      await expect(page.locator('.business-chart__line--quoted')).toHaveCount(0);
+      await quoted.check();
+      await expect(page.locator('.business-chart__line--quoted')).toHaveCount(1);
 
       const augustPoint = page.getByRole('button', { name: /Agosto 2026: ventas S\/ 10[,.]004/ });
       const augustHitArea = await augustPoint.evaluate((element) => element.getBoundingClientRect().height);
@@ -175,7 +176,7 @@ test.describe('Mockup comercial del dashboard', () => {
       await expect(page.getByText('Resma API Única')).toBeVisible();
 
       const selectedCount = page.getByRole('tab', { name: /Cotizaciones sin una venta/ }).locator('span');
-      await expect(selectedCount).toHaveText('—');
+      await expect(selectedCount).toHaveText('3');
       const selectedCounterColors = await selectedCount.evaluate((element) => {
         const style = getComputedStyle(element);
         return { color: style.color, background: style.backgroundColor };
@@ -199,4 +200,39 @@ test.describe('Mockup comercial del dashboard', () => {
       await context.close();
     }
   });
+  test('móvil: letras legibles, ampliación y toque sin abandonar el gráfico', async ({ browser, baseURL }) => {
+    const { context, page } = await openDashboardMockup(browser, baseURL, { width: 390, height: 844 });
+    try {
+      const svg = page.locator('.business-chart__svg');
+      const geometry = await svg.evaluate((el) => ({ scale: el.getScreenCTM().a, height: el.getBoundingClientRect().height }));
+      expect(geometry.scale).toBeCloseTo(1, 1);
+      expect(geometry.height).toBeGreaterThanOrEqual(320);
+      await page.getByRole('button', { name: 'Ampliar gráfico' }).tap();
+      await expect(page.getByRole('button', { name: 'Reducir gráfico' })).toHaveAttribute('aria-expanded', 'true');
+      expect((await svg.boundingBox()).height).toBe(480);
+      const expandedGeometry = await svg.evaluate((el) => ({ scale: el.getScreenCTM().a, width: el.getBoundingClientRect().width, viewBox: el.getAttribute('viewBox'), labels: [...el.querySelectorAll('.business-chart__axis-label')].map(label => ({text: label.textContent, x: label.getBBox().x})) }));
+      expect(expandedGeometry.scale).toBeCloseTo(1, 1);
+      expect(expandedGeometry.labels.every(label => label.x >= 0)).toBe(true);
+      const september = page.getByRole('button', { name: /Septiembre 2026: ventas/ });
+      await september.tap();
+      await expect(page).toHaveURL(/\/dashboard$/);
+      expect(await page.locator('.business-chart__viewport').evaluate(el => el.scrollLeft)).toBe(0);
+      await expect(page.locator('.business-chart__selection')).toContainText('S/ 12,345');
+      await expect(page.locator('.business-chart__selection')).toContainText('S/ 14,000');
+      await expect(page.locator('.business-chart__selection')).toContainText('Mismo tramo anterior');
+      await page.locator('.business-chart__selection').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: 'test-results/dashboard-mobile-expanded.png' });
+      await page.getByRole('button', { name: 'Ver registros de septiembre' }).tap();
+      await expect(page).toHaveURL(/desde=2026-09-01.*hasta=2026-09-28/);
+    } finally { await context.close(); }
+  });
+
+  test('abre la cotización concreta desde seguimiento', async ({ browser, baseURL }) => {
+    const { context, page } = await openDashboardMockup(browser, baseURL, { width: 1280, height: 900 });
+    try {
+      await page.getByRole('button', { name: 'Ver cotización', exact: true }).click();
+      await expect(page).toHaveURL(/\/cotizaciones\/300$/);
+    } finally { await context.close(); }
+  });
+
 });

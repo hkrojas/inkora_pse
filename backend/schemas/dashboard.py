@@ -76,6 +76,7 @@ class DashboardClientRow(BaseModel):
 
 
 class DashboardFollowUpRow(BaseModel):
+    quote_id: Optional[int] = None
     client_id: Optional[int] = None
     client: str
     reference: str

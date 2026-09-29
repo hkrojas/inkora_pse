@@ -22,6 +22,9 @@ export async function assertUsableRoute(page, route) {
     return root && root.children.length > 0 && text.length > 20 && text !== 'Cargando...';
   });
   await expect(page.getByText('Cargando...', { exact: true })).toHaveCount(0);
+  // Wait for authenticated UI before the next navigation can abort /users/me.
+  await expect(page.getByRole('button', { name: 'Cerrar sesión', exact: true })).toBeAttached();
+  await expect(page).toHaveURL(routeUrlPattern(route.path));
 }
 
 export function attachCriticalErrorCollector(page) {
