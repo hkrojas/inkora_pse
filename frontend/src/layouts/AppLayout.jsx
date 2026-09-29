@@ -72,7 +72,7 @@ function SunatStatus() {
 }
 
 const ROUTE_META = {
-  '/dashboard': { title: 'Dashboard', sub: 'Centro de control diario' },
+  '/dashboard': { title: 'Resumen', sub: 'Vista general del negocio' },
   '/clientes': { title: 'Clientes', sub: 'Relación comercial' },
   '/productos': { title: 'Productos', sub: 'Catálogo reusable' },
   '/cotizaciones': { title: 'Cotizaciones', sub: 'Motor comercial' },
@@ -95,7 +95,7 @@ const ROUTE_META = {
 };
 
 const SEARCH_MODULES = [
-  { label: 'Dashboard', path: '/dashboard', hint: 'Resumen operativo diario', icon: LayoutDashboard, keywords: 'inicio resumen centro operativo dashboard alertas' },
+  { label: 'Resumen', path: '/dashboard', hint: 'Vista general del negocio', icon: LayoutDashboard, keywords: 'inicio resumen centro operativo dashboard alertas' },
   { label: 'Clientes', path: '/clientes', hint: 'Buscar por razon social, RUC, DNI o telefono', icon: Users, keywords: 'cliente clientes ruc dni documento contacto empresa' },
   { label: 'Cotizaciones', path: '/cotizaciones', hint: 'Historial comercial y PDFs de cotizacion', icon: FileText, keywords: 'cotizacion cotizaciones orden presupuesto propuesta historial' },
   { label: 'Productos', path: '/productos', hint: 'Catalogo, codigos y precios', icon: Package, keywords: 'producto productos servicio sku codigo catalogo precio' },
@@ -198,10 +198,21 @@ export default function AppLayout() {
     localStorage.getItem('inkora-topbar-notifications-seen') === '1',
   );
 
-  const meta = getRouteMeta(location.pathname);
-  const isSuperadmin = Boolean(user?.is_superadmin);
-  const userName = user?.nombre_completo || user?.email || 'Usuario Inkora';
-  const userRole = isSuperadmin ? 'Superadmin' : user?.rol || 'Usuario';
+  const isDashboardMockup = import.meta.env.DEV && location.pathname === '/dashboard';
+  const isLocalDashboardMockup = isDashboardMockup && !user;
+  const activeUser = user || (isLocalDashboardMockup ? {
+    id: 'dashboard-mockup',
+    email: 'demo@inkora.pe',
+    nombre_completo: 'Negocio de ejemplo',
+    rol: 'Administrador',
+    is_superadmin: false,
+  } : null);
+  const meta = isDashboardMockup
+    ? { title: 'Resumen', sub: 'Vista general del negocio' }
+    : getRouteMeta(location.pathname);
+  const isSuperadmin = Boolean(activeUser?.is_superadmin);
+  const userName = activeUser?.nombre_completo || activeUser?.email || 'Usuario Inkora';
+  const userRole = isSuperadmin ? 'Superadmin' : activeUser?.rol || 'Usuario';
   const userInitial = userName[0]?.toUpperCase() || 'U';
 
   const searchModules = useMemo(
@@ -320,9 +331,9 @@ export default function AppLayout() {
   };
 
   if (loading) return <FullPageSpinner />;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!activeUser) return <Navigate to="/login" replace />;
 
-  if (user.must_change_password && !location.pathname.startsWith('/configuracion')) {
+  if (activeUser.must_change_password && !location.pathname.startsWith('/configuracion')) {
     return <Navigate to="/configuracion?tab=seguridad" replace />;
   }
 
@@ -368,7 +379,7 @@ export default function AppLayout() {
         isBoletasRoute && 'app-route-boletas',
       )}
     >
-      <Sidebar />
+      <Sidebar userOverride={isLocalDashboardMockup ? activeUser : null} />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
@@ -560,7 +571,7 @@ export default function AppLayout() {
                     </span>
                     <div className="min-w-0">
                       <p className="m-0 truncate text-[14px] font-extrabold text-[var(--color-text)]">{userName}</p>
-                      <p className="m-0 mt-0.5 truncate text-[12px] text-[var(--color-text-muted)]">{user?.email}</p>
+                      <p className="m-0 mt-0.5 truncate text-[12px] text-[var(--color-text-muted)]">{activeUser?.email}</p>
                     </div>
                   </div>
                   <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--color-primary-text)]">
@@ -630,7 +641,7 @@ export default function AppLayout() {
           </div>
         </header>
 
-        <SubscriptionBanner user={user} />
+        {!isDashboardMockup && <SubscriptionBanner user={activeUser} />}
 
         <main
           className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7"

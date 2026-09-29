@@ -39,7 +39,7 @@ const GROUPS = [
     id: 'operativo',
     label: 'Operativo',
     items: [
-      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/dashboard', label: 'Resumen', icon: LayoutDashboard },
       { to: '/clientes', label: 'Clientes', icon: Users },
       { to: '/cotizaciones', label: 'Cotizaciones', icon: FileText },
       { to: '/productos', label: 'Productos', icon: Package },
@@ -96,8 +96,9 @@ function useLocalStorage(key, defaultValue) {
   return [value, set];
 }
 
-export default function Sidebar() {
-  const { user, logout } = useAuth();
+export default function Sidebar({ userOverride = null }) {
+  const { user: authenticatedUser, logout } = useAuth();
+  const user = userOverride || authenticatedUser;
   const { resolvedTheme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -196,7 +197,7 @@ export default function Sidebar() {
             ? 'fixed inset-y-0 left-0 z-50 w-[264px] shadow-[var(--shadow-floating)] transition-transform duration-300'
             : 'sticky top-0 h-screen',
           isMobile && !mobileOpen && '-translate-x-full',
-          !isMobile && (collapsed ? 'w-[62px]' : 'w-[244px]'),
+          !isMobile && (collapsed ? 'w-[62px]' : 'w-[252px]'),
         )}
       >
         <div className="flex items-center gap-3 px-4 pb-4 pt-5">
