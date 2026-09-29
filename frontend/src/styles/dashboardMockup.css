@@ -187,7 +187,15 @@
   min-height: 184px;
   padding: 17px 18px 15px;
   overflow: hidden;
-  animation: business-metric-arrive 440ms var(--ease-out) calc(var(--metric-order) * 55ms) both;
+  animation: business-metric-arrive 520ms var(--ease-out) calc(var(--metric-order) * 75ms) backwards;
+  transition: transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);
+  will-change: transform;
+}
+
+.business-metric:hover {
+  z-index: 1;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.11);
+  transform: translateY(-4px);
 }
 
 .business-metric::after {
@@ -201,7 +209,10 @@
   background: color-mix(in srgb, var(--color-primary-soft) 70%, transparent);
   opacity: 0.46;
   pointer-events: none;
+  transition: transform var(--duration-slow) var(--ease-out), opacity var(--duration-slow) var(--ease-out);
 }
+
+.business-metric:hover::after { opacity: 0.72; transform: translate(-7px, -7px) scale(1.06); }
 
 .business-metric--danger::after { background: var(--color-danger-soft); }
 
@@ -221,7 +232,11 @@
   border-radius: 12px;
   background: var(--color-primary-soft);
   color: var(--dashboard-green);
+  animation: business-metric-icon 460ms var(--ease-spring) calc(130ms + (var(--metric-order) * 75ms)) backwards;
+  transition: transform var(--duration-base) var(--ease-out), background var(--duration-base) var(--ease-out);
 }
+
+.business-metric:hover .business-metric__icon { transform: translateY(-2px) rotate(-3deg); }
 
 .business-metric--danger .business-metric__icon {
   background: var(--color-danger-soft);
@@ -245,6 +260,7 @@
   line-height: 1;
   letter-spacing: -0.035em;
   font-variant-numeric: tabular-nums;
+  animation: business-metric-value 480ms var(--ease-out) calc(180ms + (var(--metric-order) * 75ms)) backwards;
 }
 
 .business-metric__detail,
@@ -508,7 +524,9 @@
 .business-dashboard__pending-note { grid-column: 1 / -1; margin: 0; color: var(--color-text-soft); font-size: 10px; }
 
 @keyframes business-rule-reveal { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-@keyframes business-metric-arrive { from { opacity: 0; transform: translateY(10px); filter: blur(3px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
+@keyframes business-metric-arrive { from { opacity: 0; transform: translateY(16px); filter: blur(4px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
+@keyframes business-metric-icon { from { opacity: 0; transform: scale(0.68) rotate(-8deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
+@keyframes business-metric-value { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes business-line-draw { to { stroke-dashoffset: 0; } }
 @keyframes business-area-reveal { from { opacity: 0; clip-path: inset(100% 0 0); } to { opacity: 1; clip-path: inset(0); } }
 @keyframes business-tab-change { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
@@ -584,6 +602,8 @@
 @media (prefers-reduced-motion: reduce) {
   .business-dashboard__rule,
   .business-metric,
+  .business-metric__icon,
+  .business-metric__value,
   .business-chart__area,
   .business-chart__line,
   .business-followup__table-wrap {

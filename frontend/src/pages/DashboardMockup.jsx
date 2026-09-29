@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
@@ -109,6 +109,47 @@ function FilterButton({ children, icon: Icon, wide = false }) {
   );
 }
 
+function AnimatedMetricValue({ value, delay = 0 }) {
+  const target = Number(value.replace(/[^0-9]/g, ''));
+  const prefix = value.startsWith('S/') ? 'S/ ' : '';
+  const [displayValue, setDisplayValue] = useState(target);
+
+  useEffect(() => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      setDisplayValue(target);
+      return undefined;
+    }
+
+    let frameId;
+    let startTime;
+    const duration = 720;
+    setDisplayValue(0);
+
+    const startTimer = window.setTimeout(() => {
+      const animate = (time) => {
+        if (!startTime) startTime = time;
+        const progress = Math.min((time - startTime) / duration, 1);
+        const eased = 1 - ((1 - progress) ** 4);
+        setDisplayValue(Math.round(target * eased));
+        if (progress < 1) frameId = window.requestAnimationFrame(animate);
+      };
+      frameId = window.requestAnimationFrame(animate);
+    }, delay);
+
+    return () => {
+      window.clearTimeout(startTimer);
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [delay, target]);
+
+  return (
+    <span aria-label={value}>
+      <span aria-hidden="true">{prefix}{new Intl.NumberFormat('es-PE').format(displayValue)}</span>
+    </span>
+  );
+}
+
 function MetricCard({ item, index }) {
   const Icon = item.icon;
   return (
@@ -117,7 +158,7 @@ function MetricCard({ item, index }) {
         <span className="business-metric__icon"><Icon aria-hidden="true" size={20} strokeWidth={2.1} /></span>
         <span className="business-metric__label">{item.label}</span>
       </div>
-      <p className="business-metric__value">{item.value}</p>
+      <p className="business-metric__value"><AnimatedMetricValue value={item.value} delay={170 + (index * 75)} /></p>
       {item.trend ? (
         <p className="business-metric__trend">
           <TrendingUp aria-hidden="true" size={15} />

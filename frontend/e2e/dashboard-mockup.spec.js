@@ -40,6 +40,14 @@ test.describe('Mockup comercial del dashboard', () => {
   test('permite comparar cotizaciones y cambiar el seguimiento sin recargar', async ({ browser, baseURL }) => {
     const { context, page } = await openDashboardMockup(browser, baseURL, { width: 1280, height: 900 });
     try {
+      const firstMetric = page.locator('.business-metric').first();
+      const metricAnimation = await firstMetric.evaluate((element) => getComputedStyle(element).animationName);
+      expect(metricAnimation).toContain('business-metric-arrive');
+      await firstMetric.hover();
+      await page.waitForTimeout(260);
+      const hoverTransform = await firstMetric.evaluate((element) => getComputedStyle(element).transform);
+      expect(hoverTransform).not.toBe('none');
+
       const quoted = page.getByRole('checkbox', { name: 'Mostrar importe cotizado' });
       await expect(quoted).toBeChecked();
       await quoted.uncheck();
