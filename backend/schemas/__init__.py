@@ -280,6 +280,8 @@ from schemas.usage_limits import (
     UsageLimitsWithUsage,
 )
 
+from schemas.dashboard import BusinessDashboardResponse
+
 __all__ = [
     "ProductoInventarioInicial",
     "SmartPSECompanyCreate", "SmartPSECompanyUpdate", "SmartPSETenantCredentialsUpdate",
@@ -362,4 +364,5 @@ __all__ = [
     # usage limits
     "UsageLimitBase", "UsageLimitCreate", "UsageLimitResponse",
     "UsageLimitsBulkUpsert", "UsageLimitUsageItem", "UsageLimitsWithUsage",
+    "BusinessDashboardResponse",
 ]

@@ -177,6 +177,8 @@ from crud.reportes import (
     get_reporte_mensual,
 )
 
+from crud.dashboard_business import get_business_dashboard
+
 from crud.frozen import (
     get_proveedores,
     create_proveedor,

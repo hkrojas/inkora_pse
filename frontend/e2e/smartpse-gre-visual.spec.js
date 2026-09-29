@@ -384,7 +384,45 @@ test.describe('Smart PSE GRE QA visual', () => {
       minimum_stock: 0,
     };
     const responses = {
-      '/analytics/dashboard': { ingresos_totales: 19454.32 },
+      '/analytics/dashboard/business': {
+        meta: {
+          generated_at: '2026-09-28T12:30:00-05:00',
+          currency: 'PEN',
+          period: { start: '2026-09-01', end: '2026-09-28', label: '1–28 sep 2026' },
+          comparison: { start: '2026-08-01', end: '2026-08-28', label: '1–28 ago 2026' },
+          history: { start: '2026-01-01', end: '2026-09-28', label: '1 ene – 28 sep 2026' },
+          client_id: null,
+          product_id: null,
+        },
+        summary: {
+          sales_amount: '19454.32',
+          sales_count: 4,
+          pending_sunat_amount: '1200.00',
+          sales_change_percent: '12.4',
+          customers_count: 3,
+          new_customers_count: 1,
+          returning_customers_count: 2,
+          average_sale: '4863.58',
+          overdue_amount: '57484.01',
+          overdue_customers_count: 1,
+        },
+        history: [],
+        conversion: {
+          available: false,
+          reason: 'quote_origin_not_recorded',
+          quote_count: null,
+          linked_sales_count: null,
+          rate_percent: null,
+        },
+        products: [],
+        clients: [],
+        follow_up: {
+          quotes: { available: false, reason: 'quote_origin_not_recorded', count: 0, rows: [] },
+          declining: { available: true, reason: null, count: 0, rows: [] },
+          inactive: { available: true, reason: null, count: 0, rows: [] },
+        },
+        pending: { low_stock_products: 0, fiscal_documents_with_errors: 0 },
+      },
       '/cobranza/resumen': {
         total_pagado_mes: 314.83,
         total_por_cobrar: 57484.01,

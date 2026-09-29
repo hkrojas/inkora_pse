@@ -11,7 +11,9 @@ de orden de producción (costos_tercerizacion) que devuelve 0 si no existe.
 No requiere que el módulo MRP esté activo para funcionar correctamente.
 """
 
-from fastapi import APIRouter, Depends
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 import crud
@@ -44,3 +46,37 @@ def read_dashboard_stats(
       (retorna 0.00 si el módulo MRP no está en uso)
     """
     return crud.get_dashboard_stats(db, current_user.tenant_id)
+
+
+@router.get(
+    "/analytics/dashboard/business",
+    response_model=schemas.BusinessDashboardResponse,
+    summary="Resumen comercial del tenant",
+)
+def read_business_dashboard(
+    desde: date | None = None,
+    hasta: date | None = None,
+    client_id: int | None = Query(default=None, ge=1),
+    product_id: int | None = Query(default=None, ge=1),
+    currency: str = Query(default="PEN", pattern="^PEN$"),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Devuelve todo el dashboard en una sola solicitud HTTP.
+
+    Las ventas incluyen facturas y boletas registradas aunque aún esperen la
+    respuesta fiscal. Las notas solo ajustan el importe cuando fueron aceptadas.
+    Operaciones anuladas y cotizaciones no se contabilizan como ventas.
+    """
+    try:
+        return crud.get_business_dashboard(
+            db,
+            current_user.tenant_id,
+            start=desde,
+            end=hasta,
+            client_id=client_id,
+            product_id=product_id,
+            currency=currency,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

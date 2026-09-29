@@ -2122,6 +2122,9 @@ export default function CotizacionesPage() {
   const [searchParams] = useSearchParams();
   const initialSearch = searchParams.get('q') || '';
   const initialViewParam = searchParams.get('view');
+  const initialDesde = searchParams.get('desde') || '';
+  const initialHasta = searchParams.get('hasta') || '';
+  const initialMoneda = searchParams.get('moneda') || 'all';
   const initialView = initialViewParam === 'fiscal' ? 'fiscal' : (initialSearch || initialViewParam === 'history' ? 'history' : 'create');
 
   // Vista activa: 'create' | 'history' | 'fiscal'
@@ -2149,10 +2152,10 @@ export default function CotizacionesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     // compartidos
-    desde: '', hasta: '',
+    desde: initialDesde, hasta: initialHasta,
     // historial
     // fiscal
-    tipo: 'all', docReceptor: '', razonSocial: '', serie: '', numero: '', moneda: 'all', formaPago: 'all',
+    tipo: 'all', docReceptor: '', razonSocial: '', serie: '', numero: '', moneda: initialMoneda, formaPago: 'all',
   });
 
   // Fila seleccionada en tab fiscal (para activar toolbar)
@@ -2221,9 +2224,17 @@ export default function CotizacionesPage() {
   useEffect(() => {
     const query = searchParams.get('q') || '';
     const viewParam = searchParams.get('view');
+    const desde = searchParams.get('desde') || '';
+    const hasta = searchParams.get('hasta') || '';
+    const moneda = searchParams.get('moneda') || 'all';
     const nextView = viewParam === 'fiscal' ? 'fiscal' : (query || viewParam === 'history' ? 'history' : 'create');
     setSearch((current) => (current === query ? current : query));
     setView((current) => (current === nextView ? current : nextView));
+    setFilters((current) => (
+      current.desde === desde && current.hasta === hasta && current.moneda === moneda
+        ? current
+        : { ...current, desde, hasta, moneda }
+    ));
   }, [searchParams]);
 
   // Separación por tipo
