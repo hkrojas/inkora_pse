@@ -267,6 +267,7 @@
 
 .business-metric__detail { color: var(--color-text-muted); }
 .business-metric__trend { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; color: var(--color-success-text); }
+.business-metric__trend.is-negative { color: var(--color-danger); }
 .business-metric__trend span { color: var(--color-text-muted); }
 .business-metric__note { display: flex; align-items: center; gap: 5px; margin-top: 6px; color: var(--color-warning-text); font-weight: 730; }
 
@@ -359,6 +360,7 @@
 .business-toggle input:checked + .business-toggle__track { background: var(--dashboard-green); }
 .business-toggle input:checked + .business-toggle__track span { transform: translateX(16px); }
 .business-toggle input:focus-visible + .business-toggle__track { outline: 3px solid rgba(141, 198, 63, 0.35); outline-offset: 2px; }
+.business-toggle.is-disabled { cursor: default; opacity: 0.72; }
 
 .business-chart { position: relative; }
 .business-chart__viewport { overflow: hidden; }
@@ -528,6 +530,29 @@
 .business-followup__table-wrap { animation: business-tab-change 260ms var(--ease-out) both; }
 .business-followup td button { min-height: 32px; padding: 0 10px; border: 0; border-radius: 9px; background: var(--color-primary-soft); color: var(--dashboard-green-deep); font-size: 10px; font-weight: 850; cursor: pointer; }
 .business-followup__all { margin-top: 7px; }
+.business-followup__notice,
+.business-table__empty {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+.business-followup__notice { margin: 0; padding: 22px 14px; border-radius: 10px; background: var(--color-surface-muted); }
+.business-table__empty { padding: 22px 10px !important; }
+
+.business-dashboard__state {
+  display: flex;
+  min-height: 260px;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 18px;
+  text-align: left;
+}
+.business-dashboard__state > svg { flex: 0 0 auto; color: var(--color-danger); }
+.business-dashboard__state h2 { margin: 0; font-size: 1.25rem; }
+.business-dashboard__state p { margin: 5px 0 0; color: var(--color-text-muted); font-size: 12px; }
+.business-dashboard__state--empty { margin-top: 12px; }
+.business-dashboard__state--empty > svg { color: var(--dashboard-green); }
 
 .business-dashboard__pending {
   display: grid;

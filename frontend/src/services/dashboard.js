@@ -16,6 +16,17 @@ async function getWithRetry(path, fallback) {
 
 export const dashboard = {
   stats:       ()       => getWithRetry('/analytics/dashboard', null),
+  business: (params = {}, { signal } = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(key, value);
+    });
+    const suffix = query.size ? `?${query.toString()}` : '';
+    return api.get(`/analytics/dashboard/business${suffix}`, {
+      timeoutMs: DASHBOARD_TIMEOUT_MS,
+      signal,
+    });
+  },
   cobranzaResumen: ()   => getWithRetry('/cobranza/resumen', null),
   cobranzaVencidas: (params = '?limit=4') => getWithRetry(`/cobranza/vencidas${params}`, []),
   reporteMensual: (anio, mes) => {
