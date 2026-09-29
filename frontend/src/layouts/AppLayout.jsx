@@ -72,7 +72,7 @@ function SunatStatus() {
 }
 
 const ROUTE_META = {
-  '/dashboard': { title: 'Dashboard', sub: 'Centro de control diario' },
+  '/dashboard': { title: 'Resumen', sub: 'Vista general del negocio' },
   '/clientes': { title: 'Clientes', sub: 'Relación comercial' },
   '/productos': { title: 'Productos', sub: 'Catálogo reusable' },
   '/cotizaciones': { title: 'Cotizaciones', sub: 'Motor comercial' },
@@ -95,7 +95,7 @@ const ROUTE_META = {
 };
 
 const SEARCH_MODULES = [
-  { label: 'Dashboard', path: '/dashboard', hint: 'Resumen operativo diario', icon: LayoutDashboard, keywords: 'inicio resumen centro operativo dashboard alertas' },
+  { label: 'Resumen', path: '/dashboard', hint: 'Vista general del negocio', icon: LayoutDashboard, keywords: 'inicio resumen centro operativo dashboard alertas' },
   { label: 'Clientes', path: '/clientes', hint: 'Buscar por razon social, RUC, DNI o telefono', icon: Users, keywords: 'cliente clientes ruc dni documento contacto empresa' },
   { label: 'Cotizaciones', path: '/cotizaciones', hint: 'Historial comercial y PDFs de cotizacion', icon: FileText, keywords: 'cotizacion cotizaciones orden presupuesto propuesta historial' },
   { label: 'Productos', path: '/productos', hint: 'Catalogo, codigos y precios', icon: Package, keywords: 'producto productos servicio sku codigo catalogo precio' },
@@ -208,7 +208,7 @@ export default function AppLayout() {
     is_superadmin: false,
   } : null);
   const meta = isDashboardMockup
-    ? { title: 'Dashboard', sub: 'Vista general del negocio' }
+    ? { title: 'Resumen', sub: 'Vista general del negocio' }
     : getRouteMeta(location.pathname);
   const isSuperadmin = Boolean(activeUser?.is_superadmin);
   const userName = activeUser?.nombre_completo || activeUser?.email || 'Usuario Inkora';

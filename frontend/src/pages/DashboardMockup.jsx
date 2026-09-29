@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowRight,
   CalendarDays,
-  Check,
-  ChevronDown,
   CircleDollarSign,
   Clock3,
   PackageSearch,
@@ -15,6 +14,7 @@ import {
   TrendingDown,
   TrendingUp,
   UsersRound,
+  X,
 } from 'lucide-react';
 import '../styles/dashboardMockup.css';
 
@@ -22,6 +22,12 @@ const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep'];
 const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre'];
 const SALES = [4600, 5900, 7000, 8100, 10800, 11300, 13900, 16300, 9800];
 const QUOTED = [5700, 8200, 10500, 9200, 12900, 11500, 10100, 14500, 11100];
+const DATA_CUTOFF = new Date(2026, 8, 26);
+const CUTOFF_DAY = DATA_CUTOFF.getDate();
+const CUTOFF_MONTH = new Intl.DateTimeFormat('es-PE', { month: 'long' }).format(DATA_CUTOFF);
+const CUTOFF_MONTH_LABEL = `${CUTOFF_MONTH[0].toUpperCase()}${CUTOFF_MONTH.slice(1)}`;
+const CURRENT_MONTH_INDEX = DATA_CUTOFF.getMonth();
+const PREVIOUS_MATCHED_SALES = 14800;
 
 const KPI_ITEMS = [
   {
@@ -29,8 +35,8 @@ const KPI_ITEMS = [
     value: 'S/ 10,000',
     detail: '20 ventas emitidas',
     trend: '+12.4 %',
-    trendLabel: 'frente al periodo anterior',
-    note: 'S/ 1,200 esperan respuesta de SUNAT',
+    trendLabel: 'vs. agosto',
+    note: 'De este total, S/ 1,200 esperan respuesta de SUNAT.',
     icon: ShoppingBag,
     tone: 'success',
   },
@@ -58,9 +64,9 @@ const KPI_ITEMS = [
 ];
 
 const PRODUCTS = [
-  { name: 'Papel bond A4', quantity: '16 cajas', amount: 'S/ 3,200', change: '+18 %', positive: true },
-  { name: 'Papel bond A3', quantity: '10 cajas', amount: 'S/ 2,600', change: '−9 %', positive: false },
-  { name: 'Cartulina blanca', quantity: '50 paquetes', amount: 'S/ 1,900', change: '+6 %', positive: true },
+  { name: 'Papel bond A4', quantity: '16 cajas', amount: 'S/ 3,200', amountValue: 3200, change: '+18 %', changeValue: 18, positive: true },
+  { name: 'Papel bond A3', quantity: '10 cajas', amount: 'S/ 2,600', amountValue: 2600, change: '−9 %', changeValue: -9, positive: false },
+  { name: 'Cartulina blanca', quantity: '50 paquetes', amount: 'S/ 1,900', amountValue: 1900, change: '+6 %', changeValue: 6, positive: true },
 ];
 
 const CLIENTS = [
@@ -99,13 +105,12 @@ const FOLLOW_UP = {
   },
 };
 
-function FilterButton({ children, icon: Icon, wide = false }) {
+function ScopeChip({ children, icon: Icon, wide = false }) {
   return (
-    <button className={`business-dashboard__filter${wide ? ' business-dashboard__filter--wide' : ''}`} type="button">
+    <span className={`business-dashboard__filter${wide ? ' business-dashboard__filter--wide' : ''}`}>
       {Icon && <Icon aria-hidden="true" size={16} strokeWidth={2} />}
       <span>{children}</span>
-      <ChevronDown aria-hidden="true" className="business-dashboard__filter-chevron" size={15} />
-    </button>
+    </span>
   );
 }
 
@@ -180,7 +185,7 @@ function MetricCard({ item, index }) {
 }
 
 function buildPoints(values, width, height, maxValue) {
-  const padding = { left: 58, right: 20, top: 20, bottom: 42 };
+  const padding = { left: 58, right: 20, top: 22, bottom: 44 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
   return values.map((value, index) => ({
@@ -198,11 +203,14 @@ function formatSoles(value) {
   return `S/ ${new Intl.NumberFormat('es-PE').format(value)}`;
 }
 
-function SalesChart({ showQuoted }) {
+function SalesChart({ showQuoted, onExploreMonth }) {
   const [activePoint, setActivePoint] = useState(null);
   const width = 920;
-  const height = 290;
+  const height = 320;
   const maxValue = 20000;
+  const plotTop = 22;
+  const plotBottom = height - 44;
+  const plotHeight = plotBottom - plotTop;
   const salesPoints = useMemo(() => buildPoints(SALES, width, height, maxValue), []);
   const quotedPoints = useMemo(() => buildPoints(QUOTED, width, height, maxValue), []);
   const yTicks = [0, 5000, 10000, 15000, 20000];
@@ -221,9 +229,9 @@ function SalesChart({ showQuoted }) {
             <stop offset="100%" stopColor="var(--dashboard-green)" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <rect className="business-chart__current" x="804" y="20" width="96" height="228" rx="10" />
+        <rect className="business-chart__current" x="804" y={plotTop} width="96" height={plotHeight} rx="10" />
         {yTicks.map((tick) => {
-          const y = 20 + 228 - (tick / maxValue) * 228;
+          const y = plotTop + plotHeight - (tick / maxValue) * plotHeight;
           return (
             <g key={tick}>
               <line className="business-chart__grid" x1="58" x2="900" y1={y} y2={y} />
@@ -235,7 +243,7 @@ function SalesChart({ showQuoted }) {
         })}
         <path
           className="business-chart__area"
-          d={`${pathFromPoints(salesPoints)} L ${salesPoints.at(-1).x} 248 L ${salesPoints[0].x} 248 Z`}
+          d={`${pathFromPoints(salesPoints)} L ${salesPoints.at(-1).x} ${plotBottom} L ${salesPoints[0].x} ${plotBottom} Z`}
         />
         <path className="business-chart__line business-chart__line--sales" d={pathFromPoints(salesPoints)} pathLength="1" />
         <g className={`business-chart__quoted${showQuoted ? ' is-visible' : ''}`}>
@@ -248,10 +256,13 @@ function SalesChart({ showQuoted }) {
           <g key={MONTHS[index]} className={activePoint === index ? 'is-active' : ''}>
             <circle className="business-chart__point-halo" cx={point.x} cy={point.y} r="8" />
             <circle className="business-chart__point business-chart__point--sales" cx={point.x} cy={point.y} r="4.5" />
-            <text className="business-chart__month" x={point.x} y="276" textAnchor="middle">{MONTHS[index]}</text>
+            <text className="business-chart__month" x={point.x} y="306" textAnchor="middle">{MONTHS[index]}</text>
           </g>
         ))}
-        <text className="business-chart__current-label" x="852" y="38" textAnchor="middle">Mes en curso</text>
+        <text className="business-chart__current-label" x="852" y="40" textAnchor="middle">
+          <tspan x="852">{CUTOFF_MONTH_LABEL}</tspan>
+          <tspan x="852" dy="12">hasta el día {CUTOFF_DAY}</tspan>
+        </text>
           </svg>
           {salesPoints.map((point, index) => (
             <button
@@ -259,13 +270,16 @@ function SalesChart({ showQuoted }) {
               className="business-chart__hotspot"
               type="button"
               style={{ '--point-x': `${(point.x / width) * 100}%`, '--point-y': `${(point.y / height) * 100}%` }}
-              aria-label={`${MONTH_NAMES[index]}: ventas ${formatSoles(SALES[index])}${showQuoted ? `, importe cotizado ${formatSoles(QUOTED[index])}` : ''}`}
+              aria-label={`${MONTH_NAMES[index]}: ventas ${formatSoles(SALES[index])}${showQuoted ? `, importe cotizado ${formatSoles(QUOTED[index])}` : ''}. Ver registros.`}
               aria-describedby={activePoint === index ? 'business-chart-tooltip' : undefined}
               onMouseEnter={() => setActivePoint(index)}
               onMouseLeave={() => setActivePoint(null)}
               onFocus={() => setActivePoint(index)}
               onBlur={() => setActivePoint(null)}
-              onClick={() => setActivePoint(index)}
+              onClick={() => {
+                setActivePoint(index);
+                onExploreMonth(index);
+              }}
             />
           ))}
           {activePoint !== null && (
@@ -278,9 +292,14 @@ function SalesChart({ showQuoted }) {
               }}
               role="tooltip"
             >
-              <strong>{MONTH_NAMES[activePoint]}{activePoint === MONTHS.length - 1 ? ' · mes en curso' : ''}</strong>
+              <strong>{MONTH_NAMES[activePoint]}{activePoint === CURRENT_MONTH_INDEX ? ` · hasta el día ${CUTOFF_DAY}` : ''}</strong>
               <span><i className="business-chart__tooltip-dot business-chart__tooltip-dot--sales" />Ventas registradas <b>{formatSoles(SALES[activePoint])}</b></span>
               {showQuoted && <span><i className="business-chart__tooltip-dot business-chart__tooltip-dot--quoted" />Importe cotizado <b>{formatSoles(QUOTED[activePoint])}</b></span>}
+              {activePoint === CURRENT_MONTH_INDEX && (
+                <span className="business-chart__tooltip-compare">
+                  Mismo tramo de agosto <b>{formatSoles(PREVIOUS_MATCHED_SALES)}</b>
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -293,10 +312,18 @@ function SalesChart({ showQuoted }) {
   );
 }
 
-function RankingTable({ type }) {
+function RankingTable({ type, onExplore }) {
   const navigate = useNavigate();
   const isProducts = type === 'products';
-  const rows = isProducts ? PRODUCTS : CLIENTS;
+  const [productOrder, setProductOrder] = useState('sales');
+  const rows = useMemo(() => {
+    if (!isProducts) return CLIENTS;
+    if (productOrder === 'decline') return [...PRODUCTS].sort((a, b) => a.changeValue - b.changeValue);
+    return [...PRODUCTS].sort((a, b) => b.amountValue - a.amountValue);
+  }, [isProducts, productOrder]);
+  const decliningProduct = PRODUCTS.reduce((lowest, product) => (
+    product.changeValue < lowest.changeValue ? product : lowest
+  ), PRODUCTS[0]);
 
   return (
     <section className="business-panel business-ranking">
@@ -305,9 +332,20 @@ function RankingTable({ type }) {
           <h2>{isProducts ? 'Productos más vendidos' : 'Clientes que más compran'}</h2>
           <p>{isProducts ? 'Ordenados por venta en soles' : 'Compras dentro del periodo analizado'}</p>
         </div>
-        <button className="business-link" type="button" onClick={() => navigate(isProducts ? '/productos' : '/clientes')}>
-          Ver todos <ArrowRight aria-hidden="true" size={15} />
-        </button>
+        <div className="business-ranking__actions">
+          {isProducts && (
+            <label className="business-ranking__sort">
+              <span className="sr-only">Ordenar productos</span>
+              <select aria-label="Ordenar productos" value={productOrder} onChange={(event) => setProductOrder(event.target.value)}>
+                <option value="sales">Mayor venta</option>
+                <option value="decline">Mayor caída</option>
+              </select>
+            </label>
+          )}
+          <button className="business-link" type="button" onClick={() => navigate(isProducts ? '/productos' : '/clientes')}>
+            Ver todos <ArrowRight aria-hidden="true" size={15} />
+          </button>
+        </div>
       </div>
       <div className="business-ranking__table-wrap">
         <table>
@@ -322,7 +360,11 @@ function RankingTable({ type }) {
           <tbody>
             {rows.map((row) => (
               <tr key={row.name}>
-                <td data-label={isProducts ? 'Producto' : 'Cliente'}><strong>{row.name}</strong></td>
+                <td data-label={isProducts ? 'Producto' : 'Cliente'}>
+                  <button className="business-ranking__entity" type="button" onClick={() => onExplore(isProducts ? 'product' : 'client', row)}>
+                    {row.name}
+                  </button>
+                </td>
                 <td data-label={isProducts ? 'Cantidad' : 'Ventas'}>{isProducts ? row.quantity : row.amount}</td>
                 <td data-label={isProducts ? 'Ventas' : 'Compras'}>{isProducts ? row.amount : row.purchases}</td>
                 <td data-label={isProducts ? 'Cambio' : 'Última compra'}>
@@ -338,10 +380,117 @@ function RankingTable({ type }) {
           </tbody>
         </table>
       </div>
-      <p className="business-ranking__insight">
-        {isProducts ? 'Papel bond A3 vendió menos que en el periodo anterior.' : 'Comercial Norte representa el 25 % de las ventas.'}
+      <p className={`business-ranking__insight${isProducts ? ' business-ranking__insight--neutral' : ''}`}>
+        {isProducts
+          ? `Las ventas de ${decliningProduct.name} bajaron ${Math.abs(decliningProduct.changeValue)} %.`
+          : 'Comercial Norte representa el 25 % de las ventas.'}
       </p>
     </section>
+  );
+}
+
+function buildExplorerData(kind, item) {
+  if (kind === 'month') {
+    const total = SALES[item.index];
+    const first = Math.round(total * 0.4);
+    const second = Math.round(total * 0.34);
+    const third = total - first - second;
+    const current = item.index === CURRENT_MONTH_INDEX;
+    return {
+      kind,
+      title: `Ventas de ${MONTH_NAMES[item.index]}`,
+      subtitle: current ? `Datos acumulados hasta el día ${CUTOFF_DAY}.` : 'Mes completo dentro del historial.',
+      total: formatSoles(total),
+      scope: [current ? `1–${CUTOFF_DAY} ${MONTHS[item.index].toLowerCase()} 2026` : `${MONTH_NAMES[item.index]} 2026`, 'Todos los clientes', 'Todos los productos', 'Soles'],
+      columns: ['Comprobante', 'Fecha', 'Cliente', 'Importe'],
+      rows: [
+        [`F001-000${82 + item.index}`, `${current ? 8 : 6} ${MONTHS[item.index].toLowerCase()}`, 'Comercial Norte', formatSoles(first)],
+        [`B001-000${41 + item.index}`, `${current ? 17 : 14} ${MONTHS[item.index].toLowerCase()}`, 'Imprenta Horizonte', formatSoles(second)],
+        [`F001-000${97 + item.index}`, `${current ? CUTOFF_DAY : 25} ${MONTHS[item.index].toLowerCase()}`, 'Papelería Central', formatSoles(third)],
+      ],
+      destination: `/facturas?month=${item.index + 1}&year=2026`,
+    };
+  }
+
+  if (kind === 'product') {
+    const first = Math.round(item.amountValue * 0.44);
+    const second = Math.round(item.amountValue * 0.33);
+    return {
+      kind,
+      title: item.name,
+      subtitle: 'Ventas que explican el importe mostrado.',
+      total: item.amount,
+      scope: [`1–${CUTOFF_DAY} sep 2026`, item.name, 'Todos los clientes', 'Soles'],
+      columns: ['Comprobante', 'Cliente', 'Cantidad', 'Importe'],
+      rows: [
+        ['F001-000102', 'Comercial Norte', item.quantity, formatSoles(first)],
+        ['B001-000064', 'Imprenta Horizonte', '4 unidades', formatSoles(second)],
+        ['F001-000118', 'Papelería Central', '3 unidades', formatSoles(item.amountValue - first - second)],
+      ],
+      destination: `/productos?q=${encodeURIComponent(item.name)}`,
+    };
+  }
+
+  const amountValue = Number(item.amount.replace(/[^0-9]/g, ''));
+  const first = Math.round(amountValue * 0.52);
+  return {
+    kind,
+    title: item.name,
+    subtitle: 'Compras que explican el importe mostrado.',
+    total: item.amount,
+    scope: [`1–${CUTOFF_DAY} sep 2026`, item.name, 'Todos los productos', 'Soles'],
+    columns: ['Comprobante', 'Fecha', 'Productos', 'Importe'],
+    rows: [
+      ['F001-000106', '12 sep', 'Papel bond A4', formatSoles(first)],
+      ['B001-000071', item.last.replace('2026', '').trim(), 'Papel bond A3', formatSoles(amountValue - first)],
+    ],
+    destination: `/clientes?q=${encodeURIComponent(item.name)}`,
+  };
+}
+
+function ExplorerPanel({ data, onClose, onOpenAll }) {
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+
+  if (!data) return null;
+
+  return createPortal(
+    <div className="business-explorer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="business-explorer__panel" role="dialog" aria-modal="true" aria-labelledby="business-explorer-title">
+        <div className="business-explorer__header">
+          <div>
+            <span>Datos de ejemplo</span>
+            <h2 id="business-explorer-title">{data.title}</h2>
+            <p>{data.subtitle}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Cerrar detalle"><X aria-hidden="true" size={19} /></button>
+        </div>
+        <div className="business-explorer__total"><span>Total consultado</span><strong>{data.total}</strong></div>
+        <div className="business-explorer__scope" aria-label="Filtros aplicados">
+          {data.scope.map((scope) => <span key={scope}>{scope}</span>)}
+        </div>
+        <div className="business-explorer__table-wrap">
+          <table>
+            <thead><tr>{data.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+            <tbody>
+              {data.rows.map((row) => (
+                <tr key={row[0]}>{row.map((cell, index) => <td key={`${row[0]}-${data.columns[index]}`} data-label={data.columns[index]}>{cell}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="business-explorer__footer">
+          <p>Estos registros son ilustrativos y se reemplazarán por datos reales al conectar el dashboard.</p>
+          <button type="button" onClick={onOpenAll}>Abrir lista completa <ArrowRight aria-hidden="true" size={15} /></button>
+        </div>
+      </section>
+    </div>,
+    document.body,
   );
 }
 
@@ -349,7 +498,18 @@ export default function DashboardMockup() {
   const navigate = useNavigate();
   const [showQuoted, setShowQuoted] = useState(true);
   const [activeFollowUp, setActiveFollowUp] = useState('quotes');
+  const [explorerData, setExplorerData] = useState(null);
   const activeRows = FOLLOW_UP[activeFollowUp].rows;
+  const activeFollowUpLabels = activeFollowUp === 'quotes'
+    ? { action: 'Ver cotización', all: 'Ver todas las cotizaciones' }
+    : { action: 'Ver cliente', all: 'Ver todos los clientes' };
+
+  const openExplorer = (kind, item) => setExplorerData(buildExplorerData(kind, item));
+  const openFollowUpRow = (row) => {
+    if (activeFollowUp === 'quotes') navigate(`/cotizaciones?q=${encodeURIComponent(row.quote)}`);
+    else navigate(`/clientes?q=${encodeURIComponent(row.client)}`);
+  };
+  const openFollowUpAll = () => navigate(activeFollowUp === 'quotes' ? '/cotizaciones' : '/clientes');
 
   return (
     <div className="business-dashboard" data-testid="dashboard-business-mockup">
@@ -358,42 +518,30 @@ export default function DashboardMockup() {
           <span className="business-dashboard__rule" aria-hidden="true" />
           <div className="business-dashboard__title-row">
             <h1>Tu negocio, de un vistazo</h1>
-            <span className="business-dashboard__sample">Datos ilustrativos</span>
+            <span className="business-dashboard__sample">Datos de ejemplo</span>
           </div>
           <p>Ventas, clientes y oportunidades para decidir qué hacer hoy.</p>
         </div>
         <div className="business-dashboard__updated">
-          <span>Actualizado al 26 sep 2026</span>
-          <small>Comparado con 1–26 ago 2026</small>
+          <span>Actualizado al {CUTOFF_DAY} sep 2026</span>
+          <small>Comparado con 1–{CUTOFF_DAY} ago 2026</small>
         </div>
       </header>
 
       <section className="business-dashboard__filters ink-enter-2" aria-label="Filtros del resumen">
         <div className="business-dashboard__filter-label">
           <span>Periodo analizado</span>
-          <FilterButton icon={CalendarDays} wide>1–26 sep 2026</FilterButton>
+          <ScopeChip icon={CalendarDays} wide>1–{CUTOFF_DAY} sep 2026</ScopeChip>
         </div>
-        <FilterButton>Todos los clientes</FilterButton>
-        <FilterButton>Todos los productos</FilterButton>
-        <FilterButton>Moneda: Soles</FilterButton>
-        <button className="business-dashboard__clear" type="button">Limpiar filtros</button>
+        <ScopeChip>Todos los clientes</ScopeChip>
+        <ScopeChip>Todos los productos</ScopeChip>
+        <ScopeChip>Moneda: Soles</ScopeChip>
         <p className="business-dashboard__currency-note">Los importes muestran únicamente operaciones registradas en soles.</p>
       </section>
 
       <section className="business-dashboard__metrics ink-enter-3" aria-label="Indicadores del negocio">
         {KPI_ITEMS.map((item, index) => <MetricCard key={item.label} item={item} index={index} />)}
       </section>
-
-      <aside className="business-dashboard__critical ink-enter-3" aria-label="Aviso importante">
-        <span className="business-dashboard__critical-icon"><AlertCircle aria-hidden="true" size={21} /></span>
-        <div>
-          <strong>Requiere atención</strong>
-          <span>1 comprobante fue rechazado por SUNAT.</span>
-        </div>
-        <button type="button" onClick={() => navigate('/facturas')}>
-          Corregir ahora <ArrowRight aria-hidden="true" size={16} />
-        </button>
-      </aside>
 
       <section className="business-panel business-sales ink-enter-4">
         <div className="business-panel__heading business-sales__heading">
@@ -403,8 +551,8 @@ export default function DashboardMockup() {
           </div>
           <div className="business-sales__controls">
             <span className="business-sales__range-label">Historial</span>
-            <FilterButton>Ene – sep 2026</FilterButton>
-            <FilterButton>Por mes</FilterButton>
+            <ScopeChip>Ene – sep 2026</ScopeChip>
+            <ScopeChip>Por mes</ScopeChip>
             <label className="business-toggle">
               <input type="checkbox" checked={showQuoted} onChange={(event) => setShowQuoted(event.target.checked)} />
               <span className="business-toggle__track" aria-hidden="true"><span /></span>
@@ -412,7 +560,7 @@ export default function DashboardMockup() {
             </label>
           </div>
         </div>
-        <SalesChart showQuoted={showQuoted} />
+        <SalesChart showQuoted={showQuoted} onExploreMonth={(index) => openExplorer('month', { index })} />
         <p className="business-sales__footnote">Incluye IGV. Descuenta notas de crédito y suma notas de débito.</p>
         <div className="business-sales__conversion">
           <div className="business-sales__conversion-rate">
@@ -423,13 +571,12 @@ export default function DashboardMockup() {
             <strong>8 de 20 cotizaciones emitidas del 1 al 26 de septiembre terminaron en venta.</strong>
             <span>Resultado actualizado al 26 de septiembre.</span>
           </div>
-          <span className="business-sales__conversion-check"><Check aria-hidden="true" size={18} /></span>
         </div>
       </section>
 
       <div className="business-dashboard__rankings ink-enter-5">
-        <RankingTable type="products" />
-        <RankingTable type="clients" />
+        <RankingTable type="products" onExplore={openExplorer} />
+        <RankingTable type="clients" onExplore={openExplorer} />
       </div>
 
       <section className="business-panel business-followup ink-enter-6">
@@ -461,7 +608,13 @@ export default function DashboardMockup() {
         <div id="followup-panel" className="business-followup__table-wrap" role="tabpanel" aria-labelledby={`followup-tab-${activeFollowUp}`} key={activeFollowUp}>
           <table>
             <thead>
-              <tr><th>Cliente</th><th>Cotización</th><th>Monto</th><th>Emitida hace</th><th>Acción</th></tr>
+              <tr>
+                <th>Cliente</th>
+                <th>{activeFollowUp === 'quotes' ? 'Cotización' : 'Referencia'}</th>
+                <th>Monto</th>
+                <th>{activeFollowUp === 'quotes' ? 'Emitida hace' : 'Hace'}</th>
+                <th>Acción</th>
+              </tr>
             </thead>
             <tbody>
               {activeRows.map((row) => (
@@ -470,14 +623,14 @@ export default function DashboardMockup() {
                   <td data-label="Cotización">{row.quote}</td>
                   <td data-label="Monto">{row.amount}</td>
                   <td data-label="Emitida hace">{row.age}</td>
-                  <td data-label="Acción"><button type="button" onClick={() => navigate('/cotizaciones')}>Ver detalle</button></td>
+                  <td data-label="Acción"><button type="button" onClick={() => openFollowUpRow(row)}>{activeFollowUpLabels.action}</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <button className="business-link business-followup__all" type="button" onClick={() => navigate('/cotizaciones')}>
-          Ver todas las oportunidades <ArrowRight aria-hidden="true" size={15} />
+        <button className="business-link business-followup__all" type="button" onClick={openFollowUpAll}>
+          {activeFollowUpLabels.all} <ArrowRight aria-hidden="true" size={15} />
         </button>
       </section>
 
@@ -491,8 +644,18 @@ export default function DashboardMockup() {
           <div><strong>productos con pocas existencias</strong><span>Conviene revisar antes de la próxima venta.</span></div>
           <button type="button" onClick={() => navigate('/inventario')}>Ver inventario <ArrowRight aria-hidden="true" size={15} /></button>
         </div>
+        <div className="business-dashboard__pending-item business-dashboard__pending-item--danger">
+          <span className="business-dashboard__pending-count"><AlertCircle aria-hidden="true" size={19} /></span>
+          <div><strong>1 comprobante rechazado por SUNAT</strong><span>Necesita una corrección antes de volver a enviarlo.</span></div>
+          <button type="button" onClick={() => navigate('/facturas')}>Corregir ahora <ArrowRight aria-hidden="true" size={15} /></button>
+        </div>
         <p className="business-dashboard__pending-note">Estos avisos muestran la situación actual y no cambian con el periodo analizado.</p>
       </section>
+      <ExplorerPanel
+        data={explorerData}
+        onClose={() => setExplorerData(null)}
+        onOpenAll={() => explorerData && navigate(explorerData.destination)}
+      />
     </div>
   );
 }
