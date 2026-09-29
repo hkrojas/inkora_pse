@@ -19,6 +19,7 @@ import {
 import '../styles/dashboardMockup.css';
 
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep'];
+const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre'];
 const SALES = [4600, 5900, 7000, 8100, 10800, 11300, 13900, 16300, 9800];
 const QUOTED = [5700, 8200, 10500, 9200, 12900, 11500, 10100, 14500, 11100];
 
@@ -152,7 +153,12 @@ function pathFromPoints(points) {
   return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
 }
 
+function formatSoles(value) {
+  return `S/ ${new Intl.NumberFormat('es-PE').format(value)}`;
+}
+
 function SalesChart({ showQuoted }) {
+  const [activePoint, setActivePoint] = useState(null);
   const width = 920;
   const height = 290;
   const maxValue = 20000;
@@ -161,11 +167,13 @@ function SalesChart({ showQuoted }) {
   const yTicks = [0, 5000, 10000, 15000, 20000];
 
   return (
-    <div className="business-chart" role="img" aria-labelledby="sales-chart-title sales-chart-description">
+    <div className="business-chart" role="region" aria-labelledby="sales-chart-title" aria-describedby="sales-chart-description">
       <p id="sales-chart-description" className="sr-only">
         Historial mensual de enero a septiembre. Las ventas registradas suben de S/ 4,600 en enero a un máximo de S/ 16,300 en agosto y cierran septiembre, aún en curso, en S/ 9,800.
       </p>
-      <svg className="business-chart__svg" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+      <div className="business-chart__viewport">
+        <div className="business-chart__canvas">
+          <svg className="business-chart__svg" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
         <defs>
           <linearGradient id="salesArea" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="var(--dashboard-green)" stopOpacity="0.17" />
@@ -196,14 +204,46 @@ function SalesChart({ showQuoted }) {
           ))}
         </g>
         {salesPoints.map((point, index) => (
-          <g key={MONTHS[index]}>
+          <g key={MONTHS[index]} className={activePoint === index ? 'is-active' : ''}>
             <circle className="business-chart__point-halo" cx={point.x} cy={point.y} r="8" />
             <circle className="business-chart__point business-chart__point--sales" cx={point.x} cy={point.y} r="4.5" />
             <text className="business-chart__month" x={point.x} y="276" textAnchor="middle">{MONTHS[index]}</text>
           </g>
         ))}
         <text className="business-chart__current-label" x="852" y="38" textAnchor="middle">Mes en curso</text>
-      </svg>
+          </svg>
+          {salesPoints.map((point, index) => (
+            <button
+              key={`hotspot-${MONTHS[index]}`}
+              className="business-chart__hotspot"
+              type="button"
+              style={{ '--point-x': `${(point.x / width) * 100}%`, '--point-y': `${(point.y / height) * 100}%` }}
+              aria-label={`${MONTH_NAMES[index]}: ventas ${formatSoles(SALES[index])}${showQuoted ? `, importe cotizado ${formatSoles(QUOTED[index])}` : ''}`}
+              aria-describedby={activePoint === index ? 'business-chart-tooltip' : undefined}
+              onMouseEnter={() => setActivePoint(index)}
+              onMouseLeave={() => setActivePoint(null)}
+              onFocus={() => setActivePoint(index)}
+              onBlur={() => setActivePoint(null)}
+              onClick={() => setActivePoint(index)}
+            />
+          ))}
+          {activePoint !== null && (
+            <div
+              id="business-chart-tooltip"
+              className={`business-chart__tooltip${Math.min(salesPoints[activePoint].y, quotedPoints[activePoint].y) < 105 ? ' business-chart__tooltip--below' : ''}`}
+              style={{
+                '--tooltip-x': `${(salesPoints[activePoint].x / width) * 100}%`,
+                '--tooltip-y': `${(Math.min(salesPoints[activePoint].y, showQuoted ? quotedPoints[activePoint].y : salesPoints[activePoint].y) / height) * 100}%`,
+              }}
+              role="tooltip"
+            >
+              <strong>{MONTH_NAMES[activePoint]}{activePoint === MONTHS.length - 1 ? ' · mes en curso' : ''}</strong>
+              <span><i className="business-chart__tooltip-dot business-chart__tooltip-dot--sales" />Ventas registradas <b>{formatSoles(SALES[activePoint])}</b></span>
+              {showQuoted && <span><i className="business-chart__tooltip-dot business-chart__tooltip-dot--quoted" />Importe cotizado <b>{formatSoles(QUOTED[activePoint])}</b></span>}
+            </div>
+          )}
+        </div>
+      </div>
       <div className="business-chart__legend" aria-hidden="true">
         <span><i className="business-chart__legend-line business-chart__legend-line--sales" />Ventas totales</span>
         <span className={showQuoted ? '' : 'is-muted'}><i className="business-chart__legend-line business-chart__legend-line--quoted" />Importe cotizado</span>

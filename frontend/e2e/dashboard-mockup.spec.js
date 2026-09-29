@@ -45,6 +45,13 @@ test.describe('Mockup comercial del dashboard', () => {
       await quoted.uncheck();
       await expect(quoted).not.toBeChecked();
 
+      const augustPoint = page.getByRole('button', { name: /Agosto: ventas S\/ 16,300/ });
+      await augustPoint.hover();
+      await expect(page.getByRole('tooltip')).toContainText('Ventas registradas');
+      await expect(page.getByRole('tooltip')).toContainText('S/ 16,300');
+      await augustPoint.focus();
+      await expect(page.getByRole('tooltip')).toBeVisible();
+
       const inactive = page.getByRole('tab', { name: /Sin compras en 60 días/ });
       await inactive.click();
       await expect(inactive).toHaveAttribute('aria-selected', 'true');
