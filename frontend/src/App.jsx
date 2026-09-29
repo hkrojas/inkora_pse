@@ -6,6 +6,7 @@ import { InkoraDialogProvider } from './components/ui/InkoraDialogProvider';
 import AppLayout from './layouts/AppLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import DashboardMockup from './pages/DashboardMockup';
 
 const AccessRequestPage = lazy(() => import('./pages/AccessRequestPage'));
 const LandingPage = lazy(() => import('./pages/LandingPage'));
@@ -62,7 +63,7 @@ export default function App() {
             <Route path="/recuperar-password" element={<LazyRoute><PasswordRecoveryPage /></LazyRoute>} />
             <Route path="/solicitar-acceso" element={<LazyRoute><AccessRequestPage /></LazyRoute>} />
             <Route element={<AppLayout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard" element={import.meta.env.DEV ? <DashboardMockup /> : <Dashboard />} />
               <Route path="/clientes" element={<LazyRoute><ClientesPage /></LazyRoute>} />
               <Route path="/productos" element={<LazyRoute><ProductosPage /></LazyRoute>} />
               <Route path="/inventario" element={<LazyRoute><InventarioPage /></LazyRoute>} />

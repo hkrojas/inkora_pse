@@ -96,8 +96,9 @@ function useLocalStorage(key, defaultValue) {
   return [value, set];
 }
 
-export default function Sidebar() {
-  const { user, logout } = useAuth();
+export default function Sidebar({ userOverride = null }) {
+  const { user: authenticatedUser, logout } = useAuth();
+  const user = userOverride || authenticatedUser;
   const { resolvedTheme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
