@@ -6,6 +6,8 @@ import {
   CalendarDays,
   CircleDollarSign,
   Clock3,
+  Maximize2,
+  Minimize2,
   PackageSearch,
   Plus,
   ReceiptText,
@@ -28,7 +30,7 @@ const FOLLOW_UP_LABELS = {
   declining: 'Compraron menos',
   inactive: 'Sin compras en 60 días',
 };
-const UNAVAILABLE_REASON = 'Inkora aún no puede distinguir las cotizaciones comerciales de las creadas al emitir un comprobante.';
+const UNAVAILABLE_REASON = 'No se pudo cargar el seguimiento de cotizaciones.';
 
 function asNumber(value) {
   const number = Number(value);
@@ -126,7 +128,9 @@ function isEmptyDashboard(data) {
   return asNumber(summary.sales_amount) === 0
     && asNumber(summary.pending_sunat_amount) === 0
     && asNumber(summary.overdue_amount) === 0
-    && !(data.history || []).some((point) => asNumber(point.sales_amount) !== 0)
+    && !(data.history || []).some((point) => asNumber(point.sales_amount) !== 0 || asNumber(point.quoted_amount) !== 0)
+    && asNumber(data.conversion?.quote_count) === 0
+    && asNumber(followUp.quotes?.count) === 0
     && (data.products || []).length === 0
     && (data.clients || []).length === 0
     && asNumber(followUp.declining?.count) === 0
@@ -219,7 +223,7 @@ function MetricCard({ item, index }) {
 }
 
 function buildPoints(values, width, height, maxValue) {
-  const padding = { left: 58, right: 20, top: 22, bottom: 44 };
+  const padding = { left: 76, right: 28, top: 22, bottom: 44 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
   return values.map((value, index) => ({
@@ -249,31 +253,52 @@ function formatAxis(value, currency) {
   return formatMoney(value, currency);
 }
 
-function SalesChart({ history, currency, onExploreMonth }) {
+function SalesChart({ history, currency, showQuotes, onExploreMonth }) {
   const [activePoint, setActivePoint] = useState(null);
-  const width = 920;
-  const height = 320;
+  const canvasRef = useRef(null);
+  const [width, setWidth] = useState(920);
+  const [expanded, setExpanded] = useState(false);
+  const [selectedPoint, setSelectedPoint] = useState(null);
+  const touchRef = useRef(false);
+  useEffect(() => {
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(240, entry.contentRect.width)));
+    observer.observe(canvasRef.current);
+    return () => observer.disconnect();
+  }, []);
+  const height = expanded ? 480 : 320;
+  const labelStride = Math.max(1, Math.ceil(history.length / Math.max(2, Math.floor((width - 104) / 64))));
   const plotTop = 22;
   const plotBottom = height - 44;
   const plotHeight = plotBottom - plotTop;
   const salesValues = useMemo(() => history.map((point) => asNumber(point.sales_amount)), [history]);
-  const { maxValue, ticks: yTicks } = useMemo(() => chartScale(salesValues), [salesValues]);
-  const salesPoints = useMemo(() => buildPoints(salesValues, width, height, maxValue), [salesValues, maxValue]);
+  const quotedValues = useMemo(() => history.map((point) => asNumber(point.quoted_amount)), [history]);
+  const { maxValue, ticks: yTicks } = useMemo(() => chartScale(showQuotes ? [...salesValues, ...quotedValues] : salesValues), [salesValues, quotedValues, showQuotes]);
+  const quotedPoints = useMemo(() => buildPoints(quotedValues, width, height, maxValue), [quotedValues, width, height, maxValue]);
+  const salesPoints = useMemo(() => buildPoints(salesValues, width, height, maxValue), [salesValues, width, height, maxValue]);
   const latestIndex = history.length - 1;
   const latest = history[latestIndex];
   const latestPoint = salesPoints[latestIndex];
-  const highlightWidth = Math.min(96, (width - 78) / Math.max(history.length, 1));
-  const highlightX = Math.max(58, Math.min((latestPoint?.x || 58) - (highlightWidth / 2), 900 - highlightWidth));
+  const highlightWidth = Math.min(96, (width - 104) / Math.max(history.length, 1));
+  const highlightX = Math.max(76, Math.min((latestPoint?.x || 76) - (highlightWidth / 2), width - 28 - highlightWidth));
   const description = history.map((point, index) => (
     `${MONTH_NAMES[point.month - 1]} ${point.year}: ${formatMoney(salesValues[index], currency)}`
   )).join('. ');
 
+  const inspectedIndex = selectedPoint ?? activePoint;
+  const inspected = history[inspectedIndex];
   return (
     <div className="business-chart" role="region" aria-labelledby="sales-chart-title" aria-describedby="sales-chart-description">
       <p id="sales-chart-description" className="sr-only">Historial mensual de ventas. {description}.</p>
+      <div className="business-chart__toolbar">
+        <span>Toca un mes para consultar sus importes.</span>
+        <button type="button" className="business-link" aria-expanded={expanded} aria-controls="business-chart-canvas" onClick={() => setExpanded((value) => !value)}>
+          {expanded ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}
+          {expanded ? 'Reducir gráfico' : 'Ampliar gráfico'}
+        </button>
+      </div>
       <div className="business-chart__viewport">
-        <div className="business-chart__canvas">
-          <svg className="business-chart__svg" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+        <div id="business-chart-canvas" ref={canvasRef} className="business-chart__canvas" style={{ height }}>
+          <svg className="business-chart__svg" viewBox={`0 0 ${width} ${height}`} style={{ height }} aria-hidden="true">
             <defs>
               <linearGradient id="salesArea" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor="var(--dashboard-green)" stopOpacity="0.17" />
@@ -285,8 +310,8 @@ function SalesChart({ history, currency, onExploreMonth }) {
               const y = plotTop + plotHeight - (tick / maxValue) * plotHeight;
               return (
                 <g key={tick}>
-                  <line className="business-chart__grid" x1="58" x2="900" y1={y} y2={y} />
-                  <text className="business-chart__axis-label" x="48" y={y + 4} textAnchor="end">{formatAxis(tick, currency)}</text>
+                  <line className="business-chart__grid" x1="76" x2={width - 28} y1={y} y2={y} />
+                  <text className="business-chart__axis-label" x="66" y={y + 4} textAnchor="end">{formatAxis(tick, currency)}</text>
                 </g>
               );
             })}
@@ -296,31 +321,41 @@ function SalesChart({ history, currency, onExploreMonth }) {
                 <path className="business-chart__line business-chart__line--sales" d={pathFromPoints(salesPoints)} pathLength="1" />
               </>
             )}
+            {showQuotes && <path className="business-chart__line business-chart__line--quoted" d={pathFromPoints(quotedPoints)} pathLength="1" />}
             {salesPoints.map((point, index) => (
               <g key={`${history[index].year}-${history[index].month}`} className={activePoint === index ? 'is-active' : ''}>
                 <circle className="business-chart__point-halo" cx={point.x} cy={point.y} r="8" />
                 <circle className="business-chart__point business-chart__point--sales" cx={point.x} cy={point.y} r="4.5" />
-                <text className="business-chart__month" x={point.x} y="306" textAnchor="middle">{MONTH_SHORT[history[index].month - 1]}</text>
+                {showQuotes && <circle className="business-chart__point business-chart__point--quoted" cx={quotedPoints[index].x} cy={quotedPoints[index].y} r="4" />}
+                {(index % labelStride === 0 || (index === latestIndex && latestIndex % labelStride >= labelStride / 2)) && (
+                  <text className="business-chart__month" x={point.x} y={height - 24} textAnchor="middle">
+                    {MONTH_SHORT[history[index].month - 1]}
+                    {(index === 0 || history[index].month === 1) && <tspan x={point.x} dy="14">{history[index].year}</tspan>}
+                  </text>
+                )}
               </g>
             ))}
             {latestPoint && (
-              <text className="business-chart__current-label" x={latestPoint.x} y="40" textAnchor="middle">
-                <tspan x={latestPoint.x}>{MONTH_NAMES[latest.month - 1]}</tspan>
-                {latest.is_partial && <tspan x={latestPoint.x} dy="12">hasta el día {latest.cutoff_day}</tspan>}
+              <text className="business-chart__current-label" x={width - 32} y="40" textAnchor="end">
+                <tspan x={width - 32}>{MONTH_NAMES[latest.month - 1]}</tspan>
+                {latest.is_partial && <tspan x={width - 32} dy="14">hasta el día {latest.cutoff_day}</tspan>}
               </text>
             )}
           </svg>
           {salesPoints.map((point, index) => {
             const item = history[index];
+            const hitWidth = Math.min(width * 0.32, (width - 104) / Math.max(history.length - 1, 1));
+            const hitX = Math.max(hitWidth / 2, Math.min(point.x, width - hitWidth / 2));
             return (
               <button
                 key={`hotspot-${item.year}-${item.month}`}
                 className="business-chart__hotspot"
                 type="button"
                 style={{
-                  '--point-x': `${(point.x / width) * 100}%`,
+                  '--point-x': `${(hitX / width) * 100}%`,
                   '--point-y': `${(point.y / height) * 100}%`,
-                  width: `${Math.min(32, 90 / Math.max(history.length, 1))}%`,
+                  height: height - 58,
+                  width: hitWidth,
                 }}
                 aria-label={`${MONTH_NAMES[item.month - 1]} ${item.year}: ventas ${formatMoney(item.sales_amount, currency)}. Abrir lista filtrada.`}
                 aria-describedby={activePoint === index ? 'business-chart-tooltip' : undefined}
@@ -328,11 +363,18 @@ function SalesChart({ history, currency, onExploreMonth }) {
                 onMouseLeave={() => setActivePoint(null)}
                 onFocus={() => setActivePoint(index)}
                 onBlur={() => setActivePoint(null)}
-                onClick={() => onExploreMonth(item)}
+                onPointerDown={(event) => { touchRef.current = event.pointerType === 'touch'; }}
+                onKeyDown={(event) => { if (event.key === 'Escape') { setActivePoint(null); setSelectedPoint(null); } }}
+                onClick={() => {
+                  if (touchRef.current || window.matchMedia('(pointer: coarse)').matches) {
+                    setSelectedPoint(index);
+                    setActivePoint(null);
+                  } else onExploreMonth(item);
+                }}
               />
             );
           })}
-          {activePoint !== null && history[activePoint] && (
+          {activePoint !== null && selectedPoint === null && history[activePoint] && (
             <div
               id="business-chart-tooltip"
               className={`business-chart__tooltip${salesPoints[activePoint].y < 105 ? ' business-chart__tooltip--below' : ''}`}
@@ -347,6 +389,7 @@ function SalesChart({ history, currency, onExploreMonth }) {
                 {history[activePoint].is_partial ? ` · hasta el día ${history[activePoint].cutoff_day}` : ''}
               </strong>
               <span><i className="business-chart__tooltip-dot business-chart__tooltip-dot--sales" />Ventas registradas <b>{formatMoney(history[activePoint].sales_amount, currency)}</b></span>
+              {showQuotes && <span><i className="business-chart__tooltip-dot business-chart__tooltip-dot--quoted" />Importe cotizado <b>{formatMoney(history[activePoint].quoted_amount, currency)}</b></span>}
               {history[activePoint].previous_matched_sales !== null && history[activePoint].previous_matched_sales !== undefined && (
                 <span className="business-chart__tooltip-compare">
                   Mismo tramo anterior <b>{formatMoney(history[activePoint].previous_matched_sales, currency)}</b>
@@ -358,7 +401,24 @@ function SalesChart({ history, currency, onExploreMonth }) {
       </div>
       <div className="business-chart__legend" aria-hidden="true">
         <span><i className="business-chart__legend-line business-chart__legend-line--sales" />Ventas totales</span>
+        {showQuotes && <span><i className="business-chart__legend-line business-chart__legend-line--quoted" />Importe cotizado</span>}
       </div>
+      <label className="business-chart__month-picker">
+        Consultar mes
+        <select aria-label="Consultar mes" value={selectedPoint ?? ''} onChange={(event) => { setSelectedPoint(event.target.value === '' ? null : Number(event.target.value)); setActivePoint(null); }}>
+          <option value="">Selecciona un mes</option>
+          {history.map((item, index) => <option key={`${item.year}-${item.month}`} value={index}>{MONTH_NAMES[item.month - 1]} {item.year}</option>)}
+        </select>
+      </label>
+      {selectedPoint !== null && inspected && (
+        <div className="business-chart__selection" role="status">
+          <strong>{MONTH_NAMES[inspected.month - 1]} {inspected.year}{inspected.is_partial ? ` · hasta el día ${inspected.cutoff_day}` : ''}</strong>
+          <span>Ventas registradas: <b>{formatMoney(inspected.sales_amount, currency)}</b></span>
+          {showQuotes && <span>Importe cotizado: <b>{formatMoney(inspected.quoted_amount, currency)}</b></span>}
+          {inspected.previous_matched_sales != null && <span>Mismo tramo anterior: <b>{formatMoney(inspected.previous_matched_sales, currency)}</b></span>}
+          <button type="button" className="business-link" onClick={() => onExploreMonth(inspected)}>Ver registros de {MONTH_NAMES[inspected.month - 1].toLowerCase()} <ArrowRight size={16} aria-hidden="true" /></button>
+        </div>
+      )}
     </div>
   );
 }
@@ -487,6 +547,7 @@ export default function DashboardMockup() {
   const [status, setStatus] = useState('loading');
   const [reloadKey, setReloadKey] = useState(0);
   const [activeFollowUp, setActiveFollowUp] = useState('quotes');
+  const [showQuotes, setShowQuotes] = useState(true);
   const requestRef = useRef(null);
   const abortTimerRef = useRef(null);
 
@@ -595,7 +656,7 @@ export default function DashboardMockup() {
   const openProduct = (row) => navigate(buildPath('/productos', { q: row.name, product_id: row.id }));
   const openClient = (row) => navigate(buildPath('/clientes', { q: row.name, client_id: row.id }));
   const openFollowUpRow = (row) => {
-    if (activeFollowUp === 'quotes') navigate(buildPath('/cotizaciones', { q: row.reference }));
+    if (activeFollowUp === 'quotes') navigate(row.quote_id ? `/cotizaciones/${row.quote_id}` : buildPath('/cotizaciones', { q: row.reference }));
     else navigate(buildPath('/clientes', { q: row.client, client_id: row.client_id }));
   };
   const openFollowUpAll = () => navigate(activeFollowUp === 'quotes' ? '/cotizaciones' : '/clientes');
@@ -642,30 +703,30 @@ export default function DashboardMockup() {
 
           <section className="business-panel business-sales ink-enter-4">
             <div className="business-panel__heading business-sales__heading">
-              <div><h2 id="sales-chart-title">Ventas</h2><p>Ventas registradas en Inkora</p></div>
+              <div><h2 id="sales-chart-title">{conversion.available ? 'Ventas y cotizaciones' : 'Ventas'}</h2><p>Ventas registradas en Inkora</p></div>
               <div className="business-sales__controls">
                 <span className="business-sales__range-label">Historial</span>
                 <ScopeChip>{historyLabel}</ScopeChip>
                 <ScopeChip>Por mes</ScopeChip>
-                <label className="business-toggle is-disabled" title={UNAVAILABLE_REASON}>
-                  <input type="checkbox" checked={false} disabled />
+                <label className={`business-toggle${conversion.available ? '' : ' is-disabled'}`}>
+                  <input type="checkbox" checked={conversion.available && showQuotes} disabled={!conversion.available} onChange={(event) => setShowQuotes(event.target.checked)} />
                   <span className="business-toggle__track" aria-hidden="true"><span /></span>
-                  <span>Importe cotizado no disponible</span>
+                  <span>{conversion.available ? 'Mostrar importe cotizado' : 'Importe cotizado no disponible'}</span>
                 </label>
               </div>
             </div>
-            <SalesChart history={data.history} currency={currency} onExploreMonth={openMonth} />
+            <SalesChart history={data.history} currency={currency} showQuotes={conversion.available && showQuotes} onExploreMonth={openMonth} />
             <p className="business-sales__footnote">Incluye IGV. Descuenta notas de crédito y suma notas de débito.</p>
             <div className="business-sales__conversion">
               <div className="business-sales__conversion-rate">
-                <strong>{conversion.available ? formatPercent(conversion.rate_percent) : '—'}</strong>
+                <strong>{conversion.available && conversion.quote_count ? `${asNumber(conversion.rate_percent).toLocaleString('es-PE', { maximumFractionDigits: 1 })} %` : '—'}</strong>
                 <span>{conversion.available ? 'Terminaron en venta' : 'Conversión no disponible'}</span>
               </div>
               <div className="business-sales__conversion-copy">
                 {conversion.available ? (
                   <>
-                    <strong>{conversion.linked_sales_count} de {conversion.quote_count} cotizaciones terminaron en venta.</strong>
-                    <span>Resultado actualizado con el periodo analizado.</span>
+                    <strong>{conversion.quote_count ? `${conversion.linked_sales_count} de ${conversion.quote_count} cotizaciones del ${periodLabel} tienen una factura o boleta vigente.` : 'No hay cotizaciones registradas en este periodo.'}</strong>
+                    <span>Incluye comprobantes pendientes de respuesta de SUNAT. Cada cotización se cuenta una sola vez.</span>
                   </>
                 ) : (
                   <><strong>{UNAVAILABLE_REASON}</strong><span>Las ventas mostradas arriba sí provienen de registros reales.</span></>
@@ -710,7 +771,7 @@ export default function DashboardMockup() {
                 <p className="business-followup__notice">{UNAVAILABLE_REASON}</p>
               ) : (
                 <table>
-                  <thead><tr><th>Cliente</th><th>Referencia</th><th>Monto</th><th>Hace</th><th>Acción</th></tr></thead>
+                  <thead><tr><th>Cliente</th><th>{activeFollowUp === 'quotes' ? 'Cotización' : 'Referencia'}</th><th>Monto</th><th>{activeFollowUp === 'quotes' ? 'Emitida hace' : 'Hace'}</th><th>Acción</th></tr></thead>
                   <tbody>
                     {activeRows.length === 0 && <tr><td colSpan="5" className="business-table__empty">No hay casos para revisar.</td></tr>}
                     {activeRows.map((row) => (
@@ -718,7 +779,7 @@ export default function DashboardMockup() {
                         <td data-label="Cliente"><strong>{row.client}</strong></td>
                         <td data-label="Referencia">{row.reference}</td>
                         <td data-label="Monto">{formatMoney(row.amount, currency)}</td>
-                        <td data-label="Hace">{row.age_days} {row.age_days === 1 ? 'día' : 'días'}</td>
+                        <td data-label={activeFollowUp === 'quotes' ? 'Emitida hace' : 'Hace'}>{row.age_days} {row.age_days === 1 ? 'día' : 'días'}</td>
                         <td data-label="Acción"><button type="button" onClick={() => openFollowUpRow(row)}>{activeFollowUpLabels.action}</button></td>
                       </tr>
                     ))}
