@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 import { attachCriticalErrorCollector } from './helpers/assertions';
 import { recordsPayload } from './helpers/dashboard-records';
 import { chooseInkoraDate, chooseInkoraMonth, chooseInkoraOption, expectPopupWithinViewport, inkoraDayLabel } from './helpers/inkora-controls';
@@ -498,6 +499,113 @@ test('los selectores de Inkora admiten teclado y respetan las opciones deshabili
     errors.assertClean();
   } finally { await context.close(); }
 });
+
+for (const width of [320, 390, 600, 768, 1024, 1440]) {
+  test(`anchos de controles: opciones completas y una línea a ${width}px`, async ({ browser, baseURL }, testInfo) => {
+    const { context, page } = await createDashboardContext(browser, baseURL, {
+      viewport: { width, height: 900 }, payloadForQuery: temporalPayload, reducedMotion: 'reduce',
+    });
+    const geometry = [];
+    const inspectMenu = async (label) => {
+      await page.getByRole('button', { name: label, exact: true }).click();
+      const popup = page.getByRole('listbox', { name: label, exact: true });
+      await expect(popup).toBeVisible();
+      await expect.poll(async () => (await popup.boundingBox())?.width || 0).toBeGreaterThan(80);
+      const rows = await popup.getByRole('option').evaluateAll((options) => options.map((option) => {
+        const bounds = option.getBoundingClientRect();
+        const walker = document.createTreeWalker(option, NodeFilter.SHOW_TEXT);
+        const textRects = [];
+        let node;
+        while ((node = walker.nextNode())) {
+          if (!node.textContent.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          textRects.push(...Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0));
+        }
+        return {
+          label: option.textContent.trim(),
+          lines: new Set(textRects.map((rect) => Math.round(rect.top * 2) / 2)).size,
+          textFits: textRects.every((rect) => rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1),
+          width: bounds.width,
+          height: bounds.height,
+          rects: textRects.map((rect) => ({ x: rect.x, y: rect.y, width: rect.width, height: rect.height })),
+        };
+      }));
+      geometry.push({ control: label, popup: await popup.boundingBox(), options: rows });
+      for (const row of rows) {
+        expect.soft(row.lines, `${label}: «${row.label}» ocupa más de una línea a ${width}px`).toBe(1);
+        expect.soft(row.textFits, `${label}: «${row.label}» se corta a ${width}px`).toBe(true);
+      }
+      await expectPopupWithinViewport(page, popup);
+      expect.soft(await popup.evaluate((element) => element.scrollWidth <= element.clientWidth + 1), `${label}: desbordamiento horizontal`).toBe(true);
+      const screenshot = testInfo.outputPath(`control-${label.replaceAll(' ', '-')}-${width}.png`);
+      await page.screenshot({ path: screenshot, animations: 'disabled' });
+      await testInfo.attach(`${label} ${width}px`, { path: screenshot, contentType: 'image/png' });
+      await page.keyboard.press('Escape');
+    };
+    try {
+      await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
+      await page.goto('/dashboard');
+      await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
+      await inspectMenu('Período del resumen');
+      await inspectMenu('Agrupar gráfico');
+      await inspectMenu('Consultar día');
+      await inspectMenu('Ordenar productos');
+      await chooseInkoraOption(page, 'Período del resumen', 'Mes específico');
+      await page.getByRole('button', { name: 'Mes del resumen', exact: true }).click();
+      const months = page.getByRole('dialog', { name: 'Seleccionar mes', exact: true });
+      await expectPopupWithinViewport(page, months);
+      geometry.push({
+        control: 'Calendario de meses',
+        popup: await months.boundingBox(),
+        options: await months.locator('.ink-date-day').evaluateAll((buttons) => buttons.map((button) => {
+          const bounds = button.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(button);
+          const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0);
+          return { label: button.textContent.trim(), width: bounds.width, textWidth: Math.max(...rects.map((rect) => rect.width)), textFits: rects.every((rect) => rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1) };
+        })),
+      });
+      for (const month of geometry.at(-1).options) expect.soft(month.textFits, `Mes «${month.label}» se corta a ${width}px`).toBe(true);
+      const monthScreenshot = testInfo.outputPath(`calendario-meses-${width}.png`);
+      await page.screenshot({ path: monthScreenshot, animations: 'disabled' });
+      await testInfo.attach(`Meses ${width}px`, { path: monthScreenshot, contentType: 'image/png' });
+      await page.keyboard.press('Escape');
+      await chooseInkoraOption(page, 'Período del resumen', 'Personalizado');
+      for (const label of ['Desde', 'Hasta']) {
+        const trigger = page.getByRole('button', { name: label, exact: true });
+        const bounds = await trigger.evaluate((button) => {
+          const rect = button.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(button.querySelector('span'));
+          const text = range.getBoundingClientRect();
+          const icon = button.querySelector('svg').getBoundingClientRect();
+          return {
+            width: rect.width,
+            textFits: text.left >= rect.left - 1 && text.right <= rect.right + 1,
+            iconFits: icon.left >= rect.left - 1 && icon.right <= rect.right + 1,
+            textIconOverlap: text.right > icon.left,
+            scrollWidth: button.scrollWidth,
+            clientWidth: button.clientWidth,
+          };
+        });
+        geometry.push({ control: label, trigger: bounds });
+        expect.soft(bounds.textFits && bounds.iconFits, `${label}: fecha o icono fuera del botón a ${width}px`).toBe(true);
+        expect.soft(bounds.textIconOverlap, `${label}: fecha e icono se superponen a ${width}px`).toBe(false);
+        expect.soft(bounds.scrollWidth <= bounds.clientWidth + 1, `${label}: desbordamiento interno a ${width}px`).toBe(true);
+      }
+      await page.getByRole('button', { name: 'Hasta', exact: true }).click();
+      await expectPopupWithinViewport(page, page.getByRole('dialog', { name: 'Seleccionar fecha', exact: true }));
+      await page.keyboard.press('Escape');
+      expect.soft(await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth + 1), `Resumen: desbordamiento horizontal a ${width}px`).toBe(true);
+    } finally {
+      const geometryPath = testInfo.outputPath(`control-geometry-${width}.json`);
+      await writeFile(geometryPath, JSON.stringify(geometry, null, 2));
+      await testInfo.attach(`Geometría controles ${width}px`, { path: geometryPath, contentType: 'application/json' });
+      await context.close();
+    }
+  });
+}
 
 test('al cambiar fechas rápidamente la última selección conserva sus datos', async ({ browser, baseURL }) => {
   const { context, page } = await createDashboardContext(browser, baseURL, {
