@@ -458,8 +458,15 @@
 .business-chart__current-label { fill: var(--color-text-muted); font-family: var(--font-body); font-size: 12px; }
 .business-chart__current { fill: var(--color-primary-soft); opacity: 0.56; }
 .business-chart__current-label { fill: var(--dashboard-green); font-size: 10px; font-weight: 800; }
-.business-chart__area { fill: url(#salesArea); opacity: 0; animation: business-area-reveal 720ms var(--ease-out) 340ms both; }
-.business-chart__line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2.5; stroke-dasharray: 1; stroke-dashoffset: 1; animation: business-line-draw 900ms var(--ease-out) 180ms forwards; }
+.business-chart__series { opacity: 1; clip-path: inset(0); }
+.business-chart__series--animated {
+  transition: clip-path var(--duration-base) var(--ease-out), opacity var(--duration-base) var(--ease-out);
+}
+@starting-style {
+  .business-chart__series--animated { clip-path: inset(0 100% 0 0); opacity: 0.4; }
+}
+.business-chart__area { fill: url(#salesArea); }
+.business-chart__line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2.5; }
 .business-chart__line--sales { stroke: var(--dashboard-green); }
 .business-chart__line--quoted { stroke: var(--dashboard-blue); stroke-dasharray: 0.025 0.014; }
 .business-chart__quoted { opacity: 0; transition: opacity var(--duration-base) var(--ease-out); }
@@ -468,8 +475,10 @@
 .business-chart__point--sales { fill: var(--dashboard-green); }
 .business-chart__point--quoted { fill: var(--dashboard-blue); }
 .business-chart__point-halo { fill: var(--color-primary-soft); opacity: 0; transition: opacity var(--duration-fast) var(--ease-out); }
-.business-chart__svg g:hover .business-chart__point-halo,
-.business-chart__svg g.is-active .business-chart__point-halo { opacity: 1; }
+.business-chart__svg g.is-active > .business-chart__point-halo { opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .business-chart__svg g:hover > .business-chart__point-halo { opacity: 1; }
+}
 .business-chart__hotspot {
   position: absolute;
   z-index: 2;
@@ -729,8 +738,6 @@
 @keyframes business-metric-arrive { from { opacity: 0; transform: translateY(16px); filter: blur(4px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
 @keyframes business-metric-icon { from { opacity: 0; transform: scale(0.68) rotate(-8deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
 @keyframes business-metric-value { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes business-line-draw { to { stroke-dashoffset: 0; } }
-@keyframes business-area-reveal { from { opacity: 0; clip-path: inset(100% 0 0); } to { opacity: 1; clip-path: inset(0); } }
 @keyframes business-tab-change { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes business-tooltip-in { from { opacity: 0; filter: blur(2px); } to { opacity: 1; filter: blur(0); } }
 @keyframes business-explorer-backdrop { from { opacity: 0; } to { opacity: 1; } }
@@ -833,8 +840,13 @@
   }
   .business-explorer,
   .business-explorer__panel { animation: none !important; }
-  .business-chart__line { stroke-dashoffset: 0; }
-  .business-chart__area { opacity: 1; clip-path: none; }
+  .business-chart__series--animated {
+    transition: opacity var(--duration-fast) var(--ease-out);
+    transition-duration: var(--duration-fast) !important;
+  }
+  @starting-style {
+    .business-chart__series--animated { clip-path: inset(0); opacity: 0.4; }
+  }
 }
 
 [data-theme='dark'] .business-dashboard,
