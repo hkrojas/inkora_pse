@@ -121,3 +121,35 @@ class BusinessDashboardResponse(BaseModel):
     clients: list[DashboardClientRow]
     follow_up: DashboardFollowUp
     pending: DashboardPending
+
+
+class DashboardRecordsMeta(BaseModel):
+    period: DashboardPeriod
+    currency: str = "PEN"
+    client_id: Optional[int] = None
+    product_id: Optional[int] = None
+    contains_product_id: Optional[int] = None
+    product_unit: Optional[str] = None
+    measure: Literal["document", "product"] = "document"
+
+
+class DashboardRecord(BaseModel):
+    document_id: int
+    reference: str
+    tipo_comprobante: Optional[str] = None
+    document_kind: str
+    issued_at: datetime
+    client_name: str
+    amount: Decimal
+    quantity: Optional[Decimal] = None
+    unit: Optional[str] = None
+    state: str
+
+
+class DashboardRecordsResponse(BaseModel):
+    meta: DashboardRecordsMeta
+    total: int
+    total_amount: Decimal
+    items: list[DashboardRecord]
+    skip: int
+    limit: int

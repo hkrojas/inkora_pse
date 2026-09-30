@@ -34,3 +34,16 @@ El endpoint autenticado `/analytics/dashboard/business` calcula datos de la empr
 - El estado de conversión de las cotizaciones se evalúa hasta hoy, aun cuando el período de emisión sea anterior. Los avisos operativos de inventario y errores fiscales también conservan su estado actual.
 
 Las lecturas están agregadas y filtradas por empresa, sin cargar colecciones completas de comprobantes ni hacer consultas por fila. El endpoint realiza seis consultas SQL para períodos seleccionados y siete para todo el historial, por la consulta inicial de su primera fecha. Los importes diarios/mensuales se agrupan en SQL; únicamente se rellenan intervalos vacíos en memoria.
+
+## Registros que explican las cifras
+
+`GET /analytics/dashboard/business/records` alimenta las ventanas de detalle del resumen. Es una lectura autenticada de la empresa del usuario y no cambia documentos ni sus estados.
+
+- `desde` y `hasta` son fechas obligatorias e inclusivas en Lima. La fecha final se limita a hoy; un rango invertido devuelve 400. Se permite un historial de varios años para consultar el mismo período que “Todo el historial”.
+- `client_id`, `product_id` y `contains_product_id` son opcionales y positivos. Sus entidades deben pertenecer a la empresa autenticada. Un ID ajeno o inexistente devuelve cero resultados, sin revelar su existencia.
+- `currency=PEN` conserva la moneda consolidada del resumen. `skip=0` y `limit=15` son los valores predeterminados; el máximo es 100 por página.
+- `measure=document` muestra el importe completo de cada comprobante reconocido. Un filtro de producto selecciona comprobantes que lo incluyen, conservando su importe completo, igual que las tarjetas, los clientes y el gráfico. Incluye facturas y boletas pendientes o facturadas, resta notas de crédito facturadas y suma notas de débito facturadas. Excluye borradores, anuladas, cotizaciones y notas pendientes.
+- `measure=product` exige `product_id`: muestra solo el aporte de las líneas de ese producto dentro de cada comprobante. Aplica signos a importe y cantidad, igual que el ranking de productos. `product_unit` permite limitar las líneas a la unidad exacta de la fila seleccionada. Sin esa unidad, si un comprobante mezcla distintas unidades del producto, devuelve importe agregado y cantidad/unidad nulos para evitar sumar cantidades incompatibles.
+- En la ventana de un producto, `contains_product_id` conserva el filtro global de otro producto: primero selecciona ventas que incluyen el producto global y luego calcula las líneas del producto de la fila. También conserva fechas, cliente y moneda.
+- `total` cuenta toda la selección y `total_amount` suma toda la selección, independientemente de la página visible. Cada registro devuelve ID, referencia, tipo, clase documental, emisión, cliente, importe firmado, cantidad/unidad cuando corresponden y estado real.
+- La selección agrega en SQL y devuelve dos consultas SELECT: totales y página ordenada por fecha/ID descendentes. No hay consultas por fila ni llamadas a servicios externos. Los nombres del cliente se unen con ownership por empresa y tienen un fallback sencillo cuando falta el nombre.
