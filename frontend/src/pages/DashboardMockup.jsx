@@ -557,7 +557,7 @@ function DateFilters({ filters, today, onChange, periodLabel, entities, onEntity
   };
   return (
     <section className="business-dashboard__filters ink-enter-2" aria-label="Filtros del resumen">
-      <label className="business-period-control">
+      <label className="business-period-control business-period-control--preset">
         <span>Ver datos de</span>
         <CustomSelect value={preset} ariaLabel="Período del resumen" onChange={(value) => {
           setPreset(value);

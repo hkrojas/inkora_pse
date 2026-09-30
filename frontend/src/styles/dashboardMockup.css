@@ -143,6 +143,8 @@
   font-weight: 700;
 }
 
+.business-period-control--preset { min-width: 180px; }
+
 .business-period-control .ink-select-trigger,
 .business-period-control .ink-date-trigger {
   width: 100%;

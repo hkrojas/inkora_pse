@@ -81,7 +81,7 @@ export default function CustomSelect({
     const scrollX = window.scrollX;
     const scrollY = window.scrollY;
     const dropdownWidth = Math.min(
-      Math.max(rect.width, compact ? 220 : rect.width),
+      Math.max(rect.width, 220),
       window.innerWidth - viewportPadding * 2,
     );
     const measuredHeight = dropdownRef.current?.offsetHeight || 260;
