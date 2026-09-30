@@ -143,8 +143,8 @@
   font-weight: 700;
 }
 
-.business-period-control select,
-.business-period-control input {
+.business-period-control .ink-select-trigger,
+.business-period-control .ink-date-trigger {
   width: 100%;
   min-width: 0;
   min-height: 42px;
@@ -157,7 +157,7 @@
   font-weight: 700;
 }
 
-.business-period-control :is(select, input):focus-visible {
+.business-period-control :is(.ink-select-trigger, .ink-date-trigger):focus-visible {
   outline: 2px solid var(--dashboard-green);
   outline-offset: 2px;
 }
@@ -197,8 +197,8 @@
 
 @media (max-width: 640px) {
   .business-period-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .business-period-form button { grid-column: 1 / -1; }
-  .business-period-control :is(select, input) { min-height: 44px; font-size: 16px; }
+  .business-period-form > button { grid-column: 1 / -1; }
+  .business-period-control :is(.ink-select-trigger, .ink-date-trigger) { min-height: 44px; font-size: 16px; }
   .business-period-summary { overflow-wrap: anywhere; }
   .business-entity-filter { width: 100%; }
   .business-entity-filter .ink-select-trigger { min-height: 44px; font-size: 16px; }
@@ -442,8 +442,8 @@
 .business-chart__toolbar > span { font-size: 12px; color: var(--color-text-muted); }
 .business-chart__toolbar button { min-height: 44px; }
 .business-chart__month-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 16px; color: var(--color-text-muted); font-size: 12px; }
-.business-chart__month-picker select { min-height: 44px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); color: var(--color-text); font: inherit; }
-.business-chart__month-picker select:focus-visible { outline: 2px solid var(--dashboard-green); outline-offset: 2px; }
+.business-chart__month-picker .ink-select-trigger { width: min(240px, 100%); min-height: 44px; font-size: 13px; }
+.business-chart__month-picker .ink-select-trigger:focus-visible { outline: 2px solid var(--dashboard-green); outline-offset: 2px; }
 .business-chart__selection { display: grid; gap: 8px; margin-top: 14px; padding: 14px; border-radius: 12px; background: var(--color-surface-muted); font-size: 13px; }
 .business-chart__selection button { min-height: 44px; justify-self: start; text-align: left; }
 .business-chart__selection b { font-variant-numeric: tabular-nums; }
@@ -553,17 +553,19 @@
 .business-ranking .business-link { flex: 0 0 auto; }
 .business-ranking__actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .business-ranking__sort { position: relative; }
-.business-ranking__sort select {
+.business-ranking__sort .ink-select-trigger {
   min-height: 36px;
-  padding: 0 28px 0 10px;
+  min-width: 140px;
+  padding: 0 10px;
   border: 1px solid var(--color-border-strong);
   border-radius: 10px;
   background: var(--color-surface);
   color: var(--color-text-muted);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 750;
   cursor: pointer;
 }
+
 .business-ranking__table-wrap,
 .business-followup__table-wrap { overflow-x: auto; }
 .business-ranking table,
