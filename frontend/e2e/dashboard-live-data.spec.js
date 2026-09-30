@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { attachCriticalErrorCollector } from './helpers/assertions';
 import { recordsPayload } from './helpers/dashboard-records';
+import { chooseInkoraDate, chooseInkoraMonth, chooseInkoraOption, expectPopupWithinViewport, inkoraDayLabel } from './helpers/inkora-controls';
 
 const API_ORIGIN = new URL(process.env.E2E_API_URL || 'http://localhost:8000').origin;
 
@@ -350,7 +351,7 @@ test('fechas sincronizan indicadores, gráfico, productos, clientes y cotizacion
     await page.goto('/dashboard');
     await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
     await expect(page.getByLabel('Consultar día')).toBeVisible();
-    await page.getByLabel('Período del resumen').selectOption('week');
+    await chooseInkoraOption(page, 'Período del resumen', 'Últimos 7 días');
     await expect(page.getByText('Producto 2026-09-23')).toBeVisible();
     await expect(page.getByText('Cliente 2026-09-23', { exact: true })).toBeVisible();
     await expect(page.getByText('Cotización 2026-09-23', { exact: true })).toBeVisible();
@@ -359,34 +360,36 @@ test('fechas sincronizan indicadores, gráfico, productos, clientes y cotizacion
     expect(await page.locator('.business-chart__hotspot').count()).toBe(7);
     await page.locator('.business-chart__hotspot').last().hover();
     await expect(page.getByRole('tooltip')).toContainText('S/ 7,000');
-    await page.getByLabel('Agrupar gráfico').selectOption('month');
+    await chooseInkoraOption(page, 'Agrupar gráfico', 'Por mes');
     await expect(page.getByLabel('Consultar mes')).toBeVisible();
     await expect(page.locator('.business-chart__hotspot')).toHaveCount(1);
     await expect(page.locator('.business-metric__value [aria-label="S/ 7,000"]')).toBeVisible();
     expect(new URL(state.dashboardCalls.at(-1).url).searchParams.get('desde')).toBe('2026-09-23');
-    await page.getByLabel('Período del resumen').selectOption('month');
-    await page.getByLabel('Mes del resumen').fill('2026-08');
+    await chooseInkoraOption(page, 'Período del resumen', 'Mes específico');
+    await chooseInkoraMonth(page, 'Mes del resumen', '2026-08');
     await expect(page.getByText('Producto 2026-08-01')).toBeVisible();
     await expect(page.locator('.business-metric__value [aria-label="S/ 8,000"]')).toBeVisible();
     expect(new URL(state.dashboardCalls.at(-1).url).searchParams.get('hasta')).toBe('2026-08-31');
-    await page.getByLabel('Período del resumen').selectOption('all');
+    await chooseInkoraOption(page, 'Período del resumen', 'Todo el historial');
     await expect(page.getByText('Producto 2025-06-17')).toBeVisible();
     await expect(page.locator('.business-metric__value [aria-label="S/ 50,000"]')).toBeVisible();
     expect(new URL(state.dashboardCalls.at(-1).url).searchParams.has('desde')).toBe(false);
-    await expect(page.getByLabel('Agrupar gráfico').locator('option[value="day"]')).toHaveAttribute('disabled', '');
-    await page.getByLabel('Período del resumen').selectOption('custom');
-    await page.getByLabel('Desde', { exact: true }).fill('2026-09-20');
-    await page.getByLabel('Hasta', { exact: true }).fill('2026-09-10');
+    await page.getByRole('button', { name: 'Agrupar gráfico', exact: true }).click();
+    await expect(page.getByRole('listbox', { name: 'Agrupar gráfico', exact: true }).getByRole('option', { name: 'Por día', exact: true })).toHaveAttribute('aria-disabled', 'true');
+    await page.keyboard.press('Escape');
+    await chooseInkoraOption(page, 'Período del resumen', 'Personalizado');
+    await chooseInkoraDate(page, 'Desde', '2026-09-20');
+    await chooseInkoraDate(page, 'Hasta', '2026-09-10');
     const calls = state.dashboardCalls.length;
     await page.getByRole('button', { name: 'Aplicar fechas' }).click();
     await expect(page.getByRole('alert')).toContainText('La fecha de inicio');
     expect(state.dashboardCalls.length).toBe(calls);
-    await page.getByLabel('Desde', { exact: true }).fill('2026-09-10');
-    await page.getByLabel('Hasta', { exact: true }).fill('2026-09-11');
+    await chooseInkoraDate(page, 'Desde', '2026-09-10');
+    await chooseInkoraDate(page, 'Hasta', '2026-09-11');
     await page.getByRole('button', { name: 'Aplicar fechas' }).click();
     await expect(page.getByText('Producto 2026-09-10')).toBeVisible();
     await expect(page.locator('.business-metric__value [aria-label="S/ 2,000"]')).toBeVisible();
-    await page.getByLabel('Consultar día').selectOption('1');
+    await chooseInkoraOption(page, 'Consultar día', inkoraDayLabel('2026-09-11', 'short'));
     errors.assertClean();
     await page.getByRole('button', { name: /Ver registros del 11/ }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
@@ -403,11 +406,15 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
       await page.goto('/dashboard');
       await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
-      await page.getByLabel('Período del resumen').selectOption('week');
+      await expect(page.getByTestId('dashboard-business-mockup').locator('select, input[type="date"], input[type="month"]')).toHaveCount(0);
+      await page.getByRole('button', { name: 'Período del resumen', exact: true }).click();
+      await expectPopupWithinViewport(page, page.getByRole('listbox', { name: 'Período del resumen', exact: true }));
+      await page.keyboard.press('Escape');
+      await chooseInkoraOption(page, 'Período del resumen', 'Últimos 7 días');
       await expect(page.getByText('Producto 2026-09-23')).toBeVisible();
       const overflow = await page.locator('main').evaluate((element) => element.scrollWidth > element.clientWidth + 1);
       expect(overflow).toBe(false);
-      await page.getByLabel('Consultar día').selectOption('6');
+      await chooseInkoraOption(page, 'Consultar día', inkoraDayLabel('2026-09-29', 'short'));
       await expect(page.locator('.business-chart__selection')).toContainText('S/ 7,000');
       const screenshot = testInfo.outputPath(`dashboard-filters-${viewport.width}.png`);
       await page.screenshot({ path: screenshot, fullPage: true, animations: 'disabled' });
@@ -415,12 +422,82 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       const chartScreenshot = testInfo.outputPath(`dashboard-chart-${viewport.width}.png`);
       await page.locator('.business-sales').screenshot({ path: chartScreenshot, animations: 'disabled' });
       await testInfo.attach(`Gráfico ${viewport.width}px`, { path: chartScreenshot, contentType: 'image/png' });
-      await page.getByLabel('Período del resumen').selectOption('custom');
+      await chooseInkoraOption(page, 'Período del resumen', 'Personalizado');
       await expect(page.getByRole('button', { name: 'Aplicar fechas' })).toBeVisible();
       expect(await page.locator('main').evaluate((element) => element.scrollWidth > element.clientWidth + 1)).toBe(false);
+      const dateTrigger = page.getByRole('button', { name: 'Hasta', exact: true });
+      await dateTrigger.click();
+      const calendar = page.getByRole('dialog', { name: 'Seleccionar fecha', exact: true });
+      await expectPopupWithinViewport(page, calendar);
+      await expect(calendar.getByRole('button', { name: inkoraDayLabel('2026-09-30'), exact: true })).toBeDisabled();
+      const calendarScreenshot = testInfo.outputPath(`dashboard-calendar-${viewport.width}.png`);
+      await page.screenshot({ path: calendarScreenshot, animations: 'disabled' });
+      await testInfo.attach(`Calendario de Inkora ${viewport.width}px`, { path: calendarScreenshot, contentType: 'image/png' });
+      await page.keyboard.press('Escape');
+      await expect(dateTrigger).toBeFocused();
+      await chooseInkoraOption(page, 'Período del resumen', 'Mes específico');
+      await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
+      await page.getByRole('button', { name: 'Mes del resumen', exact: true }).click();
+      const monthCalendar = page.getByRole('dialog', { name: 'Seleccionar mes', exact: true });
+      await expectPopupWithinViewport(page, monthCalendar);
+      await expect(monthCalendar.getByRole('button', { name: 'Octubre 2026', exact: true })).toBeDisabled();
+      const monthScreenshot = testInfo.outputPath(`dashboard-month-${viewport.width}.png`);
+      await page.screenshot({ path: monthScreenshot, animations: 'disabled' });
+      await testInfo.attach(`Meses de Inkora ${viewport.width}px`, { path: monthScreenshot, contentType: 'image/png' });
+      await page.keyboard.press('Escape');
     } finally { await context.close(); }
   });
 }
+
+test('los selectores de Inkora admiten teclado y respetan las opciones deshabilitadas', async ({ browser, baseURL }) => {
+  const { context, page, state } = await createDashboardContext(browser, baseURL, { payloadForQuery: temporalPayload, reducedMotion: 'reduce' });
+  const errors = attachCriticalErrorCollector(page);
+  try {
+    await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
+    await page.goto('/dashboard');
+    await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
+    const period = page.getByRole('button', { name: 'Período del resumen', exact: true });
+    await period.focus();
+    await period.press('ArrowDown');
+    await expect(page.getByRole('listbox', { name: 'Período del resumen', exact: true })).toBeVisible();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await expect(page.getByText('Producto 2026-09-23')).toBeVisible();
+    await expect(period).toContainText('Últimos 7 días');
+    await chooseInkoraOption(page, 'Período del resumen', 'Todo el historial');
+    await expect(page.getByText('Producto 2025-06-17')).toBeVisible();
+    const group = page.getByRole('button', { name: 'Agrupar gráfico', exact: true });
+    await group.focus();
+    await group.press('ArrowUp');
+    const listbox = page.getByRole('listbox', { name: 'Agrupar gráfico', exact: true });
+    await expect(listbox.getByRole('option', { name: 'Por día', exact: true })).toHaveAttribute('aria-disabled', 'true');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Enter');
+    await expect(group).toContainText('Por mes');
+    await expect(listbox).toHaveCount(0);
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.get('group_by')).toBe('month');
+    await group.click();
+    await page.keyboard.press('Escape');
+    await expect(group).toBeFocused();
+    await chooseInkoraOption(page, 'Período del resumen', 'Mes específico');
+    const month = page.getByRole('button', { name: 'Mes del resumen', exact: true });
+    await month.click();
+    await expect(page.getByRole('dialog', { name: 'Seleccionar mes', exact: true }).getByRole('button', { name: 'Septiembre 2026', exact: true })).toBeFocused();
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Enter');
+    await expect(page.getByText('Producto 2026-08-01')).toBeVisible();
+    await expect(month).toContainText('Agosto 2026');
+    await chooseInkoraOption(page, 'Período del resumen', 'Personalizado');
+    const until = page.getByRole('button', { name: 'Hasta', exact: true });
+    await until.click();
+    await expect(page.getByRole('dialog', { name: 'Seleccionar fecha', exact: true }).getByRole('button', { name: inkoraDayLabel('2026-09-29'), exact: true })).toBeFocused();
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Enter');
+    await expect(until).toContainText('28/09/2026');
+    errors.assertClean();
+  } finally { await context.close(); }
+});
 
 test('al cambiar fechas rápidamente la última selección conserva sus datos', async ({ browser, baseURL }) => {
   const { context, page } = await createDashboardContext(browser, baseURL, {
@@ -431,8 +508,8 @@ test('al cambiar fechas rápidamente la última selección conserva sus datos', 
     await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
     await page.goto('/dashboard');
     await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
-    await page.getByLabel('Período del resumen').selectOption('week');
-    await page.getByLabel('Período del resumen').selectOption('all');
+    await chooseInkoraOption(page, 'Período del resumen', 'Últimos 7 días');
+    await chooseInkoraOption(page, 'Período del resumen', 'Todo el historial');
     await expect(page.getByText('Producto 2025-06-17')).toBeVisible();
     // Wait for the slower obsolete response, then prove it did not replace the current one.
     await page.waitForTimeout(750);

@@ -25863,3 +25863,33 @@ body:has(.auth-expedition) {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Month selection shares the Inkora calendar surface and selection states. */
+.ink-date-month-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.ink-select-option.is-disabled,
+.ink-select-option.is-disabled:hover {
+  color: var(--text-tertiary);
+  background: transparent;
+  cursor: not-allowed;
+}
+
+.ink-date-month {
+  min-height: 44px;
+  font-size: 12px;
+}
+
+.ink-date-popover :is(.ink-date-day, .ink-date-nav, .ink-date-link):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.ink-date-popover :is(.ink-date-nav, .ink-date-link):disabled {
+  color: var(--color-text-muted);
+  background: transparent;
+  opacity: 0.35;
+  cursor: not-allowed;
+}

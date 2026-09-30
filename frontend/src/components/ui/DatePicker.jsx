@@ -1,13 +1,13 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 
 const DAYS = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'];
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
-function parseDate(val) {
+function parseDate(val, monthOnly = false) {
   if (!val) return null;
-  const d = new Date(val + 'T00:00:00');
+  const d = new Date((monthOnly ? `${val.slice(0, 7)}-01` : val) + 'T00:00:00');
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -38,13 +38,21 @@ export default function DatePicker({
   disabled = false,
   required = false,
   compact = false,
+  mode = 'day',
   min,
+  max,
   ariaLabel,
   ariaLabelledby,
 }) {
-  const selected = parseDate(value);
-  const minDate = parseDate(min);
+  const monthOnly = mode === 'month';
+  const selected = parseDate(value, monthOnly);
+  const minDate = parseDate(min, monthOnly);
+  const maxDate = parseDate(max, monthOnly);
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const generatedId = useId();
+  const triggerId = id || `ink-date-${generatedId}`;
+  const calendarId = `${triggerId}-calendar`;
 
   const [open, setOpen] = useState(false);
   const [viewYear, setViewYear] = useState((selected || today).getFullYear());
@@ -53,6 +61,12 @@ export default function DatePicker({
 
   const triggerRef = useRef(null);
   const calendarRef = useRef(null);
+
+  const isOutsideRange = (date) => Boolean((minDate && date < minDate) || (maxDate && date > maxDate));
+  const closeCalendar = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
 
   const syncCalendarPosition = () => {
     const trigger = triggerRef.current;
@@ -88,10 +102,11 @@ export default function DatePicker({
 
   const openCalendar = () => {
     if (disabled) return;
-    if (selected) {
-      setViewYear(selected.getFullYear());
-      setViewMonth(selected.getMonth());
-    }
+    let initialDate = selected || today;
+    if (minDate && initialDate < minDate) initialDate = minDate;
+    if (maxDate && initialDate > maxDate) initialDate = maxDate;
+    setViewYear(initialDate.getFullYear());
+    setViewMonth(initialDate.getMonth());
     setOpen(true);
   };
 
@@ -100,7 +115,12 @@ export default function DatePicker({
     const handler = (e) => {
       if (!triggerRef.current?.contains(e.target) && !calendarRef.current?.contains(e.target)) setOpen(false);
     };
-    const keyHandler = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const keyHandler = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeCalendar();
+      }
+    };
     const handleViewport = () => syncCalendarPosition();
     syncCalendarPosition();
     document.addEventListener('mousedown', handler);
@@ -113,7 +133,15 @@ export default function DatePicker({
       window.removeEventListener('resize', handleViewport);
       window.removeEventListener('scroll', handleViewport, true);
     };
-  }, [open, compact, viewMonth, viewYear]);
+  }, [open, compact, viewMonth, viewYear, monthOnly]);
+
+  useEffect(() => {
+    if (!open) return;
+    const calendar = calendarRef.current;
+    const selectedButton = calendar?.querySelector('.ink-date-day.is-selected:not(:disabled)');
+    const firstButton = calendar?.querySelector('.ink-date-day:not(:disabled)');
+    (selectedButton || firstButton)?.focus({ preventScroll: true });
+  }, [open]);
 
   const prevMonth = () => {
     if (viewMonth === 0) {
@@ -135,9 +163,44 @@ export default function DatePicker({
 
   const selectDay = (day) => {
     const d = new Date(viewYear, viewMonth, day);
+    if (isOutsideRange(d)) return;
     onChange(toISO(d));
-    setOpen(false);
+    closeCalendar();
   };
+
+  const selectMonth = (month) => {
+    const date = new Date(viewYear, month, 1);
+    if (isOutsideRange(date)) return;
+    onChange(toISO(date).slice(0, 7));
+    closeCalendar();
+  };
+
+  const handleGridKeyDown = (event) => {
+    const offsets = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: monthOnly ? -3 : -7, ArrowDown: monthOnly ? 3 : 7 };
+    const offset = offsets[event.key];
+    if (!offset || !event.target.matches('.ink-date-day')) return;
+    event.preventDefault();
+    const buttons = Array.from(event.currentTarget.querySelectorAll('.ink-date-day'));
+    const currentIndex = buttons.indexOf(event.target);
+    let nextIndex = currentIndex + offset;
+    while (nextIndex >= 0 && nextIndex < buttons.length) {
+      if (!buttons[nextIndex].disabled) {
+        buttons[nextIndex].focus();
+        return;
+      }
+      nextIndex += Math.sign(offset);
+    }
+  };
+
+  const previousPeriodEnd = monthOnly
+    ? new Date(viewYear - 1, 11, 1)
+    : new Date(viewYear, viewMonth, 0);
+  const nextPeriodStart = monthOnly
+    ? new Date(viewYear + 1, 0, 1)
+    : new Date(viewYear, viewMonth + 1, 1);
+  const previousDisabled = Boolean(minDate && previousPeriodEnd < minDate);
+  const nextDisabled = Boolean(maxDate && nextPeriodStart > maxDate);
+  const todayValue = monthOnly ? new Date(today.getFullYear(), today.getMonth(), 1) : today;
 
   const daysInMonth = getDaysInMonth(viewYear, viewMonth);
   const firstWeekday = getFirstWeekday(viewYear, viewMonth);
@@ -149,20 +212,21 @@ export default function DatePicker({
   return (
     <>
       <button
-        id={id}
+        id={triggerId}
         ref={triggerRef}
         type="button"
         disabled={disabled}
         aria-required={required}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls={open ? calendarId : undefined}
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledby}
         onClick={open ? () => setOpen(false) : openCalendar}
         className={`ink-date-trigger ${compact ? 'ink-date-trigger--compact' : ''} ${open ? 'is-open' : ''}`}
       >
-        <span className={`font-mono ${selected ? '' : 'text-[var(--text-tertiary)]'}`}>
-          {selected ? formatDisplay(selected) : placeholder}
+        <span className={`${monthOnly ? '' : 'font-mono'} ${selected ? '' : 'text-[var(--text-tertiary)]'}`}>
+          {selected ? (monthOnly ? `${MONTHS[selected.getMonth()]} ${selected.getFullYear()}` : formatDisplay(selected)) : placeholder}
         </span>
         <Calendar
           size={compact ? 13 : 15}
@@ -173,10 +237,11 @@ export default function DatePicker({
       {open && createPortal(
         <div
           ref={calendarRef}
+          id={calendarId}
           className="ink-date-popover"
           role="dialog"
           aria-modal="false"
-          aria-label="Seleccionar fecha"
+          aria-label={monthOnly ? 'Seleccionar mes' : 'Seleccionar fecha'}
           style={{
             top: pos.top,
             left: pos.left,
@@ -185,66 +250,91 @@ export default function DatePicker({
           }}
         >
           <div className="ink-date-header">
-            <button type="button" aria-label="Mes anterior" onMouseDown={(e) => { e.preventDefault(); prevMonth(); }} className="ink-date-nav">
+            <button type="button" aria-label={monthOnly ? 'Año anterior' : 'Mes anterior'} disabled={previousDisabled} onClick={() => monthOnly ? setViewYear((year) => year - 1) : prevMonth()} className="ink-date-nav">
               <ChevronLeft size={14} />
             </button>
             <span className="ink-date-title">
-              {MONTHS[viewMonth]} {viewYear}
+              {monthOnly ? viewYear : `${MONTHS[viewMonth]} ${viewYear}`}
             </span>
-            <button type="button" aria-label="Mes siguiente" onMouseDown={(e) => { e.preventDefault(); nextMonth(); }} className="ink-date-nav">
+            <button type="button" aria-label={monthOnly ? 'Año siguiente' : 'Mes siguiente'} disabled={nextDisabled} onClick={() => monthOnly ? setViewYear((year) => year + 1) : nextMonth()} className="ink-date-nav">
               <ChevronRight size={14} />
             </button>
           </div>
 
-          <div className="ink-date-grid">
-            {DAYS.map((day) => (
-              <div key={day} className="ink-date-weekday">
-                {day}
+          {monthOnly ? (
+            <div className="ink-date-grid ink-date-month-grid" onKeyDown={handleGridKeyDown}>
+              {MONTHS.map((month, index) => {
+                const candidate = new Date(viewYear, index, 1);
+                const selectedMonth = selected && selected.getMonth() === index && selected.getFullYear() === viewYear;
+                const currentMonth = today.getMonth() === index && today.getFullYear() === viewYear;
+                return (
+                  <button
+                    type="button"
+                    key={month}
+                    onClick={() => selectMonth(index)}
+                    className={`ink-date-day ink-date-month ${selectedMonth ? 'is-selected' : ''} ${currentMonth ? 'is-today' : ''}`}
+                    aria-label={`${month} ${viewYear}`}
+                    aria-pressed={Boolean(selectedMonth)}
+                    disabled={isOutsideRange(candidate)}
+                  >
+                    {month}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <>
+              <div className="ink-date-grid">
+                {DAYS.map((day) => (
+                  <div key={day} className="ink-date-weekday">
+                    {day}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          <div className="ink-date-grid pt-0">
-            {cells.map((day, index) => {
-              if (!day) return <div key={`e-${index}`} />;
-              const selectedDay = isSelected(day);
-              const todayDay = isToday(day);
-              const candidate = new Date(viewYear, viewMonth, day);
-              const isDisabled = minDate && candidate < minDate;
-              return (
-                <button
-                  type="button"
-                  key={day}
-                  onMouseDown={(e) => { e.preventDefault(); selectDay(day); }}
-                  className={`ink-date-day ${selectedDay ? 'is-selected' : ''} ${todayDay ? 'is-today' : ''}`}
-                  aria-label={candidate.toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })}
-                  aria-pressed={Boolean(selectedDay)}
-                  disabled={isDisabled}
-                >
-                  {day}
-                </button>
-              );
-            })}
-          </div>
+              <div className="ink-date-grid pt-0" onKeyDown={handleGridKeyDown}>
+                {cells.map((day, index) => {
+                  if (!day) return <div key={`e-${index}`} />;
+                  const selectedDay = isSelected(day);
+                  const todayDay = isToday(day);
+                  const candidate = new Date(viewYear, viewMonth, day);
+                  const isDisabled = isOutsideRange(candidate);
+                  return (
+                    <button
+                      type="button"
+                      key={day}
+                      onClick={() => selectDay(day)}
+                      className={`ink-date-day ${selectedDay ? 'is-selected' : ''} ${todayDay ? 'is-today' : ''}`}
+                      aria-label={candidate.toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      aria-pressed={Boolean(selectedDay)}
+                      disabled={isDisabled}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
 
           <div className="ink-date-footer">
             {required ? <span /> : (
-              <button type="button" onMouseDown={(e) => { e.preventDefault(); onChange(''); setOpen(false); }} className="ink-date-link">
+              <button type="button" onClick={() => { onChange(''); closeCalendar(); }} className="ink-date-link">
                 Borrar
               </button>
             )}
             <button
               type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onChange(toISO(today));
-                setOpen(false);
+              disabled={isOutsideRange(todayValue)}
+              onClick={() => {
+                onChange(monthOnly ? toISO(todayValue).slice(0, 7) : toISO(today));
+                closeCalendar();
                 setViewYear(today.getFullYear());
                 setViewMonth(today.getMonth());
               }}
               className="ink-date-link"
             >
-              Hoy
+              {monthOnly ? 'Este mes' : 'Hoy'}
             </button>
           </div>
         </div>,

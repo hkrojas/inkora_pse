@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { recordsPayload } from './helpers/dashboard-records';
+import { chooseInkoraOption } from './helpers/inkora-controls';
 
 const API_ORIGIN = new URL(process.env.E2E_API_URL || 'http://localhost:8000').origin;
 
@@ -187,7 +188,7 @@ test.describe('Mockup comercial del dashboard', () => {
       });
       expect(selectedCounterColors.color).not.toBe(selectedCounterColors.background);
 
-      await page.getByLabel('Ordenar productos').selectOption('decline');
+      await chooseInkoraOption(page, 'Ordenar productos', 'Mayor caída');
       const firstProduct = page.locator('.business-ranking').first().locator('.business-ranking__entity').first();
       await expect(firstProduct).toHaveText('Tinta API Azul');
       await firstProduct.click();

@@ -16,6 +16,8 @@ import {
   UsersRound,
 } from 'lucide-react';
 import Spinner from '../components/ui/Spinner';
+import CustomSelect from '../components/ui/CustomSelect';
+import DatePicker from '../components/ui/DatePicker';
 import DashboardEntityFilter from '../components/dashboard/DashboardEntityFilter';
 import DashboardExplorer from '../components/dashboard/DashboardExplorer';
 import { dashboard } from '../services/dashboard';
@@ -409,10 +411,8 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth, group = 'mo
       </div>
       <label className="business-chart__month-picker">
         Consultar {unit}
-        <select aria-label={`Consultar ${unit}`} value={selectedPoint ?? ''} onChange={(event) => { setSelectedPoint(event.target.value === '' ? null : Number(event.target.value)); setActivePoint(null); }}>
-          <option value="">Selecciona un {unit}</option>
-          {history.map((item, index) => <option key={item.date || `${item.year}-${item.month}`} value={index}>{pointLabel(item)}</option>)}
-        </select>
+        <CustomSelect ariaLabel={`Consultar ${unit}`} value={selectedPoint ?? ''} onChange={(value) => { setSelectedPoint(value === '' ? null : Number(value)); setActivePoint(null); }}
+          options={[{ value: '', label: `Selecciona un ${unit}` }, ...history.map((item, index) => ({ value: index, label: pointLabel(item) }))]} />
       </label>
       {selectedPoint !== null && inspected && (
         <div className="business-chart__selection" role="status">
@@ -461,10 +461,8 @@ function RankingTable({ type, rows, currency, onExplore }) {
           {isProducts && (
             <label className="business-ranking__sort">
               <span className="sr-only">Ordenar productos</span>
-              <select aria-label="Ordenar productos" value={productOrder} onChange={(event) => setProductOrder(event.target.value)}>
-                <option value="sales">Mayor venta</option>
-                <option value="decline">Mayor caída</option>
-              </select>
+              <CustomSelect compact ariaLabel="Ordenar productos" value={productOrder} onChange={setProductOrder}
+                options={[{ value: 'sales', label: 'Mayor venta' }, { value: 'decline', label: 'Mayor caída' }]} />
             </label>
           )}
           <button className="business-link" type="button" onClick={() => navigate(isProducts ? '/productos' : '/clientes')}>
@@ -561,31 +559,27 @@ function DateFilters({ filters, today, onChange, periodLabel, entities, onEntity
     <section className="business-dashboard__filters ink-enter-2" aria-label="Filtros del resumen">
       <label className="business-period-control">
         <span>Ver datos de</span>
-        <select value={preset} aria-label="Período del resumen" onChange={(event) => {
-          const value = event.target.value;
+        <CustomSelect value={preset} ariaLabel="Período del resumen" onChange={(value) => {
           setPreset(value);
           setError('');
           if (value === 'custom') return;
           if (value === 'month') { applyMonth(month); return; }
           onChange({ ...filters, preset: value, group: value === 'all' ? 'month' : 'day' });
-        }}>
-          <option value="current">Este mes</option>
-          <option value="month">Mes específico</option>
-          <option value="week">Últimos 7 días</option>
-          <option value="thirty">Últimos 30 días</option>
-          <option value="all">Todo el historial</option>
-          <option value="custom">Personalizado</option>
-        </select>
+        }} options={[
+          { value: 'current', label: 'Este mes' }, { value: 'month', label: 'Mes específico' },
+          { value: 'week', label: 'Últimos 7 días' }, { value: 'thirty', label: 'Últimos 30 días' },
+          { value: 'all', label: 'Todo el historial' }, { value: 'custom', label: 'Personalizado' },
+        ]} />
       </label>
-      {preset === 'month' && <label className="business-period-control"><span>Mes</span><input type="month" aria-label="Mes del resumen" value={month} max={today.slice(0, 7)} onChange={(event) => applyMonth(event.target.value)} /></label>}
+      {preset === 'month' && <label className="business-period-control"><span>Mes</span><DatePicker mode="month" required ariaLabel="Mes del resumen" value={month} max={today.slice(0, 7)} onChange={applyMonth} /></label>}
       {preset === 'custom' && <form className="business-period-form" onSubmit={(event) => {
         event.preventDefault();
         const message = validateDashboardRange(draft.start, draft.end, today);
         setError(message);
         if (!message) onChange({ ...filters, preset: 'custom', ...draft, group: rangeDays(draft.start, draft.end) > 93 ? 'month' : 'day' });
       }}>
-        <label className="business-period-control"><span>Desde</span><input type="date" aria-label="Desde" value={draft.start} max={today} onChange={(event) => setDraft({ ...draft, start: event.target.value })} /></label>
-        <label className="business-period-control"><span>Hasta</span><input type="date" aria-label="Hasta" value={draft.end} max={today} onChange={(event) => setDraft({ ...draft, end: event.target.value })} /></label>
+        <label className="business-period-control"><span>Desde</span><DatePicker required ariaLabel="Desde" value={draft.start} max={today} onChange={(value) => setDraft({ ...draft, start: value })} /></label>
+        <label className="business-period-control"><span>Hasta</span><DatePicker required ariaLabel="Hasta" value={draft.end} max={today} onChange={(value) => setDraft({ ...draft, end: value })} /></label>
         <button className="business-button business-button--primary" type="submit">Aplicar fechas</button>
       </form>}
       <DashboardEntityFilter kind="client" selected={entities.client} onChange={(client) => onEntityChange({ ...entities, client })} />
@@ -770,9 +764,8 @@ export default function DashboardMockup() {
               <div className="business-sales__controls">
                 <span className="business-sales__range-label">Historial</span>
                 <ScopeChip>{historyLabel}</ScopeChip>
-                <label className="business-period-control"><span className="sr-only">Agrupar gráfico</span><select aria-label="Agrupar gráfico" value={params.group_by} onChange={(event) => setFilters({ ...filters, group: event.target.value })}>
-                  <option value="day" disabled={!canUseDays}>Por día</option><option value="month">Por mes</option>
-                </select></label>
+                <label className="business-period-control"><span className="sr-only">Agrupar gráfico</span><CustomSelect ariaLabel="Agrupar gráfico" value={params.group_by} onChange={(value) => setFilters({ ...filters, group: value })}
+                  options={[{ value: 'day', label: 'Por día', disabled: !canUseDays }, { value: 'month', label: 'Por mes' }]} /></label>
                 <label className={`business-toggle${conversion.available ? '' : ' is-disabled'}`}>
                   <input type="checkbox" checked={conversion.available && showQuotes} disabled={!conversion.available} onChange={(event) => setShowQuotes(event.target.checked)} />
                   <span className="business-toggle__track" aria-hidden="true"><span /></span>

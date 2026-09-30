@@ -107,7 +107,7 @@ export default function CustomSelect({
   const openDropdown = () => {
     if (disabled) return;
     const selectedIndex = filteredOptions.findIndex((opt) => String(opt.value) === String(value));
-    setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    setHighlightedIndex(selectedIndex >= 0 && !filteredOptions[selectedIndex].disabled ? selectedIndex : filteredOptions.findIndex((opt) => !opt.disabled));
     setOpen(true);
   };
 
@@ -127,9 +127,9 @@ export default function CustomSelect({
       if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key) || !filteredOptions.length) return;
       e.preventDefault();
       if (e.key === 'ArrowDown') {
-        setHighlightedIndex((current) => (current + 1 + filteredOptions.length) % filteredOptions.length);
+        setHighlightedIndex((current) => nextEnabledIndex(current, 1));
       } else if (e.key === 'ArrowUp') {
-        setHighlightedIndex((current) => (current - 1 + filteredOptions.length) % filteredOptions.length);
+        setHighlightedIndex((current) => nextEnabledIndex(current, -1));
       } else if (filteredOptions[highlightedIndex]) {
         handleSelect(filteredOptions[highlightedIndex].value);
         triggerRef.current?.focus();
@@ -161,9 +161,18 @@ export default function CustomSelect({
   }, [open, searchable]);
 
   const handleSelect = (optValue) => {
+    if (options.find((opt) => String(opt.value) === String(optValue))?.disabled) return;
     onChange(optValue);
     setOpen(false);
     setQuery('');
+  };
+
+  const nextEnabledIndex = (current, direction) => {
+    for (let step = 1; step <= filteredOptions.length; step += 1) {
+      const index = (current + direction * step + filteredOptions.length * 2) % filteredOptions.length;
+      if (!filteredOptions[index].disabled) return index;
+    }
+    return -1;
   };
 
   const handleCreate = () => {
@@ -208,6 +217,7 @@ export default function CustomSelect({
         onKeyDown={(event) => {
           if (!open && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
             event.preventDefault();
+            event.stopPropagation();
             openDropdown();
           }
         }}
@@ -265,10 +275,11 @@ export default function CustomSelect({
                 id={`${listboxId}-option-${index}`}
                 key={opt.value}
                 onMouseDown={(e) => { e.preventDefault(); handleSelect(opt.value); }}
-                onMouseEnter={() => setHighlightedIndex(index)}
-                className={`ink-select-option ${isActive ? 'is-active' : ''} ${highlightedIndex === index ? 'is-highlighted' : ''}`}
+                onMouseEnter={() => { if (!opt.disabled) setHighlightedIndex(index); }}
+                className={`ink-select-option ${isActive ? 'is-active' : ''} ${highlightedIndex === index ? 'is-highlighted' : ''} ${opt.disabled ? 'is-disabled' : ''}`}
                 role="option"
                 aria-selected={isActive}
+                aria-disabled={opt.disabled || undefined}
               >
                 {renderOption ? (
                   renderOption(opt, { isActive, query: normalizedQuery })
