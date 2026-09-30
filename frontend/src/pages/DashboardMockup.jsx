@@ -16,6 +16,8 @@ import {
   UsersRound,
 } from 'lucide-react';
 import Spinner from '../components/ui/Spinner';
+import DashboardEntityFilter from '../components/dashboard/DashboardEntityFilter';
+import DashboardExplorer from '../components/dashboard/DashboardExplorer';
 import { dashboard } from '../services/dashboard';
 import { chartPointBounds, dashboardPeriodParams, limaToday, rangeDays, resolveDashboardRange, validateDashboardRange } from '../lib/utils/dashboardPeriods';
 import '../styles/dashboardMockup.css';
@@ -359,7 +361,8 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth, group = 'mo
                   height: height - 58,
                   width: hitWidth,
                 }}
-                aria-label={`${pointLabel(item)}: ventas ${formatMoney(item.sales_amount, currency)}. Abrir lista filtrada.`}
+                aria-label={`${pointLabel(item)}: ventas ${formatMoney(item.sales_amount, currency)}. Abrir detalle de ventas.`}
+                aria-haspopup="dialog"
                 aria-describedby={activePoint === index ? 'business-chart-tooltip' : undefined}
                 onMouseEnter={() => setActivePoint(index)}
                 onMouseLeave={() => setActivePoint(null)}
@@ -487,9 +490,9 @@ function RankingTable({ type, rows, currency, onExplore }) {
               const change = formatPercent(row.change_percent);
               const positive = asNumber(row.change_percent) >= 0;
               return (
-                <tr key={`${type}-${row.id ?? row.name}`}>
+                <tr key={`${type}-${row.id ?? row.name}-${row.unit || ''}`}>
                   <td data-label={isProducts ? 'Producto' : 'Cliente'}>
-                    <button className="business-ranking__entity" type="button" onClick={() => onExplore(row)}>{row.name}</button>
+                    <button className="business-ranking__entity" type="button" aria-haspopup="dialog" onClick={() => onExplore(row)}>{row.name}</button>
                   </td>
                   <td data-label={isProducts ? 'Cantidad' : 'Ventas'}>{isProducts ? formatQuantity(row.quantity, row.unit) : formatMoney(row.amount, currency)}</td>
                   <td data-label={isProducts ? 'Ventas' : 'Compras'}>{isProducts ? formatMoney(row.amount, currency) : row.purchases}</td>
@@ -542,7 +545,7 @@ function DashboardState({ kind, onRetry }) {
   return null;
 }
 
-function DateFilters({ filters, today, onChange, periodLabel }) {
+function DateFilters({ filters, today, onChange, periodLabel, entities, onEntityChange }) {
   const [preset, setPreset] = useState(filters.preset);
   const [month, setMonth] = useState(today.slice(0, 7));
   const [draft, setDraft] = useState({ start: `${today.slice(0, 7)}-01`, end: today });
@@ -585,7 +588,11 @@ function DateFilters({ filters, today, onChange, periodLabel }) {
         <label className="business-period-control"><span>Hasta</span><input type="date" aria-label="Hasta" value={draft.end} max={today} onChange={(event) => setDraft({ ...draft, end: event.target.value })} /></label>
         <button className="business-button business-button--primary" type="submit">Aplicar fechas</button>
       </form>}
+      <DashboardEntityFilter kind="client" selected={entities.client} onChange={(client) => onEntityChange({ ...entities, client })} />
+      <DashboardEntityFilter kind="product" selected={entities.product} onChange={(product) => onEntityChange({ ...entities, product })} />
+      {(entities.client || entities.product) && <button type="button" className="business-link" onClick={() => onEntityChange({ client: null, product: null })}>Limpiar cliente y producto</button>}
       <p className="business-period-summary"><strong>Período aplicado:</strong> {periodLabel}<span>Ventas, productos, clientes y cotizaciones · importes en soles</span></p>
+      {entities.product && <p className="business-filter-hint business-filter-hint--full">Se muestran ventas que incluyen {entities.product.name}. Las tarjetas, el gráfico y los clientes muestran el total de cada venta.</p>}
       {error && <p className="business-period-error" role="alert">{error}</p>}
     </section>
   );
@@ -600,7 +607,9 @@ export default function DashboardMockup() {
   const [showQuotes, setShowQuotes] = useState(true);
   const [today] = useState(() => limaToday());
   const [filters, setFilters] = useState({ preset: 'current', group: 'day' });
-  const params = useMemo(() => dashboardPeriodParams(filters, today), [filters, today]);
+  const [entities, setEntities] = useState({ client: null, product: null });
+  const [explorerContext, setExplorerContext] = useState(null);
+  const params = useMemo(() => ({ ...dashboardPeriodParams(filters, today), client_id: entities.client?.id, product_id: entities.product?.id }), [entities, filters, today]);
   const requestKey = `${JSON.stringify(params)}:${reloadKey}`;
   const requestRef = useRef(null);
   const abortTimerRef = useRef(null);
@@ -696,13 +705,27 @@ export default function DashboardMockup() {
     : { action: 'Ver cliente', all: 'Ver todos los clientes' };
   const noData = isEmptyDashboard(data);
 
-  const openMonth = (point) => navigate(buildPath('/cotizaciones', {
-    view: 'fiscal',
-    ...chartPointBounds(point),
-    moneda: currency,
-  }));
-  const openProduct = (row) => navigate(buildPath('/productos', { q: row.name, product_id: row.id }));
-  const openClient = (row) => navigate(buildPath('/clientes', { q: row.name, client_id: row.id }));
+  const openExplorer = (title, bounds, recordParams, extraScope = []) => setExplorerContext({
+    title,
+    periodLabel: formatPeriod({ start: bounds.desde, end: bounds.hasta }),
+    params: { ...bounds, currency, ...recordParams },
+    scope: [...new Set([
+      ...extraScope,
+      entities.client && `Cliente: ${entities.client.name}`,
+      entities.product && `Ventas con: ${entities.product.name}`,
+      currency === 'PEN' ? 'Soles' : currency,
+    ].filter(Boolean))],
+  });
+  const periodBounds = { desde: meta.period?.start, hasta: meta.period?.end };
+  const openMonth = (point) => openExplorer(`Ventas ${point.date ? 'del' : 'de'} ${pointLabel(point)}`, chartPointBounds(point), {
+    measure: 'document', client_id: entities.client?.id, product_id: entities.product?.id,
+  });
+  const openProduct = (row) => openExplorer(`Ventas de ${row.name}`, periodBounds, {
+    measure: 'product', product_id: row.id, product_unit: row.unit, contains_product_id: entities.product?.id, client_id: entities.client?.id,
+  }, [`Producto: ${row.name}`]);
+  const openClient = (row) => openExplorer(`Compras de ${row.name}`, periodBounds, {
+    measure: 'document', client_id: row.id, product_id: entities.product?.id,
+  }, [`Cliente: ${row.name}`]);
   const openFollowUpRow = (row) => {
     if (activeFollowUp === 'quotes') navigate(row.quote_id ? `/cotizaciones/${row.quote_id}` : buildPath('/cotizaciones', { q: row.reference }));
     else navigate(buildPath('/clientes', { q: row.client, client_id: row.client_id }));
@@ -724,7 +747,7 @@ export default function DashboardMockup() {
         </div>
       </header>
 
-      <DateFilters filters={filters} today={today} onChange={setFilters} periodLabel={periodLabel} />
+      <DateFilters filters={filters} today={today} onChange={setFilters} periodLabel={periodLabel} entities={entities} onEntityChange={setEntities} />
 
       {status !== 'ready' ? <DashboardState kind={status} onRetry={() => setReloadKey((value) => value + 1)} /> : noData ? (
         <section className="business-panel business-dashboard__state business-dashboard__state--empty">
@@ -860,6 +883,13 @@ export default function DashboardMockup() {
           </section>
         </>
       )}
+      {explorerContext && <DashboardExplorer
+        context={explorerContext}
+        onClose={() => setExplorerContext(null)}
+        onOpenDocument={(id) => navigate(`/cotizaciones/${id}`)}
+        formatMoney={formatMoney}
+        formatDate={formatDate}
+      />}
     </div>
   );
 }

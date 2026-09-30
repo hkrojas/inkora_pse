@@ -27,6 +27,16 @@ export const dashboard = {
       signal,
     });
   },
+  records: (params = {}, { signal } = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(key, value);
+    });
+    return api.get(`/analytics/dashboard/business/records?${query}`, {
+      timeoutMs: DASHBOARD_TIMEOUT_MS,
+      signal,
+    });
+  },
   cobranzaResumen: ()   => getWithRetry('/cobranza/resumen', null),
   cobranzaVencidas: (params = '?limit=4') => getWithRetry(`/cobranza/vencidas${params}`, []),
   reporteMensual: (anio, mes) => {

@@ -1,8 +1,12 @@
-.business-dashboard {
+.business-dashboard,
+.business-explorer {
   --dashboard-green: #17652f;
   --dashboard-green-deep: #123d22;
   --dashboard-lime: var(--color-primary);
   --dashboard-blue: #7284a4;
+}
+
+.business-dashboard {
   width: min(100%, 1480px);
   margin: 0 auto;
   padding-bottom: 28px;
@@ -186,11 +190,18 @@
   font-size: 13px;
 }
 
+.business-entity-filter { width: min(220px, 100%); }
+.business-entity-filter .ink-select-trigger { min-height: 42px; border-radius: 12px; font-size: 13px; }
+.business-filter-hint { margin: 0; font-size: 12px; font-weight: 500; color: var(--color-text-muted); }
+.business-filter-hint--full { flex-basis: 100%; }
+
 @media (max-width: 640px) {
   .business-period-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .business-period-form button { grid-column: 1 / -1; }
   .business-period-control :is(select, input) { min-height: 44px; font-size: 16px; }
   .business-period-summary { overflow-wrap: anywhere; }
+  .business-entity-filter { width: 100%; }
+  .business-entity-filter .ink-select-trigger { min-height: 44px; font-size: 16px; }
 }
 
 .business-dashboard__clear,
@@ -663,7 +674,7 @@
   height: 100%;
   flex-direction: column;
   padding: 24px;
-  overflow-y: auto;
+  overflow: hidden;
   background: var(--color-surface);
   color: var(--color-text);
   box-shadow: -18px 0 48px rgba(15, 23, 42, 0.2);
@@ -687,6 +698,28 @@
 .business-explorer__footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: auto; padding-top: 22px; }
 .business-explorer__footer p { max-width: 34ch; margin: 0; color: var(--color-text-soft); font-size: 10px; }
 .business-explorer__footer button { display: inline-flex; min-height: 42px; flex: 0 0 auto; align-items: center; gap: 6px; padding: 0 13px; border: 0; border-radius: 11px; background: var(--dashboard-green); color: white; font-size: 11px; font-weight: 850; cursor: pointer; }
+.business-explorer__header,
+.business-explorer__scope,
+.business-explorer__footer { flex-shrink: 0; }
+.business-explorer__header h2 { overflow-wrap: anywhere; }
+.business-explorer__content { min-height: 0; flex: 1; overflow-y: auto; }
+.business-explorer__total { margin-top: 0; }
+.business-explorer__total strong { white-space: nowrap; font-size: clamp(1.4rem, 5vw, 1.9rem); }
+.business-explorer__explanation { font-size: 12px; color: var(--color-text-muted); margin: 12px 0 16px; }
+.business-explorer__state { display: flex; min-height: 180px; flex-direction: column; justify-content: center; align-items: center; gap: 12px; font-size: 13px; color: var(--color-text-muted); }
+.business-explorer td small { display: block; margin-top: 3px; font-size: 10px; font-weight: 500; color: var(--color-text-muted); }
+.business-record-link { border: 0; background: transparent; padding: 2px 0; min-height: 32px; color: var(--dashboard-green); font-weight: 800; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
+.business-explorer__pagination { display: flex; gap: 8px; }
+.business-explorer__footer button:not(:disabled) { color: var(--color-surface); }
+.business-explorer__footer button:disabled { background: var(--color-surface-muted); color: var(--color-text-muted); cursor: default; box-shadow: none; }
+.business-explorer button:focus-visible { outline: 2px solid var(--dashboard-green); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .business-explorer__pagination { width: 100%; }
+  .business-explorer__pagination button { flex: 1; min-height: 44px; }
+  .business-explorer td:first-child { flex-wrap: wrap; }
+  .business-explorer td:first-child small { width: 100%; text-align: right; }
+  .business-explorer__scope span { overflow-wrap: anywhere; max-width: 100%; }
+}
 
 @keyframes business-rule-reveal { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes business-metric-arrive { from { opacity: 0; transform: translateY(16px); filter: blur(4px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
@@ -800,7 +833,8 @@
   .business-chart__area { opacity: 1; clip-path: none; }
 }
 
-[data-theme='dark'] .business-dashboard {
+[data-theme='dark'] .business-dashboard,
+[data-theme='dark'] .business-explorer {
   --dashboard-green: #9ed957;
   --dashboard-green-deep: #dff7bd;
   --dashboard-blue: #a6b5d0;

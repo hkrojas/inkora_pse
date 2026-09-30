@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { attachCriticalErrorCollector } from './helpers/assertions';
+import { recordsPayload } from './helpers/dashboard-records';
 
 const API_ORIGIN = new URL(process.env.E2E_API_URL || 'http://localhost:8000').origin;
 
@@ -126,6 +127,7 @@ function emptyDashboardPayload() {
 async function createDashboardContext(browser, baseURL, options = {}) {
   const state = {
     dashboardCalls: [],
+    recordsCalls: [],
     unexpectedRequests: [],
   };
   const context = await browser.newContext({
@@ -157,6 +159,22 @@ async function createDashboardContext(browser, baseURL, options = {}) {
         contentType: 'application/json',
         body: JSON.stringify({ compra: 3.7, venta: 3.72, moneda: 'USD' }),
       });
+      return;
+    }
+    if (path === '/analytics/dashboard/business/records' && method === 'GET') {
+      state.recordsCalls.push(url);
+      const call = state.recordsCalls.length;
+      if (options.recordsDelayMs) await new Promise((resolve) => setTimeout(resolve, options.recordsDelayMs));
+      if (options.failRecords && call <= options.failRecords) { await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Detalle no disponible' }) }); return; }
+      const amount = url.searchParams.get('measure') === 'product' ? url.searchParams.get('product_id') === '912' ? '4568' : '7777' : url.searchParams.get('client_id') === '731' ? '8000' : '12345';
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(options.recordsForQuery ? options.recordsForQuery(url.searchParams) : recordsPayload(url.searchParams, { totalAmount: amount })) });
+      return;
+    }
+    if ((path === '/clientes/search' || path === '/productos/search') && method === 'GET') {
+      const clients = path === '/clientes/search';
+      const body = clients ? [{ id: 731, razon_social: 'Cliente API Único' }, { id: 732, razon_social: 'Cliente API Dos' }] : [{ id: 911, nombre: 'Resma API Única' }, { id: 912, nombre: 'Tinta API Azul' }];
+      const query = (url.searchParams.get('q') || '').toLowerCase();
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body.filter((row) => String(row.razon_social || row.nombre).toLowerCase().includes(query))) });
       return;
     }
     if (path === '/analytics/dashboard/business' && method === 'GET') {
@@ -371,7 +389,10 @@ test('fechas sincronizan indicadores, gráfico, productos, clientes y cotizacion
     await page.getByLabel('Consultar día').selectOption('1');
     errors.assertClean();
     await page.getByRole('button', { name: /Ver registros del 11/ }).click();
-    await expect(page).toHaveURL(/desde=2026-09-11&hasta=2026-09-11/);
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect.poll(() => state.recordsCalls.at(-1)?.searchParams.get('desde')).toBe('2026-09-11');
+    expect(state.recordsCalls.at(-1).searchParams.get('hasta')).toBe('2026-09-11');
   } finally { await context.close(); }
 });
 
@@ -419,3 +440,136 @@ test('al cambiar fechas rápidamente la última selección conserva sus datos', 
     await expect(page.getByText('Producto 2026-09-23')).toHaveCount(0);
   } finally { await context.close(); }
 });
+
+test('paneles de producto, cliente y gráfico conservan filtros, totales y paginación sin abandonar el resumen', async ({ browser, baseURL }) => {
+  const { context, page, state } = await createDashboardContext(browser, baseURL, { reducedMotion: 'reduce' });
+  try {
+    await page.goto('/dashboard');
+    const product = page.getByRole('button', { name: 'Resma API Única', exact: true });
+    await product.click();
+    const panel = page.getByRole('dialog', { name: 'Ventas de Resma API Única' });
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.business-explorer__total')).toContainText('S/ 7,777');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    const productQuery = state.recordsCalls.at(-1).searchParams;
+    expect(productQuery.get('measure')).toBe('product');
+    expect(productQuery.get('product_id')).toBe('911');
+    expect(productQuery.get('product_unit')).toBe('NIU');
+    expect(productQuery.get('desde')).toBe('2026-09-01');
+    expect(productQuery.get('hasta')).toBe('2026-09-28');
+    await expect(panel.getByText('Página 1 de 2.', { exact: false })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Anterior' })).toBeDisabled();
+    await panel.getByRole('button', { name: 'Siguiente' }).click();
+    await expect(panel.getByRole('button', { name: 'F001-000016', exact: true })).toBeVisible();
+    await expect(panel.locator('.business-explorer__total')).toContainText('S/ 7,777');
+    expect(state.recordsCalls.at(-1).searchParams.get('skip')).toBe('15');
+    await expect(panel.getByRole('button', { name: 'Siguiente' })).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(product).toBeFocused();
+    await page.getByRole('button', { name: 'Cliente API Único', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Compras de Cliente API Único' })).toBeVisible();
+    await expect(page.locator('.business-explorer__total')).toContainText('S/ 8,000');
+    expect(state.recordsCalls.at(-1).searchParams.get('client_id')).toBe('731');
+    expect(state.recordsCalls.at(-1).searchParams.get('measure')).toBe('document');
+    await page.locator('.business-explorer').click({ position: { x: 10, y: 10 } });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.getByRole('button', { name: /Septiembre 2026: ventas/ }).click();
+    await expect(page.getByRole('dialog', { name: 'Ventas de Septiembre 2026' })).toBeVisible();
+    await expect(page.locator('.business-explorer__total')).toContainText('S/ 12,345');
+    expect(state.recordsCalls.at(-1).searchParams.get('hasta')).toBe('2026-09-28');
+    await page.getByRole('button', { name: 'Cerrar detalle' }).click();
+    expect(state.unexpectedRequests).toEqual([]);
+    // A specific record, rather than its product/client catalog, is the drill-through.
+    await product.click();
+    await page.getByRole('button', { name: 'F001-000001', exact: true }).click();
+    await expect(page).toHaveURL(/\/cotizaciones\/9000$/);
+  } finally { await context.close(); }
+});
+
+test('los filtros de cliente y producto buscan, recalculan y se conservan en las ventanas', async ({ browser, baseURL }) => {
+  const { context, page, state } = await createDashboardContext(browser, baseURL, {
+    reducedMotion: 'reduce',
+    payloadForQuery: (params) => ({
+      ...dashboardPayload,
+      meta: { ...dashboardPayload.meta, client_id: params.get('client_id'), product_id: params.get('product_id') },
+      summary: { ...dashboardPayload.summary, sales_amount: params.has('client_id') && params.has('product_id') ? '3500' : params.has('client_id') ? '8000' : '12345' },
+    }),
+  });
+  try {
+    await page.goto('/dashboard');
+    await expect(page.getByText('Resma API Única')).toBeVisible();
+    await page.getByRole('button', { name: 'Filtrar por cliente' }).click();
+    await page.getByRole('textbox', { name: 'Buscar cliente' }).fill('Cliente API Único');
+    await page.getByRole('option', { name: 'Cliente API Único', exact: true }).click();
+    await expect(page.locator('.business-metric__value [aria-label="S/ 8,000"]')).toBeVisible();
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.get('client_id')).toBe('731');
+    await page.getByRole('button', { name: 'Filtrar por producto' }).click();
+    await page.getByRole('textbox', { name: 'Buscar producto' }).fill('Resma');
+    await page.getByRole('option', { name: 'Resma API Única', exact: true }).click();
+    await expect(page.locator('.business-metric__value [aria-label="S/ 3,500"]')).toBeVisible();
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.get('product_id')).toBe('911');
+    await expect(page.getByText(/Las tarjetas, el gráfico y los clientes muestran el total/)).toBeVisible();
+    await page.getByRole('button', { name: 'Tinta API Azul', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Ventas de Tinta API Azul' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'F001-000001', exact: true })).toBeVisible();
+    const query = state.recordsCalls.at(-1).searchParams;
+    expect(query.get('product_id')).toBe('912');
+    expect(query.get('contains_product_id')).toBe('911');
+    expect(query.get('client_id')).toBe('731');
+    await page.getByRole('button', { name: 'Cerrar detalle' }).click();
+    await page.getByRole('button', { name: 'Limpiar cliente y producto' }).click();
+    await expect(page.locator('.business-metric__value [aria-label="S/ 12,345"]')).toBeVisible();
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.has('client_id')).toBe(false);
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.has('product_id')).toBe(false);
+    expect(state.unexpectedRequests).toEqual([]);
+  } finally { await context.close(); }
+});
+
+test('detalle distingue carga, error recuperable y registros vacíos', async ({ browser, baseURL }) => {
+  const { context, page } = await createDashboardContext(browser, baseURL, {
+    recordsDelayMs: 400, failRecords: 1,
+    recordsForQuery: (params) => recordsPayload(params, { total: 0, totalAmount: '0' }),
+  });
+  try {
+    await page.goto('/dashboard');
+    await page.getByRole('button', { name: 'Resma API Única', exact: true }).click();
+    await expect(page.getByRole('dialog').getByRole('status')).toContainText('Cargando registros');
+    await expect(page.getByRole('dialog').getByRole('alert')).toContainText('No pudimos cargar');
+    await page.getByRole('dialog').getByRole('button', { name: 'Reintentar' }).click();
+    await expect(page.getByText('No hay ventas registradas con estos filtros.')).toBeVisible();
+    await expect(page.locator('.business-explorer__total')).toContainText('S/ 0');
+    await expect(page.getByRole('button', { name: 'F001-000001', exact: true })).toHaveCount(0);
+  } finally { await context.close(); }
+});
+
+for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+  test(`ventana aprobada y filtros sin desbordamiento a ${viewport.width}px`, async ({ browser, baseURL }) => {
+    const { context, page } = await createDashboardContext(browser, baseURL, { viewport, reducedMotion: 'reduce' });
+    try {
+      await page.goto('/dashboard');
+      await page.getByRole('button', { name: 'Filtrar por producto' }).click();
+      await expect(page.getByRole('listbox')).toBeVisible();
+      const dropdown = await page.getByRole('listbox').boundingBox();
+      expect(dropdown.x).toBeGreaterThanOrEqual(0);
+      expect(dropdown.x + dropdown.width).toBeLessThanOrEqual(viewport.width);
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: 'Resma API Única', exact: true }).click();
+      const panel = page.getByRole('dialog');
+      await expect(panel.getByRole('button', { name: 'F001-000001', exact: true })).toBeVisible();
+      expect(await panel.evaluate((element) => element.scrollWidth > element.clientWidth + 1)).toBe(false);
+      expect(await page.locator('main').evaluate((element) => element.scrollWidth > element.clientWidth + 1)).toBe(false);
+      await expect(page.getByRole('button', { name: 'Cerrar detalle' })).toBeFocused();
+      await page.keyboard.press('Shift+Tab');
+      await expect(panel.getByRole('button', { name: 'Siguiente' })).toBeFocused();
+      const paginationColors = await panel.getByRole('button', { name: 'Siguiente' }).evaluate((element) => ({ background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color }));
+      expect(paginationColors.background).not.toBe('rgba(0, 0, 0, 0)');
+      expect(paginationColors.background).not.toBe(paginationColors.color);
+      await page.keyboard.press('Tab');
+      await expect(page.getByRole('button', { name: 'Cerrar detalle' })).toBeFocused();
+      await page.screenshot({ path: `test-results/dashboard-explorer-${viewport.width}.png`, animations: 'disabled' });
+      await page.getByRole('button', { name: 'Cerrar detalle' }).click();
+      await expect(page.getByRole('button', { name: 'Resma API Única', exact: true })).toBeFocused();
+    } finally { await context.close(); }
+  });
+}

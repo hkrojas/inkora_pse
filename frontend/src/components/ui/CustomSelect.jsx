@@ -12,6 +12,7 @@ export default function CustomSelect({
   searchable = false,
   searchPlaceholder = 'Buscar...',
   onSearchChange,
+  onOpenChange,
   loading = false,
   filterOption,
   renderOption,
@@ -66,6 +67,10 @@ export default function CustomSelect({
   const showCreateOption = Boolean(
     searchable && onCreateNew && normalizedQuery && !hasExactMatch,
   );
+
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
 
   const syncDropdownPosition = () => {
     const trigger = triggerRef.current;
