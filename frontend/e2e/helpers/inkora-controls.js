@@ -33,10 +33,16 @@ export async function chooseInkoraMonth(page, label, month) {
 
 export async function expectPopupWithinViewport(page, popup) {
   await expect(popup).toBeVisible();
-  const bounds = await popup.boundingBox();
   const viewport = page.viewportSize();
-  expect(bounds.x).toBeGreaterThanOrEqual(0);
-  expect(bounds.y).toBeGreaterThanOrEqual(0);
-  expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width + 1);
-  expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1);
+  // Portals are positioned after mounting; wait for layout without relaxing the bounds.
+  await expect(async () => {
+    const bounds = await popup.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds.width).toBeGreaterThan(0);
+    expect(bounds.height).toBeGreaterThan(0);
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1);
+  }).toPass({ timeout: 10_000 });
 }
