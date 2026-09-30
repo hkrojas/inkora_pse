@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowRight,
-  CalendarDays,
   CircleDollarSign,
   Clock3,
   Maximize2,
@@ -18,6 +17,7 @@ import {
 } from 'lucide-react';
 import Spinner from '../components/ui/Spinner';
 import { dashboard } from '../services/dashboard';
+import { chartPointBounds, dashboardPeriodParams, limaToday, rangeDays, resolveDashboardRange, validateDashboardRange } from '../lib/utils/dashboardPeriods';
 import '../styles/dashboardMockup.css';
 
 const MONTH_NAMES = [
@@ -111,14 +111,14 @@ function buildPath(path, params = {}) {
   return query.size ? `${path}?${query.toString()}` : path;
 }
 
-function monthBounds(point) {
-  const month = String(point.month).padStart(2, '0');
-  const lastDay = new Date(point.year, point.month, 0).getDate();
-  const endDay = point.is_partial && point.cutoff_day ? point.cutoff_day : lastDay;
-  return {
-    desde: `${point.year}-${month}-01`,
-    hasta: `${point.year}-${month}-${String(endDay).padStart(2, '0')}`,
-  };
+function pointLabel(point) {
+  return point.date ? formatDate(point.date) : `${MONTH_NAMES[point.month - 1]} ${point.year}`;
+}
+
+function pointDetail(point) {
+  if (point.date || !point.is_partial) return '';
+  if (point.period_start && Number(point.period_start.slice(-2)) !== 1) return ` · ${formatPeriod({ start: point.period_start, end: point.period_end })}`;
+  return ` · hasta el día ${point.cutoff_day}`;
 }
 
 function isEmptyDashboard(data) {
@@ -253,13 +253,15 @@ function formatAxis(value, currency) {
   return formatMoney(value, currency);
 }
 
-function SalesChart({ history, currency, showQuotes, onExploreMonth }) {
+function SalesChart({ history, currency, showQuotes, onExploreMonth, group = 'month' }) {
   const [activePoint, setActivePoint] = useState(null);
   const canvasRef = useRef(null);
   const [width, setWidth] = useState(920);
   const [expanded, setExpanded] = useState(false);
   const [selectedPoint, setSelectedPoint] = useState(null);
   const touchRef = useRef(false);
+  const daily = group === 'day';
+  const unit = daily ? 'día' : 'mes';
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) => setWidth(Math.max(240, entry.contentRect.width)));
     observer.observe(canvasRef.current);
@@ -281,16 +283,16 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth }) {
   const highlightWidth = Math.min(96, (width - 104) / Math.max(history.length, 1));
   const highlightX = Math.max(76, Math.min((latestPoint?.x || 76) - (highlightWidth / 2), width - 28 - highlightWidth));
   const description = history.map((point, index) => (
-    `${MONTH_NAMES[point.month - 1]} ${point.year}: ${formatMoney(salesValues[index], currency)}`
+    `${pointLabel(point)}: ${formatMoney(salesValues[index], currency)}`
   )).join('. ');
 
   const inspectedIndex = selectedPoint ?? activePoint;
   const inspected = history[inspectedIndex];
   return (
     <div className="business-chart" role="region" aria-labelledby="sales-chart-title" aria-describedby="sales-chart-description">
-      <p id="sales-chart-description" className="sr-only">Historial mensual de ventas. {description}.</p>
+      <p id="sales-chart-description" className="sr-only">Historial {daily ? 'diario' : 'mensual'} de ventas. {description}.</p>
       <div className="business-chart__toolbar">
-        <span>Toca un mes para consultar sus importes.</span>
+        <span>Toca un {unit} para consultar sus importes.</span>
         <button type="button" className="business-link" aria-expanded={expanded} aria-controls="business-chart-canvas" onClick={() => setExpanded((value) => !value)}>
           {expanded ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}
           {expanded ? 'Reducir gráfico' : 'Ampliar gráfico'}
@@ -323,22 +325,22 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth }) {
             )}
             {showQuotes && <path className="business-chart__line business-chart__line--quoted" d={pathFromPoints(quotedPoints)} pathLength="1" />}
             {salesPoints.map((point, index) => (
-              <g key={`${history[index].year}-${history[index].month}`} className={activePoint === index ? 'is-active' : ''}>
+              <g key={history[index].date || `${history[index].year}-${history[index].month}`} className={activePoint === index ? 'is-active' : ''}>
                 <circle className="business-chart__point-halo" cx={point.x} cy={point.y} r="8" />
                 <circle className="business-chart__point business-chart__point--sales" cx={point.x} cy={point.y} r="4.5" />
                 {showQuotes && <circle className="business-chart__point business-chart__point--quoted" cx={quotedPoints[index].x} cy={quotedPoints[index].y} r="4" />}
                 {(index % labelStride === 0 || (index === latestIndex && latestIndex % labelStride >= labelStride / 2)) && (
                   <text className="business-chart__month" x={point.x} y={height - 24} textAnchor="middle">
-                    {MONTH_SHORT[history[index].month - 1]}
-                    {(index === 0 || history[index].month === 1) && <tspan x={point.x} dy="14">{history[index].year}</tspan>}
+                    {daily ? Number(history[index].date.slice(-2)) : MONTH_SHORT[history[index].month - 1]}
+                    {(index === 0 || (daily ? history[index].date.slice(5, 7) !== history[index - 1].date.slice(5, 7) : history[index].month === 1)) && <tspan x={point.x} dy="14">{daily ? MONTH_SHORT[history[index].month - 1] : history[index].year}</tspan>}
                   </text>
                 )}
               </g>
             ))}
             {latestPoint && (
               <text className="business-chart__current-label" x={width - 32} y="40" textAnchor="end">
-                <tspan x={width - 32}>{MONTH_NAMES[latest.month - 1]}</tspan>
-                {latest.is_partial && <tspan x={width - 32} dy="14">hasta el día {latest.cutoff_day}</tspan>}
+                <tspan x={width - 32}>{daily ? formatDate(latest.date, { year: undefined }) : MONTH_NAMES[latest.month - 1]}</tspan>
+                {!daily && latest.is_partial && <tspan x={width - 32} dy="14">{latest.period_start && Number(latest.period_start.slice(-2)) !== 1 ? `días ${Number(latest.period_start.slice(-2))}–${latest.cutoff_day}` : `hasta el día ${latest.cutoff_day}`}</tspan>}
               </text>
             )}
           </svg>
@@ -348,7 +350,7 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth }) {
             const hitX = Math.max(hitWidth / 2, Math.min(point.x, width - hitWidth / 2));
             return (
               <button
-                key={`hotspot-${item.year}-${item.month}`}
+                key={`hotspot-${item.date || `${item.year}-${item.month}`}`}
                 className="business-chart__hotspot"
                 type="button"
                 style={{
@@ -357,7 +359,7 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth }) {
                   height: height - 58,
                   width: hitWidth,
                 }}
-                aria-label={`${MONTH_NAMES[item.month - 1]} ${item.year}: ventas ${formatMoney(item.sales_amount, currency)}. Abrir lista filtrada.`}
+                aria-label={`${pointLabel(item)}: ventas ${formatMoney(item.sales_amount, currency)}. Abrir lista filtrada.`}
                 aria-describedby={activePoint === index ? 'business-chart-tooltip' : undefined}
                 onMouseEnter={() => setActivePoint(index)}
                 onMouseLeave={() => setActivePoint(null)}
@@ -385,8 +387,7 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth }) {
               role="tooltip"
             >
               <strong>
-                {MONTH_NAMES[history[activePoint].month - 1]} {history[activePoint].year}
-                {history[activePoint].is_partial ? ` · hasta el día ${history[activePoint].cutoff_day}` : ''}
+                {pointLabel(history[activePoint])}{pointDetail(history[activePoint])}
               </strong>
               <span><i className="business-chart__tooltip-dot business-chart__tooltip-dot--sales" />Ventas registradas <b>{formatMoney(history[activePoint].sales_amount, currency)}</b></span>
               {showQuotes && <span><i className="business-chart__tooltip-dot business-chart__tooltip-dot--quoted" />Importe cotizado <b>{formatMoney(history[activePoint].quoted_amount, currency)}</b></span>}
@@ -404,19 +405,19 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth }) {
         {showQuotes && <span><i className="business-chart__legend-line business-chart__legend-line--quoted" />Importe cotizado</span>}
       </div>
       <label className="business-chart__month-picker">
-        Consultar mes
-        <select aria-label="Consultar mes" value={selectedPoint ?? ''} onChange={(event) => { setSelectedPoint(event.target.value === '' ? null : Number(event.target.value)); setActivePoint(null); }}>
-          <option value="">Selecciona un mes</option>
-          {history.map((item, index) => <option key={`${item.year}-${item.month}`} value={index}>{MONTH_NAMES[item.month - 1]} {item.year}</option>)}
+        Consultar {unit}
+        <select aria-label={`Consultar ${unit}`} value={selectedPoint ?? ''} onChange={(event) => { setSelectedPoint(event.target.value === '' ? null : Number(event.target.value)); setActivePoint(null); }}>
+          <option value="">Selecciona un {unit}</option>
+          {history.map((item, index) => <option key={item.date || `${item.year}-${item.month}`} value={index}>{pointLabel(item)}</option>)}
         </select>
       </label>
       {selectedPoint !== null && inspected && (
         <div className="business-chart__selection" role="status">
-          <strong>{MONTH_NAMES[inspected.month - 1]} {inspected.year}{inspected.is_partial ? ` · hasta el día ${inspected.cutoff_day}` : ''}</strong>
+          <strong>{pointLabel(inspected)}{pointDetail(inspected)}</strong>
           <span>Ventas registradas: <b>{formatMoney(inspected.sales_amount, currency)}</b></span>
           {showQuotes && <span>Importe cotizado: <b>{formatMoney(inspected.quoted_amount, currency)}</b></span>}
           {inspected.previous_matched_sales != null && <span>Mismo tramo anterior: <b>{formatMoney(inspected.previous_matched_sales, currency)}</b></span>}
-          <button type="button" className="business-link" onClick={() => onExploreMonth(inspected)}>Ver registros de {MONTH_NAMES[inspected.month - 1].toLowerCase()} <ArrowRight size={16} aria-hidden="true" /></button>
+          <button type="button" className="business-link" onClick={() => onExploreMonth(inspected)}>Ver registros {daily ? `del ${formatDate(inspected.date)}` : `de ${MONTH_NAMES[inspected.month - 1].toLowerCase()}`} <ArrowRight size={16} aria-hidden="true" /></button>
         </div>
       )}
     </div>
@@ -541,6 +542,55 @@ function DashboardState({ kind, onRetry }) {
   return null;
 }
 
+function DateFilters({ filters, today, onChange, periodLabel }) {
+  const [preset, setPreset] = useState(filters.preset);
+  const [month, setMonth] = useState(today.slice(0, 7));
+  const [draft, setDraft] = useState({ start: `${today.slice(0, 7)}-01`, end: today });
+  const [error, setError] = useState('');
+  const applyMonth = (value) => {
+    setMonth(value);
+    const range = resolveDashboardRange({ preset: 'month', month: value }, today);
+    if (!range.start) { setError('Elige un mes hasta el mes actual.'); return; }
+    setError('');
+    onChange({ ...filters, preset: 'month', month: value, group: 'day' });
+  };
+  return (
+    <section className="business-dashboard__filters ink-enter-2" aria-label="Filtros del resumen">
+      <label className="business-period-control">
+        <span>Ver datos de</span>
+        <select value={preset} aria-label="Período del resumen" onChange={(event) => {
+          const value = event.target.value;
+          setPreset(value);
+          setError('');
+          if (value === 'custom') return;
+          if (value === 'month') { applyMonth(month); return; }
+          onChange({ ...filters, preset: value, group: value === 'all' ? 'month' : 'day' });
+        }}>
+          <option value="current">Este mes</option>
+          <option value="month">Mes específico</option>
+          <option value="week">Últimos 7 días</option>
+          <option value="thirty">Últimos 30 días</option>
+          <option value="all">Todo el historial</option>
+          <option value="custom">Personalizado</option>
+        </select>
+      </label>
+      {preset === 'month' && <label className="business-period-control"><span>Mes</span><input type="month" aria-label="Mes del resumen" value={month} max={today.slice(0, 7)} onChange={(event) => applyMonth(event.target.value)} /></label>}
+      {preset === 'custom' && <form className="business-period-form" onSubmit={(event) => {
+        event.preventDefault();
+        const message = validateDashboardRange(draft.start, draft.end, today);
+        setError(message);
+        if (!message) onChange({ ...filters, preset: 'custom', ...draft, group: rangeDays(draft.start, draft.end) > 93 ? 'month' : 'day' });
+      }}>
+        <label className="business-period-control"><span>Desde</span><input type="date" aria-label="Desde" value={draft.start} max={today} onChange={(event) => setDraft({ ...draft, start: event.target.value })} /></label>
+        <label className="business-period-control"><span>Hasta</span><input type="date" aria-label="Hasta" value={draft.end} max={today} onChange={(event) => setDraft({ ...draft, end: event.target.value })} /></label>
+        <button className="business-button business-button--primary" type="submit">Aplicar fechas</button>
+      </form>}
+      <p className="business-period-summary"><strong>Período aplicado:</strong> {periodLabel}<span>Ventas, productos, clientes y cotizaciones · importes en soles</span></p>
+      {error && <p className="business-period-error" role="alert">{error}</p>}
+    </section>
+  );
+}
+
 export default function DashboardMockup() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -548,6 +598,10 @@ export default function DashboardMockup() {
   const [reloadKey, setReloadKey] = useState(0);
   const [activeFollowUp, setActiveFollowUp] = useState('quotes');
   const [showQuotes, setShowQuotes] = useState(true);
+  const [today] = useState(() => limaToday());
+  const [filters, setFilters] = useState({ preset: 'current', group: 'day' });
+  const params = useMemo(() => dashboardPeriodParams(filters, today), [filters, today]);
+  const requestKey = `${JSON.stringify(params)}:${reloadKey}`;
   const requestRef = useRef(null);
   const abortTimerRef = useRef(null);
 
@@ -555,12 +609,13 @@ export default function DashboardMockup() {
     if (abortTimerRef.current) window.clearTimeout(abortTimerRef.current);
     let active = true;
     setStatus('loading');
-    if (!requestRef.current || requestRef.current.key !== reloadKey) {
+    if (!requestRef.current || requestRef.current.key !== requestKey) {
+      requestRef.current?.controller.abort('dashboard-period-changed');
       const controller = new AbortController();
       requestRef.current = {
-        key: reloadKey,
+        key: requestKey,
         controller,
-        promise: dashboard.business({}, { signal: controller.signal }),
+        promise: dashboard.business(params, { signal: controller.signal }),
       };
     }
     const request = requestRef.current;
@@ -574,7 +629,7 @@ export default function DashboardMockup() {
         setStatus('ready');
       })
       .catch((error) => {
-        if (!error?.isCanceled) setStatus('error');
+        if (active && !error?.isCanceled) setStatus('error');
       });
     return () => {
       active = false;
@@ -585,19 +640,12 @@ export default function DashboardMockup() {
         }
       }, 0);
     };
-  }, [reloadKey]);
+  }, [requestKey, params]);
 
-  if (status !== 'ready') {
-    return (
-      <div className="business-dashboard" data-testid="dashboard-business-mockup">
-        <DashboardState kind={status} onRetry={() => setReloadKey((value) => value + 1)} />
-      </div>
-    );
-  }
-
-  const { meta, summary, conversion, pending } = data;
+  const { meta = {}, summary = {}, conversion = {}, pending = {} } = data || {};
   const currency = meta.currency || 'PEN';
-  const periodLabel = formatPeriod(meta.period);
+  const requestedRange = resolveDashboardRange(filters, today);
+  const periodLabel = status === 'ready' ? formatPeriod(meta.period) : requestedRange ? formatPeriod(requestedRange) : 'Todo el historial';
   const comparisonLabel = formatPeriod(meta.comparison);
   const historyLabel = formatPeriod(meta.history);
   const salesTrend = formatPercent(summary.sales_change_percent);
@@ -619,7 +667,7 @@ export default function DashboardMockup() {
     {
       label: 'Clientes que compraron',
       value: summary.customers_count,
-      detail: `${summary.new_customers_count} nuevos · ${summary.returning_customers_count} que volvieron`,
+      detail: `${summary.new_customers_count} ${summary.new_customers_count === 1 ? 'nuevo' : 'nuevos'} · ${summary.returning_customers_count} que volvieron`,
       icon: UsersRound,
       tone: 'primary',
     },
@@ -635,12 +683,12 @@ export default function DashboardMockup() {
       label: 'Por cobrar fuera de plazo',
       value: summary.overdue_amount,
       currency,
-      detail: `${summary.overdue_customers_count} ${summary.overdue_customers_count === 1 ? 'cliente' : 'clientes'} · al día de hoy`,
+      detail: `${summary.overdue_customers_count} ${summary.overdue_customers_count === 1 ? 'cliente' : 'clientes'} · saldo actual de ventas de estas fechas`,
       icon: CircleDollarSign,
       tone: 'danger',
     },
   ];
-  const followUp = data.follow_up || {};
+  const followUp = data?.follow_up || {};
   const activeGroup = followUp[activeFollowUp] || { available: true, count: 0, rows: [] };
   const activeRows = activeGroup.rows || [];
   const activeFollowUpLabels = activeFollowUp === 'quotes'
@@ -650,7 +698,7 @@ export default function DashboardMockup() {
 
   const openMonth = (point) => navigate(buildPath('/cotizaciones', {
     view: 'fiscal',
-    ...monthBounds(point),
+    ...chartPointBounds(point),
     moneda: currency,
   }));
   const openProduct = (row) => navigate(buildPath('/productos', { q: row.name, product_id: row.id }));
@@ -659,7 +707,8 @@ export default function DashboardMockup() {
     if (activeFollowUp === 'quotes') navigate(row.quote_id ? `/cotizaciones/${row.quote_id}` : buildPath('/cotizaciones', { q: row.reference }));
     else navigate(buildPath('/clientes', { q: row.client, client_id: row.client_id }));
   };
-  const openFollowUpAll = () => navigate(activeFollowUp === 'quotes' ? '/cotizaciones' : '/clientes');
+  const openFollowUpAll = () => navigate(activeFollowUp === 'quotes' ? buildPath('/cotizaciones', { desde: meta.period?.start, hasta: meta.period?.end }) : '/clientes');
+  const canUseDays = filters.preset !== 'all' && requestedRange && rangeDays(requestedRange.start, requestedRange.end) <= 93;
 
   return (
     <div className="business-dashboard" data-testid="dashboard-business-mockup">
@@ -670,28 +719,19 @@ export default function DashboardMockup() {
           <p>Ventas, clientes y oportunidades para decidir qué hacer hoy.</p>
         </div>
         <div className="business-dashboard__updated">
-          <span>{formatUpdated(meta.generated_at)}</span>
-          <small>Comparado con {comparisonLabel}</small>
+          <span>{status === 'ready' ? formatUpdated(meta.generated_at) : 'Consultando el período elegido'}</span>
+          {status === 'ready' && <small>Comparado con {comparisonLabel}</small>}
         </div>
       </header>
 
-      <section className="business-dashboard__filters ink-enter-2" aria-label="Filtros del resumen">
-        <div className="business-dashboard__filter-label">
-          <span>Periodo analizado</span>
-          <ScopeChip icon={CalendarDays} wide>{periodLabel}</ScopeChip>
-        </div>
-        <ScopeChip>{meta.client_id ? `Cliente #${meta.client_id}` : 'Todos los clientes'}</ScopeChip>
-        <ScopeChip>{meta.product_id ? `Producto #${meta.product_id}` : 'Todos los productos'}</ScopeChip>
-        <ScopeChip>Moneda: {currency === 'PEN' ? 'Soles' : currency}</ScopeChip>
-        <p className="business-dashboard__currency-note">Los importes muestran únicamente operaciones registradas en soles.</p>
-      </section>
+      <DateFilters filters={filters} today={today} onChange={setFilters} periodLabel={periodLabel} />
 
-      {noData ? (
+      {status !== 'ready' ? <DashboardState kind={status} onRetry={() => setReloadKey((value) => value + 1)} /> : noData ? (
         <section className="business-panel business-dashboard__state business-dashboard__state--empty">
           <ReceiptText aria-hidden="true" size={34} />
           <div>
-            <h2>Aún no hay actividad para mostrar</h2>
-            <p>Cuando registres ventas, clientes o movimientos pendientes, el resumen aparecerá aquí.</p>
+            <h2>No hay actividad en estas fechas</h2>
+            <p>Prueba otro período o consulta Todo el historial.</p>
           </div>
           <button className="business-button business-button--primary" type="button" onClick={() => navigate('/comprobantes/nuevo')}>Registrar venta</button>
         </section>
@@ -707,7 +747,9 @@ export default function DashboardMockup() {
               <div className="business-sales__controls">
                 <span className="business-sales__range-label">Historial</span>
                 <ScopeChip>{historyLabel}</ScopeChip>
-                <ScopeChip>Por mes</ScopeChip>
+                <label className="business-period-control"><span className="sr-only">Agrupar gráfico</span><select aria-label="Agrupar gráfico" value={params.group_by} onChange={(event) => setFilters({ ...filters, group: event.target.value })}>
+                  <option value="day" disabled={!canUseDays}>Por día</option><option value="month">Por mes</option>
+                </select></label>
                 <label className={`business-toggle${conversion.available ? '' : ' is-disabled'}`}>
                   <input type="checkbox" checked={conversion.available && showQuotes} disabled={!conversion.available} onChange={(event) => setShowQuotes(event.target.checked)} />
                   <span className="business-toggle__track" aria-hidden="true"><span /></span>
@@ -715,7 +757,8 @@ export default function DashboardMockup() {
                 </label>
               </div>
             </div>
-            <SalesChart history={data.history} currency={currency} showQuotes={conversion.available && showQuotes} onExploreMonth={openMonth} />
+            <SalesChart key={requestKey} history={data.history} currency={currency} showQuotes={conversion.available && showQuotes} onExploreMonth={openMonth} group={meta.group_by || 'month'} />
+            {!canUseDays && <p className="business-sales__footnote">Los períodos largos se muestran por mes para facilitar su lectura.</p>}
             <p className="business-sales__footnote">Incluye IGV. Descuenta notas de crédito y suma notas de débito.</p>
             <div className="business-sales__conversion">
               <div className="business-sales__conversion-rate">
@@ -742,7 +785,7 @@ export default function DashboardMockup() {
 
           <section className="business-panel business-followup ink-enter-6">
             <div className="business-panel__heading">
-              <div><h2>Para hacer seguimiento</h2><p>Señales comerciales calculadas con la actividad registrada.</p></div>
+              <div><h2>Para hacer seguimiento</h2><p>{activeFollowUp === 'inactive' ? `Clientes sin compras durante los 60 días anteriores al ${formatDate(meta.period?.end)}.` : 'Señales comerciales del período elegido. La venta relacionada se comprueba al día de hoy.'}</p></div>
               <button className="business-button business-button--primary" type="button" onClick={() => navigate('/cotizaciones')}>
                 Crear cotización <Plus aria-hidden="true" size={16} />
               </button>

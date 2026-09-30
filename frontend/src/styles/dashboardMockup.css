@@ -129,6 +129,70 @@
 
 .business-dashboard__filter--wide { min-width: 165px; }
 
+.business-period-control {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.business-period-control select,
+.business-period-control input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px 11px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.business-period-control :is(select, input):focus-visible {
+  outline: 2px solid var(--dashboard-green);
+  outline-offset: 2px;
+}
+
+.business-period-form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.business-period-summary {
+  margin: 0;
+  padding: 2px 0;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.business-period-summary span {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.business-period-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-danger, #b42318);
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .business-period-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .business-period-form button { grid-column: 1 / -1; }
+  .business-period-control :is(select, input) { min-height: 44px; font-size: 16px; }
+  .business-period-summary { overflow-wrap: anywhere; }
+}
+
 .business-dashboard__clear,
 .business-link {
   display: inline-flex;

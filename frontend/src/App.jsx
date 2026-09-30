@@ -5,7 +5,7 @@ import { ToastProvider } from './components/ui/Toast';
 import { InkoraDialogProvider } from './components/ui/InkoraDialogProvider';
 import AppLayout from './layouts/AppLayout';
 import Login from './pages/Login';
-import DashboardMockup from './pages/DashboardMockup';
+const DashboardMockup = lazy(() => import('./pages/DashboardMockup'));
 
 const AccessRequestPage = lazy(() => import('./pages/AccessRequestPage'));
 const LandingPage = lazy(() => import('./pages/LandingPage'));
@@ -62,7 +62,7 @@ export default function App() {
             <Route path="/recuperar-password" element={<LazyRoute><PasswordRecoveryPage /></LazyRoute>} />
             <Route path="/solicitar-acceso" element={<LazyRoute><AccessRequestPage /></LazyRoute>} />
             <Route element={<AppLayout />}>
-              <Route path="/dashboard" element={<DashboardMockup />} />
+              <Route path="/dashboard" element={<LazyRoute><DashboardMockup /></LazyRoute>} />
               <Route path="/clientes" element={<LazyRoute><ClientesPage /></LazyRoute>} />
               <Route path="/productos" element={<LazyRoute><ProductosPage /></LazyRoute>} />
               <Route path="/inventario" element={<LazyRoute><InventarioPage /></LazyRoute>} />
