@@ -164,6 +164,26 @@ def _client_name(primary, secondary) -> str:
     return primary or secondary or "Cliente sin nombre"
 
 
+def _previous_history_sales(db: Session, filters: list, start: date, end: date):
+    """Aggregate the previous equivalent month span, independent of current rows."""
+    first_day = start.day if (start.year, start.month) == (end.year, end.month) else 1
+    year, month = _month_before(end)
+    last_day = calendar.monthrange(year, month)[1]
+    matched_start = date(year, month, min(first_day, last_day))
+    matched_end = date(year, month, min(end.day, last_day))
+    return (
+        db.query(func.sum(_signed_total()))
+        .filter(
+            *filters,
+            _recognized_sales_filter(),
+            models.Cotizacion.fecha_emision >= _day_start(matched_start),
+            models.Cotizacion.fecha_emision < _day_after(matched_end),
+        )
+        .correlate(None)
+        .scalar_subquery()
+    )
+
+
 def get_business_dashboard(
     db: Session,
     tenant_id: int,
@@ -173,16 +193,43 @@ def get_business_dashboard(
     client_id: int | None = None,
     product_id: int | None = None,
     currency: str = "PEN",
+    group_by: str = "month",
+    history_scope: str = "all",
+    period_scope: str = "selected",
 ) -> dict:
     """Return one bounded dashboard payload without loading document collections."""
 
     today = fiscal_time.today_lima()
-    period_end = min(end or today, today)
-    period_start = start or period_end.replace(day=1)
+    if group_by not in ("day", "month"):
+        raise ValueError("Agrupa los datos por días o por meses.")
+    if history_scope not in ("all", "period"):
+        raise ValueError("Elige el historial completo o el período seleccionado.")
+    if period_scope not in ("selected", "all"):
+        raise ValueError("Elige un período o todo el historial.")
+    if period_scope == "all" and group_by != "month":
+        raise ValueError("Para ver todo el historial, agrupa por meses.")
+    if period_scope == "all":
+        history_scope = "period"
+    if group_by == "day" and history_scope != "period":
+        raise ValueError("Para ver días, selecciona un período de hasta 93 días.")
+    history_today_dt = _day_after(today)
+    first_activity_query = (
+        db.query(func.min(models.Cotizacion.fecha_emision))
+        .filter(
+            models.Cotizacion.tenant_id == tenant_id,
+            models.Cotizacion.fecha_emision < history_today_dt,
+            or_(_registered_quote_filter(), _recognized_sales_filter()),
+        )
+    )
+    all_activity = first_activity_query.scalar() if period_scope == "all" else None
+    period_end = today if period_scope == "all" else min(end or today, today)
+    period_start = (all_activity.date() if all_activity else today) if period_scope == "all" else start or period_end.replace(day=1)
     if period_start > period_end:
         raise ValueError("La fecha inicial no puede ser posterior a la fecha final.")
-    if (period_end - period_start).days > 366:
+    if period_scope == "selected" and (period_end - period_start).days > 366:
         raise ValueError("El periodo analizado no puede superar 367 dias.")
+    if group_by == "day" and (period_end - period_start).days > 92:
+        raise ValueError("La vista por días permite hasta 93 días. Elige un período más corto.")
     if currency != "PEN":
         raise ValueError("El dashboard comercial solo consolida operaciones en PEN.")
 
@@ -207,8 +254,10 @@ def get_business_dashboard(
         models.Cotizacion.fecha_emision >= comparison_start_dt,
         models.Cotizacion.fecha_emision < comparison_end_dt,
     )
-    history_end = today
+    history_end = period_end if history_scope == "period" else today
     history_end_dt = _day_after(history_end)
+    # Conversion remains the current state of the selected quotation cohort.
+    conversion_end_dt = history_today_dt
     linked_document = aliased(models.Cotizacion)
     has_linked_sale = (
         db.query(linked_document.id)
@@ -218,7 +267,7 @@ def get_business_dashboard(
             linked_document.document_kind == DOCUMENT_KIND_FISCAL_DOCUMENT,
             linked_document.tipo_comprobante.in_(("01", "03")),
             linked_document.estado.in_((DOCUMENT_STATUS_PENDING, DOCUMENT_STATUS_ISSUED)),
-            linked_document.fecha_emision < history_end_dt,
+            linked_document.fecha_emision < conversion_end_dt,
         )
         .correlate(models.Cotizacion)
         .exists()
@@ -231,15 +280,7 @@ def get_business_dashboard(
         .filter(*common_filters, in_period, _registered_quote_filter())
         .subquery("dashboard_quote_summary")
     )
-    first_activity_query = (
-        db.query(func.min(models.Cotizacion.fecha_emision))
-        .filter(
-            models.Cotizacion.tenant_id == tenant_id,
-            models.Cotizacion.fecha_emision < history_end_dt,
-            or_(_registered_quote_filter(), _recognized_sales_filter()),
-        )
-        .scalar_subquery()
-    )
+    first_activity_scalar = first_activity_query.scalar_subquery()
     signed_total = _signed_total()
     sales_summary = (
         db.query(
@@ -357,12 +398,11 @@ def get_business_dashboard(
     ).select_from(models.Cotizacion)
     overdue_query = _join_collection_totals(overdue_query, collection_totals).filter(
         *_accepted_fiscal_filters(tenant_id),
-        models.Cotizacion.moneda == currency,
+        *common_filters,
+        in_period,
         models.Cotizacion.fecha_vencimiento.isnot(None),
         models.Cotizacion.fecha_vencimiento < fiscal_time.now_lima_naive(),
     )
-    if client_id is not None:
-        overdue_query = overdue_query.filter(models.Cotizacion.cliente_id == client_id)
     overdue_metrics = overdue_query.subquery("dashboard_overdue_metrics")
 
     low_stock_count_query = (
@@ -403,7 +443,12 @@ def get_business_dashboard(
             func.coalesce(fiscal_error_count_query, 0).label("fiscal_error_count"),
             quote_summary.c.quote_count,
             func.coalesce(quote_summary.c.converted_count, 0).label("converted_count"),
-            first_activity_query.label("first_activity"),
+            first_activity_scalar.label("first_activity"),
+            *(
+                [_previous_history_sales(db, common_filters, period_start, history_end)
+                 .label("previous_history_amount")]
+                if history_scope == "period" else []
+            ),
         )
         .select_from(sales_summary)
         .join(overdue_metrics, true())
@@ -417,53 +462,75 @@ def get_business_dashboard(
     customers_count = int(summary_row.customers_count or 0)
     new_customers_count = int(summary_row.new_customers_count or 0)
 
-    history_start = summary_row.first_activity.date() if summary_row.first_activity else today
+    activity_start = summary_row.first_activity.date() if summary_row.first_activity else None
+    history_start = period_start if history_scope == "period" else activity_start or today
     history_start_dt = _day_start(history_start)
-    matched_start, matched_end = _comparison_period(history_end.replace(day=1), history_end)
-    in_history_comparison = and_(
-        models.Cotizacion.fecha_emision >= _day_start(matched_start),
-        models.Cotizacion.fecha_emision < _day_after(matched_end),
+    # Period comparisons are part of the summary so empty months retain them.
+    previous_history_amount = (
+        _previous_history_sales(db, common_filters, history_start, history_end)
+        if history_scope == "all" else None
     )
     year_expr = func.extract("year", models.Cotizacion.fecha_emision)
     month_expr = func.extract("month", models.Cotizacion.fecha_emision)
+    day_expr = func.extract("day", models.Cotizacion.fecha_emision)
+    grouping = [year_expr, month_expr] + ([day_expr] if group_by == "day" else [])
+    history_columns = [
+        year_expr.label("year"), month_expr.label("month"),
+        func.sum(case((_recognized_sales_filter(), signed_total), else_=ZERO)).label("amount"),
+        func.sum(case((_registered_quote_filter(), models.Cotizacion.total_venta), else_=ZERO)).label("quoted_amount"),
+    ]
+    if history_scope == "all":
+        history_columns.append(previous_history_amount.label("previous_matched_amount"))
+    if group_by == "day":
+        history_columns.append(day_expr.label("day"))
     sales_history_rows = (
-        db.query(
-            year_expr.label("year"),
-            month_expr.label("month"),
-            func.sum(case((_recognized_sales_filter(), signed_total), else_=ZERO)).label("amount"),
-            func.sum(case((_registered_quote_filter(), models.Cotizacion.total_venta), else_=ZERO)).label("quoted_amount"),
-            func.sum(case((and_(_recognized_sales_filter(), in_history_comparison), signed_total), else_=ZERO)).label("matched_amount"),
-        )
+        db.query(*history_columns)
         .filter(
             *common_filters,
             models.Cotizacion.fecha_emision >= history_start_dt,
             models.Cotizacion.fecha_emision < history_end_dt,
             or_(_recognized_sales_filter(), _registered_quote_filter()),
         )
-        .group_by(year_expr, month_expr)
+        .group_by(*grouping)
         .all()
     )
-    sales_history = {(int(row.year), int(row.month)): _money(row.amount) for row in sales_history_rows}
-    quoted_history = {(int(row.year), int(row.month)): _money(row.quoted_amount) for row in sales_history_rows}
-    previous_matched_sales = _money(sum((row.matched_amount or ZERO for row in sales_history_rows), ZERO))
+    def history_key(row):
+        key = (int(row.year), int(row.month))
+        return key + (int(row.day),) if group_by == "day" else key
+    sales_history = {history_key(row): _money(row.amount) for row in sales_history_rows}
+    quoted_history = {history_key(row): _money(row.quoted_amount) for row in sales_history_rows}
+    previous_matched_sales = (
+        _money(summary_row.previous_history_amount)
+        if history_scope == "period"
+        else _money(sales_history_rows[0].previous_matched_amount) if sales_history_rows else None
+    )
     history = []
-    cursor = history_start.replace(day=1)
-    while summary_row.first_activity and cursor <= history_end:
+    cursor = history_start if group_by == "day" else history_start.replace(day=1)
+    while (activity_start or (history_scope == "period" and period_scope == "selected")) and cursor <= history_end:
         key = (cursor.year, cursor.month)
         last_day = calendar.monthrange(cursor.year, cursor.month)[1]
-        partial = key == (history_end.year, history_end.month) and history_end.day < last_day
-        history.append(
-            {
-                "year": cursor.year,
-                "month": cursor.month,
-                "sales_amount": sales_history.get(key, ZERO),
-                "quoted_amount": quoted_history.get(key, ZERO),
-                "is_partial": partial,
-                "cutoff_day": history_end.day if partial else None,
-                "previous_matched_sales": previous_matched_sales if partial else None,
-            }
-        )
-        if cursor.month == 12:
+        bucket_start = max(cursor, history_start)
+        bucket_end = min(date(cursor.year, cursor.month, last_day), history_end)
+        partial = bucket_start.day != 1 or bucket_end.day != last_day
+        if group_by == "day":
+            key += (cursor.day,)
+            bucket_start = bucket_end = cursor
+            partial = False
+        history.append({
+            "year": cursor.year,
+            "month": cursor.month,
+            "date": cursor if group_by == "day" else None,
+            "period_start": bucket_start,
+            "period_end": bucket_end,
+            "sales_amount": sales_history.get(key, ZERO),
+            "quoted_amount": quoted_history.get(key, ZERO),
+            "is_partial": partial,
+            "cutoff_day": bucket_end.day if partial else None,
+            "previous_matched_sales": previous_matched_sales if partial and bucket_end == history_end else None,
+        })
+        if group_by == "day":
+            cursor += timedelta(days=1)
+        elif cursor.month == 12:
             cursor = date(cursor.year + 1, 1, 1)
         else:
             cursor = date(cursor.year, cursor.month + 1, 1)
@@ -724,7 +791,7 @@ def get_business_dashboard(
         for row in declining_clients[:3]
     ]
 
-    inactive_cutoff = _day_start(today - timedelta(days=60))
+    inactive_cutoff = _day_start(period_end - timedelta(days=60))
     inactive_ranked = (
         db.query(
             models.Cotizacion.cliente_id.label("client_id"),
@@ -743,6 +810,7 @@ def get_business_dashboard(
         .filter(
             *common_filters,
             _base_sale_filter(),
+            models.Cotizacion.fecha_emision < period_end_dt,
             models.Cotizacion.cliente_id.isnot(None),
         )
         .subquery("dashboard_inactive_ranked")
@@ -780,7 +848,7 @@ def get_business_dashboard(
             "client": _client_name(row.client_name, row.client_alt),
             "reference": "Ultima compra",
             "amount": _money(row.amount),
-            "age_days": max((today - row.last_purchase.date()).days, 0),
+            "age_days": max((period_end - row.last_purchase.date()).days, 0),
         }
         for row in inactive_rows
     ]
@@ -788,6 +856,11 @@ def get_business_dashboard(
     return {
         "meta": {
             "generated_at": now,
+            "activity_start": activity_start,
+            "group_by": group_by,
+            "history_scope": history_scope,
+            "period_scope": period_scope,
+            "overdue_as_of": today,
             "currency": currency,
             "period": {
                 "start": period_start,

@@ -308,8 +308,8 @@ def test_business_dashboard_uses_real_fiscal_semantics(db_session):
             end=datetime(2026, 9, 28).date(),
             product_id=ink_id,
         )
-    assert product_filtered["summary"]["overdue_amount"] == Decimal("450.00")
-    assert product_filtered["summary"]["overdue_customers_count"] == 1
+    assert product_filtered["summary"]["overdue_amount"] == Decimal("0.00")
+    assert product_filtered["summary"]["overdue_customers_count"] == 0
     assert len(filtered_capture.statements) <= 6
 
 
@@ -591,6 +591,9 @@ def test_business_dashboard_http_contract_serializes_and_forwards_filters(
         "client_id": 7,
         "product_id": 11,
         "currency": "PEN",
+        "group_by": "month",
+        "history_scope": "all",
+        "period_scope": "selected",
     }
     body = response.json()
     assert set(body) == {
@@ -647,6 +650,9 @@ def test_business_dashboard_http_maps_domain_validation_to_400(
         "product_id=0",
         "currency=USD",
         "desde=no-es-fecha",
+        "group_by=week",
+        "history_scope=wrong",
+        "period_scope=wrong",
     ],
 )
 def test_business_dashboard_http_rejects_invalid_query_before_crud(
@@ -818,3 +824,159 @@ def test_empty_business_history_has_no_invented_months(db_session):
     assert payload["meta"]["history"]["end"] == date(2026, 9, 28)
     assert payload["conversion"]["quote_count"] == 0
     assert payload["conversion"]["rate_percent"] is None
+    all_payload = get_business_dashboard(db_session, tenant.id, period_scope="all")
+    assert all_payload["history"] == []
+    assert all_payload["meta"]["activity_start"] is None
+
+
+def test_daily_period_keeps_exact_boundaries_zero_days_notes_and_tenant(db_session):
+    tenant = make_tenant(db_session, "DAILY01")
+    user = make_user(db_session, tenant, email="daily@test.com")
+    client = make_cliente(db_session, tenant, "DAILY01")
+    other = make_tenant(db_session, "DAILY02")
+    other_user = make_user(db_session, other, email="daily-other@test.com")
+    other_client = make_cliente(db_session, other, "DAILY02")
+    for at, amount in ((datetime(2026, 9, 21, 23, 59, 59), "1000"),
+                       (datetime(2026, 9, 22), "100"),
+                       (datetime(2026, 9, 28, 23, 59, 59), "200"),
+                       (datetime(2026, 9, 29), "1000")):
+        _document(db_session, tenant, user, client, issued_at=at, amount=amount)
+    sale = _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 24), amount="100")
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 24), amount="25",
+              kind=DOCUMENT_KIND_CREDIT_NOTE, type_code="07", reference_id=sale.id)
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 24), amount="10",
+              kind=DOCUMENT_KIND_DEBIT_NOTE, type_code="08", reference_id=sale.id)
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 25), amount="70",
+              kind=DOCUMENT_KIND_QUOTATION, type_code="00")
+    _document(db_session, other, other_user, other_client, issued_at=datetime(2026, 9, 22), amount="9999")
+    tenant_id = tenant.id
+    with _SelectCapture(db_session) as capture:
+        payload = get_business_dashboard(db_session, tenant_id, start=date(2026, 9, 22),
+                                         end=date(2026, 9, 28), group_by="day", history_scope="period")
+    assert len(capture.statements) == 6
+    assert payload["meta"]["group_by"] == "day"
+    assert len(payload["history"]) == 7
+    assert [p["date"] for p in payload["history"]] == [date(2026, 9, day) for day in range(22, 29)]
+    assert [p["sales_amount"] for p in payload["history"]] == list(map(Decimal, ("100", "0", "85", "0", "0", "0", "200")))
+    assert all(p["period_start"] == p["period_end"] == p["date"] for p in payload["history"])
+    assert sum(p["sales_amount"] for p in payload["history"]) == payload["summary"]["sales_amount"] == Decimal("385")
+    assert payload["history"][3]["quoted_amount"] == Decimal("70")
+
+
+def test_monthly_period_intersects_months_and_matches_summary(db_session):
+    tenant = make_tenant(db_session, "MONTHRANGE")
+    user = make_user(db_session, tenant, email="monthrange@test.com")
+    client = make_cliente(db_session, tenant, "MONTHRANGE")
+    for at, amount in ((datetime(2026, 8, 16, 23, 59, 59), "900"),
+                       (datetime(2026, 8, 17), "100"),
+                       (datetime(2026, 8, 31, 23, 59, 59), "200"),
+                       (datetime(2026, 9, 1), "300"),
+                       (datetime(2026, 9, 12, 23, 59, 59), "400"),
+                       (datetime(2026, 9, 13), "900")):
+        _document(db_session, tenant, user, client, issued_at=at, amount=amount)
+    payload = get_business_dashboard(db_session, tenant.id, start=date(2026, 8, 17),
+                                     end=date(2026, 9, 12), history_scope="period")
+    assert [(p["period_start"], p["period_end"]) for p in payload["history"]] == [
+        (date(2026, 8, 17), date(2026, 8, 31)), (date(2026, 9, 1), date(2026, 9, 12))]
+    assert all(p["is_partial"] for p in payload["history"])
+    assert [p["sales_amount"] for p in payload["history"]] == [Decimal("300"), Decimal("700")]
+    assert sum(p["sales_amount"] for p in payload["history"]) == payload["summary"]["sales_amount"] == Decimal("1000")
+    assert payload["meta"]["history"]["end"] == date(2026, 9, 12)
+
+
+def test_all_period_spans_multiple_years_with_bounded_queries(db_session):
+    tenant = make_tenant(db_session, "ALLPERIOD")
+    user = make_user(db_session, tenant, email="allperiod@test.com")
+    client = make_cliente(db_session, tenant, "ALLPERIOD")
+    quote = _document(db_session, tenant, user, client, issued_at=datetime(2024, 12, 15),
+                      amount="30", kind=DOCUMENT_KIND_QUOTATION, type_code="00")
+    _document(db_session, tenant, user, client, issued_at=datetime(2025, 1, 1), amount="100", source_quote_id=quote.id)
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 28), amount="200")
+    tenant_id = tenant.id
+    with _SelectCapture(db_session) as capture:
+        payload = get_business_dashboard(db_session, tenant_id, period_scope="all", start=date(2026, 9, 1))
+    assert len(capture.statements) == 7
+    assert payload["meta"]["period"]["start"] == payload["meta"]["activity_start"] == date(2024, 12, 15)
+    assert payload["meta"]["history_scope"] == "period"
+    assert len(payload["history"]) == 22
+    assert payload["summary"]["sales_count"] == 2
+    assert sum(p["sales_amount"] for p in payload["history"]) == payload["summary"]["sales_amount"] == Decimal("300")
+    assert payload["conversion"]["quote_count"] == 1
+    assert payload["conversion"]["linked_sales_count"] == 1
+
+
+def test_period_overdue_uses_current_balance_and_selected_issue_dates(db_session):
+    tenant = make_tenant(db_session, "DUEPERIOD")
+    user = make_user(db_session, tenant, email="dueperiod@test.com")
+    client = make_cliente(db_session, tenant, "DUEPERIOD")
+    product = make_producto(db_session, tenant, "DUEPRODUCT")
+    for at, amount in ((datetime(2026, 8, 10), "1000"), (datetime(2026, 9, 8), "300")):
+        sale = _document(db_session, tenant, user, client, issued_at=at, amount=amount,
+                         due_at=datetime(2026, 9, 20))
+        _item(db_session, sale, product, amount=amount, quantity="1")
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 8), amount="500", due_at=datetime(2026, 9, 20))
+    payload = get_business_dashboard(db_session, tenant.id, start=date(2026, 9, 1),
+                                     end=date(2026, 9, 10), history_scope="period", product_id=product.id)
+    assert payload["summary"]["overdue_amount"] == Decimal("300")
+    assert payload["meta"]["overdue_as_of"] == date(2026, 9, 28)
+
+
+def test_inactive_clients_use_period_end_and_ignore_later_purchases(db_session):
+    tenant = make_tenant(db_session, "INACTIVEEND")
+    user = make_user(db_session, tenant, email="inactiveend@test.com")
+    client = make_cliente(db_session, tenant, "INACTIVEEND")
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 4, 1), amount="100")
+    _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 20), amount="200")
+    payload = get_business_dashboard(db_session, tenant.id, start=date(2026, 7, 1), end=date(2026, 7, 31), history_scope="period")
+    assert payload["follow_up"]["inactive"]["count"] == 1
+    assert payload["follow_up"]["inactive"]["rows"][0]["age_days"] == 121
+    assert payload["follow_up"]["inactive"]["rows"][0]["amount"] == Decimal("100")
+
+
+@pytest.mark.parametrize("filters", [
+    {"group_by": "day", "history_scope": "period", "start": date(2026, 1, 1), "end": date(2026, 9, 28)},
+    {"group_by": "day"},
+    {"group_by": "day", "history_scope": "period", "period_scope": "all"},
+    {"group_by": "week"}, {"period_scope": "invalid"}, {"history_scope": "invalid"},
+])
+def test_period_group_validation_is_explicit(db_session, filters):
+    with pytest.raises(ValueError):
+        get_business_dashboard(db_session, 1, **filters)
+
+
+def test_daily_limit_accepts_exactly_93_days_and_http_rejects_94(db_session):
+    tenant = make_tenant(db_session, "DAYLIMIT")
+    user = make_user(db_session, tenant, email="daylimit@test.com")
+    client = _dashboard_http_client(db_session, user)
+    response = client.get("/analytics/dashboard/business", params={
+        "desde": "2026-06-28", "hasta": "2026-09-28", "group_by": "day", "history_scope": "period"})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["history"]) == 93
+    assert body["history"][0]["date"] == body["history"][0]["period_start"] == "2026-06-28"
+    assert body["meta"]["activity_start"] is None
+    response = client.get("/analytics/dashboard/business", params={
+        "desde": "2026-06-27", "hasta": "2026-09-28", "group_by": "day", "history_scope": "period"})
+    assert response.status_code == 400
+    assert "93" in response.json()["detail"]
+
+
+def test_empty_partial_month_keeps_previous_equivalent_span_without_extra_queries(db_session):
+    tenant = make_tenant(db_session, "EMPTYCOMPARE")
+    user = make_user(db_session, tenant, email="emptycompare@test.com")
+    client = make_cliente(db_session, tenant, "EMPTYCOMPARE")
+    for day, amount in ((5, "1000"), (17, "100"), (28, "200"), (29, "1000")):
+        _document(db_session, tenant, user, client, issued_at=datetime(2026, 8, day), amount=amount)
+    tenant_id = tenant.id
+    with _SelectCapture(db_session) as capture:
+        payload = get_business_dashboard(db_session, tenant_id, start=date(2026, 9, 17),
+                                         end=date(2026, 9, 28), history_scope="period")
+    assert len(capture.statements) == 6
+    assert payload["summary"]["sales_amount"] == Decimal("0")
+    assert len(payload["history"]) == 1
+    point = payload["history"][0]
+    assert point["is_partial"] is True
+    assert point["period_start"] == date(2026, 9, 17)
+    assert point["period_end"] == date(2026, 9, 28)
+    assert point["sales_amount"] == Decimal("0")
+    assert point["previous_matched_sales"] == Decimal("300")

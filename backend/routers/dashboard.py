@@ -12,6 +12,7 @@ No requiere que el módulo MRP esté activo para funcionar correctamente.
 """
 
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -59,6 +60,9 @@ def read_business_dashboard(
     client_id: int | None = Query(default=None, ge=1),
     product_id: int | None = Query(default=None, ge=1),
     currency: str = Query(default="PEN", pattern="^PEN$"),
+    group_by: Literal["day", "month"] = "month",
+    history_scope: Literal["all", "period"] = "all",
+    period_scope: Literal["selected", "all"] = "selected",
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -77,6 +81,9 @@ def read_business_dashboard(
             client_id=client_id,
             product_id=product_id,
             currency=currency,
+            group_by=group_by,
+            history_scope=history_scope,
+            period_scope=period_scope,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
