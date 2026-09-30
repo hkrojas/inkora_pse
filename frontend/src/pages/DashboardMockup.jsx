@@ -257,7 +257,7 @@ function formatAxis(value, currency) {
   return formatMoney(value, currency);
 }
 
-function SalesChart({ history, currency, showQuotes, onExploreMonth, group = 'month' }) {
+function SalesChart({ history, currency, showQuotes, onExploreMonth, group = 'month', animate = true }) {
   const [activePoint, setActivePoint] = useState(null);
   const canvasRef = useRef(null);
   const [width, setWidth] = useState(920);
@@ -321,25 +321,29 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth, group = 'mo
                 </g>
               );
             })}
-            {salesPoints.length > 0 && (
-              <>
-                <path className="business-chart__area" d={`${pathFromPoints(salesPoints)} L ${salesPoints.at(-1).x} ${plotBottom} L ${salesPoints[0].x} ${plotBottom} Z`} />
-                <path className="business-chart__line business-chart__line--sales" d={pathFromPoints(salesPoints)} pathLength="1" />
-              </>
-            )}
-            {showQuotes && <path className="business-chart__line business-chart__line--quoted" d={pathFromPoints(quotedPoints)} pathLength="1" />}
+            <g className={`business-chart__series${animate ? ' business-chart__series--animated' : ''}`}>
+              {salesPoints.length > 0 && (
+                <>
+                  <path className="business-chart__area" d={`${pathFromPoints(salesPoints)} L ${salesPoints.at(-1).x} ${plotBottom} L ${salesPoints[0].x} ${plotBottom} Z`} />
+                  <path className="business-chart__line business-chart__line--sales" d={pathFromPoints(salesPoints)} pathLength="1" />
+                </>
+              )}
+              {showQuotes && <path className="business-chart__line business-chart__line--quoted" d={pathFromPoints(quotedPoints)} pathLength="1" />}
+              {salesPoints.map((point, index) => (
+                <g key={history[index].date || `${history[index].year}-${history[index].month}`} className={activePoint === index ? 'is-active' : ''}>
+                  <circle className="business-chart__point-halo" cx={point.x} cy={point.y} r="8" />
+                  <circle className="business-chart__point business-chart__point--sales" cx={point.x} cy={point.y} r="4.5" />
+                  {showQuotes && <circle className="business-chart__point business-chart__point--quoted" cx={quotedPoints[index].x} cy={quotedPoints[index].y} r="4" />}
+                </g>
+              ))}
+            </g>
             {salesPoints.map((point, index) => (
-              <g key={history[index].date || `${history[index].year}-${history[index].month}`} className={activePoint === index ? 'is-active' : ''}>
-                <circle className="business-chart__point-halo" cx={point.x} cy={point.y} r="8" />
-                <circle className="business-chart__point business-chart__point--sales" cx={point.x} cy={point.y} r="4.5" />
-                {showQuotes && <circle className="business-chart__point business-chart__point--quoted" cx={quotedPoints[index].x} cy={quotedPoints[index].y} r="4" />}
-                {(index % labelStride === 0 || (index === latestIndex && latestIndex % labelStride >= labelStride / 2)) && (
-                  <text className="business-chart__month" x={point.x} y={height - 24} textAnchor="middle">
-                    {daily ? Number(history[index].date.slice(-2)) : MONTH_SHORT[history[index].month - 1]}
-                    {(index === 0 || (daily ? history[index].date.slice(5, 7) !== history[index - 1].date.slice(5, 7) : history[index].month === 1)) && <tspan x={point.x} dy="14">{daily ? MONTH_SHORT[history[index].month - 1] : history[index].year}</tspan>}
-                  </text>
-                )}
-              </g>
+              (index % labelStride === 0 || (index === latestIndex && latestIndex % labelStride >= labelStride / 2)) && (
+                <text key={`label-${history[index].date || `${history[index].year}-${history[index].month}`}`} className="business-chart__month" x={point.x} y={height - 24} textAnchor="middle">
+                  {daily ? Number(history[index].date.slice(-2)) : MONTH_SHORT[history[index].month - 1]}
+                  {(index === 0 || (daily ? history[index].date.slice(5, 7) !== history[index - 1].date.slice(5, 7) : history[index].month === 1)) && <tspan x={point.x} dy="14">{daily ? MONTH_SHORT[history[index].month - 1] : history[index].year}</tspan>}
+                </text>
+              )
             ))}
             {latestPoint && (
               <text className="business-chart__current-label" x={width - 32} y="40" textAnchor="end">
@@ -603,6 +607,7 @@ export default function DashboardMockup() {
   const [filters, setFilters] = useState({ preset: 'current', group: 'day' });
   const [entities, setEntities] = useState({ client: null, product: null });
   const [explorerContext, setExplorerContext] = useState(null);
+  const keyboardInputRef = useRef(false);
   const params = useMemo(() => ({ ...dashboardPeriodParams(filters, today), client_id: entities.client?.id, product_id: entities.product?.id }), [entities, filters, today]);
   const requestKey = `${JSON.stringify(params)}:${reloadKey}`;
   const requestRef = useRef(null);
@@ -728,7 +733,9 @@ export default function DashboardMockup() {
   const canUseDays = filters.preset !== 'all' && requestedRange && rangeDays(requestedRange.start, requestedRange.end) <= 93;
 
   return (
-    <div className="business-dashboard" data-testid="dashboard-business-mockup">
+    <div className="business-dashboard" data-testid="dashboard-business-mockup"
+      onPointerDownCapture={() => { keyboardInputRef.current = false; }}
+      onKeyDownCapture={() => { keyboardInputRef.current = true; }}>
       <header className="business-dashboard__intro ink-enter-1">
         <div>
           <span className="business-dashboard__rule" aria-hidden="true" />
@@ -758,7 +765,7 @@ export default function DashboardMockup() {
             {kpis.map((item, index) => <MetricCard key={item.label} item={item} index={index} />)}
           </section>
 
-          <section className="business-panel business-sales ink-enter-4">
+          <section className="business-panel business-sales">
             <div className="business-panel__heading business-sales__heading">
               <div><h2 id="sales-chart-title">{conversion.available ? 'Ventas y cotizaciones' : 'Ventas'}</h2><p>Ventas registradas en Inkora</p></div>
               <div className="business-sales__controls">
@@ -773,7 +780,7 @@ export default function DashboardMockup() {
                 </label>
               </div>
             </div>
-            <SalesChart key={requestKey} history={data.history} currency={currency} showQuotes={conversion.available && showQuotes} onExploreMonth={openMonth} group={meta.group_by || 'month'} />
+            <SalesChart key={requestKey} history={data.history} currency={currency} showQuotes={conversion.available && showQuotes} onExploreMonth={openMonth} group={meta.group_by || 'month'} animate={!keyboardInputRef.current} />
             {!canUseDays && <p className="business-sales__footnote">Los períodos largos se muestran por mes para facilitar su lectura.</p>}
             <p className="business-sales__footnote">Incluye IGV. Descuenta notas de crédito y suma notas de débito.</p>
             <div className="business-sales__conversion">

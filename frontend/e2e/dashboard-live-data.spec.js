@@ -344,6 +344,139 @@ function temporalPayload(params) {
   };
 }
 
+async function recordChartTransitions(page) {
+  await page.addInitScript(() => {
+    window.__chartMotionEvents = [];
+    const seriesIds = new WeakMap();
+    let nextId = 0;
+    const record = (event) => {
+      if (!event.target.classList?.contains('business-chart__series')) return;
+      if (!['clip-path', 'opacity'].includes(event.propertyName)) return;
+      if (!seriesIds.has(event.target)) seriesIds.set(event.target, ++nextId);
+      window.__chartMotionEvents.push({
+        type: event.type, property: event.propertyName, elapsed: event.elapsedTime,
+        series: seriesIds.get(event.target), time: performance.now(),
+        opacity: getComputedStyle(event.target).opacity,
+        clipPath: getComputedStyle(event.target).clipPath,
+      });
+    };
+    document.addEventListener('transitionrun', record, true);
+    document.addEventListener('transitionend', record, true);
+  });
+}
+
+async function chartMotionEvents(page) {
+  return page.evaluate(() => window.__chartMotionEvents || []);
+}
+
+async function waitForChartEntrance(page, completedBefore, properties) {
+  await expect.poll(async () => (await chartMotionEvents(page)).filter((event) => event.type === 'transitionend').length).toBe(completedBefore + properties.length);
+  const events = await chartMotionEvents(page);
+  const ended = events.filter((event) => event.type === 'transitionend').slice(completedBefore);
+  expect(ended.map((event) => event.property).sort()).toEqual([...properties].sort());
+  expect(ended.every((event) => event.elapsed > 0 && event.elapsed <= 0.3)).toBe(true);
+  for (const event of ended) {
+    expect(events.some((run) => run.series === event.series && run.type === 'transitionrun' && run.property === event.property)).toBe(true);
+  }
+  await expect.poll(async () => page.locator('.business-chart__series').evaluate((series) => getComputedStyle(series).opacity)).toBe('1');
+  expect(await page.locator('.business-chart__series').evaluate((series) => getComputedStyle(series).clipPath)).toBe('inset(0px)');
+  return events;
+}
+
+async function afterChartPaint(page) {
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+}
+
+async function attachChartMotion(page, testInfo, name) {
+  const body = JSON.stringify(await chartMotionEvents(page), null, 2);
+  await writeFile(testInfo.outputPath(`${name}-transitions.json`), body);
+  await testInfo.attach(`${name}: transiciones reales`, { body, contentType: 'application/json' });
+  const chart = page.locator('.business-sales');
+  if (await chart.count()) {
+    const path = testInfo.outputPath(`${name}.png`);
+    await chart.screenshot({ path });
+    await testInfo.attach(name, { path, contentType: 'image/png' });
+  }
+}
+
+for (const width of [1440, 390]) {
+  test(`animación del gráfico: carga y fechas sin repetir por hover o ampliación a ${width}px`, async ({ browser, baseURL }, testInfo) => {
+    const { context, page } = await createDashboardContext(browser, baseURL, { viewport: { width, height: 900 }, payloadForQuery: temporalPayload });
+    const errors = attachCriticalErrorCollector(page);
+    try {
+      await recordChartTransitions(page);
+      await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
+      await page.goto('/dashboard');
+      await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
+      const initial = await waitForChartEntrance(page, 0, ['clip-path', 'opacity']);
+      await page.locator('.business-chart__hotspot').last().hover();
+      await expect(page.getByRole('tooltip')).toBeVisible();
+      await expect(page.getByRole('tooltip')).toContainText('S/ 10,000');
+      await expect(page.locator('.business-chart__series > g.is-active')).toHaveCount(1);
+      await afterChartPaint(page);
+      expect(await chartMotionEvents(page)).toEqual(initial);
+      await page.getByRole('button', { name: 'Ampliar gráfico', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Reducir gráfico', exact: true })).toHaveAttribute('aria-expanded', 'true');
+      await afterChartPaint(page);
+      expect(await chartMotionEvents(page)).toEqual(initial);
+      await chooseInkoraOption(page, 'Período del resumen', 'Últimos 7 días');
+      await expect(page.getByText('Producto 2026-09-23')).toBeVisible();
+      const changed = await waitForChartEntrance(page, 2, ['clip-path', 'opacity']);
+      expect(new Set(changed.map((event) => event.series)).size).toBe(2);
+      expect(await page.locator('.business-chart__hotspot').count()).toBe(7);
+      errors.assertClean();
+    } finally {
+      await attachChartMotion(page, testInfo, `chart-motion-${width}`);
+      await context.close();
+    }
+  });
+}
+
+test('animación del gráfico: movimiento reducido conserva solo opacidad', async ({ browser, baseURL }, testInfo) => {
+  const { context, page } = await createDashboardContext(browser, baseURL, { payloadForQuery: temporalPayload, reducedMotion: 'reduce' });
+  try {
+    await recordChartTransitions(page);
+    await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
+    await page.goto('/dashboard');
+    await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
+    await waitForChartEntrance(page, 0, ['opacity']);
+    await chooseInkoraOption(page, 'Período del resumen', 'Últimos 7 días');
+    await expect(page.getByText('Producto 2026-09-23')).toBeVisible();
+    const events = await waitForChartEntrance(page, 1, ['opacity']);
+    expect(events.every((event) => event.property === 'opacity')).toBe(true);
+    expect(events.filter((event) => event.type === 'transitionend').every((event) => event.elapsed <= 0.15)).toBe(true);
+  } finally {
+    await attachChartMotion(page, testInfo, 'chart-motion-reduced');
+    await context.close();
+  }
+});
+
+test('animación del gráfico: cambiar agrupación con teclado es inmediato', async ({ browser, baseURL }, testInfo) => {
+  const { context, page, state } = await createDashboardContext(browser, baseURL, { payloadForQuery: temporalPayload });
+  try {
+    await recordChartTransitions(page);
+    await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
+    await page.goto('/dashboard');
+    await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
+    const initial = await waitForChartEntrance(page, 0, ['clip-path', 'opacity']);
+    const grouping = page.getByRole('button', { name: 'Agrupar gráfico', exact: true });
+    await grouping.focus();
+    await grouping.press('ArrowDown');
+    await expect(page.getByRole('listbox', { name: 'Agrupar gráfico', exact: true })).toBeVisible();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Consultar mes', exact: true })).toBeVisible();
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.get('group_by')).toBe('month');
+    await afterChartPaint(page);
+    expect(await chartMotionEvents(page)).toEqual(initial);
+    await expect(page.locator('.business-chart__series')).not.toHaveClass(/business-chart__series--animated/);
+    expect(await page.locator('.business-chart__series').evaluate((series) => series.getAnimations().length)).toBe(0);
+  } finally {
+    await attachChartMotion(page, testInfo, 'chart-motion-keyboard');
+    await context.close();
+  }
+});
+
 test('fechas sincronizan indicadores, gráfico, productos, clientes y cotizaciones; agrupar conserva el período', async ({ browser, baseURL }) => {
   const { context, page, state } = await createDashboardContext(browser, baseURL, { payloadForQuery: temporalPayload });
   const errors = attachCriticalErrorCollector(page);
