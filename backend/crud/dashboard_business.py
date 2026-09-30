@@ -537,6 +537,8 @@ def get_business_dashboard(
 
     product = aliased(models.Producto)
     product_name = func.coalesce(product.nombre, models.CotizacionItem.descripcion)
+    # Historical missing units use the same default as newly created lines.
+    product_unit = func.coalesce(models.CotizacionItem.unidad_medida, "NIU")
     current_item_amount = func.sum(
         case(
             (
@@ -559,7 +561,7 @@ def get_business_dashboard(
         db.query(
             models.CotizacionItem.producto_id.label("id"),
             product_name.label("name"),
-            models.CotizacionItem.unidad_medida.label("unit"),
+            product_unit.label("unit"),
             func.sum(
                 case(
                     (
@@ -591,7 +593,7 @@ def get_business_dashboard(
         .group_by(
             models.CotizacionItem.producto_id,
             product_name,
-            models.CotizacionItem.unidad_medida,
+            product_unit,
         )
         .subquery("dashboard_product_totals")
     )

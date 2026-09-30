@@ -88,12 +88,13 @@ def get_business_dashboard_records(
     ]
     if measure == "product":
         item = models.CotizacionItem
-        unit = func.min(item.unidad_medida)
+        normalized_unit = func.coalesce(item.unidad_medida, "NIU")
+        unit = func.min(normalized_unit)
         # Quantities only have one unit when every matching line agrees.
-        same_unit = func.min(item.unidad_medida) == func.max(item.unidad_medida)
+        same_unit = func.min(normalized_unit) == func.max(normalized_unit)
         item_filters = [item.producto_id == product_id]
         if product_unit is not None:
-            item_filters.append(item.unidad_medida == product_unit)
+            item_filters.append(normalized_unit == product_unit)
         selection = (
             db.query(
                 *columns,

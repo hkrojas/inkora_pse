@@ -103,6 +103,40 @@ def test_product_contains_filter_and_units_preserve_ranking_context(db_session, 
     assert all_units["items"][0]["unit"] is None
 
 
+def test_null_and_niu_units_share_one_ranking_and_matching_detail(db_session, selection):
+    tenant, user, client, paper, _ = selection
+    previous = _document(db_session, tenant, user, client, issued_at=datetime(2026, 8, 2), amount="30")
+    previous_item = _item(db_session, previous, paper, amount="30", quantity="3")
+    previous_item.unidad_medida = None
+    current = _document(db_session, tenant, user, client, issued_at=datetime(2026, 9, 2), amount="120")
+    historic_item = _item(db_session, current, paper, amount="20", quantity="2")
+    historic_item.unidad_medida = None
+    standard_item = _item(db_session, current, paper, amount="30", quantity="3")
+    kilogram_item = _item(db_session, current, paper, amount="70", quantity="7")
+    kilogram_item.unidad_medida = "KGM"
+    db_session.commit()
+
+    dashboard = get_business_dashboard(db_session, tenant.id, start=date(2026, 9, 1), end=date(2026, 9, 28))
+    unit_rows = [row for row in dashboard["products"] if row["id"] == paper.id and row["unit"] == "NIU"]
+    assert len(unit_rows) == 1
+    assert unit_rows[0]["amount"] == Decimal("50.00")
+    assert unit_rows[0]["previous_amount"] == Decimal("30.00")
+    assert unit_rows[0]["quantity"] == Decimal("5")
+    detail = _records(db_session, tenant.id, product_id=paper.id, product_unit="NIU", measure="product")
+    assert detail["total_amount"] == unit_rows[0]["amount"]
+    assert detail["items"][0]["quantity"] == unit_rows[0]["quantity"]
+    assert detail["items"][0]["unit"] == "NIU"
+
+    # A NULL unit is an NIU line, so it must not be ignored when detecting
+    # incompatible quantities alongside another unit in the same document.
+    db_session.delete(standard_item)
+    db_session.commit()
+    all_units = _records(db_session, tenant.id, product_id=paper.id, measure="product")
+    assert all_units["total_amount"] == Decimal("90.00")
+    assert all_units["items"][0]["quantity"] is None
+    assert all_units["items"][0]["unit"] is None
+
+
 def test_records_scope_dates_clients_currency_and_first_activity(db_session, selection):
     tenant, user, client, paper, _ = selection
     other_client = make_cliente(db_session, tenant, "OTHER")
