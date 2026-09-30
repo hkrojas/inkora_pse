@@ -1,21 +1,28 @@
 """Typed responses for the business dashboard analytics endpoint."""
 
-from datetime import date, datetime
+from __future__ import annotations
+
+from datetime import date as CalendarDate, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
 
 class DashboardPeriod(BaseModel):
-    start: date
-    end: date
+    start: CalendarDate
+    end: CalendarDate
     label: str
 
 
 class DashboardMeta(BaseModel):
     generated_at: datetime
     currency: str = "PEN"
+    activity_start: Optional[CalendarDate] = None
+    group_by: Literal["day", "month"] = "month"
+    history_scope: Literal["all", "period"] = "all"
+    period_scope: Literal["selected", "all"] = "selected"
+    overdue_as_of: Optional[CalendarDate] = None
     period: DashboardPeriod
     comparison: DashboardPeriod
     history: DashboardPeriod
@@ -37,6 +44,9 @@ class DashboardSummary(BaseModel):
 
 
 class DashboardHistoryPoint(BaseModel):
+    date: Optional[CalendarDate] = None
+    period_start: Optional[CalendarDate] = None
+    period_end: Optional[CalendarDate] = None
     year: int
     month: int = Field(ge=1, le=12)
     sales_amount: Decimal
@@ -69,7 +79,7 @@ class DashboardClientRow(BaseModel):
     name: str
     amount: Decimal
     purchases: int
-    last_purchase: Optional[date] = None
+    last_purchase: Optional[CalendarDate] = None
     share_percent: Decimal
     previous_amount: Decimal
     change_percent: Optional[Decimal] = None
@@ -111,3 +121,35 @@ class BusinessDashboardResponse(BaseModel):
     clients: list[DashboardClientRow]
     follow_up: DashboardFollowUp
     pending: DashboardPending
+
+
+class DashboardRecordsMeta(BaseModel):
+    period: DashboardPeriod
+    currency: str = "PEN"
+    client_id: Optional[int] = None
+    product_id: Optional[int] = None
+    contains_product_id: Optional[int] = None
+    product_unit: Optional[str] = None
+    measure: Literal["document", "product"] = "document"
+
+
+class DashboardRecord(BaseModel):
+    document_id: int
+    reference: str
+    tipo_comprobante: Optional[str] = None
+    document_kind: str
+    issued_at: datetime
+    client_name: str
+    amount: Decimal
+    quantity: Optional[Decimal] = None
+    unit: Optional[str] = None
+    state: str
+
+
+class DashboardRecordsResponse(BaseModel):
+    meta: DashboardRecordsMeta
+    total: int
+    total_amount: Decimal
+    items: list[DashboardRecord]
+    skip: int
+    limit: int

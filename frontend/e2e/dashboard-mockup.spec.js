@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { recordsPayload } from './helpers/dashboard-records';
 
 const API_ORIGIN = new URL(process.env.E2E_API_URL || 'http://localhost:8000').origin;
 
@@ -59,7 +60,8 @@ async function openDashboardMockup(browser, baseURL, viewport) {
   const page = await context.newPage();
   await page.route(`${API_ORIGIN}/**`, async (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname.replace(/\/$/, '');
+    const url = new URL(request.url());
+    const path = url.pathname.replace(/\/$/, '');
     let body = {};
     if (path === '/users/me') {
       body = {
@@ -73,6 +75,8 @@ async function openDashboardMockup(browser, baseURL, viewport) {
       };
     } else if (path === '/analytics/dashboard/business') {
       body = visualPayload;
+    } else if (path === '/analytics/dashboard/business/records') {
+      body = recordsPayload(url.searchParams);
     }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
@@ -120,8 +124,9 @@ test.describe('Mockup comercial del dashboard', () => {
         }
         if (viewport.width === 390) {
           await page.getByRole('button', { name: 'Resma API Única', exact: true }).click();
-          await expect(page).toHaveURL(/\/productos\?.*product_id=911/);
-          await page.goBack();
+          await expect(page.getByRole('dialog', { name: 'Ventas de Resma API Única' })).toBeVisible();
+          await expect(page).toHaveURL(/\/dashboard$/);
+          await page.getByRole('button', { name: 'Cerrar detalle' }).click();
           await expect(page.getByText('Resma API Única')).toBeVisible();
         }
         if (viewport.width === 1440 && process.env.MOCKUP_SCREENSHOT_PATH) {
@@ -169,10 +174,9 @@ test.describe('Mockup comercial del dashboard', () => {
       await septemberPoint.hover();
       await expect(page.getByRole('tooltip')).toContainText('Mismo tramo anterior');
       await septemberPoint.click();
-      await expect(page).toHaveURL(/\/cotizaciones\?.*view=fiscal/);
-      await expect(page).toHaveURL(/desde=2026-09-01/);
-      await expect(page).toHaveURL(/hasta=2026-09-28/);
-      await page.goBack();
+      await expect(page.getByRole('dialog', { name: 'Ventas de Septiembre 2026' })).toBeVisible();
+      await expect(page).toHaveURL(/\/dashboard$/);
+      await page.getByRole('button', { name: 'Cerrar detalle' }).click();
       await expect(page.getByText('Resma API Única')).toBeVisible();
 
       const selectedCount = page.getByRole('tab', { name: /Cotizaciones sin una venta/ }).locator('span');
@@ -187,8 +191,8 @@ test.describe('Mockup comercial del dashboard', () => {
       const firstProduct = page.locator('.business-ranking').first().locator('.business-ranking__entity').first();
       await expect(firstProduct).toHaveText('Tinta API Azul');
       await firstProduct.click();
-      await expect(page).toHaveURL(/\/productos\?.*product_id=912/);
-      await page.goBack();
+      await expect(page.getByRole('dialog', { name: 'Ventas de Tinta API Azul' })).toBeVisible();
+      await page.getByRole('button', { name: 'Cerrar detalle' }).click();
       await expect(page.getByText('Resma API Única')).toBeVisible();
 
       const inactive = page.getByRole('tab', { name: /Sin compras en 60 días/ });
@@ -223,7 +227,8 @@ test.describe('Mockup comercial del dashboard', () => {
       await page.locator('.business-chart__selection').scrollIntoViewIfNeeded();
       await page.screenshot({ path: 'test-results/dashboard-mobile-expanded.png' });
       await page.getByRole('button', { name: 'Ver registros de septiembre' }).tap();
-      await expect(page).toHaveURL(/desde=2026-09-01.*hasta=2026-09-28/);
+      await expect(page.getByRole('dialog', { name: 'Ventas de Septiembre 2026' })).toBeVisible();
+      await expect(page).toHaveURL(/\/dashboard$/);
     } finally { await context.close(); }
   });
 

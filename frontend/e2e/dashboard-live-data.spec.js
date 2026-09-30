@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { attachCriticalErrorCollector } from './helpers/assertions';
+import { recordsPayload } from './helpers/dashboard-records';
 
 const API_ORIGIN = new URL(process.env.E2E_API_URL || 'http://localhost:8000').origin;
 
@@ -126,11 +127,13 @@ function emptyDashboardPayload() {
 async function createDashboardContext(browser, baseURL, options = {}) {
   const state = {
     dashboardCalls: [],
+    recordsCalls: [],
     unexpectedRequests: [],
   };
   const context = await browser.newContext({
     baseURL,
     viewport: options.viewport || { width: 1280, height: 900 },
+    reducedMotion: options.reducedMotion || 'no-preference',
     storageState: { cookies: [], origins: [] },
   });
   await context.addInitScript(() => localStorage.setItem('token', 'dashboard-live-data-e2e-token'));
@@ -158,13 +161,29 @@ async function createDashboardContext(browser, baseURL, options = {}) {
       });
       return;
     }
+    if (path === '/analytics/dashboard/business/records' && method === 'GET') {
+      state.recordsCalls.push(url);
+      const call = state.recordsCalls.length;
+      if (options.recordsDelayMs) await new Promise((resolve) => setTimeout(resolve, options.recordsDelayMs));
+      if (options.failRecords && call <= options.failRecords) { await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Detalle no disponible' }) }); return; }
+      const amount = url.searchParams.get('measure') === 'product' ? url.searchParams.get('product_id') === '912' ? '4568' : '7777' : url.searchParams.get('client_id') === '731' ? '8000' : '12345';
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(options.recordsForQuery ? options.recordsForQuery(url.searchParams) : recordsPayload(url.searchParams, { totalAmount: amount })) });
+      return;
+    }
+    if ((path === '/clientes/search' || path === '/productos/search') && method === 'GET') {
+      const clients = path === '/clientes/search';
+      const body = clients ? [{ id: 731, razon_social: 'Cliente API Único' }, { id: 732, razon_social: 'Cliente API Dos' }] : [{ id: 911, nombre: 'Resma API Única' }, { id: 912, nombre: 'Tinta API Azul' }];
+      const query = (url.searchParams.get('q') || '').toLowerCase();
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body.filter((row) => String(row.razon_social || row.nombre).toLowerCase().includes(query))) });
+      return;
+    }
     if (path === '/analytics/dashboard/business' && method === 'GET') {
       state.dashboardCalls.push({
         url: request.url(),
         authorization: request.headers().authorization,
       });
       const call = state.dashboardCalls.length;
-      if (options.delayMs) await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+      if (options.delayMs) await new Promise((resolve) => setTimeout(resolve, typeof options.delayMs === 'function' ? options.delayMs(url.searchParams) : options.delayMs));
       if (options.failRequests && call <= options.failRequests) {
         await route.fulfill({
           status: 503,
@@ -176,7 +195,7 @@ async function createDashboardContext(browser, baseURL, options = {}) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(options.payload || dashboardPayload),
+        body: JSON.stringify(options.payloadForQuery ? options.payloadForQuery(url.searchParams) : options.payload || dashboardPayload),
       });
       return;
     }
@@ -228,8 +247,8 @@ test.describe('Dashboard conectado al contrato business', () => {
       await page.goto('/dashboard');
 
       await expect(page.getByTestId('dashboard-business-mockup')).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Aún no hay actividad para mostrar' })).toBeVisible();
-      await expect(page.getByText('Cuando registres ventas, clientes o movimientos pendientes, el resumen aparecerá aquí.')).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'No hay actividad en estas fechas' })).toBeVisible();
+      await expect(page.getByText('Prueba otro período o consulta Todo el historial.')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Reintentar' })).toHaveCount(0);
       await expect(page.getByText('Resma API Única')).toHaveCount(0);
       expect(state.dashboardCalls).toHaveLength(1);
@@ -247,7 +266,7 @@ test.describe('Dashboard conectado al contrato business', () => {
       await page.goto('/dashboard');
 
       await expect(page.getByRole('heading', { name: 'Ventas' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Aún no hay actividad para mostrar' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'No hay actividad en estas fechas' })).toHaveCount(0);
       await expect(page.getByText(/Enero 2026: S\/ 750/)).toBeAttached();
     } finally {
       await context.close();
@@ -285,3 +304,272 @@ test.describe('Dashboard conectado al contrato business', () => {
     }
   });
 });
+
+function temporalPayload(params) {
+  const all = params.get('period_scope') === 'all';
+  const start = all ? '2025-06-17' : params.get('desde');
+  const end = all ? '2026-09-29' : params.get('hasta');
+  const group = params.get('group_by');
+  const amount = all ? 50000 : start === '2026-09-23' ? 7000 : start === '2026-08-01' ? 8000 : start === '2026-09-10' ? 2000 : 10000;
+  const history = [];
+  let cursor = new Date(`${start}T00:00:00Z`);
+  if (group === 'month') cursor.setUTCDate(1);
+  while (cursor.toISOString().slice(0, 10) <= end) {
+    const date = cursor.toISOString().slice(0, 10);
+    const last = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+    history.push({
+      year: cursor.getUTCFullYear(), month: cursor.getUTCMonth() + 1,
+      ...(group === 'day' ? { date } : {}),
+      period_start: date < start ? start : date,
+      period_end: group === 'day' ? date : last > end ? end : last,
+      sales_amount: '0', quoted_amount: '0', is_partial: group === 'month' && (date < start || last > end),
+      cutoff_day: Number(end.slice(-2)), previous_matched_sales: null,
+    });
+    if (group === 'day') cursor.setUTCDate(cursor.getUTCDate() + 1);
+    else cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  history.at(-1).sales_amount = String(amount);
+  history.at(-1).quoted_amount = String(amount + 1000);
+  return {
+    ...dashboardPayload,
+    meta: { ...dashboardPayload.meta, period: { start, end }, history: { start, end }, group_by: group, history_scope: 'period', period_scope: all ? 'all' : 'selected' },
+    summary: { ...dashboardPayload.summary, sales_amount: String(amount), average_sale: String(amount / 3), overdue_amount: String(amount / 10) },
+    history,
+    conversion: { available: true, quote_count: 4, linked_sales_count: 1, rate_percent: '25' },
+    products: [{ ...dashboardPayload.products[0], name: `Producto ${start}`, amount: String(amount) }],
+    clients: [{ ...dashboardPayload.clients[0], name: `Cliente ${start}`, amount: String(amount), share_percent: '100' }],
+    follow_up: { ...dashboardPayload.follow_up, quotes: { available: true, count: 3, rows: [{ quote_id: 300, client_id: 733, client: `Cotización ${start}`, reference: 'COT-000300', amount: '800', age_days: 6 }] } },
+  };
+}
+
+test('fechas sincronizan indicadores, gráfico, productos, clientes y cotizaciones; agrupar conserva el período', async ({ browser, baseURL }) => {
+  const { context, page, state } = await createDashboardContext(browser, baseURL, { payloadForQuery: temporalPayload });
+  const errors = attachCriticalErrorCollector(page);
+  try {
+    await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
+    await page.goto('/dashboard');
+    await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
+    await expect(page.getByLabel('Consultar día')).toBeVisible();
+    await page.getByLabel('Período del resumen').selectOption('week');
+    await expect(page.getByText('Producto 2026-09-23')).toBeVisible();
+    await expect(page.getByText('Cliente 2026-09-23', { exact: true })).toBeVisible();
+    await expect(page.getByText('Cotización 2026-09-23', { exact: true })).toBeVisible();
+    await expect(page.locator('.business-metric__value [aria-label="S/ 7,000"]')).toBeVisible();
+    await expect(page.locator('.business-metric__value [aria-label="S/ 700"]')).toBeVisible();
+    expect(await page.locator('.business-chart__hotspot').count()).toBe(7);
+    await page.locator('.business-chart__hotspot').last().hover();
+    await expect(page.getByRole('tooltip')).toContainText('S/ 7,000');
+    await page.getByLabel('Agrupar gráfico').selectOption('month');
+    await expect(page.getByLabel('Consultar mes')).toBeVisible();
+    await expect(page.locator('.business-chart__hotspot')).toHaveCount(1);
+    await expect(page.locator('.business-metric__value [aria-label="S/ 7,000"]')).toBeVisible();
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.get('desde')).toBe('2026-09-23');
+    await page.getByLabel('Período del resumen').selectOption('month');
+    await page.getByLabel('Mes del resumen').fill('2026-08');
+    await expect(page.getByText('Producto 2026-08-01')).toBeVisible();
+    await expect(page.locator('.business-metric__value [aria-label="S/ 8,000"]')).toBeVisible();
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.get('hasta')).toBe('2026-08-31');
+    await page.getByLabel('Período del resumen').selectOption('all');
+    await expect(page.getByText('Producto 2025-06-17')).toBeVisible();
+    await expect(page.locator('.business-metric__value [aria-label="S/ 50,000"]')).toBeVisible();
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.has('desde')).toBe(false);
+    await expect(page.getByLabel('Agrupar gráfico').locator('option[value="day"]')).toHaveAttribute('disabled', '');
+    await page.getByLabel('Período del resumen').selectOption('custom');
+    await page.getByLabel('Desde', { exact: true }).fill('2026-09-20');
+    await page.getByLabel('Hasta', { exact: true }).fill('2026-09-10');
+    const calls = state.dashboardCalls.length;
+    await page.getByRole('button', { name: 'Aplicar fechas' }).click();
+    await expect(page.getByRole('alert')).toContainText('La fecha de inicio');
+    expect(state.dashboardCalls.length).toBe(calls);
+    await page.getByLabel('Desde', { exact: true }).fill('2026-09-10');
+    await page.getByLabel('Hasta', { exact: true }).fill('2026-09-11');
+    await page.getByRole('button', { name: 'Aplicar fechas' }).click();
+    await expect(page.getByText('Producto 2026-09-10')).toBeVisible();
+    await expect(page.locator('.business-metric__value [aria-label="S/ 2,000"]')).toBeVisible();
+    await page.getByLabel('Consultar día').selectOption('1');
+    errors.assertClean();
+    await page.getByRole('button', { name: /Ver registros del 11/ }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect.poll(() => state.recordsCalls.at(-1)?.searchParams.get('desde')).toBe('2026-09-11');
+    expect(state.recordsCalls.at(-1).searchParams.get('hasta')).toBe('2026-09-11');
+  } finally { await context.close(); }
+});
+
+for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+  test(`filtros y datos diarios legibles a ${viewport.width}px`, async ({ browser, baseURL }, testInfo) => {
+    const { context, page } = await createDashboardContext(browser, baseURL, { viewport, payloadForQuery: temporalPayload, reducedMotion: 'reduce' });
+    try {
+      await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
+      await page.goto('/dashboard');
+      await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
+      await page.getByLabel('Período del resumen').selectOption('week');
+      await expect(page.getByText('Producto 2026-09-23')).toBeVisible();
+      const overflow = await page.locator('main').evaluate((element) => element.scrollWidth > element.clientWidth + 1);
+      expect(overflow).toBe(false);
+      await page.getByLabel('Consultar día').selectOption('6');
+      await expect(page.locator('.business-chart__selection')).toContainText('S/ 7,000');
+      const screenshot = testInfo.outputPath(`dashboard-filters-${viewport.width}.png`);
+      await page.screenshot({ path: screenshot, fullPage: true, animations: 'disabled' });
+      await testInfo.attach(`Filtros ${viewport.width}px`, { path: screenshot, contentType: 'image/png' });
+      const chartScreenshot = testInfo.outputPath(`dashboard-chart-${viewport.width}.png`);
+      await page.locator('.business-sales').screenshot({ path: chartScreenshot, animations: 'disabled' });
+      await testInfo.attach(`Gráfico ${viewport.width}px`, { path: chartScreenshot, contentType: 'image/png' });
+      await page.getByLabel('Período del resumen').selectOption('custom');
+      await expect(page.getByRole('button', { name: 'Aplicar fechas' })).toBeVisible();
+      expect(await page.locator('main').evaluate((element) => element.scrollWidth > element.clientWidth + 1)).toBe(false);
+    } finally { await context.close(); }
+  });
+}
+
+test('al cambiar fechas rápidamente la última selección conserva sus datos', async ({ browser, baseURL }) => {
+  const { context, page } = await createDashboardContext(browser, baseURL, {
+    payloadForQuery: temporalPayload,
+    delayMs: (params) => params.get('desde') === '2026-09-23' ? 600 : 0,
+  });
+  try {
+    await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
+    await page.goto('/dashboard');
+    await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
+    await page.getByLabel('Período del resumen').selectOption('week');
+    await page.getByLabel('Período del resumen').selectOption('all');
+    await expect(page.getByText('Producto 2025-06-17')).toBeVisible();
+    // Wait for the slower obsolete response, then prove it did not replace the current one.
+    await page.waitForTimeout(750);
+    await expect(page.getByText('Producto 2025-06-17')).toBeVisible();
+    await expect(page.getByText('Producto 2026-09-23')).toHaveCount(0);
+  } finally { await context.close(); }
+});
+
+test('paneles de producto, cliente y gráfico conservan filtros, totales y paginación sin abandonar el resumen', async ({ browser, baseURL }) => {
+  const { context, page, state } = await createDashboardContext(browser, baseURL, { reducedMotion: 'reduce' });
+  try {
+    await page.goto('/dashboard');
+    const product = page.getByRole('button', { name: 'Resma API Única', exact: true });
+    await product.click();
+    const panel = page.getByRole('dialog', { name: 'Ventas de Resma API Única' });
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.business-explorer__total')).toContainText('S/ 7,777');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    const productQuery = state.recordsCalls.at(-1).searchParams;
+    expect(productQuery.get('measure')).toBe('product');
+    expect(productQuery.get('product_id')).toBe('911');
+    expect(productQuery.get('product_unit')).toBe('NIU');
+    expect(productQuery.get('desde')).toBe('2026-09-01');
+    expect(productQuery.get('hasta')).toBe('2026-09-28');
+    await expect(panel.getByText('Página 1 de 2.', { exact: false })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Anterior' })).toBeDisabled();
+    await panel.getByRole('button', { name: 'Siguiente' }).click();
+    await expect(panel.getByRole('button', { name: 'F001-000016', exact: true })).toBeVisible();
+    await expect(panel.locator('.business-explorer__total')).toContainText('S/ 7,777');
+    expect(state.recordsCalls.at(-1).searchParams.get('skip')).toBe('15');
+    await expect(panel.getByRole('button', { name: 'Siguiente' })).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(product).toBeFocused();
+    await page.getByRole('button', { name: 'Cliente API Único', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Compras de Cliente API Único' })).toBeVisible();
+    await expect(page.locator('.business-explorer__total')).toContainText('S/ 8,000');
+    expect(state.recordsCalls.at(-1).searchParams.get('client_id')).toBe('731');
+    expect(state.recordsCalls.at(-1).searchParams.get('measure')).toBe('document');
+    await page.locator('.business-explorer').click({ position: { x: 10, y: 10 } });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.getByRole('button', { name: /Septiembre 2026: ventas/ }).click();
+    await expect(page.getByRole('dialog', { name: 'Ventas de Septiembre 2026' })).toBeVisible();
+    await expect(page.locator('.business-explorer__total')).toContainText('S/ 12,345');
+    expect(state.recordsCalls.at(-1).searchParams.get('hasta')).toBe('2026-09-28');
+    await page.getByRole('button', { name: 'Cerrar detalle' }).click();
+    expect(state.unexpectedRequests).toEqual([]);
+    // A specific record, rather than its product/client catalog, is the drill-through.
+    await product.click();
+    await page.getByRole('button', { name: 'F001-000001', exact: true }).click();
+    await expect(page).toHaveURL(/\/cotizaciones\/9000$/);
+  } finally { await context.close(); }
+});
+
+test('los filtros de cliente y producto buscan, recalculan y se conservan en las ventanas', async ({ browser, baseURL }) => {
+  const { context, page, state } = await createDashboardContext(browser, baseURL, {
+    reducedMotion: 'reduce',
+    payloadForQuery: (params) => ({
+      ...dashboardPayload,
+      meta: { ...dashboardPayload.meta, client_id: params.get('client_id'), product_id: params.get('product_id') },
+      summary: { ...dashboardPayload.summary, sales_amount: params.has('client_id') && params.has('product_id') ? '3500' : params.has('client_id') ? '8000' : '12345' },
+    }),
+  });
+  try {
+    await page.goto('/dashboard');
+    await expect(page.getByText('Resma API Única')).toBeVisible();
+    await page.getByRole('button', { name: 'Filtrar por cliente' }).click();
+    await page.getByRole('textbox', { name: 'Buscar cliente' }).fill('Cliente API Único');
+    await page.getByRole('option', { name: 'Cliente API Único', exact: true }).click();
+    await expect(page.locator('.business-metric__value [aria-label="S/ 8,000"]')).toBeVisible();
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.get('client_id')).toBe('731');
+    await page.getByRole('button', { name: 'Filtrar por producto' }).click();
+    await page.getByRole('textbox', { name: 'Buscar producto' }).fill('Resma');
+    await page.getByRole('option', { name: 'Resma API Única', exact: true }).click();
+    await expect(page.locator('.business-metric__value [aria-label="S/ 3,500"]')).toBeVisible();
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.get('product_id')).toBe('911');
+    await expect(page.getByText(/Las tarjetas, el gráfico y los clientes muestran el total/)).toBeVisible();
+    await page.getByRole('button', { name: 'Tinta API Azul', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Ventas de Tinta API Azul' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'F001-000001', exact: true })).toBeVisible();
+    const query = state.recordsCalls.at(-1).searchParams;
+    expect(query.get('product_id')).toBe('912');
+    expect(query.get('contains_product_id')).toBe('911');
+    expect(query.get('client_id')).toBe('731');
+    await page.getByRole('button', { name: 'Cerrar detalle' }).click();
+    await page.getByRole('button', { name: 'Limpiar cliente y producto' }).click();
+    await expect(page.locator('.business-metric__value [aria-label="S/ 12,345"]')).toBeVisible();
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.has('client_id')).toBe(false);
+    expect(new URL(state.dashboardCalls.at(-1).url).searchParams.has('product_id')).toBe(false);
+    expect(state.unexpectedRequests).toEqual([]);
+  } finally { await context.close(); }
+});
+
+test('detalle distingue carga, error recuperable y registros vacíos', async ({ browser, baseURL }) => {
+  const { context, page } = await createDashboardContext(browser, baseURL, {
+    recordsDelayMs: 400, failRecords: 1,
+    recordsForQuery: (params) => recordsPayload(params, { total: 0, totalAmount: '0' }),
+  });
+  try {
+    await page.goto('/dashboard');
+    await page.getByRole('button', { name: 'Resma API Única', exact: true }).click();
+    await expect(page.getByRole('dialog').getByRole('status')).toContainText('Cargando registros');
+    await expect(page.getByRole('dialog').getByRole('alert')).toContainText('No pudimos cargar');
+    await page.getByRole('dialog').getByRole('button', { name: 'Reintentar' }).click();
+    await expect(page.getByText('No hay ventas registradas con estos filtros.')).toBeVisible();
+    await expect(page.locator('.business-explorer__total')).toContainText('S/ 0');
+    await expect(page.getByRole('button', { name: 'F001-000001', exact: true })).toHaveCount(0);
+  } finally { await context.close(); }
+});
+
+for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+  test(`ventana aprobada y filtros sin desbordamiento a ${viewport.width}px`, async ({ browser, baseURL }) => {
+    const { context, page } = await createDashboardContext(browser, baseURL, { viewport, reducedMotion: 'reduce' });
+    try {
+      await page.goto('/dashboard');
+      await page.getByRole('button', { name: 'Filtrar por producto' }).click();
+      await expect(page.getByRole('listbox')).toBeVisible();
+      const dropdown = await page.getByRole('listbox').boundingBox();
+      expect(dropdown.x).toBeGreaterThanOrEqual(0);
+      expect(dropdown.x + dropdown.width).toBeLessThanOrEqual(viewport.width);
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: 'Resma API Única', exact: true }).click();
+      const panel = page.getByRole('dialog');
+      await expect(panel.getByRole('button', { name: 'F001-000001', exact: true })).toBeVisible();
+      expect(await panel.evaluate((element) => element.scrollWidth > element.clientWidth + 1)).toBe(false);
+      expect(await page.locator('main').evaluate((element) => element.scrollWidth > element.clientWidth + 1)).toBe(false);
+      await expect(page.getByRole('button', { name: 'Cerrar detalle' })).toBeFocused();
+      await page.keyboard.press('Shift+Tab');
+      await expect(panel.getByRole('button', { name: 'Siguiente' })).toBeFocused();
+      const paginationColors = await panel.getByRole('button', { name: 'Siguiente' }).evaluate((element) => ({ background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color }));
+      expect(paginationColors.background).not.toBe('rgba(0, 0, 0, 0)');
+      expect(paginationColors.background).not.toBe(paginationColors.color);
+      await page.keyboard.press('Tab');
+      await expect(page.getByRole('button', { name: 'Cerrar detalle' })).toBeFocused();
+      await page.screenshot({ path: `test-results/dashboard-explorer-${viewport.width}.png`, animations: 'disabled' });
+      await page.getByRole('button', { name: 'Cerrar detalle' }).click();
+      await expect(page.getByRole('button', { name: 'Resma API Única', exact: true })).toBeFocused();
+    } finally { await context.close(); }
+  });
+}

@@ -281,6 +281,7 @@ from schemas.usage_limits import (
 )
 
 from schemas.dashboard import BusinessDashboardResponse
+from schemas.dashboard import DashboardRecordsResponse
 
 __all__ = [
     "ProductoInventarioInicial",
@@ -365,4 +366,5 @@ __all__ = [
     "UsageLimitBase", "UsageLimitCreate", "UsageLimitResponse",
     "UsageLimitsBulkUpsert", "UsageLimitUsageItem", "UsageLimitsWithUsage",
     "BusinessDashboardResponse",
+    "DashboardRecordsResponse",
 ]

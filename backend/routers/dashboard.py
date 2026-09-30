@@ -12,6 +12,7 @@ No requiere que el módulo MRP esté activo para funcionar correctamente.
 """
 
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -59,6 +60,9 @@ def read_business_dashboard(
     client_id: int | None = Query(default=None, ge=1),
     product_id: int | None = Query(default=None, ge=1),
     currency: str = Query(default="PEN", pattern="^PEN$"),
+    group_by: Literal["day", "month"] = "month",
+    history_scope: Literal["all", "period"] = "all",
+    period_scope: Literal["selected", "all"] = "selected",
     db: Session = Depends(get_db_tenant),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -77,6 +81,47 @@ def read_business_dashboard(
             client_id=client_id,
             product_id=product_id,
             currency=currency,
+            group_by=group_by,
+            history_scope=history_scope,
+            period_scope=period_scope,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/analytics/dashboard/business/records",
+    response_model=schemas.DashboardRecordsResponse,
+    summary="Comprobantes que explican las cifras del resumen",
+)
+def read_business_dashboard_records(
+    desde: date,
+    hasta: date,
+    client_id: int | None = Query(default=None, ge=1),
+    product_id: int | None = Query(default=None, ge=1),
+    contains_product_id: int | None = Query(default=None, ge=1),
+    product_unit: str | None = Query(default=None, min_length=1, max_length=20),
+    currency: str = Query(default="PEN", pattern="^PEN$"),
+    measure: Literal["document", "product"] = "document",
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=15, ge=1, le=100),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    try:
+        return crud.get_business_dashboard_records(
+            db,
+            current_user.tenant_id,
+            start=desde,
+            end=hasta,
+            client_id=client_id,
+            product_id=product_id,
+            contains_product_id=contains_product_id,
+            product_unit=product_unit,
+            currency=currency,
+            measure=measure,
+            skip=skip,
+            limit=limit,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
