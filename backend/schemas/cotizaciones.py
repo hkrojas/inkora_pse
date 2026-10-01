@@ -455,6 +455,14 @@ class CobranzaVencidaItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CobranzaPageResponse(BaseModel):
+    items: list[CobranzaVencidaItem]
+    total: int
+    counts: dict[str, int]
+    skip: int
+    limit: int
+
+
 class FacturarPayload(StrictInputModel):
     tipo_comprobante: str
     tipo_operacion: Optional[str] = None

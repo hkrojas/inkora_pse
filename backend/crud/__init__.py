@@ -173,6 +173,7 @@ from crud.usage_limits import (
 from crud.reportes import (
     get_dashboard_stats,
     get_cobranza_vencida,
+    get_cobranza_vencida_page,
     get_cobranza_resumen,
     get_reporte_mensual,
 )
