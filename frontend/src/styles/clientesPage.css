@@ -1,0 +1,61 @@
+.clients-page .list-head,
+.clients-page .client-row {
+  grid-template-columns: minmax(0, 1.3fr) minmax(120px, .55fr) minmax(0, 1fr) 132px;
+}
+
+.clients-page .client-identity {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.clients-page .client-name { max-width: 100%; }
+
+.clients-page .client-document {
+  min-width: 0;
+  color: var(--color-text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.clients-page .client-contact { display: grid; gap: 6px; min-width: 0; }
+.clients-page .client-contact__line { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.clients-page .client-contact__line svg { flex: 0 0 auto; margin-top: 2px; color: var(--color-text-muted); }
+.clients-page .client-contact__line span { min-width: 0; color: var(--color-text); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.clients-page .client-contact__empty { color: var(--color-text-muted); }
+
+.clients-page .actions-col { opacity: 1; }
+.clients-page .actions-col .edit-btn { min-height: 40px; }
+.clients-page .actions-col .history-action-button {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0;
+  justify-content: center;
+}
+.clients-page .actions-col .history-action-button span { display: none; }
+
+@media (max-width: 960px) {
+  .clients-page .list-head {
+    display: grid;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .clients-page .client-row { grid-template-columns: minmax(0, 1fr); }
+  .clients-page .client-main { flex-wrap: nowrap; }
+  .clients-page .client-document::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: var(--color-text-muted);
+    font-size: 12px;
+  }
+  .clients-page .actions-col .edit-btn,
+  .clients-page .actions-col .history-action-button { min-height: 44px; }
+}

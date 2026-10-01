@@ -430,12 +430,12 @@ test.describe('Smart PSE GRE QA visual', () => {
         documentos_pendientes: 1,
         clientes_con_deuda: 1,
       },
-      '/cobranza/vencidas': [debt],
+      '/cobranza/vencidas/page': { items: [debt], total: 1, skip: 0, limit: 15, counts: { all: 1, vencidos: 1, criticos: 0, hoy: 0, proximos: 0 } },
       '/inventario/existencias': [stock],
       '/inventario/kardex/page': { items: [], total: 0 },
       '/inventario/almacenes': [{ id: 1, name: 'Almacén central', code: 'CENTRAL' }],
       '/inventario/establecimientos-fiscales': [],
-      '/inventario/devoluciones': [],
+      '/inventario/devoluciones/page': { items: [], total: 0, skip: 0, limit: 15 },
     };
 
     await page.route(`${API_ORIGIN}/**`, async (route) => {

@@ -23,6 +23,7 @@ import crud
 import models
 import schemas
 from api_dependencies import get_current_user, get_db_tenant
+from schemas.cotizaciones import CobranzaPageResponse
 from services.document_flow_service import (
     DOCUMENT_KIND_CREDIT_NOTE,
     DOCUMENT_KIND_DEBIT_NOTE,
@@ -170,6 +171,11 @@ def cobranza_vencidas(
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
+    return _cobranza_response_items(cotizaciones)
+
+
+def _cobranza_response_items(cotizaciones):
+    ahora = datetime.now()
     result = []
     for cot in cotizaciones:
         dias_vencido = 0
@@ -218,6 +224,22 @@ def cobranza_vencidas(
         })
 
     return result
+
+
+@router.get("/cobranza/vencidas/page", response_model=CobranzaPageResponse)
+def cobranza_vencidas_page(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=15, ge=1, le=100),
+    q: str | None = Query(default=None, max_length=120),
+    scope: str = Query(default="active", pattern="^(overdue|active)$"),
+    segment: str = Query(default="all", pattern="^(all|vencidos|criticos|hoy|proximos)$"),
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(get_current_user),
+):
+    page = crud.get_cobranza_vencida_page(
+        db, current_user.tenant_id, skip=skip, limit=limit, q=q, scope=scope, segment=segment,
+    )
+    return {**page, "items": _cobranza_response_items(page["items"])}
 
 
 @router.get(

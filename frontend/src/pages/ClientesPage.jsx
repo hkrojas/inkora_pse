@@ -25,6 +25,7 @@ import Spinner from '../components/ui/Spinner';
 import EmptyState from '../components/ui/EmptyState';
 import Drawer from '../components/ui/Drawer';
 import CustomSelect from '../components/ui/CustomSelect';
+import ActionMenu from '../components/ui/ActionMenu';
 import FormField from '../components/ui/FormField';
 import Pagination from '../components/ui/Pagination';
 import { PageError } from '../components/ui/PageState';
@@ -41,6 +42,7 @@ import {
 } from '../lib/utils/documentLookup';
 import { normalizeUppercaseFieldValue, normalizeUppercaseShape } from '../lib/utils/uppercase';
 import OperationalPageHeader from '../components/ui/OperationalPageHeader';
+import '../styles/clientesPage.css';
 
 const DOC_TYPE_OPTIONS = [
   { value: '6', label: 'RUC' },
@@ -144,19 +146,6 @@ function isCompany(item = {}) {
   return item.tipo_documento === '6' || String(item.numero_documento || '').length === 11;
 }
 
-function getCommercialGaps(item = {}) {
-  const gaps = [];
-  if (!item.email) gaps.push('correo');
-  if (!(item.telefono || item.whatsapp)) gaps.push('teléfono o WhatsApp');
-  if (!item.direccion) gaps.push('dirección');
-  if (!item.condicion_pago) gaps.push('condición comercial');
-  return gaps;
-}
-
-function isIncomplete(item = {}) {
-  return getCommercialGaps(item).length > 0;
-}
-
 function getInitials(name) {
   if (!name) return '??';
   const parts = name.split(/\s+/).filter(Boolean);
@@ -170,22 +159,6 @@ function getAvatarColor(item) {
   if (!item?.id) return 'a-green';
   const code = String(item.id).charCodeAt(0) || 0;
   return AVATAR_COLORS[code % AVATAR_COLORS.length];
-}
-
-function getPaymentLabel(item = {}) {
-  const value = item.condicion_pago;
-  if (!value) return 'Sin condición';
-  return value
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function getPaymentTone(item = {}) {
-  const value = item.condicion_pago;
-  if (!value) return 'risk';
-  if (value === 'contado') return 'cash';
-  if (value.startsWith('credito')) return 'credit';
-  return 'ok';
 }
 
 function validateClientForm(form) {
@@ -596,10 +569,10 @@ export default function ClientesPage() {
 
   const stats = useMemo(() => {
     const activos = counts.all || 0;
-    const conCredito = counts.credito || 0;
+    const empresas = counts.empresa || 0;
+    const personas = counts.persona || 0;
     const incompletos = counts.incompletos || 0;
-    const conDeuda = counts.credito || 0;
-    return { activos, conCredito, conDeuda, incompletos };
+    return { activos, empresas, personas, incompletos };
   }, [counts]);
 
   const filtered = list;
@@ -689,14 +662,14 @@ export default function ClientesPage() {
           <div className="stat-foot good">Registrados en este tenant</div>
         </article>
         <article className="stat">
-          <div className="stat-label">Con crédito</div>
-          <div className="stat-value">{stats.conCredito}</div>
-          <div className="stat-foot warn">Condición comercial a crédito</div>
+          <div className="stat-label">Empresas</div>
+          <div className="stat-value">{stats.empresas}</div>
+          <div className="stat-foot">Clientes registrados con RUC</div>
         </article>
         <article className="stat">
-          <div className="stat-label">Con deuda</div>
-          <div className="stat-value">{stats.conDeuda}</div>
-          <div className="stat-foot bad">Requieren seguimiento comercial</div>
+          <div className="stat-label">Personas</div>
+          <div className="stat-value">{stats.personas}</div>
+          <div className="stat-foot">Clientes registrados como personas</div>
         </article>
         <article className="stat">
           <div className="stat-label">Datos incompletos</div>
@@ -765,60 +738,44 @@ export default function ClientesPage() {
           </div>
         ) : (
           <>
-            <div className="client-list">
-              <div className="list-head">
-                <div>Cliente</div>
-                <div>Contacto</div>
-                <div>Condición</div>
-                <div>Actividad / saldo</div>
-                <div style={{ textAlign: 'right' }}>Acción</div>
+            <div className="client-list" role="table" aria-label="Clientes">
+              <div className="list-head" role="row">
+                <div role="columnheader">Cliente</div>
+                <div role="columnheader">RUC / DNI</div>
+                <div role="columnheader">Contacto</div>
+                <div role="columnheader" style={{ textAlign: 'right' }}>Acciones</div>
               </div>
 
               {filtered.map((item) => {
                 const company = isCompany(item);
-                const commercialGaps = getCommercialGaps(item);
-                const incomplete = commercialGaps.length > 0;
-                const debtTone = (item.condicion_pago || 'contado') === 'contado' ? 'zero' : 'owed';
+                const phone = String(item.telefono || '').trim() || String(item.whatsapp || '').trim();
+                const email = String(item.email || '').trim();
+                const name = getClientDisplayName(item);
                 return (
-                  <div key={item.id} className="client-row">
-                    <div className="client-main">
-                      <div className={`client-avatar ${getAvatarColor(item)}`}>
-                        {getInitials(getClientDisplayName(item))}
+                  <div key={item.id} className="client-row" role="row">
+                    <div className="client-main" role="cell">
+                      <div className={`client-avatar ${getAvatarColor(item)}`} aria-hidden="true">
+                        {getInitials(name)}
                       </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div className="client-name-line">
-                          <div className="client-name">{getClientDisplayName(item)}</div>
-                          <span className={`pill ${company ? 'company' : 'person'}`}>
-                            {company ? 'Empresa' : 'Persona'}
-                          </span>
-                        </div>
-                        <div className="meta">
-                          {getDocumentLabel(item.tipo_documento)} {item.numero_documento || 'Sin documento'}
-                          {item.direccion ? ` · ${item.direccion}` : ''}
-                        </div>
+                      <div className="client-identity">
+                        <div className="client-name" title={name}>{name}</div>
+                        <span className={`pill ${company ? 'company' : 'person'}`}>
+                          {company ? 'Empresa' : 'Persona'}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="contact-block">
-                      <strong>{item.email || 'Sin correo principal'}</strong>
-                      <span>{item.telefono || item.whatsapp || 'Falta teléfono o WhatsApp'}</span>
+                    <div className="client-document" role="cell" data-label="RUC / DNI" aria-label={`${getDocumentLabel(item.tipo_documento)}: ${item.numero_documento || '-'}`}>
+                      {item.numero_documento || '-'}
                     </div>
 
-                    <div className="commercial">
-                      <span className={`pill ${getPaymentTone(item)}`}>{getPaymentLabel(item)}</span>
-                      <span className={`pill ${incomplete ? 'risk' : 'ok'}`}>{incomplete ? 'Revisión' : 'Activo'}</span>
+                    <div className="client-contact" role="cell">
+                      {phone && <div className="client-contact__line"><Phone size={15} aria-hidden="true" /><span>{phone}</span></div>}
+                      {email && <div className="client-contact__line"><Mail size={15} aria-hidden="true" /><span>{email}</span></div>}
+                      {!phone && !email && <span className="client-contact__empty">-</span>}
                     </div>
 
-                    <div className="activity-block">
-                      <strong>{incomplete ? 'Ficha comercial pendiente' : 'Ficha comercial completa'}</strong>
-                      <span className={`debt ${debtTone}`}>
-                        {incomplete
-                          ? `Pendiente: ${commercialGaps.join(', ')}.`
-                          : 'Listo para cotizar, emitir y cobrar.'}
-                      </span>
-                    </div>
-
-                    <div className="actions-col">
+                    <div className="actions-col" role="cell">
                       <button
                         type="button"
                         className="edit-btn"
@@ -827,15 +784,11 @@ export default function ClientesPage() {
                         <Pencil size={13} />
                         Editar
                       </button>
-                      <button
-                        type="button"
-                        className="more-btn"
-                        onClick={() => handleDelete(item.id)}
-                        disabled={deleting === item.id}
-                        title="Eliminar"
-                      >
-                        {deleting === item.id ? <Spinner size="sm" /> : <Trash2 size={14} />}
-                      </button>
+                      <ActionMenu label={`Más acciones de ${name}`} triggerLabel="" disabled={deleting === item.id}>
+                        <button type="button" className="is-danger" onClick={() => handleDelete(item.id)}>
+                          <Trash2 size={15} aria-hidden="true" />Eliminar cliente
+                        </button>
+                      </ActionMenu>
                     </div>
                   </div>
                 );

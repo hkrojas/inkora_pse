@@ -64,7 +64,11 @@ export default function ActionMenu({ label, children, disabled = false, onOpen, 
       className="ink-action-menu" style={position}
       onClick={(event) => {
         const action = event.target.closest('button, a');
-        if (action && !action.disabled && !action.hasAttribute('data-keep-open')) setOpen(false);
+        if (action && !action.disabled && !action.hasAttribute('data-keep-open')) {
+          // Keep a mounted focus target for dialogs opened by a menu action.
+          trigger.current?.focus();
+          setOpen(false);
+        }
       }}
       onKeyDown={(event) => {
         if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;

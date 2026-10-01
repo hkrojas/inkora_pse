@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -17,8 +17,9 @@ import { useToast } from '../components/ui/Toast';
 import OperationalPageHeader from '../components/ui/OperationalPageHeader';
 import Modal from '../components/ui/Modal';
 import CustomSelect from '../components/ui/CustomSelect';
+import Pagination from '../components/ui/Pagination';
 
-const AVATAR_COLORS = ['a-green', 'a-blue', 'a-purple', 'a-yellow', 'a-red'];
+const PAGE_SIZE = 15;
 const PAYMENT_METHODS = ['Yape', 'Efectivo', 'Transferencia', 'BCP', 'Interbank', 'BBVA', 'Tarjeta']
   .map((method) => ({ value: method, label: method }));
 
@@ -73,33 +74,52 @@ export default function CobranzaPage() {
   const [error, setError] = useState(null);
   const [search, setSearch] = useState(() => searchParams.get('q') || '');
   const [segment, setSegment] = useState('all');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState({ all: 0, vencidos: 0, criticos: 0, hoy: 0, proximos: 0 });
+  const requestSequence = useRef(0);
   const [quickPayItem, setQuickPayItem] = useState(null);
   const [quickPayMethod, setQuickPayMethod] = useState('Yape');
   const [quickPayReference, setQuickPayReference] = useState('');
   const [quickPaySaving, setQuickPaySaving] = useState(false);
 
   const loadCobranza = useCallback(() => {
+    const sequence = ++requestSequence.current;
     setLoading(true);
     setError(null);
-    Promise.all([cobranza.vencidas(), cobranza.resumen()])
+    const params = new URLSearchParams({ scope: 'active', skip: String((page - 1) * PAGE_SIZE), limit: String(PAGE_SIZE), segment });
+    if (search.trim()) params.set('q', search.trim());
+    Promise.all([cobranza.vencidasPage(`?${params}`), cobranza.resumen()])
       .then(([vencidasRes, resumenRes]) => {
-        setVencidas(Array.isArray(vencidasRes) ? vencidasRes : []);
+        if (sequence !== requestSequence.current) return;
+        const nextTotal = Number(vencidasRes.total || 0);
+        const lastPage = Math.max(1, Math.ceil(nextTotal / PAGE_SIZE));
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
+        setVencidas(vencidasRes.items || []);
+        setTotal(nextTotal);
+        setCounts(vencidasRes.counts || { all: nextTotal, vencidos: 0, criticos: 0, hoy: 0, proximos: 0 });
         setResumen(resumenRes);
       })
       .catch((err) => {
+        if (sequence !== requestSequence.current) return;
         setError(err);
         toast(err.message || 'No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error');
       })
-      .finally(() => setLoading(false));
-  }, [toast]);
+      .finally(() => { if (sequence === requestSequence.current) setLoading(false); });
+  }, [page, search, segment, toast]);
 
   useEffect(() => {
     loadCobranza();
+    return () => { requestSequence.current += 1; };
   }, [loadCobranza]);
 
   useEffect(() => {
     const query = searchParams.get('q') || '';
     setSearch((current) => (current === query ? current : query));
+    setPage(1);
   }, [searchParams]);
 
   const openQuickPay = (item) => {
@@ -148,32 +168,9 @@ export default function CobranzaPage() {
     }
   };
 
-  const counts = useMemo(() => ({
-    all:      vencidas.length,
-    vencidos: vencidas.filter((i) => Number(i.dias_vencido ?? 0) > 0).length,
-    criticos: vencidas.filter((i) => Number(i.dias_vencido ?? 0) > 30).length,
-    hoy:      vencidas.filter((i) => Number(i.dias_vencido ?? 0) === 0).length,
-    proximos: vencidas.filter((i) => Number(i.dias_vencido ?? 0) < 0).length,
-  }), [vencidas]);
-
-  const filtered = useMemo(() => {
-    let base = vencidas;
-
-    const q = search.trim().toLowerCase();
-    if (q) {
-      base = base.filter((i) =>
-        [getClientName(i), i.cliente_documento, i.cliente?.numero_documento, getDocLabel(i)]
-          .filter(Boolean)
-          .some((v) => String(v).toLowerCase().includes(q)),
-      );
-    }
-
-    if (segment === 'vencidos') return base.filter((i) => Number(i.dias_vencido ?? 0) > 0);
-    if (segment === 'criticos') return base.filter((i) => Number(i.dias_vencido ?? 0) > 30);
-    if (segment === 'hoy')      return base.filter((i) => Number(i.dias_vencido ?? 0) === 0);
-    if (segment === 'proximos') return base.filter((i) => Number(i.dias_vencido ?? 0) < 0);
-    return base;
-  }, [vencidas, search, segment]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const firstVisible = total > 0 ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const lastVisible = Math.min((page - 1) * PAGE_SIZE + vencidas.length, total);
 
   const segments = [
     { key: 'all',      label: `Todos ${counts.all}` },
@@ -189,7 +186,7 @@ export default function CobranzaPage() {
         variant="monitoring"
         eyebrow="Seguimiento de pagos"
         title="Cobranza"
-        description={`${loading ? '—' : vencidas.length} documentos en seguimiento activo.`}
+        description={`${loading ? '—' : counts.all} documentos en seguimiento activo${search.trim() ? ' con esta búsqueda' : ''}.`}
         meta={<span className="operational-page-header__scope">Saldo fiscal neto por cobrar</span>}
       />
 
@@ -218,7 +215,7 @@ export default function CobranzaPage() {
         </article>
         <article className="stat">
           <div className="stat-label">En seguimiento</div>
-          <div className="stat-value">{loading ? '—' : vencidas.length}</div>
+          <div className="stat-value">{loading ? '—' : counts.all}</div>
           <div className="stat-foot">Documentos monitoreados</div>
         </article>
       </section>
@@ -231,7 +228,7 @@ export default function CobranzaPage() {
             <input
               placeholder="Buscar por cliente o numero de documento..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             />
           </label>
           <div className="toolbar-actions">
@@ -251,7 +248,7 @@ export default function CobranzaPage() {
                 key={key}
                 type="button"
                 className={`segment ${segment === key ? 'active' : ''}`}
-                onClick={() => setSegment(key)}
+                onClick={() => { setSegment(key); setPage(1); }}
               >
                 {label}
               </button>
@@ -270,7 +267,7 @@ export default function CobranzaPage() {
           <div style={{ padding: '40px 18px' }}>
             <Spinner />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : vencidas.length === 0 ? (
           <div style={{ padding: '40px 18px' }}>
             <EmptyState
               title="Sin vencimientos"
@@ -292,7 +289,7 @@ export default function CobranzaPage() {
                 <div style={{ textAlign: 'right' }}>Accion</div>
               </div>
 
-              {filtered.map((item) => {
+              {vencidas.map((item) => {
                 const aging = getAgingPill(item.dias_vencido);
                 const avatarColor = getAgingAvatar(item.dias_vencido);
                 const dias = Number(item.dias_vencido ?? 0);
@@ -371,19 +368,22 @@ export default function CobranzaPage() {
 
             <div className="table-footer">
               <div>
-                Mostrando <strong>{filtered.length}</strong> de{' '}
-                <strong>{vencidas.length}</strong> documentos
+                Mostrando <strong>{firstVisible}–{lastVisible}</strong> de{' '}
+                <strong>{total}</strong> documentos
               </div>
               <div className="cobranza-total-footer">
                 <AlertCircle size={13} style={{ color: 'var(--color-danger)' }} />
                 <span>
-                  Saldo de los {filtered.length} documentos visibles:{' '}
+                  Saldo de esta página ({vencidas.length} documentos):{' '}
                   <strong>
                     S/{' '}
-                    {fmt(filtered.reduce((sum, i) => sum + Number(i.saldo_pendiente || 0), 0))}
+                    {fmt(vencidas.reduce((sum, i) => sum + Number(i.saldo_pendiente || 0), 0))}
                   </strong>
                 </span>
               </div>
+            </div>
+            <div className="table-footer">
+              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} ariaLabel="Paginación de cobranza" />
             </div>
           </>
         )}

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from sqlalchemy import String, cast, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 import models
 from access_control import ELEVATED_TENANT_ROLES, ROLE_ADMIN, ROLE_SUPERADMIN, assert_user_has_roles, get_effective_role
@@ -327,12 +327,18 @@ def returns(skip: int = Query(0, ge=0), limit: int = Query(15, ge=1, le=100),
             db: Session = Depends(get_db_tenant), user: models.User = Depends(get_current_user)):
     rows = db.query(models.InventoryReturn).filter(
         models.InventoryReturn.tenant_id == user.tenant_id,
-    ).order_by(models.InventoryReturn.created_at.desc()).offset(skip).limit(limit).all()
+    ).options(selectinload(models.InventoryReturn.items)).order_by(
+        models.InventoryReturn.created_at.desc(), models.InventoryReturn.id.desc(),
+    ).offset(skip).limit(limit).all()
+    return _return_response_items(db, user.tenant_id, rows)
+
+
+def _return_response_items(db, tenant_id, rows):
     product_ids = {item.product_id for row in rows for item in row.items}
     products = {
         product.id: product
         for product in db.query(models.Producto).filter(
-            models.Producto.tenant_id == user.tenant_id,
+            models.Producto.tenant_id == tenant_id,
             models.Producto.id.in_(product_ids),
         ).all()
     } if product_ids else {}
@@ -340,7 +346,7 @@ def returns(skip: int = Query(0, ge=0), limit: int = Query(15, ge=1, le=100),
     notes = {
         note.id: note
         for note in db.query(models.Cotizacion).filter(
-            models.Cotizacion.tenant_id == user.tenant_id,
+            models.Cotizacion.tenant_id == tenant_id,
             models.Cotizacion.id.in_(note_ids),
         ).all()
     } if note_ids else {}
@@ -356,6 +362,18 @@ def returns(skip: int = Query(0, ge=0), limit: int = Query(15, ge=1, le=100),
             "received_quantity": item.received_quantity,
         } for item in row.items],
     } for row in rows]
+
+
+@router.get("/devoluciones/page")
+def returns_page(skip: int = Query(0, ge=0), limit: int = Query(15, ge=1, le=100),
+                 db: Session = Depends(get_db_tenant), user: models.User = Depends(get_current_user)):
+    query = db.query(models.InventoryReturn).filter(models.InventoryReturn.tenant_id == user.tenant_id)
+    total = query.count()
+    rows = query.options(selectinload(models.InventoryReturn.items)).order_by(
+        models.InventoryReturn.created_at.desc(), models.InventoryReturn.id.desc(),
+    ).offset(skip).limit(limit).all()
+    return {"items": _return_response_items(db, user.tenant_id, rows),
+            "total": total, "skip": skip, "limit": limit}
 
 
 @router.post("/devoluciones/{return_id}/recibir")

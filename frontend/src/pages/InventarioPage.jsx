@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, ArrowDown, ArrowLeftRight, ArrowUp, Boxes, ClipboardList,
   Download, MapPin, PackageCheck, PackageMinus, Pencil, Plus, RefreshCw, RotateCcw,
@@ -140,6 +140,9 @@ export default function InventarioPage() {
   const [fiscalEstablishments, setFiscalEstablishments] = useState([]);
   const [syncingEstablishments, setSyncingEstablishments] = useState(false);
   const [returns, setReturns] = useState([]);
+  const [returnPage, setReturnPage] = useState(1);
+  const [returnTotal, setReturnTotal] = useState(0);
+  const requestSequence = useRef(0);
   const [query, setQuery] = useState(() => initialParams.get('stock_q') || '');
   const [stockStatus, setStockStatus] = useState(() => initialParams.get('stock_status') || 'all');
   const [stockWarehouse, setStockWarehouse] = useState(() => initialParams.get('stock_warehouse') || '');
@@ -175,33 +178,43 @@ export default function InventarioPage() {
   const [receipt, setReceipt] = useState({});
 
   const load = useCallback(async () => {
+    const sequence = ++requestSequence.current;
     setLoading(true);
     setError('');
     try {
       const skip = (movementPage - 1) * PAGE_SIZE;
       const movementParams = new URLSearchParams({ skip: String(skip), limit: String(PAGE_SIZE) });
       Object.entries(movementFilters).forEach(([key, value]) => { if (value) movementParams.set(key, value); });
-      const [stockRows, movementData, warehouseRows, establishmentRows, returnRows] = await Promise.all([
+      const [stockRows, movementData, warehouseRows, establishmentRows, returnData] = await Promise.all([
         inventory.stock(),
         inventory.movementsPage(`?${movementParams.toString()}`),
         inventory.warehouses(),
         inventory.fiscalEstablishments(),
-        inventory.returns('?skip=0&limit=15'),
+        inventory.returnsPage(`?skip=${(returnPage - 1) * PAGE_SIZE}&limit=${PAGE_SIZE}`),
       ]);
+      if (sequence !== requestSequence.current) return;
       setStock(stockRows);
       setMovements(movementData.items || []);
       setMovementTotal(Number(movementData.total || 0));
       setWarehouses(warehouseRows);
       setFiscalEstablishments(establishmentRows);
-      setReturns(returnRows);
+      const nextReturnTotal = Number(returnData.total || 0);
+      setReturnTotal(nextReturnTotal);
+      const lastReturnPage = Math.max(1, Math.ceil(nextReturnTotal / PAGE_SIZE));
+      if (returnPage > lastReturnPage) setReturnPage(lastReturnPage);
+      else setReturns(returnData.items || []);
     } catch (err) {
+      if (sequence !== requestSequence.current) return;
       setError(err.message || 'No se pudo cargar el inventario.');
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current) setLoading(false);
     }
-  }, [movementFilters, movementPage]);
+  }, [movementFilters, movementPage, returnPage]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => { requestSequence.current += 1; };
+  }, [load]);
   useEffect(() => {
     const params = new URLSearchParams();
     if (tab !== 'stock') params.set('tab', tab);
@@ -294,12 +307,13 @@ export default function InventarioPage() {
     && String(row.product_id) === String(form.product_id));
   const projectedStock = Number(selectedStockRow?.on_hand || 0) + Number(form.quantity || 0);
   const movementPages = Math.max(1, Math.ceil(movementTotal / PAGE_SIZE));
+  const returnPages = Math.max(1, Math.ceil(returnTotal / PAGE_SIZE));
   const tabCounts = {
     stock: stock.length,
     kardex: movementTotal,
     warehouses: warehouses.length,
     transfers: null,
-    returns: returns.length,
+    returns: returnTotal,
   };
 
   useEffect(() => { setStockPage(1); }, [query, stockStatus, stockWarehouse]);
@@ -748,7 +762,12 @@ export default function InventarioPage() {
 
       {tab === 'transfers' && <section className="inventory-panel"><PanelHeading eyebrow="Movimiento interno" title="Traslados entre almacenes" description="Prepara despachos, emite la GRE cuando corresponde y registra la recepción física sin adelantar el ingreso al destino." /><div className="inventory-transfer-empty"><div className="inventory-transfer-route" aria-hidden="true"><span><Warehouse size={18} /></span><i /><span><ArrowLeftRight size={18} /></span><i /><span><Warehouse size={18} /></span></div>{internalTransfersEnabled ? <EmptyState icon={<ArrowLeftRight size={22} />} title="Gestiona el traslado completo" description="La salida y la recepción se registran en momentos distintos. Los movimientos históricos inmediatos se conservan solo para consulta." action={<div className="flex flex-wrap justify-center gap-2"><Link className="btn-primary" to="/traslados-internos/nuevo">Nuevo traslado</Link><Link className="btn-secondary" to="/traslados-internos">Ver traslados</Link><Link className="btn" to="/inventario?tab=warehouses">Configurar almacenes</Link></div>} /> : <EmptyState icon={<ArrowLeftRight size={22} />} title="Traslados internos no habilitados" description="Solicita al administrador habilitar esta función para tu empresa. El inventario actual no se modifica." />}</div></section>}
 
-      {tab === 'returns' && <section className="inventory-panel"><PanelHeading eyebrow="Ingreso por devolución" title="Recepciones pendientes" description="Confirma únicamente las unidades que regresaron físicamente al almacén." meta={`${returns.length} pendientes`} /><div className="inventory-return-list">{returns.length === 0 ? <div className="p-4"><EmptyState icon={<RotateCcw size={22} />} title="No hay devoluciones pendientes" description="Las notas de crédito con devolución física aparecerán aquí después de ser aceptadas." /></div> : returns.map((row) => <article key={row.id} className="inventory-return-card"><div className="inventory-return-card__head"><div><p className="inventory-panel__eyebrow">Nota de crédito</p><h3>{row.credit_note_number || `Documento #${row.credit_note_id}`}</h3><span>{row.items.length} {row.items.length === 1 ? 'producto autorizado' : 'productos autorizados'}</span></div><div className="inventory-return-card__actions"><span className="inventory-return-status"><span aria-hidden="true" />{row.status === 'received' ? 'Recibida' : 'Pendiente de recepción'}</span>{canOperate && row.status !== 'received' && <Button onClick={() => openReceipt(row)}>Confirmar recepción</Button>}</div></div><div className="inventory-return-items">{row.items.map((item) => { const authorized = Number(item.authorized_quantity || 0); const received = Number(item.received_quantity || 0); const progress = authorized > 0 ? Math.min(100, (received / authorized) * 100) : 0; return <div key={item.id} className="inventory-return-item"><div><span className="inventory-return-item__icon" aria-hidden="true"><Boxes size={14} /></span><div><strong>{item.product_name || `Producto #${item.product_id}`}</strong><small>Recibido {qty(received)} de {qty(authorized)}</small></div></div><div className="inventory-return-progress" aria-label={`${Math.round(progress)}% recibido`}><span style={{ width: `${progress}%` }} /></div><b>{qty(Math.max(authorized - received, 0))} pendiente</b></div>; })}</div></article>)}</div></section>}
+      {tab === 'returns' && <section className="inventory-panel"><PanelHeading eyebrow="Ingreso por devolución" title="Devoluciones" description="Consulta las recepciones y confirma las unidades que regresaron físicamente al almacén." meta={`${returnTotal} devoluciones`} /><div className="inventory-return-list">{returns.length === 0 ? <div className="p-4"><EmptyState icon={<RotateCcw size={22} />} title="No hay devoluciones" description="Las notas de crédito con devolución física aparecerán aquí después de ser aceptadas." /></div> : returns.map((row) => <article key={row.id} className="inventory-return-card"><div className="inventory-return-card__head"><div><p className="inventory-panel__eyebrow">Nota de crédito</p><h3>{row.credit_note_number || `Documento #${row.credit_note_id}`}</h3><span>{row.items.length} {row.items.length === 1 ? 'producto autorizado' : 'productos autorizados'}</span></div><div className="inventory-return-card__actions"><span className="inventory-return-status"><span aria-hidden="true" />{row.status === 'received' ? 'Recibida' : 'Pendiente de recepción'}</span>{canOperate && row.status !== 'received' && <Button onClick={() => openReceipt(row)}>Confirmar recepción</Button>}</div></div><div className="inventory-return-items">{row.items.map((item) => { const authorized = Number(item.authorized_quantity || 0); const received = Number(item.received_quantity || 0); const progress = authorized > 0 ? Math.min(100, (received / authorized) * 100) : 0; return <div key={item.id} className="inventory-return-item"><div><span className="inventory-return-item__icon" aria-hidden="true"><Boxes size={14} /></span><div><strong>{item.product_name || `Producto #${item.product_id}`}</strong><small>Recibido {qty(received)} de {qty(authorized)}</small></div></div><div className="inventory-return-progress" aria-label={`${Math.round(progress)}% recibido`}><span style={{ width: `${progress}%` }} /></div><b>{qty(Math.max(authorized - received, 0))} pendiente</b></div>; })}</div></article>)}</div>
+        <div className="table-footer">
+          <span>Mostrando <strong>{returnTotal ? (returnPage - 1) * PAGE_SIZE + 1 : 0}–{Math.min((returnPage - 1) * PAGE_SIZE + returns.length, returnTotal)}</strong> de <strong>{returnTotal}</strong> devoluciones</span>
+          <Pagination page={returnPage} totalPages={returnPages} onPageChange={setReturnPage} ariaLabel="Paginación de devoluciones" />
+        </div>
+      </section>}
 
       <Drawer
         open={modal === 'stock'}

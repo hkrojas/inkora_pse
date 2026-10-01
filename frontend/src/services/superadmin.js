@@ -27,6 +27,7 @@ export const superadmin = {
   updateSmartPseTenantCredentials: (tenantId, data) => api.put(`/superadmin/tenants/${tenantId}/smartpse/credentials`, data),
   deleteSmartPseTenantCompany: (tenantId, companyId) => api.delete(`/superadmin/tenants/${tenantId}/smartpse/company${buildQueryString({ confirm_company_id: companyId })}`),
   smartPseTenantAuditLogs: (tenantId)   => api.get(`/superadmin/tenants/${tenantId}/smartpse/audit-logs`),
+  smartPseTenantAuditLogsPage: (tenantId, params) => api.get(`/superadmin/tenants/${tenantId}/smartpse/audit-logs/page${buildQueryString(params)}`),
   toggleSmartPseTenantCompanyActivation: (tenantId) => api.post(`/superadmin/tenants/${tenantId}/smartpse/activation`),
   updateSmartPseGreCredentials: (tenantId, data) => api.put(`/superadmin/tenants/${tenantId}/smartpse/gre-credentials`, data),
   checkSmartPseGreCredentials:  (tenantId)       => api.post(`/superadmin/tenants/${tenantId}/smartpse/gre-credentials/check`),
@@ -46,6 +47,7 @@ export const superadmin = {
   checkTokenHealth:     (tenantId)      => api.post(`/superadmin/tenants/${tenantId}/check-token-health`),
   checkAllTokens:       ()              => api.post('/superadmin/check-all-tokens'),
   emissionErrors:       (tenantId, limit = 50) => api.get(`/superadmin/tenants/${tenantId}/emission-errors?limit=${limit}`),
+  emissionErrorsPage:   (tenantId, params) => api.get(`/superadmin/tenants/${tenantId}/emission-errors/page${buildQueryString(params)}`),
 
   // Limites de emision (Fase 2)
   tenantLimits:         (tenantId)      => api.get(`/superadmin/tenants/${tenantId}/limits`),

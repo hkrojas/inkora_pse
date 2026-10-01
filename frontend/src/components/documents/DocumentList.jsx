@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
@@ -28,6 +28,7 @@ import EmptyState from '../ui/EmptyState';
 import { PageError } from '../ui/PageState';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import FiscalDocumentActions from './FiscalDocumentActions';
+import Pagination from '../ui/Pagination';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos' },
@@ -146,6 +147,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
   const [filters, setFilters] = useState({ desde: '', hasta: '', estado: 'all', moneda: 'all' });
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState('all');
+  const requestSeq = useRef(0);
   const toast = useToast();
   const debouncedSearch = useDebouncedValue(search, 300);
 
@@ -156,6 +158,8 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
   );
 
   const load = useCallback(async ({ background = false } = {}) => {
+    const seq = requestSeq.current + 1;
+    requestSeq.current = seq;
     if (!background) setLoading(true);
     setError(null);
     try {
@@ -174,18 +178,20 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
       if (filters.moneda !== 'all') params.set('moneda', filters.moneda);
       const url = endpoint || `/facturas-emitidas/page?${params.toString()}`;
       const data = await api.get(url);
+      if (requestSeq.current !== seq) return;
       const items = Array.isArray(data) ? data : data.items || [];
       setDocs(items);
       setTotal(Array.isArray(data) ? items.length : data.total || 0);
       setTabCounts(data.counts || { all: items.length, draft: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 });
     } catch (err) {
+      if (requestSeq.current !== seq) return;
       setError(err);
       setDocs([]);
       setTotal(0);
       setTabCounts({ all: 0, draft: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 });
       toast(err.message || 'No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error');
     } finally {
-      setLoading(false);
+      if (requestSeq.current === seq) setLoading(false);
     }
   }, [activeTab, debouncedSearch, endpoint, filters, page, tipo, toast]);
 
@@ -231,6 +237,10 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
 
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
   const pageItems = docs;
+
+  useEffect(() => {
+    if (!loading && page > totalPages) setPage(totalPages);
+  }, [loading, page, totalPages]);
 
   const hasActiveFilters =
     search || filters.desde || filters.hasta || filters.estado !== 'all' || filters.moneda !== 'all';
@@ -566,27 +576,12 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
               <span className="ink-table-count">
                 Pag. <strong>{page}</strong> de <strong>{totalPages}</strong>
               </span>
-              <div className="pagination">
-                <button
-                  type="button"
-                  className="page-btn"
-                  disabled={page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  &#8249;
-                </button>
-                <button type="button" className="page-btn active">
-                  {page}
-                </button>
-                <button
-                  type="button"
-                  className="page-btn"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                >
-                  &#8250;
-                </button>
-              </div>
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                ariaLabel={`Paginación de ${family.pageTitle.toLowerCase()}`}
+              />
               <span className="ink-table-count">{PER_PAGE} por página</span>
             </div>
           </div>

@@ -60,6 +60,20 @@ class AuditLogResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SmartPSEAuditPageResponse(BaseModel):
+    items: List[AuditLogResponse]
+    total: int
+    skip: int
+    limit: int
+
+
+class EmissionErrorsPageResponse(BaseModel):
+    items: List[schemas.EmissionErrorResponse]
+    total: int
+    skip: int
+    limit: int
+
+
 def _raise_token_validation_error(validation: dict) -> None:
     detail = validation.get("message") or "El token de ApisPeru no es valido."
     provider_detail = validation.get("provider_detail")
@@ -1315,6 +1329,29 @@ def get_tenant_emission_errors_endpoint(
     return crud.get_tenant_emission_errors(db, tenant_id, limit)
 
 
+@router.get("/superadmin/tenants/{tenant_id}/emission-errors/page", response_model=EmissionErrorsPageResponse)
+def get_tenant_emission_errors_page_endpoint(
+    tenant_id: int,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=15, ge=1, le=100),
+    q: str | None = Query(default=None, max_length=100),
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    if not crud.get_tenant(db, tenant_id):
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+    job = models.DocumentEmissionJob
+    query = db.query(job).filter(job.tenant_id == tenant_id, job.status == "failed")
+    if q and q.strip():
+        query = query.filter(job.last_error.ilike(f"%{q.strip()}%"))
+    total = query.count()
+    rows = query.order_by(job.finished_at.desc().nullslast(), job.id.desc()).offset(skip).limit(limit).all()
+    return {"items": [dict(job_id=row.id, action=row.action, resource_type=row.resource_type,
+                           resource_id=row.resource_id, last_error=row.last_error, attempts=row.attempts,
+                           finished_at=row.finished_at, created_at=row.created_at) for row in rows],
+            "total": total, "skip": skip, "limit": limit}
+
+
 @router.post(
     "/superadmin/tenants/{tenant_id}/check-token-health",
     response_model=schemas.TokenHealthResponse,
@@ -1774,6 +1811,27 @@ def list_tenant_smartpse_audit_logs_endpoint(
         .limit(limit)
         .all()
     )
+
+
+@router.get("/superadmin/tenants/{tenant_id}/smartpse/audit-logs/page", response_model=SmartPSEAuditPageResponse)
+def list_tenant_smartpse_audit_logs_page_endpoint(
+    tenant_id: int,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=15, ge=1, le=100),
+    q: str | None = Query(default=None, max_length=100),
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(get_superadmin),
+):
+    if not crud.get_tenant(db, tenant_id):
+        raise HTTPException(status_code=404, detail="Tenant no encontrado.")
+    log = models.AuditLog
+    query = db.query(log).filter(log.entity_type == "tenant", log.entity_id == tenant_id,
+                                log.action.ilike("%smartpse%"))
+    if q and q.strip():
+        query = query.filter(log.action.ilike(f"%{q.strip()}%"))
+    total = query.count()
+    return {"items": query.order_by(log.timestamp.desc(), log.id.desc()).offset(skip).limit(limit).all(),
+            "total": total, "skip": skip, "limit": limit}
 
 
 @router.post(

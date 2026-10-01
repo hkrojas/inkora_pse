@@ -15,6 +15,7 @@ import { api } from '../lib/utils/api';
 import { useToast } from '../components/ui/Toast';
 import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
+import Pagination from '../components/ui/Pagination';
 import Drawer from '../components/ui/Drawer';
 import Spinner from '../components/ui/Spinner';
 import Badge from '../components/ui/Badge';
@@ -243,9 +244,13 @@ export default function ReversionesPage() {
         })),
       };
       const res = await api.post('/reversiones/enviar', payload);
-      setResultados((prev) => [res, ...prev].slice(0, PER_PAGE));
       toast(res.ticket ? `Ticket: ${res.ticket}` : 'Reversion enviada correctamente', 'success');
       setModalOpen(false);
+      if (page === 1) load();
+      else {
+        setLoading(true);
+        setPage(1);
+      }
     } catch (err) {
       toast(err?.message || 'No se pudo enviar la reversion. Revisa los datos e intentalo nuevamente.', 'error');
       load();
@@ -258,6 +263,10 @@ export default function ReversionesPage() {
   const filtered = resultados;
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
   const pageItems = resultados;
+
+  useEffect(() => {
+    if (!loading && page > totalPages) setPage(totalPages);
+  }, [loading, page, totalPages]);
 
   const heroCards = [
     {
@@ -519,27 +528,7 @@ export default function ReversionesPage() {
               <span className="ink-table-count">
                 Pag. <strong>{page}</strong> de <strong>{totalPages}</strong>
               </span>
-              <div className="pagination">
-                <button
-                  type="button"
-                  className="page-btn"
-                  disabled={page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  &#8249;
-                </button>
-                <button type="button" className="page-btn active">
-                  {page}
-                </button>
-                <button
-                  type="button"
-                  className="page-btn"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                >
-                  &#8250;
-                </button>
-              </div>
+              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} ariaLabel="Paginación de reversiones" />
               <span className="ink-table-count">{PER_PAGE} por pagina</span>
             </div>
           </div>

@@ -1,10 +1,10 @@
 """crud/reportes.py — Dashboard, cobranza y reportes contables."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import String, and_, case, cast, func, or_
 
 
 import models
@@ -243,11 +243,9 @@ def get_dashboard_stats(db: Session, tenant_id: int):
     }
 
 
-def get_cobranza_vencida(
+def _cobranza_vencida_query(
     db: Session,
     tenant_id: int,
-    skip: int = 0,
-    limit: int = 100,
     q: str | None = None,
     scope: str = "overdue",
 ) -> list:
@@ -294,16 +292,30 @@ def get_cobranza_vencida(
     term = (q or "").strip()
     if term:
         like_term = f"%{term}%"
-        query = query.filter(
-            or_(
+        search_filters = [
                 models.Cliente.razon_social.ilike(like_term),
                 models.Cliente.nombre_comercial.ilike(like_term),
                 models.Cliente.numero_documento.ilike(like_term),
                 models.Cotizacion.internal_order_number.ilike(like_term),
                 models.Cotizacion.serie.ilike(like_term),
-            )
-        )
+                cast(models.Cotizacion.correlativo, String).ilike(like_term),
+        ]
+        normalized = term.upper().replace(" ", "")
+        if "-" in normalized:
+            series, number = normalized.rsplit("-", 1)
+            if number.isdigit() and len(number) <= 10:
+                search_filters.append(and_(
+                    func.upper(models.Cotizacion.serie) == series,
+                    models.Cotizacion.correlativo == int(number),
+                ))
+        elif normalized.isdigit() and len(normalized) <= 10:
+            search_filters.append(models.Cotizacion.correlativo == int(normalized))
+        query = query.filter(or_(*search_filters))
 
+    return query
+
+
+def _cobranza_rows(query, skip: int, limit: int) -> list:
     rows = (
         query.order_by(
             models.Cotizacion.fecha_vencimiento.asc(),
@@ -335,6 +347,40 @@ def get_cobranza_vencida(
         )
         for row in rows
     ]
+
+
+def get_cobranza_vencida(
+    db: Session, tenant_id: int, skip: int = 0, limit: int = 100,
+    q: str | None = None, scope: str = "overdue",
+) -> list:
+    return _cobranza_rows(_cobranza_vencida_query(db, tenant_id, q, scope), skip, limit)
+
+
+def get_cobranza_vencida_page(
+    db: Session, tenant_id: int, *, skip: int = 0, limit: int = 15,
+    q: str | None = None, scope: str = "active", segment: str = "all",
+) -> dict:
+    # Counts and rows use the same tenant, accepted-document and net-balance filters.
+    query = _cobranza_vencida_query(db, tenant_id, q, scope)
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    due = models.Cotizacion.fecha_vencimiento
+    filters = {
+        "vencidos": due < today,
+        "criticos": due < today - timedelta(days=30),
+        "hoy": and_(due >= today, due < today + timedelta(days=1)),
+        "proximos": due >= today + timedelta(days=1),
+    }
+    if segment != "all" and segment not in filters:
+        raise ValueError("segment inválido")
+    row = query.with_entities(
+        func.count(models.Cotizacion.id).label("all"),
+        *[func.sum(case((condition, 1), else_=0)).label(key) for key, condition in filters.items()],
+    ).one()
+    counts = {key: int(getattr(row, key) or 0) for key in ("all", *filters)}
+    if segment != "all":
+        query = query.filter(filters[segment])
+    return {"items": _cobranza_rows(query, skip, limit), "total": counts[segment],
+            "counts": counts, "skip": skip, "limit": limit}
 
 
 def get_cobranza_resumen(db: Session, tenant_id: int) -> dict:
