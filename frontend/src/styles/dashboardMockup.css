@@ -844,7 +844,7 @@
     transition: opacity var(--duration-fast) var(--ease-out);
     transition-duration: var(--duration-fast) !important;
   }
-  .business-chart__quoted { transition-duration: var(--duration-fast); }
+  .business-chart__quoted { transition-duration: var(--duration-fast) !important; }
   @starting-style {
     .business-chart__series--animated { clip-path: inset(0); opacity: 0.4; }
   }

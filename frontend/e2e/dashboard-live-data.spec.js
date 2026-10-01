@@ -535,6 +535,7 @@ for (const mode of ['desktop', 'mobile', 'reduced', 'keyboard']) {
         expect(ended.length).toBeGreaterThanOrEqual(2);
         expect(events.every((event) => event.property === 'opacity')).toBe(true);
         expect(ended.every((event) => event.elapsed > 0 && event.elapsed <= (mode === 'reduced' ? 0.15 : 0.22))).toBe(true);
+        if (mode === 'reduced') expect(ended.every((event) => Math.abs(event.elapsed - 0.15) < 0.001)).toBe(true);
       }
       await expect(page.locator('.business-chart__line--sales')).toHaveAttribute('d', salesPath);
       expect(state.dashboardCalls).toHaveLength(calls);
