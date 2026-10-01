@@ -27,7 +27,7 @@ const audit = Array.from({ length: 37 }, (_, index) => ({
   timestamp: '2026-09-30T12:00:00Z', entity_type: 'tenant', entity_id: tenant.id,
 }));
 
-async function setup(browser, baseURL, width) {
+async function setup(browser, baseURL, width, { provider = 'metadata', companyCount = 37 } = {}) {
   const context = await browser.newContext({ baseURL, viewport: { width, height: 900 },
     reducedMotion: 'reduce', storageState: { cookies: [], origins: [] } });
   await context.addInitScript(() => { localStorage.setItem('token', 'local-pagination-fixture'); });
@@ -35,6 +35,7 @@ async function setup(browser, baseURL, width) {
   const calls = [];
   const writes = [];
   const errors = attachCriticalErrorCollector(page);
+  const remoteCompanies = companies.slice(0, companyCount);
   await page.route(`${API_ORIGIN}/**`, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -50,10 +51,15 @@ async function setup(browser, baseURL, width) {
     else if (path === '/superadmin/tenants-page') payload = { items: [tenant], total: 1, skip: 0, limit: 15,
       metrics: { total: 1, active: 1, smartpse_gre: 1, smartpse_gre_pending: 0 } };
     else if (path === '/superadmin/smartpse/companies') {
-      const selected = companies.filter((row) => row.razon_social.toLowerCase().includes((url.searchParams.get('search') || '').toLowerCase()));
+      const selected = remoteCompanies.filter((row) => row.razon_social.toLowerCase().includes((url.searchParams.get('search') || '').toLowerCase()));
       const number = Number(url.searchParams.get('page')) || 1;
       const size = Number(url.searchParams.get('per_page')) || 15;
-      payload = { data: selected.slice((number - 1) * size, number * size), total: selected.length,
+      if (request.method() === 'POST') {
+        payload = { id: 'created-company', ...request.postDataJSON(), active: true };
+        remoteCompanies.unshift(payload);
+      } else if (provider === 'complete-list') payload = selected;
+      else if (provider === 'bare-pages') payload = { data: selected.slice((number - 1) * size, number * size) };
+      else payload = { data: selected.slice((number - 1) * size, number * size), total: selected.length,
         current_page: number, last_page: Math.max(1, Math.ceil(selected.length / size)) };
     } else if (path.endsWith('/users-detail')) payload = members;
     else if (path.endsWith('/smartpse/company')) payload = { id: 'company-7', ruc: tenant.business_ruc, razon_social: tenant.business_name };
@@ -68,6 +74,75 @@ async function setup(browser, baseURL, width) {
   await page.goto('/superadmin');
   await expect(page.getByRole('heading', { name: 'Panel de empresas', exact: true })).toBeVisible();
   return { context, page, calls, writes, errors };
+}
+
+test('Superadmin: lista completa sin metadata conserva sus 37 empresas con páginas locales', async ({ browser, baseURL }) => {
+  const { context, page, calls, writes, errors } = await setup(browser, baseURL, 390, { provider: 'complete-list' });
+  try {
+    const cards = page.locator('.smartpse-company-card');
+    await expect(cards).toHaveCount(15);
+    const initialRequests = calls.filter((url) => url.pathname === '/superadmin/smartpse/companies').length;
+    await lastPage(page, 'Paginación de empresas Smart PSE');
+    await expect(page.getByText('Remote company 16', { exact: true })).toBeVisible();
+    const pager = page.getByRole('navigation', { name: 'Paginación de empresas Smart PSE' });
+    await pager.getByRole('button', { name: 'Ir a página 3', exact: true }).click();
+    await expect(cards).toHaveCount(7);
+    await expect(page.getByText('Remote company 37', { exact: true })).toBeVisible();
+    expect(calls.filter((url) => url.pathname === '/superadmin/smartpse/companies')).toHaveLength(initialRequests);
+    await assertMobilePager(page, pager);
+    expect(writes).toEqual([]);
+    errors.assertClean();
+  } finally { await context.close(); }
+});
+
+test('Superadmin: páginas sin metadata permiten llegar al final vacío sin inventar total', async ({ browser, baseURL }) => {
+  const { context, page, calls, writes, errors } = await setup(browser, baseURL, 390, { provider: 'bare-pages', companyCount: 30 });
+  try {
+    const cards = page.locator('.smartpse-company-card');
+    await expect(cards).toHaveCount(15);
+    const pager = page.getByRole('navigation', { name: 'Paginación de empresas Smart PSE' });
+    await expect(page.getByText(/el proveedor no informó el total/)).toBeVisible();
+    await pager.getByRole('button', { name: 'Página siguiente', exact: true }).click();
+    await expect(page.getByText('Remote company 16', { exact: true })).toBeVisible();
+    await expect(cards).toHaveCount(15);
+    await pager.getByRole('button', { name: 'Página siguiente', exact: true }).click();
+    await expect(page.getByText('No hay más empresas', { exact: true })).toBeVisible();
+    await expect(cards).toHaveCount(0);
+    await expect(pager.getByRole('button', { name: 'Página siguiente', exact: true })).toBeDisabled();
+    await assertMobilePager(page, pager);
+    await pager.getByRole('button', { name: 'Página anterior', exact: true }).click();
+    await expect(page.getByText('Remote company 30', { exact: true })).toBeVisible();
+    const requests = calls.filter((url) => url.pathname === '/superadmin/smartpse/companies');
+    expect(distinctConsecutive(requests.map((url) => Number(url.searchParams.get('page'))))).toEqual([1, 2, 3, 2]);
+    expect(requests.every((url) => url.searchParams.get('per_page') === '15')).toBe(true);
+    expect(writes).toEqual([]);
+    errors.assertClean();
+  } finally { await context.close(); }
+});
+
+for (const provider of ['metadata', 'bare-pages']) {
+  test(`Superadmin: crear empresa desde página2 recarga página1 de15 (${provider})`, async ({ browser, baseURL }) => {
+    const { context, page, calls, writes, errors } = await setup(browser, baseURL, 390, { provider });
+    try {
+      const cards = page.locator('.smartpse-company-card');
+      await expect(cards).toHaveCount(15);
+      await page.getByRole('navigation', { name: 'Paginación de empresas Smart PSE' }).getByRole('button', { name: 'Página siguiente', exact: true }).click();
+      await expect(page.getByText('Remote company 16', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Registrar en Smart PSE', exact: true }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByLabel('RUC *', { exact: true }).fill('20999999999');
+      await dialog.getByLabel('Razon social *', { exact: true }).fill('Created company');
+      await dialog.getByRole('button', { name: 'Crear empresa', exact: true }).click();
+      await expect(dialog).not.toBeVisible();
+      await expect(page.getByText('Created company', { exact: true })).toBeVisible();
+      await expect(cards).toHaveCount(15);
+      const requests = calls.filter((url) => url.pathname === '/superadmin/smartpse/companies' && url.searchParams.has('page'));
+      expect(distinctConsecutive(requests.map((url) => Number(url.searchParams.get('page'))))).toEqual([1, 2, 1]);
+      expect(writes).toEqual(['POST /superadmin/smartpse/companies']);
+      if (provider === 'bare-pages') await expect(page.getByText(/el proveedor no informó el total/)).toBeVisible();
+      errors.assertClean();
+    } finally { await context.close(); }
+  });
 }
 
 async function lastPage(page, label) {

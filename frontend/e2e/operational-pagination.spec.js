@@ -72,6 +72,9 @@ async function openOperationalPage(browser, baseURL, width, path, { debtCount = 
 }
 
 async function assertViewportAndCapture(page, testInfo, label) {
+  // The app shell scrolls independently of the document: fullPage alone can
+  // capture the header while leaving the list footer outside the viewport.
+  await page.locator('.pagination').last().scrollIntoViewIfNeeded();
   const geometry = await page.evaluate(() => ({ viewport: innerWidth, scroll: document.documentElement.scrollWidth,
     pagination: [...document.querySelectorAll('.pagination')].map((element) => { const r = element.getBoundingClientRect(); return { left: r.left, right: r.right }; }) }));
   expect(geometry.scroll).toBeLessThanOrEqual(geometry.viewport);

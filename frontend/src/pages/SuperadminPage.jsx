@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Building2,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Gauge,
   Hash,
   KeyRound,
@@ -2637,6 +2639,8 @@ export default function SuperadminPage() {
   const [smartPseCompanyTotal, setSmartPseCompanyTotal] = useState(0);
   const [smartPseCompanyPage, setSmartPseCompanyPage] = useState(1);
   const [smartPseCompanyPageCount, setSmartPseCompanyPageCount] = useState(1);
+  const [smartPseCompanyHasNext, setSmartPseCompanyHasNext] = useState(false);
+  const smartPseCompleteList = useRef(null);
   const [smartPseCompanyReloadKey, setSmartPseCompanyReloadKey] = useState(0);
   const [showSmartPseCreate, setShowSmartPseCreate] = useState(false);
   const [smartPseCreateLookupLoading, setSmartPseCreateLookupLoading] = useState(false);
@@ -2681,23 +2685,42 @@ export default function SuperadminPage() {
   ]);
 
   useEffect(() => {
+    if (tenantSearch.trim() === debouncedTenantSearch) return undefined;
     const timer = window.setTimeout(() => {
       setTenantPage(1);
       setDebouncedTenantSearch(tenantSearch.trim());
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [tenantSearch]);
+  }, [tenantSearch, debouncedTenantSearch]);
 
   useEffect(() => {
+    if (smartPseCompanySearch.trim() === debouncedSmartPseCompanySearch) return undefined;
     const timer = window.setTimeout(() => {
       setSmartPseCompanyPage(1);
       setDebouncedSmartPseCompanySearch(smartPseCompanySearch.trim());
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [smartPseCompanySearch]);
+  }, [smartPseCompanySearch, debouncedSmartPseCompanySearch]);
 
   useEffect(() => {
     if (!user?.is_superadmin) return undefined;
+
+    const cacheKey = `${smartPseCompanyReloadKey}:${debouncedSmartPseCompanySearch}`;
+    const applyCompleteList = (rows) => {
+      const pageCount = getPageCount(rows.length, SUPERADMIN_PAGE_SIZE);
+      const page = Math.min(smartPseCompanyPage, pageCount);
+      setSmartPseCompanies(rows.slice((page - 1) * SUPERADMIN_PAGE_SIZE, page * SUPERADMIN_PAGE_SIZE));
+      setSmartPseCompanyTotal(rows.length);
+      setSmartPseCompanyPageCount(pageCount);
+      setSmartPseCompanyHasNext(page < pageCount);
+      if (page !== smartPseCompanyPage) setSmartPseCompanyPage(page);
+    };
+    if (smartPseCompleteList.current?.key === cacheKey) {
+      applyCompleteList(smartPseCompleteList.current.rows);
+      setSmartPseCompaniesError(false);
+      setSmartPseCompaniesLoading(false);
+      return undefined;
+    }
 
     let cancelled = false;
     setSmartPseCompaniesLoading(true);
@@ -2709,12 +2732,22 @@ export default function SuperadminPage() {
     })
       .then((data) => {
         if (cancelled) return;
-        const rows = Array.isArray(data.data) ? data.data : [];
-        setSmartPseCompanies(rows);
-        setSmartPseCompanyTotal(data.total == null ? null : Number(data.total));
-        const pageCount = Math.max(1, Number(data.last_page) || getPageCount(Number(data.total) || 0, SUPERADMIN_PAGE_SIZE));
+        const rows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+        const hasMetadata = data?.total != null || data?.last_page != null;
+        // A provider returning more than the requested limit has returned its complete list.
+        if (!hasMetadata && rows.length > SUPERADMIN_PAGE_SIZE) {
+          smartPseCompleteList.current = { key: cacheKey, rows };
+          applyCompleteList(rows);
+          return;
+        }
+        setSmartPseCompanies(rows.slice(0, SUPERADMIN_PAGE_SIZE));
+        setSmartPseCompanyTotal(data?.total == null ? null : Number(data.total));
+        const pageCount = hasMetadata
+          ? Math.max(1, Number(data.last_page) || getPageCount(Number(data.total) || 0, SUPERADMIN_PAGE_SIZE))
+          : null;
         setSmartPseCompanyPageCount(pageCount);
-        if (smartPseCompanyPage > pageCount) setSmartPseCompanyPage(pageCount);
+        setSmartPseCompanyHasNext(pageCount == null ? rows.length === SUPERADMIN_PAGE_SIZE : smartPseCompanyPage < pageCount);
+        if (pageCount != null && smartPseCompanyPage > pageCount) setSmartPseCompanyPage(pageCount);
       })
       .catch(() => {
         if (!cancelled) { setSmartPseCompaniesError(true); toast('No se pudo cargar empresas Smart PSE.', 'error'); }
@@ -2799,15 +2832,15 @@ export default function SuperadminPage() {
     event.preventDefault();
     setSmartPseCreateSaving(true);
     try {
-      const created = await svc.createSmartPseCompany({
+      await svc.createSmartPseCompany({
         ruc: smartPseCreateForm.ruc,
         razon_social: smartPseCreateForm.razon_social,
         environment: smartPseCreateForm.environment,
         start_date: smartPseCreateForm.start_date || null,
         end_date: smartPseCreateForm.end_date || null,
       });
-      setSmartPseCompanies((current) => [created, ...current.filter((item) => item.id !== created.id)]);
-      setSmartPseCompanyTotal((total) => total + 1);
+      setSmartPseCompanyPage(1);
+      setSmartPseCompanyReloadKey((key) => key + 1);
       setSmartPseCreateForm({
         ruc: '',
         razon_social: '',
@@ -3073,7 +3106,7 @@ export default function SuperadminPage() {
           ) : smartPseCompaniesError ? (
             <div className="p-4" role="alert"><p>No pudimos cargar las empresas Smart PSE.</p><button type="button" className="btn-secondary" onClick={() => setSmartPseCompanyReloadKey((value) => value + 1)}>Reintentar</button></div>
           ) : smartPseCompanies.length === 0 ? (
-            <EmptyState title="Sin empresas conectadas" description="Registra una empresa o ajusta la búsqueda." />
+            <EmptyState title={smartPseCompanyPage > 1 ? 'No hay más empresas' : 'Sin empresas conectadas'} description={smartPseCompanyPage > 1 ? 'Vuelve a la página anterior para consultar las empresas.' : 'Registra una empresa o ajusta la búsqueda.'} />
           ) : (
             smartPseCompanies.map((company) => {
               const companyInitials = String(company.razon_social || company.ruc || 'SP')
@@ -3138,7 +3171,13 @@ export default function SuperadminPage() {
         </div>
       </section>
 
-      {!smartPseCompaniesLoading && !smartPseCompaniesError && <Pagination page={smartPseCompanyPage} totalPages={smartPseCompanyPageCount} onPageChange={setSmartPseCompanyPage} ariaLabel="Paginación de empresas Smart PSE" />}
+      {!smartPseCompaniesLoading && !smartPseCompaniesError && (smartPseCompanyPageCount == null ? (
+        <div className="pagination" role="navigation" aria-label="Paginación de empresas Smart PSE">
+          <button type="button" className="page-btn page-btn--nav" aria-label="Página anterior" disabled={smartPseCompanyPage <= 1} onClick={() => setSmartPseCompanyPage((page) => page - 1)}><ChevronLeft aria-hidden="true" size={17} /></button>
+          <span aria-current="page">Página {smartPseCompanyPage}</span>
+          <button type="button" className="page-btn page-btn--nav" aria-label="Página siguiente" disabled={!smartPseCompanyHasNext} onClick={() => setSmartPseCompanyPage((page) => page + 1)}><ChevronRight aria-hidden="true" size={17} /></button>
+        </div>
+      ) : <Pagination page={smartPseCompanyPage} totalPages={smartPseCompanyPageCount} onPageChange={setSmartPseCompanyPage} ariaLabel="Paginación de empresas Smart PSE" />)}
 
       {loading ? (
         <div className="flex justify-center py-20">
