@@ -278,7 +278,8 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth, group = 'mo
   const plotHeight = plotBottom - plotTop;
   const salesValues = useMemo(() => history.map((point) => asNumber(point.sales_amount)), [history]);
   const quotedValues = useMemo(() => history.map((point) => asNumber(point.quoted_amount)), [history]);
-  const { maxValue, ticks: yTicks } = useMemo(() => chartScale(showQuotes ? [...salesValues, ...quotedValues] : salesValues), [salesValues, quotedValues, showQuotes]);
+  // Keep the scale stable while toggling quotes so sales do not jump during the fade.
+  const { maxValue, ticks: yTicks } = useMemo(() => chartScale([...salesValues, ...quotedValues]), [salesValues, quotedValues]);
   const quotedPoints = useMemo(() => buildPoints(quotedValues, width, height, maxValue), [quotedValues, width, height, maxValue]);
   const salesPoints = useMemo(() => buildPoints(salesValues, width, height, maxValue), [salesValues, width, height, maxValue]);
   const latestIndex = history.length - 1;
@@ -328,14 +329,18 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth, group = 'mo
                   <path className="business-chart__line business-chart__line--sales" d={pathFromPoints(salesPoints)} pathLength="1" />
                 </>
               )}
-              {showQuotes && <path className="business-chart__line business-chart__line--quoted" d={pathFromPoints(quotedPoints)} />}
               {salesPoints.map((point, index) => (
                 <g key={history[index].date || `${history[index].year}-${history[index].month}`} className={activePoint === index ? 'is-active' : ''}>
                   <circle className="business-chart__point-halo" cx={point.x} cy={point.y} r="8" />
                   <circle className="business-chart__point business-chart__point--sales" cx={point.x} cy={point.y} r="4.5" />
-                  {showQuotes && <circle className="business-chart__point business-chart__point--quoted" cx={quotedPoints[index].x} cy={quotedPoints[index].y} r="4" />}
                 </g>
               ))}
+              <g className={`business-chart__quoted${showQuotes ? ' is-visible' : ''}${animate ? '' : ' is-instant'}`}>
+                <path className="business-chart__line business-chart__line--quoted" d={pathFromPoints(quotedPoints)} />
+                {quotedPoints.map((point, index) => (
+                  <circle key={history[index].date || `${history[index].year}-${history[index].month}`} className="business-chart__point business-chart__point--quoted" cx={point.x} cy={point.y} r="4" />
+                ))}
+              </g>
             </g>
             {salesPoints.map((point, index) => (
               (index % labelStride === 0 || (index === latestIndex && latestIndex % labelStride >= labelStride / 2)) && (
@@ -411,7 +416,7 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth, group = 'mo
       </div>
       <div className="business-chart__legend" aria-hidden="true">
         <span><i className="business-chart__legend-line business-chart__legend-line--sales" />Ventas totales</span>
-        {showQuotes && <span><i className="business-chart__legend-line business-chart__legend-line--quoted" />Importe cotizado</span>}
+        <span className={`business-chart__quoted${showQuotes ? ' is-visible' : ''}${animate ? '' : ' is-instant'}`}><i className="business-chart__legend-line business-chart__legend-line--quoted" />Importe cotizado</span>
       </div>
       <label className="business-chart__month-picker">
         Consultar {unit}

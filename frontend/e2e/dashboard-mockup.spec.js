@@ -155,7 +155,7 @@ test.describe('Mockup comercial del dashboard', () => {
       await expect(quoted).toBeChecked();
       await expect(page.getByText('2 de 5 cotizaciones', { exact: false })).toBeVisible();
       await quoted.uncheck();
-      await expect(page.locator('.business-chart__line--quoted')).toHaveCount(0);
+      await expect(page.locator('g.business-chart__quoted')).toHaveCSS('opacity', '0');
       await quoted.check();
       await expect(page.locator('.business-chart__line--quoted')).toHaveCount(1);
 

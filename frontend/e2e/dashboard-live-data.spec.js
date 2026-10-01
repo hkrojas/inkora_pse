@@ -135,6 +135,7 @@ async function createDashboardContext(browser, baseURL, options = {}) {
   const context = await browser.newContext({
     baseURL,
     viewport: options.viewport || { width: 1280, height: 900 },
+    hasTouch: options.hasTouch || false,
     reducedMotion: options.reducedMotion || 'no-preference',
     storageState: { cookies: [], origins: [] },
   });
@@ -477,6 +478,83 @@ test('animación del gráfico: cambiar agrupación con teclado es inmediato', as
   }
 });
 
+for (const mode of ['desktop', 'mobile', 'reduced', 'keyboard']) {
+  test(`alternar cotizaciones: transición interrumpible y escala estable (${mode})`, async ({ browser, baseURL }, testInfo) => {
+    const { context, page, state } = await createDashboardContext(browser, baseURL, {
+      viewport: { width: mode === 'mobile' ? 390 : 1440, height: 900 },
+      hasTouch: mode === 'mobile',
+      payloadForQuery: variedQuotesPayload,
+      reducedMotion: mode === 'reduced' ? 'reduce' : 'no-preference',
+    });
+    const errors = attachCriticalErrorCollector(page);
+    try {
+      await page.clock.setFixedTime(new Date('2026-09-30T15:00:00Z'));
+      await page.goto('/dashboard');
+      const quotes = page.locator('g.business-chart__quoted');
+      await expect(quotes).toHaveCSS('opacity', '1');
+      await expect(page.locator('.business-chart__series')).toHaveCSS('opacity', '1');
+      const salesPath = await page.locator('.business-chart__line--sales').getAttribute('d');
+      const calls = state.dashboardCalls.length;
+      await quotes.evaluate((element) => {
+        window.__quoteToggleEvents = [];
+        for (const type of ['transitionrun', 'transitionend', 'transitioncancel']) {
+          element.addEventListener(type, (event) => window.__quoteToggleEvents.push({ type, property: event.propertyName, elapsed: event.elapsedTime }));
+        }
+      });
+      const toggle = async () => {
+        if (mode === 'keyboard') await page.getByRole('checkbox').press('Space');
+        else if (mode === 'mobile') await page.locator('.business-toggle').tap();
+        else await page.locator('.business-toggle').click();
+      };
+      await toggle();
+      await expect(quotes).toHaveCSS('opacity', '0');
+      await expect(page.locator('.business-chart__legend .business-chart__quoted')).toHaveCSS('opacity', '0');
+      await expect(page.locator('.business-chart__line--sales')).toHaveAttribute('d', salesPath);
+      await page.locator('.business-chart__hotspot').nth(13).hover();
+      await expect(page.getByRole('tooltip')).not.toContainText('Importe cotizado');
+      await toggle();
+      await expect(quotes).toHaveCSS('opacity', '1');
+      if (mode === 'desktop') {
+        // Pause halfway to reverse a real transition without racing the test runner.
+        await toggle();
+        const intermediate = await quotes.evaluate((element) => {
+          const animation = element.getAnimations()[0];
+          animation.pause();
+          animation.currentTime = 110;
+          return Number(getComputedStyle(element).opacity);
+        });
+        expect(intermediate).toBeGreaterThan(0);
+        expect(intermediate).toBeLessThan(1);
+        await toggle();
+        await expect(quotes).toHaveCSS('opacity', '1');
+      }
+      if (mode !== 'keyboard') {
+        await expect.poll(async () => page.evaluate(() => window.__quoteToggleEvents.filter((event) => event.type === 'transitionend').length)).toBeGreaterThanOrEqual(2);
+      }
+      const events = await page.evaluate(() => window.__quoteToggleEvents);
+      if (mode === 'keyboard') expect(events).toEqual([]);
+      else {
+        const ended = events.filter((event) => event.type === 'transitionend');
+        expect(ended.length).toBeGreaterThanOrEqual(2);
+        expect(events.every((event) => event.property === 'opacity')).toBe(true);
+        expect(ended.every((event) => event.elapsed > 0 && event.elapsed <= (mode === 'reduced' ? 0.15 : 0.22))).toBe(true);
+        if (mode === 'reduced') expect(ended.every((event) => Math.abs(event.elapsed - 0.15) < 0.001)).toBe(true);
+      }
+      await expect(page.locator('.business-chart__line--sales')).toHaveAttribute('d', salesPath);
+      expect(state.dashboardCalls).toHaveLength(calls);
+      await expect(page.locator('.business-chart__point--quoted')).toHaveCount(30);
+      const path = testInfo.outputPath(`quote-toggle-${mode}.png`);
+      await page.locator('.business-sales').screenshot({ path });
+      await testInfo.attach(`Cotizaciones ${mode}`, { path, contentType: 'image/png' });
+      const body = JSON.stringify(events, null, 2);
+      await testInfo.attach('Transiciones reales', { body, contentType: 'application/json' });
+      errors.assertClean();
+    } finally {
+      await context.close();
+    }
+  });
+}
+
 for (const width of [320, 390, 600, 768, 1024, 1440]) {
   test(`conversión legible: porcentaje decimal sin choques a ${width}px`, async ({ browser, baseURL }, testInfo) => {
     const payload = {
@@ -614,8 +692,8 @@ for (const width of [1440, 390]) {
       await testInfo.attach(`Cotizaciones diarias ${width}px`, { path: dailyPath, contentType: 'image/png' });
       await page.locator('.business-toggle').click();
       await expect(page.getByRole('checkbox')).not.toBeChecked();
-      await expect(page.locator('.business-chart__line--quoted')).toHaveCount(0);
-      await expect(page.locator('.business-chart__point--quoted')).toHaveCount(0);
+      await expect(page.locator('g.business-chart__quoted')).toHaveCSS('opacity', '0');
+      await expect(page.locator('.business-chart__point--quoted')).toHaveCount(30);
       await expect(page.locator('.business-chart__point--sales')).toHaveCount(30);
       await expect(page.locator('.business-chart__line--sales')).toHaveCount(1);
       await page.locator('.business-toggle').click();
