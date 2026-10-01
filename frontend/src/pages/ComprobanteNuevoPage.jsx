@@ -233,29 +233,6 @@ function getIdentityLabel(tipoDocumento) {
   return 'DOC';
 }
 
-function ModeSwitch({ mode, onChange }) {
-  return (
-    <div className="document-mode-switch" role="group" aria-label="Modo de emisión">
-      <button
-        type="button"
-        aria-pressed={mode === 'cpe'}
-        className={`document-mode-button${mode === 'cpe' ? ' is-active' : ''}`}
-        onClick={() => onChange('cpe')}
-      >
-        Emisión estándar
-      </button>
-      <button
-        type="button"
-        aria-pressed={mode === 'contingencia'}
-        className={`document-mode-button${mode === 'contingencia' ? ' is-active' : ''}`}
-        onClick={() => onChange('contingencia')}
-      >
-        Contingencia
-      </button>
-    </div>
-  );
-}
-
 function BuilderSwitch({ label, checked, onChange }) {
   return (
     <button
@@ -895,7 +872,7 @@ export default function ComprobanteNuevoPage() {
 
   const hasValidationErrors = Object.keys(errors).length > 0;
   const paymentLabel = PAYMENT_OPTIONS.find((option) => option.value === form.condicion_pago)?.label || 'Contado';
-  const modeLabel = form.modo_emision === 'contingencia' ? 'Contingencia activada' : 'Emisión estándar';
+  const modeLabel = 'Comprobante electrónico';
   const readyLines = form.items.filter(
     (item) => item.descripcion.trim() && Number(item.cantidad) > 0 && Number(item.precio_unitario) > 0,
   ).length;
@@ -1015,7 +992,6 @@ export default function ComprobanteNuevoPage() {
                     onChange={(v) => setRootField('tipo_comprobante', v)}
                     options={['01', '03']}
                   />
-                  <ModeSwitch mode={form.modo_emision} onChange={(v) => setRootField('modo_emision', v)} />
                 </div>
 
                 <div className="ink-inline-alert ink-inline-alert-warning document-builder-alert">

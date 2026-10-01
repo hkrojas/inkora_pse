@@ -160,7 +160,7 @@ export default function FiscalDocumentActions({ doc, allowGuides = true, reload,
         {job?.last_error && <p className="mt-3">{job.last_error}</p>}
         {actions?.retry_block_reason && <p className="mt-3">{actions.retry_block_reason}</p>}
         {trackingError && <p role="alert" className="mt-3">{trackingError}</p>}
-        <p className="mt-3">Esta vista consulta el trabajo guardado en Inkora; no reenvía ni realiza una conciliación con Smart PSE. Si el resultado es incierto, solicita revisión a soporte indicando {number}.</p>
+        <p className="mt-3">Inkora verifica automáticamente los comprobantes pendientes y actualiza su resultado. Puedes actualizar esta vista para ver el avance de {number}.</p>
         <button className="btn-secondary mt-4" onClick={async () => { const result = await loadActions(); track(result); refresh(); }}>Actualizar seguimiento</button>
       </Modal>
       <Modal open={Boolean(confirm)} onClose={() => { if (!busy) setConfirm(null); }} title={confirm === 'retry' ? (actions?.retry_label || 'Reintentar envío fiscal') : 'Solicitar baja'} footer={<>

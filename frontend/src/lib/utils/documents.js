@@ -105,8 +105,7 @@ export function fmtPrice(value) {
   });
 }
 
-export function deriveSeries(tipoComprobante, modoEmision, tenant = null) {
-  if (modoEmision === 'contingencia') return '0001';
+export function deriveSeries(tipoComprobante, _modoEmision, tenant = null) {
   const configured = tipoComprobante === '01'
     ? tenant?.fiscal_invoice_series
     : tenant?.fiscal_boleta_series;
@@ -141,7 +140,8 @@ export function computeDocumentTotals(items, incluyeIgv) {
 
 export function getSunatStatus(item) {
   if (item.estado === 'anulada')           return { label: 'ANULADO',   variant: 'danger',  kind: 'voided' };
-  if (item.sunat_error)                    return { label: 'RECHAZADO', variant: 'danger',  kind: 'error', tooltip: item.sunat_error };
+  if (item.provider_verification_status === 'rejected') return { label: 'RECHAZADO', variant: 'danger', kind: 'error', tooltip: item.sunat_error };
+  if (item.sunat_error)                    return { label: 'PROCESANDO', variant: 'warning', kind: 'pending', tooltip: 'Verificando el resultado del comprobante.' };
   if (item.provider_verification_status && item.provider_verification_status !== 'verified') {
     return {
       label: 'NO VERIFICADO',

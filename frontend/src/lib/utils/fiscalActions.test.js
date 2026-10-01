@@ -8,12 +8,13 @@ test('el seguimiento no confunde trabajo completado con aceptación', () => {
   assert.match(fiscalTrackingState({ status: 'succeeded' }).label, /Verificando/);
   assert.match(fiscalTrackingState({ status: 'succeeded' }, 'emitted').label, /Aceptado/);
   assert.match(fiscalTrackingState({ status: 'succeeded', action: 'void_fiscal_document' }, 'emitted').label, /Baja/);
-  for (const status of ['queued', 'processing', 'retry', 'contingency_pending']) assert.equal(fiscalTrackingState({ status }).poll, true);
-  for (const status of ['failed', 'pending_confirmation']) {
+  for (const status of ['queued', 'processing', 'retry', 'contingency_pending', 'pending_confirmation']) assert.equal(fiscalTrackingState({ status }).poll, true);
+  for (const status of ['failed']) {
     assert.equal(fiscalTrackingState({ status }).poll, false);
     assert.equal(fiscalTrackingState({ status }).terminal, true);
   }
-  assert.match(fiscalTrackingState({ status: 'failed' }).label, /no implica rechazo/);
+  assert.match(fiscalTrackingState({ status: 'failed' }).label, /Requiere atención/);
+  assert.equal(fiscalTrackingState({ status: 'pending_confirmation' }).terminal, false);
 });
 
 test('paginación fiscal alcanza registros posteriores a 100 y conserva filtros', () => {

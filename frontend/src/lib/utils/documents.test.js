@@ -18,6 +18,7 @@ test('deriveSeries uses the fiscal series configured for the tenant', () => {
 
   assert.equal(deriveSeries('01', 'cpe', tenant), 'FA01');
   assert.equal(deriveSeries('03', 'cpe', tenant), 'BB01');
+  assert.equal(deriveSeries('01', 'contingencia', tenant), 'FA01');
 });
 
 test('deriveSeries does not invent a production series when configuration is missing', () => {
