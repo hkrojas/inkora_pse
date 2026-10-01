@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, CheckCircle2, Clock3, CreditCard, FileText, ReceiptText, RefreshCw, Search, XCircle, XOctagon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/utils/api';
@@ -11,6 +11,7 @@ import Badge from '../components/ui/Badge';
 import { DocumentTypeBadge } from '../components/documents/DocumentType';
 import { formatCurrency, getSunatStatus } from '../lib/utils/documents';
 import { notas as notasService } from '../services/notas';
+import Pagination from '../components/ui/Pagination';
 
 const PER_PAGE = 15;
 
@@ -69,8 +70,12 @@ export default function NotasPage() {
   const [notesLoading, setNotesLoading] = useState(false);
   const [notesError, setNotesError] = useState(null);
   const [drawer, setDrawer] = useState({ open: false, document: null, type: 'credito', context: null, loading: false, error: null });
+  const sourceRequestSeq = useRef(0);
+  const notesRequestSeq = useRef(0);
 
   const loadSources = useCallback(async () => {
+    const seq = sourceRequestSeq.current + 1;
+    sourceRequestSeq.current = seq;
     setSourceLoading(true);
     setSourceError(null);
     try {
@@ -81,18 +86,22 @@ export default function NotasPage() {
       });
       if (sourceQuery.trim()) params.set('q', sourceQuery.trim());
       const response = await api.get(`/facturas-emitidas/page?${params}`);
+      if (sourceRequestSeq.current !== seq) return;
       setSourceDocuments(Array.isArray(response) ? response : response.items || []);
       setSourceTotal(Array.isArray(response) ? response.length : Number(response.total || 0));
     } catch (error) {
+      if (sourceRequestSeq.current !== seq) return;
       setSourceDocuments([]);
       setSourceTotal(0);
       setSourceError(error);
     } finally {
-      setSourceLoading(false);
+      if (sourceRequestSeq.current === seq) setSourceLoading(false);
     }
   }, [sourcePage, sourceQuery]);
 
   const loadNotes = useCallback(async () => {
+    const seq = notesRequestSeq.current + 1;
+    notesRequestSeq.current = seq;
     setNotesLoading(true);
     setNotesError(null);
     try {
@@ -105,14 +114,16 @@ export default function NotasPage() {
       if (noteType !== 'all') params.set('tipo_nota', noteType);
       if (noteStatus !== 'all') params.set('estado', noteStatus);
       const response = await api.get(`/notas/page?${params}`);
+      if (notesRequestSeq.current !== seq) return;
       setNotes(Array.isArray(response) ? response : response.items || []);
       setNotesTotal(Array.isArray(response) ? response.length : Number(response.total || 0));
     } catch (error) {
+      if (notesRequestSeq.current !== seq) return;
       setNotes([]);
       setNotesTotal(0);
       setNotesError(error);
     } finally {
-      setNotesLoading(false);
+      if (notesRequestSeq.current === seq) setNotesLoading(false);
     }
   }, [noteStatus, noteType, notesPage, notesQuery]);
 
@@ -141,6 +152,14 @@ export default function NotasPage() {
   const canContinue = Boolean(context && Object.keys(selectedMotives).length);
   const sourcePages = Math.max(1, Math.ceil(sourceTotal / PER_PAGE));
   const historyPages = Math.max(1, Math.ceil(notesTotal / PER_PAGE));
+
+  useEffect(() => {
+    if (!sourceLoading && sourcePage > sourcePages) setSourcePage(sourcePages);
+  }, [sourceLoading, sourcePage, sourcePages]);
+
+  useEffect(() => {
+    if (!notesLoading && notesPage > historyPages) setNotesPage(historyPages);
+  }, [historyPages, notesLoading, notesPage]);
 
   const historySummary = useMemo(() => notes.reduce((summary, note) => {
     const status = getSunatStatus(note)?.kind;
@@ -207,7 +226,10 @@ export default function NotasPage() {
                       </article>
                     ))}
                   </div>
-                  <Pagination page={sourcePage} pages={sourcePages} total={sourceTotal} onChange={setSourcePage} />
+                  <div className="ink-table-footer">
+                    <span className="ink-table-count">Página <strong>{sourcePage}</strong> de <strong>{sourcePages}</strong> · {sourceTotal} registros</span>
+                    <Pagination page={sourcePage} totalPages={sourcePages} onPageChange={setSourcePage} ariaLabel="Paginación de comprobantes elegibles" />
+                  </div>
                 </>}
         </section>
       ) : (
@@ -229,7 +251,10 @@ export default function NotasPage() {
                     const reference = note.nota_referencia || note.source_quote;
                     return <tr key={note.id}><td data-label="Número"><div className="ink-table-cell__primary document-list-folio">{note.estado === 'borrador' ? 'Sin correlativo' : numberOf(note)}</div><div className="ink-table-cell__meta">{formatDate(note.fecha_emision)}</div></td><td data-label="Tipo"><DocumentTypeBadge tipo={note.document_kind === 'credit_note' ? '07' : '08'} size="sm" /></td><td data-label="Comprobante afectado"><div className="ink-table-cell__primary">{reference ? numberOf(reference) : '—'}</div></td><td data-label="Cliente"><div className="ink-table-cell__primary">{clientName(note)}</div><div className="ink-table-cell__meta">{clientDocument(note)}</div></td><td data-label="Motivo"><div className="ink-table-cell__primary">{note.nota_motivo_descripcion || '—'}</div></td><td data-label="Estado SUNAT"><NoteStatus document={note} /></td><td data-label="Acciones">{note.estado === 'borrador' ? <button type="button" className="ink-row-btn" title="Continuar borrador" aria-label="Continuar borrador" onClick={() => navigate(`/notas/nueva?draft=${note.id}`)}><ArrowRight size={14} /></button> : null}</td></tr>;
                   })}</tbody></table></div>
-                  <Pagination page={notesPage} pages={historyPages} total={notesTotal} onChange={setNotesPage} />
+                  <div className="ink-table-footer">
+                    <span className="ink-table-count">Página <strong>{notesPage}</strong> de <strong>{historyPages}</strong> · {notesTotal} registros</span>
+                    <Pagination page={notesPage} totalPages={historyPages} onPageChange={setNotesPage} ariaLabel="Paginación del historial de notas" />
+                  </div>
                 </>}
         </section>
       )}
@@ -248,8 +273,4 @@ export default function NotasPage() {
       </Drawer>
     </div>
   );
-}
-
-function Pagination({ page, pages, total, onChange }) {
-  return <div className="ink-table-footer"><span className="ink-table-count">Página <strong>{page}</strong> de <strong>{pages}</strong> · {total} registros</span><div className="pagination"><button type="button" className="page-btn" aria-label="Página anterior" disabled={page <= 1} onClick={() => onChange(page - 1)}>‹</button><span className="page-btn active" aria-current="page">{page}</span><button type="button" className="page-btn" aria-label="Página siguiente" disabled={page >= pages} onClick={() => onChange(page + 1)}>›</button></div></div>;
 }

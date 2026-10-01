@@ -26,5 +26,6 @@ export const inventory = {
   documentAvailability: (id) => api.get(`/inventario/documentos/${id}/disponibilidad`),
   configureProduct: (id, data) => api.put(`/inventario/productos/${id}`, data),
   returns: (params = '?skip=0&limit=15') => api.get(`/inventario/devoluciones${params}`),
+  returnsPage: (params = '?skip=0&limit=15') => api.get(`/inventario/devoluciones/page${params}`),
   receiveReturn: (id, data) => api.post(`/inventario/devoluciones/${id}/recibir`, data),
 };

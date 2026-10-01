@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, Plus, PlusCircle, Trash2, Truck, MapPin, ChevronDown, AlertCircle, Search, Download, Package, CheckCircle2, FileX, ArrowRight, Clock3, ArrowLeftRight } from 'lucide-react';
 import { guias as svc } from '../services/guias';
@@ -17,6 +17,7 @@ import { getGuideStatusMeta } from '../lib/utils/fiscalStatus';
 import { getPageCount } from '../lib/utils/queryParams';
 import { SUNAT_UNIT_OPTIONS } from '../lib/utils/sunatCatalogs';
 import { useFiscalFeatures } from '../hooks/useFiscalFeatures';
+import Pagination from '../components/ui/Pagination';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -443,6 +444,7 @@ export default function GuiasPage() {
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState(DEFAULT_GUIDE_COUNTS);
   const [error, setError] = useState(null);
+  const requestSeq = useRef(0);
   const [filters, setFilters] = useState({
     motivo: 'all',
     modalidad: 'all',
@@ -459,6 +461,8 @@ export default function GuiasPage() {
   }, [search]);
 
   const load = useCallback(() => {
+    const seq = requestSeq.current + 1;
+    requestSeq.current = seq;
     setLoading(true);
     setError(null);
     svc.list({
@@ -472,18 +476,22 @@ export default function GuiasPage() {
       hasta: filters.hasta || undefined,
     })
       .then((data) => {
+        if (requestSeq.current !== seq) return;
         setList(Array.isArray(data.items) ? data.items : []);
         setTotal(Number(data.total || 0));
         setCounts({ ...DEFAULT_GUIDE_COUNTS, ...(data.counts || {}) });
       })
       .catch((err) => {
+        if (requestSeq.current !== seq) return;
         setError(err);
         setList([]);
         setTotal(0);
         setCounts(DEFAULT_GUIDE_COUNTS);
         toast(err.message || 'No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error');
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (requestSeq.current === seq) setLoading(false);
+      });
   }, [activeTab, debouncedSearch, filters, page, toast]);
 
   useEffect(() => {
@@ -950,27 +958,7 @@ export default function GuiasPage() {
             <div className="ink-table-footer">
               <span className="ink-table-count">{pageItems.length} guías visibles</span>
               {guidePageCount > 1 && (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setPage((current) => Math.max(1, current - 1))}
-                    disabled={page <= 1}
-                  >
-                    Anterior
-                  </button>
-                  <span className="ink-table-count">
-                    Página {page} de {guidePageCount}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setPage((current) => Math.min(guidePageCount, current + 1))}
-                    disabled={page >= guidePageCount}
-                  >
-                    Siguiente
-                  </button>
-                </div>
+                <Pagination page={page} totalPages={guidePageCount} onPageChange={setPage} ariaLabel="Paginación de guías" />
               )}
               <span className="ink-table-count">{counts.pending} por salir · {counts.transit} en ruta</span>
             </div>

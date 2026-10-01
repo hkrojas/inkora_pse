@@ -306,6 +306,10 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
   const [showSmartPseAudit, setShowSmartPseAudit] = useState(false);
   const [smartPseAuditLoading, setSmartPseAuditLoading] = useState(false);
   const [smartPseAuditLogs, setSmartPseAuditLogs] = useState([]);
+  const [smartPseAuditPage, setSmartPseAuditPage] = useState(1);
+  const [smartPseAuditTotal, setSmartPseAuditTotal] = useState(0);
+  const [smartPseAuditReload, setSmartPseAuditReload] = useState(0);
+  const [smartPseAuditError, setSmartPseAuditError] = useState(false);
   const [form, setForm] = useState({
     business_name: tenant.business_name || '',
     business_ruc: tenant.business_ruc || '',
@@ -521,18 +525,26 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
     }
   };
 
-  const handleLoadSmartPseAudit = async () => {
+  const handleLoadSmartPseAudit = () => {
     setShowSmartPseAudit(true);
-    setSmartPseAuditLoading(true);
-    try {
-      const logs = await svc.smartPseTenantAuditLogs(tenant.id);
-      setSmartPseAuditLogs(Array.isArray(logs) ? logs : []);
-    } catch (error) {
-      toast(error.message, 'error');
-    } finally {
-      setSmartPseAuditLoading(false);
-    }
+    setSmartPseAuditPage(1);
+    setSmartPseAuditReload((value) => value + 1);
   };
+
+  useEffect(() => {
+    if (!showSmartPseAudit) return undefined;
+    let active = true;
+    setSmartPseAuditLoading(true);
+    setSmartPseAuditError(false);
+    svc.smartPseTenantAuditLogsPage(tenant.id, { skip: (smartPseAuditPage - 1) * SUPERADMIN_PAGE_SIZE, limit: SUPERADMIN_PAGE_SIZE })
+      .then((data) => { if (active) { setSmartPseAuditLogs(data.items); setSmartPseAuditTotal(data.total); } })
+      .catch((error) => { if (active) { setSmartPseAuditError(true); toast(error.message, 'error'); } })
+      .finally(() => { if (active) setSmartPseAuditLoading(false); });
+    return () => { active = false; };
+  }, [showSmartPseAudit, smartPseAuditPage, smartPseAuditReload, tenant.id, toast]);
+  useEffect(() => {
+    if (!smartPseAuditLoading && smartPseAuditPage > getPageCount(smartPseAuditTotal, SUPERADMIN_PAGE_SIZE)) setSmartPseAuditPage(getPageCount(smartPseAuditTotal, SUPERADMIN_PAGE_SIZE));
+  }, [smartPseAuditLoading, smartPseAuditPage, smartPseAuditTotal]);
 
   const handleDeleteSmartPseCompany = async () => {
     const expectedCompanyId = String(tenant.smartpse_company_id || smartPseCompany?.id || '').trim();
@@ -884,7 +896,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-[var(--text-primary)]">Historial de Smart PSE</p>
-                  <p className="text-xs text-[var(--text-secondary)]">Últimas acciones registradas para esta empresa.</p>
+                  <p className="text-xs text-[var(--text-secondary)]">{smartPseAuditTotal} acciones registradas en Inkora para esta empresa.</p>
                 </div>
                 <button type="button" className="btn-secondary" onClick={handleLoadSmartPseAudit}>
                   Actualizar
@@ -892,6 +904,8 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
               </div>
               {smartPseAuditLoading ? (
                 <Spinner size="sm" label="Cargando auditoria" />
+              ) : smartPseAuditError ? (
+                <p role="alert">No pudimos cargar el historial. Usa Actualizar para reintentar.</p>
               ) : smartPseAuditLogs.length === 0 ? (
                 <p className="text-sm text-[var(--text-secondary)]">Sin eventos Smart PSE registrados.</p>
               ) : (
@@ -905,6 +919,7 @@ function TenantModal({ tenant, onClose, onSaved, onDeleted }) {
                   ))}
                 </div>
               )}
+              {!smartPseAuditLoading && !smartPseAuditError && smartPseAuditTotal > 0 && <Pagination page={smartPseAuditPage} totalPages={getPageCount(smartPseAuditTotal, SUPERADMIN_PAGE_SIZE)} onPageChange={setSmartPseAuditPage} ariaLabel="Paginación del historial Smart PSE" />}
             </div>
           ) : null}
 
@@ -1492,6 +1507,9 @@ function TenantUsersModal({ tenant, onClose }) {
   const toast = useToast();
   const { confirmAction } = useInkoraDialog();
   const [users, setUsers] = useState([]);
+  const [usersPage, setUsersPage] = useState(1);
+  const usersPageCount = getPageCount(users.length, SUPERADMIN_PAGE_SIZE);
+  const boundedUsersPage = Math.min(usersPage, usersPageCount);
   const [loading, setLoading] = useState(true);
   const [resettingId, setResettingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
@@ -1597,7 +1615,7 @@ function TenantUsersModal({ tenant, onClose }) {
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
+              {users.slice((boundedUsersPage - 1) * SUPERADMIN_PAGE_SIZE, boundedUsersPage * SUPERADMIN_PAGE_SIZE).map((u) => (
                 <tr key={u.id} style={{ opacity: u.is_active ? 1 : 0.45 }}>
                   <td>
                     <p className="font-semibold text-sm">{u.email}</p>
@@ -1661,7 +1679,7 @@ function TenantUsersModal({ tenant, onClose }) {
               ))}
             </tbody>
           </table>
-
+          <div className="p-4"><p className="text-sm text-[var(--text-secondary)]">{users.length} usuarios</p><Pagination page={boundedUsersPage} totalPages={usersPageCount} onPageChange={setUsersPage} ariaLabel="Paginación de usuarios de la empresa" /></div>
         </div>
       )}
 
@@ -2177,14 +2195,25 @@ function TenantFiscalFlagsModal({ tenant, onClose }) {
 function TenantErrorsModal({ tenant, onClose }) {
   const toast = useToast();
   const [errors, setErrors] = useState([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    svc.emissionErrors(tenant.id)
-      .then(setErrors)
-      .catch((err) => toast(err.message, 'error'))
-      .finally(() => setLoading(false));
-  }, [tenant.id, toast]);
+    let active = true;
+    setLoading(true);
+    setLoadError(false);
+    svc.emissionErrorsPage(tenant.id, { skip: (page - 1) * SUPERADMIN_PAGE_SIZE, limit: SUPERADMIN_PAGE_SIZE })
+      .then((data) => { if (active) { setErrors(data.items); setTotal(data.total); } })
+      .catch((err) => { if (active) { setLoadError(true); toast(err.message, 'error'); } })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [tenant.id, toast, page, reloadKey]);
+  useEffect(() => {
+    if (!loading && page > getPageCount(total, SUPERADMIN_PAGE_SIZE)) setPage(getPageCount(total, SUPERADMIN_PAGE_SIZE));
+  }, [loading, page, total]);
 
   const fmtDate = (iso) => {
     if (!iso) return '—';
@@ -2204,6 +2233,8 @@ function TenantErrorsModal({ tenant, onClose }) {
         <div className="flex justify-center py-10">
           <Spinner size="lg" label="Cargando incidencias" />
         </div>
+      ) : loadError ? (
+        <div role="alert"><p>No pudimos cargar las incidencias.</p><button type="button" className="btn-secondary" onClick={() => setReloadKey((value) => value + 1)}>Reintentar</button></div>
       ) : errors.length === 0 ? (
         <EmptyState title="Sin incidencias recientes" description="No hay envíos fiscales fallidos para esta empresa." />
       ) : (
@@ -2232,6 +2263,7 @@ function TenantErrorsModal({ tenant, onClose }) {
           </table>
         </div>
       )}
+      {!loading && !loadError && total > 0 && <><p className="mt-4 text-sm text-[var(--text-secondary)]">{total} incidencias fiscales</p><Pagination page={page} totalPages={getPageCount(total, SUPERADMIN_PAGE_SIZE)} onPageChange={setPage} ariaLabel="Paginación de incidencias fiscales" /></>}
       <div className="mt-4 flex justify-end border-t border-[var(--border-subtle)] pt-4">
         <button type="button" onClick={onClose} className="btn-secondary">Cerrar</button>
       </div>
@@ -2599,9 +2631,12 @@ export default function SuperadminPage() {
   const [tenantReloadKey, setTenantReloadKey] = useState(0);
   const [smartPseCompanies, setSmartPseCompanies] = useState([]);
   const [smartPseCompaniesLoading, setSmartPseCompaniesLoading] = useState(false);
+  const [smartPseCompaniesError, setSmartPseCompaniesError] = useState(false);
   const [smartPseCompanySearch, setSmartPseCompanySearch] = useState('');
   const [debouncedSmartPseCompanySearch, setDebouncedSmartPseCompanySearch] = useState('');
   const [smartPseCompanyTotal, setSmartPseCompanyTotal] = useState(0);
+  const [smartPseCompanyPage, setSmartPseCompanyPage] = useState(1);
+  const [smartPseCompanyPageCount, setSmartPseCompanyPageCount] = useState(1);
   const [smartPseCompanyReloadKey, setSmartPseCompanyReloadKey] = useState(0);
   const [showSmartPseCreate, setShowSmartPseCreate] = useState(false);
   const [smartPseCreateLookupLoading, setSmartPseCreateLookupLoading] = useState(false);
@@ -2655,6 +2690,7 @@ export default function SuperadminPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      setSmartPseCompanyPage(1);
       setDebouncedSmartPseCompanySearch(smartPseCompanySearch.trim());
     }, 300);
     return () => window.clearTimeout(timer);
@@ -2665,19 +2701,23 @@ export default function SuperadminPage() {
 
     let cancelled = false;
     setSmartPseCompaniesLoading(true);
+    setSmartPseCompaniesError(false);
     svc.listSmartPseCompanies({
       search: debouncedSmartPseCompanySearch || undefined,
-      page: 1,
-      per_page: 10,
+      page: smartPseCompanyPage,
+      per_page: SUPERADMIN_PAGE_SIZE,
     })
       .then((data) => {
         if (cancelled) return;
         const rows = Array.isArray(data.data) ? data.data : [];
         setSmartPseCompanies(rows);
-        setSmartPseCompanyTotal(Number(data.total ?? rows.length));
+        setSmartPseCompanyTotal(data.total == null ? null : Number(data.total));
+        const pageCount = Math.max(1, Number(data.last_page) || getPageCount(Number(data.total) || 0, SUPERADMIN_PAGE_SIZE));
+        setSmartPseCompanyPageCount(pageCount);
+        if (smartPseCompanyPage > pageCount) setSmartPseCompanyPage(pageCount);
       })
       .catch(() => {
-        if (!cancelled) toast('No se pudo cargar empresas Smart PSE.', 'error');
+        if (!cancelled) { setSmartPseCompaniesError(true); toast('No se pudo cargar empresas Smart PSE.', 'error'); }
       })
       .finally(() => {
         if (!cancelled) setSmartPseCompaniesLoading(false);
@@ -2686,7 +2726,7 @@ export default function SuperadminPage() {
     return () => {
       cancelled = true;
     };
-  }, [debouncedSmartPseCompanySearch, smartPseCompanyReloadKey, toast, user?.is_superadmin]);
+  }, [debouncedSmartPseCompanySearch, smartPseCompanyReloadKey, smartPseCompanyPage, toast, user?.is_superadmin]);
 
   useEffect(() => {
     setTenantPage(1);
@@ -3012,7 +3052,7 @@ export default function SuperadminPage() {
           <div className="sort-text">
             {smartPseCompaniesLoading ? 'Cargando...' : (
               <>
-                Mostrando <strong>{smartPseCompanies.length}</strong> de <strong>{smartPseCompanyTotal}</strong>
+                Mostrando <strong>{smartPseCompanies.length}</strong>{smartPseCompanyTotal == null ? ' en esta página · el proveedor no informó el total' : <> de <strong>{smartPseCompanyTotal}</strong></>}
               </>
             )}
           </div>
@@ -3030,6 +3070,8 @@ export default function SuperadminPage() {
             <div className="flex justify-center py-6">
               <Spinner size="sm" label="Cargando empresas Smart PSE" />
             </div>
+          ) : smartPseCompaniesError ? (
+            <div className="p-4" role="alert"><p>No pudimos cargar las empresas Smart PSE.</p><button type="button" className="btn-secondary" onClick={() => setSmartPseCompanyReloadKey((value) => value + 1)}>Reintentar</button></div>
           ) : smartPseCompanies.length === 0 ? (
             <EmptyState title="Sin empresas conectadas" description="Registra una empresa o ajusta la búsqueda." />
           ) : (
@@ -3095,6 +3137,8 @@ export default function SuperadminPage() {
           )}
         </div>
       </section>
+
+      {!smartPseCompaniesLoading && !smartPseCompaniesError && <Pagination page={smartPseCompanyPage} totalPages={smartPseCompanyPageCount} onPageChange={setSmartPseCompanyPage} ariaLabel="Paginación de empresas Smart PSE" />}
 
       {loading ? (
         <div className="flex justify-center py-20">
