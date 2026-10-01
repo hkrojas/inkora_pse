@@ -471,6 +471,7 @@
 .business-chart__line--quoted { stroke: var(--dashboard-blue); stroke-dasharray: 6 4; }
 .business-chart__quoted { opacity: 0; transition: opacity var(--duration-base) var(--ease-out); }
 .business-chart__quoted.is-visible { opacity: 1; }
+.business-chart__quoted.is-instant { transition: none; }
 .business-chart__point { stroke: var(--color-surface); stroke-width: 2; }
 .business-chart__point--sales { fill: var(--dashboard-green); }
 .business-chart__point--quoted { fill: var(--dashboard-blue); }
@@ -534,7 +535,7 @@
 .business-chart__tooltip-dot--quoted { background: var(--dashboard-blue); }
 .business-chart__tooltip > .business-chart__tooltip-compare { grid-template-columns: minmax(0, 1fr) auto; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--color-surface) 18%, transparent); }
 .business-chart__legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 18px; margin-top: -4px; color: var(--color-text-muted); font-size: 11px; }
-.business-chart__legend span { display: inline-flex; align-items: center; gap: 7px; transition: opacity var(--duration-base) var(--ease-out); }
+.business-chart__legend span { display: inline-flex; align-items: center; gap: 7px; }
 .business-chart__legend .is-muted { opacity: 0.38; }
 .business-chart__legend-line { position: relative; display: inline-block; width: 24px; height: 2px; background: var(--dashboard-green); }
 .business-chart__legend-line::after { content: ''; position: absolute; top: 50%; left: 50%; width: 7px; height: 7px; border-radius: 50%; background: inherit; transform: translate(-50%, -50%); }
@@ -843,6 +844,7 @@
     transition: opacity var(--duration-fast) var(--ease-out);
     transition-duration: var(--duration-fast) !important;
   }
+  .business-chart__quoted { transition-duration: var(--duration-fast); }
   @starting-style {
     .business-chart__series--animated { clip-path: inset(0); opacity: 0.4; }
   }
