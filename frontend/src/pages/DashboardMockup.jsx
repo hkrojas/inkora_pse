@@ -328,7 +328,7 @@ function SalesChart({ history, currency, showQuotes, onExploreMonth, group = 'mo
                   <path className="business-chart__line business-chart__line--sales" d={pathFromPoints(salesPoints)} pathLength="1" />
                 </>
               )}
-              {showQuotes && <path className="business-chart__line business-chart__line--quoted" d={pathFromPoints(quotedPoints)} pathLength="1" />}
+              {showQuotes && <path className="business-chart__line business-chart__line--quoted" d={pathFromPoints(quotedPoints)} />}
               {salesPoints.map((point, index) => (
                 <g key={history[index].date || `${history[index].year}-${history[index].month}`} className={activePoint === index ? 'is-active' : ''}>
                   <circle className="business-chart__point-halo" cx={point.x} cy={point.y} r="8" />
