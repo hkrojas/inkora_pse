@@ -477,6 +477,176 @@ test('animación del gráfico: cambiar agrupación con teclado es inmediato', as
   }
 });
 
+for (const width of [320, 390, 600, 768, 1024, 1440]) {
+  test(`conversión legible: porcentaje decimal sin choques a ${width}px`, async ({ browser, baseURL }, testInfo) => {
+    const payload = {
+      ...dashboardPayload,
+      conversion: { available: true, quote_count: 29, linked_sales_count: 25, rate_percent: '86.2' },
+    };
+    const { context, page } = await createDashboardContext(browser, baseURL, {
+      viewport: { width, height: 900 }, payload, reducedMotion: 'reduce',
+    });
+    try {
+      await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
+      await page.goto('/dashboard');
+      const conversion = page.locator('.business-sales__conversion');
+      await expect(conversion.locator('.business-sales__conversion-rate strong')).toHaveText(/^86[.,]2 %$/);
+      await conversion.scrollIntoViewIfNeeded();
+      const geometry = await conversion.evaluate((element) => {
+        const strong = element.querySelector('.business-sales__conversion-rate strong');
+        const label = element.querySelector('.business-sales__conversion-rate span');
+        const rate = element.querySelector('.business-sales__conversion-rate');
+        const copy = element.querySelector('.business-sales__conversion-copy');
+        const range = document.createRange();
+        range.selectNodeContents(strong);
+        const textRects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0);
+        const rect = (node) => {
+          const bounds = node.getBoundingClientRect();
+          return { x: bounds.x, y: bounds.y, right: bounds.right, bottom: bounds.bottom, width: bounds.width, height: bounds.height };
+        };
+        return {
+          percentage: rect(strong), label: rect(label), rate: rect(rate), copy: rect(copy), container: rect(element),
+          lines: new Set(textRects.map((bounds) => Math.round(bounds.top * 2) / 2)).size,
+          fontSize: parseFloat(getComputedStyle(strong).fontSize),
+          lineHeight: parseFloat(getComputedStyle(strong).lineHeight),
+          scrollWidth: element.scrollWidth, clientWidth: element.clientWidth,
+        };
+      });
+      expect(geometry.lines).toBe(1);
+      expect(geometry.fontSize).toBe(32);
+      expect(geometry.percentage.height).toBeLessThanOrEqual(geometry.lineHeight + 1);
+      expect(geometry.percentage.right).toBeLessThanOrEqual(geometry.label.x + 1);
+      expect(geometry.copy.x >= geometry.rate.right - 1 || geometry.copy.y >= geometry.rate.bottom - 1).toBe(true);
+      expect(geometry.percentage.x).toBeGreaterThanOrEqual(geometry.container.x);
+      expect(geometry.percentage.right).toBeLessThanOrEqual(geometry.container.right);
+      expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+      expect(await page.locator('main').evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+      const json = JSON.stringify(geometry, null, 2);
+      await writeFile(testInfo.outputPath(`percentage-${width}.json`), json);
+      await testInfo.attach(`Porcentaje ${width}px: geometría`, { body: json, contentType: 'application/json' });
+      const path = testInfo.outputPath(`percentage-${width}.png`);
+      await conversion.screenshot({ path, animations: 'disabled' });
+      await testInfo.attach(`Porcentaje ${width}px`, { path, contentType: 'image/png' });
+    } finally { await context.close(); }
+  });
+}
+
+function variedQuotesPayload(params) {
+  const payload = temporalPayload(params);
+  const daily = [];
+  const cursor = new Date(`${payload.meta.period.start}T12:00:00Z`);
+  while (cursor.toISOString().slice(0, 10) <= payload.meta.period.end) {
+    const index = daily.length;
+    const date = cursor.toISOString().slice(0, 10);
+    daily.push({
+      date, year: cursor.getUTCFullYear(), month: cursor.getUTCMonth() + 1,
+      period_start: date, period_end: date, is_partial: false, cutoff_day: null, previous_matched_sales: null,
+      sales_amount: String(index % 7 === 0 ? 0 : (index % 5 + 1) * 315),
+      quoted_amount: String(index % 4 === 0 ? 0 : (index % 6 + 1) * 227),
+    });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  const monthly = [];
+  for (const day of daily) {
+    let month = monthly.at(-1);
+    if (!month || month.month !== day.month || month.year !== day.year) {
+      month = { ...day, date: undefined, sales_amount: 0, quoted_amount: 0 };
+      monthly.push(month);
+    }
+    month.period_end = day.date;
+    month.sales_amount += Number(day.sales_amount);
+    month.quoted_amount += Number(day.quoted_amount);
+  }
+  return {
+    ...payload,
+    conversion: { available: true, quote_count: 29, linked_sales_count: 25, rate_percent: '86.2' },
+    history: params.get('group_by') === 'month' ? monthly : daily,
+  };
+}
+
+function quotedMoney(amount) {
+  return `S/ ${new Intl.NumberFormat('es-PE').format(Number(amount))}`;
+}
+
+async function quotedDashGeometry(page) {
+  return page.locator('.business-chart__line--quoted').evaluate((path) => {
+    const length = path.getTotalLength();
+    const pathLength = path.hasAttribute('pathLength') ? Number(path.getAttribute('pathLength')) : null;
+    const normalization = pathLength ? length / pathLength : 1;
+    const scale = path.getScreenCTM().a;
+    const declared = getComputedStyle(path).strokeDasharray.split(/[ ,]+/).map(parseFloat);
+    return { length, pathLength, declared, effective: declared.map((value) => value * normalization * scale), scale };
+  });
+}
+
+for (const width of [1440, 390]) {
+  test(`cotizaciones diarias: 30 puntos y guiones constantes a ${width}px`, async ({ browser, baseURL }, testInfo) => {
+    const { context, page } = await createDashboardContext(browser, baseURL, { viewport: { width, height: 900 }, payloadForQuery: variedQuotesPayload });
+    const metrics = {};
+    try {
+      await recordChartTransitions(page);
+      await page.clock.setFixedTime(new Date('2026-09-29T15:00:00Z'));
+      await page.goto('/dashboard');
+      await expect(page.getByText('Producto 2026-09-01')).toBeVisible();
+      await waitForChartEntrance(page, 0, ['clip-path', 'opacity']);
+      await chooseInkoraOption(page, 'Período del resumen', 'Últimos 30 días');
+      await expect(page.getByText('Producto 2026-08-31')).toBeVisible();
+      await waitForChartEntrance(page, 2, ['clip-path', 'opacity']);
+      await expect(page.locator('.business-chart__point--quoted')).toHaveCount(30);
+      await expect(page.locator('.business-chart__point--sales')).toHaveCount(30);
+      const daily = variedQuotesPayload(new URLSearchParams({ desde: '2026-08-31', hasta: '2026-09-29', group_by: 'day' })).history;
+      for (const index of [0, 1, 14, 29]) {
+        await page.locator('.business-chart__hotspot').nth(index).hover();
+        const tooltip = page.getByRole('tooltip');
+        await expect(tooltip.getByText('Ventas registradas', { exact: false })).toContainText(quotedMoney(daily[index].sales_amount));
+        await expect(tooltip.getByText('Importe cotizado', { exact: false })).toContainText(quotedMoney(daily[index].quoted_amount));
+      }
+      await chooseInkoraOption(page, 'Consultar día', inkoraDayLabel(daily.at(-1).date, 'short'));
+      await expect(page.locator('.business-chart__selection')).toContainText(quotedMoney(daily.at(-1).quoted_amount));
+      metrics.daily = await quotedDashGeometry(page);
+      await page.getByRole('button', { name: 'Ampliar gráfico', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Reducir gráfico', exact: true })).toBeVisible();
+      await afterChartPaint(page);
+      metrics.expanded = await quotedDashGeometry(page);
+      await expect(page.locator('.business-chart__point--quoted')).toHaveCount(30);
+      const dailyPath = testInfo.outputPath(`quoted-daily-${width}.png`);
+      await page.locator('.business-sales').screenshot({ path: dailyPath });
+      await testInfo.attach(`Cotizaciones diarias ${width}px`, { path: dailyPath, contentType: 'image/png' });
+      await page.locator('.business-toggle').click();
+      await expect(page.getByRole('checkbox')).not.toBeChecked();
+      await expect(page.locator('.business-chart__line--quoted')).toHaveCount(0);
+      await expect(page.locator('.business-chart__point--quoted')).toHaveCount(0);
+      await expect(page.locator('.business-chart__point--sales')).toHaveCount(30);
+      await expect(page.locator('.business-chart__line--sales')).toHaveCount(1);
+      await page.locator('.business-toggle').click();
+      await expect(page.getByRole('checkbox')).toBeChecked();
+      await expect(page.locator('.business-chart__point--quoted')).toHaveCount(30);
+      metrics.restored = await quotedDashGeometry(page);
+      await chooseInkoraOption(page, 'Agrupar gráfico', 'Por mes');
+      await expect(page.getByRole('button', { name: 'Consultar mes', exact: true })).toBeVisible();
+      await waitForChartEntrance(page, 4, ['clip-path', 'opacity']);
+      await expect(page.locator('.business-chart__point--quoted')).toHaveCount(2);
+      metrics.monthly = await quotedDashGeometry(page);
+      for (const value of Object.values(metrics)) {
+        expect(value.length).toBeGreaterThan(0);
+        expect(value.pathLength).toBeNull();
+        expect(value.effective).toHaveLength(2);
+        expect(value.effective[0]).toBeCloseTo(6, 1);
+        expect(value.effective[1]).toBeCloseTo(4, 1);
+      }
+      metrics.transitions = await chartMotionEvents(page);
+      const path = testInfo.outputPath(`quoted-monthly-${width}.png`);
+      await page.locator('.business-sales').screenshot({ path });
+      await testInfo.attach(`Cotizaciones por mes ${width}px`, { path, contentType: 'image/png' });
+    } finally {
+      const body = JSON.stringify(metrics, null, 2);
+      await writeFile(testInfo.outputPath(`quoted-metrics-${width}.json`), body);
+      await testInfo.attach(`Guiones ${width}px: métricas`, { body, contentType: 'application/json' });
+      await context.close();
+    }
+  });
+}
+
 test('fechas sincronizan indicadores, gráfico, productos, clientes y cotizaciones; agrupar conserva el período', async ({ browser, baseURL }) => {
   const { context, page, state } = await createDashboardContext(browser, baseURL, { payloadForQuery: temporalPayload });
   const errors = attachCriticalErrorCollector(page);
