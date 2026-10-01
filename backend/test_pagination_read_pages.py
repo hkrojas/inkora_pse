@@ -60,6 +60,10 @@ def test_collection_pages_reach_beyond_fifty_and_counts_follow_search(db_session
     assert selected['total'] == 1 and selected['counts']['all'] == 1
     assert selected['items'][0]['id'] == docs[-1].id
     assert selected['items'][0]['saldo_pendiente'] == '118.00'
+    for term in ('PAG1-000061', 'pag1-000061', '000061'):
+        by_folio = http.get('/cobranza/vencidas/page', params={'q': term}).json()
+        assert by_folio['total'] == 1
+        assert by_folio['items'][0]['id'] == docs[-1].id
     legacy = http.get('/cobranza/vencidas?scope=active&limit=15').json()
     assert isinstance(legacy, list) and legacy == first['items']
     assert http.get('/cobranza/vencidas/page?segment=invalid').status_code == 422

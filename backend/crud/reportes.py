@@ -4,7 +4,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import String, and_, case, cast, func, or_
 
 
 import models
@@ -292,15 +292,25 @@ def _cobranza_vencida_query(
     term = (q or "").strip()
     if term:
         like_term = f"%{term}%"
-        query = query.filter(
-            or_(
+        search_filters = [
                 models.Cliente.razon_social.ilike(like_term),
                 models.Cliente.nombre_comercial.ilike(like_term),
                 models.Cliente.numero_documento.ilike(like_term),
                 models.Cotizacion.internal_order_number.ilike(like_term),
                 models.Cotizacion.serie.ilike(like_term),
-            )
-        )
+                cast(models.Cotizacion.correlativo, String).ilike(like_term),
+        ]
+        normalized = term.upper().replace(" ", "")
+        if "-" in normalized:
+            series, number = normalized.rsplit("-", 1)
+            if number.isdigit() and len(number) <= 10:
+                search_filters.append(and_(
+                    func.upper(models.Cotizacion.serie) == series,
+                    models.Cotizacion.correlativo == int(number),
+                ))
+        elif normalized.isdigit() and len(normalized) <= 10:
+            search_filters.append(models.Cotizacion.correlativo == int(normalized))
+        query = query.filter(or_(*search_filters))
 
     return query
 
