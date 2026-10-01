@@ -528,6 +528,9 @@ for (const mode of ['desktop', 'mobile', 'reduced', 'keyboard']) {
         await toggle();
         await expect(quotes).toHaveCSS('opacity', '1');
       }
+      if (mode !== 'keyboard') {
+        await expect.poll(async () => page.evaluate(() => window.__quoteToggleEvents.filter((event) => event.type === 'transitionend').length)).toBeGreaterThanOrEqual(2);
+      }
       const events = await page.evaluate(() => window.__quoteToggleEvents);
       if (mode === 'keyboard') expect(events).toEqual([]);
       else {
