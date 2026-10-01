@@ -20,6 +20,7 @@ router = APIRouter(tags=["cotizaciones"])
 
 
 def _resolve_pdf_download_url(documento_pdf) -> str:
+    _ensure_pdf_ready(documento_pdf)
     try:
         resolved_url = storage_service.resolve_storage_download_url(
             getattr(documento_pdf, "sunat_pdf_url", None)
@@ -33,6 +34,13 @@ def _resolve_pdf_download_url(documento_pdf) -> str:
             "El documento se esta generando en la nube, por favor intente en unos segundos.",
         )
     return resolved_url
+
+
+def _ensure_pdf_ready(document):
+    try:
+        pdf_storage_service.ensure_fiscal_pdf_ready(document, allow_existing=True)
+    except pdf_storage_service.FiscalPdfNotReady as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.get("/cotizaciones/", response_model=List[schemas.CotizacionListResponse])
@@ -182,6 +190,11 @@ async def descargar_pdf_publico(
     cotizacion = crud.get_cotizacion_by_uuid(db, uuid_publico)
     if not cotizacion:
         raise HTTPException(404, "Enlace no valido o expirado.")
+    _ensure_pdf_ready(cotizacion)
+    if getattr(cotizacion, "document_kind", "quotation") != "quotation":
+        reference = await pdf_storage_service.generate_and_upload_pdf(db, cotizacion)
+        if not reference:
+            raise HTTPException(202, "El comprobante cambio durante la generacion del PDF. Reintente.")
     return RedirectResponse(url=_resolve_pdf_download_url(cotizacion), status_code=307)
 
 
@@ -203,7 +216,8 @@ async def descargar_pdf_interno(
     if cotizacion.document_kind == "quotation" and cotizacion.linked_fiscal_document:
         documento_pdf = cotizacion.linked_fiscal_document
 
-    if not documento_pdf.sunat_pdf_url:
+    _ensure_pdf_ready(documento_pdf)
+    if not documento_pdf.sunat_pdf_url or documento_pdf.document_kind != "quotation":
         reference = await pdf_storage_service.generate_and_upload_pdf(db, documento_pdf)
         if not reference:
             raise HTTPException(202, "La cotizacion cambio mientras se generaba el PDF. Reintente.")
@@ -230,7 +244,8 @@ async def descargar_pdf_interno_como_archivo(
     ) else cotizacion
 
     reference = getattr(documento_pdf, "sunat_pdf_url", None)
-    if not storage_service.is_private_storage_reference(reference):
+    _ensure_pdf_ready(documento_pdf)
+    if documento_pdf.document_kind != "quotation" or not storage_service.is_private_storage_reference(reference):
         reference = await pdf_storage_service.generate_and_upload_pdf(db, documento_pdf)
         if not reference:
             raise HTTPException(202, "La cotizacion cambio mientras se generaba el PDF. Reintente.")

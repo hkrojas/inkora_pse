@@ -272,16 +272,15 @@ def recover_pending_fiscal_reconciliations(db: Session):
     """Convert old ambiguous sends into consult-only jobs without resending XML."""
     jobs = db.query(models.DocumentEmissionJob).filter(
         models.DocumentEmissionJob.provider == "smartpse",
-        models.DocumentEmissionJob.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL,
+        models.DocumentEmissionJob.action.in_([models.EMISSION_JOB_ACTION_EMIT_FISCAL, models.EMISSION_JOB_ACTION_CONSULT_FISCAL]),
         models.DocumentEmissionJob.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION,
-        models.DocumentEmissionJob.last_error.ilike(
-            "%Smart PSE remote verification missing:%"
-        ),
     ).all()
 
     now = datetime.now()
     for job in jobs:
-        job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+        snapshot = job.payload_snapshot or {}
+        if not (snapshot.get("sign_only") and not snapshot.get("send_started")):
+            job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
         job.status = models.EMISSION_JOB_STATUS_RETRY
         job.available_at = now
         job.finished_at = None
@@ -454,7 +453,11 @@ def recover_stale_processing_jobs(
     now = datetime.now()
     recovered = 0
     for job in jobs:
-        if (job.attempts or 0) >= (job.max_attempts or 1):
+        sale = job.provider == "smartpse" and job.action in {models.EMISSION_JOB_ACTION_EMIT_FISCAL, models.EMISSION_JOB_ACTION_CONSULT_FISCAL}
+        snapshot = job.payload_snapshot or {}
+        if sale and job.attempts and not (snapshot.get("sign_only") and not snapshot.get("send_started")):
+            job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+        if not sale and (job.attempts or 0) >= (job.max_attempts or 1):
             job.status = models.EMISSION_JOB_STATUS_FAILED
             job.finished_at = now
             job.last_error = (

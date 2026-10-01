@@ -138,6 +138,7 @@ from models.frozen import (
     OrdenProduccionDetalle,
     AlertaInventario,
 )
+from models.fiscal_provider_circuits import FiscalProviderCircuit
 from models.emission_jobs import (
     DocumentEmissionJob,
     DocumentEmissionAttempt,
@@ -257,6 +258,7 @@ __all__ = [
     "PERCEPCION_STATUS_SENT",
     "PERCEPCION_STATUS_PENDING",
     "PERCEPCION_STATUS_REJECTED",
+    "FiscalProviderCircuit",
     "DocumentEmissionJob",
     "DocumentEmissionAttempt",
     "EMISSION_JOB_STATUS_QUEUED",

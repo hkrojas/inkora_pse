@@ -111,9 +111,12 @@ def guardar_respuesta_sunat(
     query = db.query(models.Cotizacion).filter(models.Cotizacion.id == cotizacion_id)
     if tenant_id is not None:
         query = query.filter(models.Cotizacion.tenant_id == tenant_id)
-    db_cot = query.first()
+    db_cot = query.populate_existing().with_for_update().first()
     if db_cot:
         was_issued = db_cot.estado == DOCUMENT_STATUS_ISSUED
+        if was_issued and db_cot.sunat_accepted:
+            db.commit()
+            return db_cot
         links = _extract_provider_links(data_sunat)
         if links:
             db_cot.sunat_xml_url = links.get("xml")
@@ -126,7 +129,11 @@ def guardar_respuesta_sunat(
         if data_sunat.get("hash"):
             db_cot.sunat_hash = data_sunat.get("hash")
         if "provider_response" in data_sunat:
-            db_cot.provider_response = data_sunat.get("provider_response")
+            response = data_sunat.get("provider_response")
+            previous = db_cot.provider_response if isinstance(db_cot.provider_response, dict) else {}
+            if isinstance(response, dict) and previous.get("inkora_evidence"):
+                response = dict(response, inkora_evidence=previous["inkora_evidence"])
+            db_cot.provider_response = response
         if "provider_endpoint" in data_sunat:
             db_cot.provider_endpoint = data_sunat.get("provider_endpoint")
         if "provider_status_code" in data_sunat:
@@ -160,6 +167,15 @@ def guardar_respuesta_sunat(
             or db_cot.sunat_cdr_content
             or db_cot.sunat_cdr_url
         )
+        # Signing/receiving the document does not authorize economic side effects.
+        # This also protects callers that persist a normalized 202 response.
+        if data_sunat.get("pending") or (
+            db_cot.tipo_comprobante in {"01", "03", "07", "08"}
+            and data_sunat.get("success") and not cdr_available
+        ):
+            verification_failed = True
+            db_cot.provider_verification_status = "pending_confirmation"
+            db_cot.provider_verification_error = data_sunat.get("provider_verification_error") or "Pendiente de respuesta fiscal definitiva."
         if is_v2_note and data_sunat.get("success"):
             if not cdr_available:
                 verification_failed = True

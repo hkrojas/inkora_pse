@@ -120,7 +120,13 @@ def recover_coordinator(db, *, legacy_timeout):
           FOR UPDATE SKIP LOCKED
         ), recovered AS (
           UPDATE document_emission_jobs j SET
-            status=CASE WHEN j.lease_token IS NOT NULL AND j.execution_started_at IS NOT NULL
+            action=CASE WHEN j.provider='smartpse' AND j.action IN ('emit_fiscal_document','consult_fiscal_document')
+                         AND (j.execution_started_at IS NOT NULL OR (j.lease_token IS NULL AND j.attempts > 0))
+                         AND NOT (coalesce(j.payload_snapshot->>'sign_only','false')='true'
+                                  AND coalesce(j.payload_snapshot->>'send_started','false')!='true')
+                         THEN 'consult_fiscal_document' ELSE j.action END,
+            status=CASE WHEN j.provider='smartpse' AND j.action IN ('emit_fiscal_document','consult_fiscal_document') THEN 'retry'
+                        WHEN j.lease_token IS NOT NULL AND j.execution_started_at IS NOT NULL
                          THEN 'pending_confirmation'
                         WHEN j.lease_token IS NULL AND j.attempts >= j.max_attempts THEN 'failed'
                         ELSE 'retry' END,
@@ -128,7 +134,8 @@ def recover_coordinator(db, *, legacy_timeout):
                          THEN 'Reserva vencida tras iniciar ejecución; conciliar antes de reenviar.'
                         ELSE 'Reserva recuperada tras interrupción del worker.' END,
             locked_at=NULL, processing_started_at=NULL,
-            finished_at=CASE WHEN j.execution_started_at IS NOT NULL OR j.attempts >= j.max_attempts
+            finished_at=CASE WHEN j.provider='smartpse' AND j.action IN ('emit_fiscal_document','consult_fiscal_document') THEN NULL
+                        WHEN j.execution_started_at IS NOT NULL OR j.attempts >= j.max_attempts
                          THEN clock_timestamp()::timestamp ELSE NULL END,
             available_at=clock_timestamp()::timestamp,updated_at=clock_timestamp()::timestamp
           FROM expired e WHERE j.id=e.id RETURNING j.id,j.attempts,j.status,j.last_error,j.lease_token
@@ -143,8 +150,9 @@ def recover_coordinator(db, *, legacy_timeout):
             available_at=clock_timestamp()::timestamp,finished_at=NULL,locked_at=NULL,
             processing_started_at=NULL,updated_at=clock_timestamp()::timestamp
           WHERE id IN (SELECT id FROM document_emission_jobs WHERE provider='smartpse'
-            AND action='emit_fiscal_document' AND status='pending_confirmation'
-            AND last_error ILIKE '%Smart PSE remote verification missing:%'
+            AND action IN ('emit_fiscal_document','consult_fiscal_document') AND status='pending_confirmation'
+            AND NOT (coalesce(payload_snapshot->>'sign_only','false')='true'
+                     AND coalesce(payload_snapshot->>'send_started','false')!='true')
             FOR UPDATE SKIP LOCKED) RETURNING id
         ) SELECT (SELECT count(*) FROM recovered) + (SELECT count(*) FROM reconciled) AS n
     """), {"timeout": legacy_timeout}).one()
@@ -179,7 +187,12 @@ def recover(db):
                                Job.lease_expires_at <= now).with_for_update(skip_locked=True).all()
     for job in jobs:
         started = job.execution_started_at is not None
-        job.status = "pending_confirmation" if started else "retry"
+        sale = job.provider == "smartpse" and job.action in {"emit_fiscal_document", "consult_fiscal_document"}
+        snapshot = job.payload_snapshot or {}
+        signing = snapshot.get("sign_only") and not snapshot.get("send_started")
+        job.status = "retry" if sale or not started else "pending_confirmation"
+        if sale and started and not signing:
+            job.action = "consult_fiscal_document"
         job.last_error = ("Reserva vencida tras iniciar ejecución; conciliar antes de reenviar."
                           if started else "Reserva vencida antes de iniciar ejecución.")
         job.available_at = now

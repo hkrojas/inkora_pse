@@ -20,7 +20,7 @@ from test_emission_queue import _make_fiscal_document
     ('borrador', None, None, None, 'draft'),
     ('pendiente', '[1033] ya informado', None, None, 'pending_confirmation'),
     ('pendiente', None, 'pending_confirmation', None, 'pending_confirmation'),
-    ('pendiente', '[0111] policy', None, None, 'rejected'),
+    ('pendiente', '[0111] policy', None, None, 'pending_confirmation'),
     ('pendiente', None, 'unverified', 'cdr', 'pending'),
     ('facturada', '', 'verified', 'cdr', 'emitted'),
     ('facturada', None, None, 'cdr', 'emitted'),

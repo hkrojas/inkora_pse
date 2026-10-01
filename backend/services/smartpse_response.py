@@ -257,7 +257,8 @@ def _is_pending(data: dict) -> bool:
 
 
 def _provider_rejected(data: dict) -> bool:
-    return data.get("rechazado") is True or bool(data.get("errores"))
+    # A transport/policy message is not proof of a fiscal rejection.
+    return data.get("rechazado") is True
 
 
 def build_smartpse_result(
@@ -271,7 +272,7 @@ def build_smartpse_result(
 ) -> dict:
     payload = payload or {}
     data = data or {}
-    if status_code >= 400 or _provider_rejected(data):
+    if status_code >= 400:
         detail = _join_messages(
             data.get("mensaje"),
             data.get("message"),
@@ -279,26 +280,33 @@ def build_smartpse_result(
             data.get("observaciones"),
             data.get("error"),
         )
-        if _provider_rejected(data) and status_code < 400:
-            from services.smartpse_client import SmartPSEDefinitiveRejection
-            raise SmartPSEDefinitiveRejection(
-                detail or "Smart PSE rechazo definitivamente el documento.", data
-            )
-        raise SmartPSEException(detail or "Smart PSE rechazo el documento.")
+        raise SmartPSEException(detail or "Smart PSE rechazo el documento.", data,
+                                status_code=status_code)
 
     resolved_ticket = ticket or data.get("ticket")
     signed_xml = extract_xml_from_signed_zip(data.get("xml_firmado") or data.get("xml"))
     cdr_xml = _decode_base64_text(data.get("cdr"))
     document_type = str(payload.get("tipoDoc") or "").zfill(2)
-    if cdr_xml and document_type in {"09", "31"}:
-        validate_gre_cdr(cdr_xml, payload)
-    elif cdr_xml and document_type in {"01", "03", "07", "08"}:
-        validate_sale_cdr(cdr_xml, payload)
-    pending = str(data.get("estado") or "").strip() == "202" or _is_pending(data)
-    explicitly_pending = str(data.get("estado") or "").strip() == "202"
+    if document_type in {"RC", "RA", "RR", "20", "40"} and (_provider_rejected(data) or data.get("errores")):
+        from services.smartpse_client import SmartPSEDefinitiveRejection
+        raise SmartPSEDefinitiveRejection(_join_messages(data.get("mensaje"), data.get("errores")) or "Smart PSE rechazo el documento.", data)
+    try:
+        if cdr_xml and document_type in {"09", "31"}:
+            validate_gre_cdr(cdr_xml, payload)
+        elif cdr_xml and document_type in {"01", "03", "07", "08"}:
+            validate_sale_cdr(cdr_xml, payload)
+    except SmartPSEException as exc:
+        exc.response_data = data
+        exc.status_code = status_code
+        raise
+    if (_provider_rejected(data) or data.get("errores")) and not cdr_xml:
+        detail = _join_messages(data.get("mensaje"), data.get("message"), data.get("errores"), data.get("observaciones"))
+        raise SmartPSEException(f"{detail or 'Respuesta fiscal incierta'}; sin CDR verificado, requiere conciliacion.",
+                                data, status_code=status_code)
+    pending = not cdr_xml and (str(data.get("estado") or "").strip() == "202" or _is_pending(data))
     if require_cdr and not cdr_xml and not pending:
         raise SmartPSEException(
-            "Smart PSE no devolvio CDR de aceptacion; el documento no puede marcarse como aceptado."
+            "Smart PSE no devolvio CDR de aceptacion; el documento no puede marcarse como aceptado.", data
         )
 
     result = {

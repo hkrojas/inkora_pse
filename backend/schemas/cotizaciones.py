@@ -145,6 +145,8 @@ class PagoResponse(BaseModel):
 
 
 class FiscalPresentationResponse(BaseModel):
+    has_deliverable_fiscal_xml: bool = False
+
     @computed_field
     @property
     def fiscal_status(self) -> str | None:

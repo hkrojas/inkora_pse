@@ -12,6 +12,11 @@ from config import settings
 class SmartPSEException(Exception):
     """Business/provider error raised by the Smart PSE integration."""
 
+    def __init__(self, message: str, response_data: dict | None = None, *, status_code: int | None = None):
+        super().__init__(message)
+        self.response_data = response_data or {}
+        self.status_code = status_code
+
 
 class SmartPSEDefinitiveRejection(SmartPSEException):
     """Structured provider response that explicitly rejects the document."""
@@ -107,7 +112,8 @@ class SmartPSEClient:
             return
         data = _safe_json(response)
         detail = _redacted_provider_message(data)
-        raise SmartPSEException(f"Smart PSE rechazo {action}: {detail}")
+        raise SmartPSEException(f"Smart PSE respuesta HTTP {status_code} en {action}: {detail}",
+                                data, status_code=status_code)
 
     def _tenant_cache_key(self, tenant) -> int | str:
         return getattr(tenant, "id", None) or getattr(tenant, "business_ruc", None) or "default"
@@ -198,6 +204,25 @@ class SmartPSEClient:
             raise SmartPSEException(f"Timeout enviando documento Smart PSE a {endpoint}.") from exc
         except requests.exceptions.ConnectionError as exc:
             raise SmartPSEException(f"No se pudo conectar con Smart PSE en {endpoint}.") from exc
+
+    def sign_xml(self, tenant, nombre_archivo: str, xml_content: str, *, demo: bool = False) -> dict:
+        return self._submit_cpe("/api/cpe/generar-demo" if demo else "/api/cpe/generar", tenant, {
+            "nombre_archivo": nombre_archivo,
+            "contenido_archivo": base64.b64encode(xml_content.encode("utf-8")).decode("ascii"),
+        })
+
+    def send_signed_xml(self, tenant, nombre_archivo: str, xml_content: str, *, demo: bool = False) -> dict:
+        return self._submit_cpe("/api/cpe/enviar-demo" if demo else "/api/cpe/enviar", tenant, {
+            "nombre_xml_firmado": nombre_archivo,
+            "contenido_xml_firmado": base64.b64encode(xml_content.encode("utf-8")).decode("ascii"),
+        })
+
+    def _submit_cpe(self, endpoint: str, tenant, payload: dict) -> dict:
+        response = self._post_cpe(endpoint, tenant, payload, force_refresh=False)
+        if getattr(response, "status_code", None) == 401:
+            response = self._post_cpe(endpoint, tenant, payload, force_refresh=True)
+        self._raise_for_response(response, action=endpoint)
+        return _safe_json(response)
 
     def consult_ticket(
         self,

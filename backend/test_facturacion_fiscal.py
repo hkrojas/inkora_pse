@@ -193,6 +193,7 @@ def _provider_success_response():
         "correlativo": "000001",
         "provider_endpoint": "/invoice/send",
         "provider_status_code": 200,
+        "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>",
         "sunat_response": {"success": True, "cdrResponse": {"description": "Aceptado"}},
     }
 
@@ -527,13 +528,13 @@ class TestNotasParcialesFiscalBalance:
         crud.guardar_respuesta_sunat(
             db_session,
             first_note.id,
-            {"success": True, "xml": "<xml/>"},
+            {"success": True, "xml": "<xml/>", "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>"},
             tenant_id=tenant.id,
         )
         blocked = crud.guardar_respuesta_sunat(
             db_session,
             second_note.id,
-            {"success": True, "xml": "<xml/>"},
+            {"success": True, "xml": "<xml/>", "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>"},
             tenant_id=tenant.id,
         )
 
@@ -571,7 +572,7 @@ class TestNotasParcialesFiscalBalance:
         crud.guardar_respuesta_sunat(
             db_session,
             first_note.id,
-            {"success": True, "xml": "<xml/>"},
+            {"success": True, "xml": "<xml/>", "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>"},
             tenant_id=tenant.id,
         )
         job, _ = emission_queue_service.enqueue_note_job(
@@ -686,7 +687,7 @@ class TestNotasParcialesFiscalBalance:
         accepted = crud.guardar_respuesta_sunat(
             db_session,
             credit_note.id,
-            {"success": True, "xml": "<xml/>"},
+            {"success": True, "xml": "<xml/>", "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>"},
             tenant_id=tenant.id,
         )
 
@@ -738,7 +739,7 @@ class TestNotasParcialesFiscalBalance:
         accepted = crud.guardar_respuesta_sunat(
             db_session,
             own_note.id,
-            {"success": True, "xml": "<xml/>"},
+            {"success": True, "xml": "<xml/>", "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>"},
             tenant_id=tenant.id,
         )
 

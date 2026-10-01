@@ -114,6 +114,7 @@ def test_artifact_recovery_does_not_emit(db_session):
     _, user, doc = _make_fiscal_document(db_session, 'DA7')
     doc.estado = 'facturada'
     doc.sunat_cdr_content = '<ApplicationResponse />'
+    doc.sunat_xml_content = '<Invoice />'
     db_session.commit()
     with patch.object(facturacion.fiscal_artifact_service, 'persist_cdr_artifact', return_value='private-cdr'), patch.object(facturacion.pdf_storage_service, 'generate_and_upload_pdf', return_value='private-pdf'), patch.object(facturacion.facturacion_service, 'emitir_factura') as send:
         response = client_for(db_session, user).post(f'/facturacion/{doc.id}/artifacts/retry')

@@ -34,6 +34,13 @@ from tenant_access import (
 class FacturacionException(Exception):
     """Excepcion para errores de negocio en facturacion."""
 
+    def __init__(self, message: str, provider_response: dict | None = None, *,
+                 status_code: int | None = None, partial_result: dict | None = None):
+        super().__init__(message)
+        self.provider_response = provider_response or {}
+        self.status_code = status_code
+        self.partial_result = partial_result or {}
+
 
 class FacturacionRejectedException(FacturacionException):
     def __init__(self, message: str, provider_response: dict | None = None):
@@ -1090,7 +1097,7 @@ def _verify_smartpse_remote_document(
         except smartpse_client.SmartPSEDefinitiveRejection as exc:
             raise FacturacionRejectedException(str(exc), exc.response_data) from exc
         except smartpse_client.SmartPSEException as exc:
-            raise FacturacionException(str(exc)) from exc
+            raise FacturacionException(str(exc), process_response, partial_result=process_result) from exc
 
         identity = smartpse_response.extract_sale_document_identity(process_result.get("xml"))
         mismatches = _smartpse_identity_mismatches(_smartpse_expected_identity(payload), identity)
@@ -1101,7 +1108,8 @@ def _verify_smartpse_remote_document(
                 nombre_archivo,
             )
             raise FacturacionException(
-                "Smart PSE process verification mismatch: " + "; ".join(mismatches)
+                "Smart PSE process verification mismatch: " + "; ".join(mismatches),
+                process_response, partial_result=process_result
             )
 
         process_result["provider_endpoint"] = process_endpoint
@@ -1168,11 +1176,14 @@ def _verify_smartpse_remote_document(
                 nombre_archivo,
                 reason,
             )
-            raise FacturacionException(f"Smart PSE remote verification missing: {exc}") from exc
+            raise FacturacionException(f"Smart PSE remote verification missing: {exc}",
+                                      process_response, status_code=getattr(exc, "status_code", None),
+                                      partial_result=process_result) from exc
 
     if verification_result is None:
         raise FacturacionException(
-            f"Smart PSE remote verification missing: {last_error or 'sin resultado verificable'}"
+            f"Smart PSE remote verification missing: {last_error or 'sin resultado verificable'}",
+            process_response, partial_result=process_result
         )
 
     identity = smartpse_response.extract_sale_document_identity(verification_result.get("xml"))
@@ -1183,7 +1194,8 @@ def _verify_smartpse_remote_document(
             getattr(tenant, "id", None),
             nombre_archivo,
         )
-        raise FacturacionException("Smart PSE remote verification mismatch: " + "; ".join(mismatches))
+        raise FacturacionException("Smart PSE remote verification mismatch: " + "; ".join(mismatches),
+                                  process_response, partial_result=process_result)
 
     verification_result["provider_endpoint"] = process_endpoint
     verification_result["provider_response"] = {
@@ -1316,7 +1328,8 @@ def _enviar_a_smartpse(
     except smartpse_client.SmartPSEDefinitiveRejection as exc:
         raise FacturacionRejectedException(str(exc), exc.response_data) from exc
     except smartpse_client.SmartPSEException as exc:
-        raise FacturacionException(str(exc)) from exc
+        raise FacturacionException(str(exc), getattr(exc, "response_data", None),
+                                  status_code=getattr(exc, "status_code", None)) from exc
 
     if requires_remote_verification:
         return _verify_smartpse_remote_document(
@@ -1373,7 +1386,12 @@ def emitir_factura(
     tipo_doc_override=None,
     tipo_operacion_override: str | None = None,
     serie_override: str | None = None,
+    prepared_sale: dict | None = None,
 ):
+    if prepared_sale:
+        result = _enviar_a_api(prepared_sale["payload"], user, "/invoice/send",
+                               xml_content_override=prepared_sale["unsigned_xml"])
+        return _attach_sale_artifacts(result, user)
     if tipo_doc_override:
         tipo_comprobante = tipo_doc_override
     else:
@@ -1398,11 +1416,27 @@ def emitir_factura(
     return _attach_sale_artifacts(result, user)
 
 
+def prepare_sale_document(cotizacion, db, user, tipo_comprobante):
+    """Freeze exact bytes and fiscal data before any provider submission."""
+    payload, _ = _base_payload(cotizacion, user, tipo_comprobante)
+    payload["serie"] = cotizacion.serie
+    payload["correlativo"] = _provider_correlativo(cotizacion.correlativo or cotizacion.id)
+    payload = _sync_invoice_totals(_aplicar_anticipos(_aplicar_detraccion(payload, cotizacion, user, db), cotizacion, user))
+    payload = _prepare_smartpse_payload(payload, "/invoice/send")
+    xml = _build_smartpse_xml(payload, "/invoice/send")
+    # Decimal strings preserve the original precision when stored in JSON.
+    frozen_payload = json.loads(json.dumps(payload, default=lambda value: str(value)))
+    return {"payload": frozen_payload, "unsigned_xml": xml,
+            "nombre_archivo": smartpse_ubl_service.build_smartpse_filename(payload), "stage": "prepared",
+            "provider_environment": getattr(user.tenant, "smartpse_environment", None)}
+
+
 def consultar_documento_fiscal(
     cotizacion: models.Cotizacion,
     user: models.User,
     *,
     tipo_doc_override: str | None = None,
+    prepared_sale: dict | None = None,
 ):
     """Reconcile a submitted invoice/receipt without invoking the send endpoint."""
     tenant = getattr(user, "tenant", None)
@@ -1414,14 +1448,19 @@ def consultar_documento_fiscal(
         or cotizacion.tipo_comprobante
         or ("01" if obtener_tipo_documento_codigo(cotizacion.cliente.tipo_documento) == "6" else "03")
     )
-    payload, _ = _base_payload(cotizacion, user, tipo_comprobante)
-    payload["serie"] = cotizacion.serie
-    payload["correlativo"] = _provider_correlativo(cotizacion.correlativo or cotizacion.id)
+    if prepared_sale:
+        payload = prepared_sale["payload"]
+    else:
+        payload, _ = _base_payload(cotizacion, user, tipo_comprobante)
+        payload["serie"] = cotizacion.serie
+        payload["correlativo"] = _provider_correlativo(cotizacion.correlativo or cotizacion.id)
     nombre_archivo = smartpse_ubl_service.build_smartpse_filename(payload)
     client = smartpse_client.get_default_client()
 
     try:
         response = client.consult_ticket(tenant, nombre_archivo)
+        if cotizacion.sunat_xml_content and not (response.get("xml_firmado") or response.get("xml")):
+            response = dict(response, xml_firmado=cotizacion.sunat_xml_content)
         result = smartpse_response.build_smartpse_result(
             payload,
             response,
@@ -1432,11 +1471,13 @@ def consultar_documento_fiscal(
     except smartpse_client.SmartPSEDefinitiveRejection as exc:
         raise FacturacionRejectedException(str(exc), exc.response_data) from exc
     except smartpse_client.SmartPSEException as exc:
-        raise FacturacionException(str(exc)) from exc
+        raise FacturacionException(str(exc), getattr(exc, "response_data", None),
+                                  status_code=getattr(exc, "status_code", None)) from exc
 
     if result.get("pending"):
         raise FacturacionException(
-            f"Smart PSE mantiene {nombre_archivo} en proceso; se consultara nuevamente."
+            f"Smart PSE mantiene {nombre_archivo} en proceso; se consultara nuevamente.",
+            response, partial_result=result
         )
 
     try:
@@ -1444,13 +1485,13 @@ def consultar_documento_fiscal(
     except smartpse_client.SmartPSEDefinitiveRejection as exc:
         raise FacturacionRejectedException(str(exc), exc.response_data) from exc
     except smartpse_client.SmartPSEException as exc:
-        raise FacturacionException(str(exc)) from exc
+        raise FacturacionException(str(exc), response, partial_result=result) from exc
 
     identity = smartpse_response.extract_sale_document_identity(result.get("xml"))
     mismatches = _smartpse_identity_mismatches(_smartpse_expected_identity(payload), identity)
     if mismatches:
         raise FacturacionException(
-            "Smart PSE remote verification mismatch: " + "; ".join(mismatches)
+            "Smart PSE remote verification mismatch: " + "; ".join(mismatches), response, partial_result=result
         )
 
     result["provider_document_name"] = nombre_archivo

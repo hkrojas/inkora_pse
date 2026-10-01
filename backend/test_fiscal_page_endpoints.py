@@ -175,7 +175,9 @@ def test_facturas_emitidas_page_usa_dos_consultas_y_preserva_contrato(db_session
     assert len(statements) == 2
     assert serialized["items"] == [expected]
     item_select = statements[1].lower().split(" from ", 1)[0]
-    assert "provider_response" not in item_select
+    # Only a boolean JSON projection is allowed, never the full XML/response body.
+    assert "provider_response as provider_response" not in item_select
+    assert "has_deliverable_fiscal_xml" in item_select
     assert "sunat_qr_payload" not in item_select
     assert "sunat_qr_svg" not in item_select
     assert "sunat_xml_content as sunat_xml_content" not in item_select

@@ -605,6 +605,10 @@ def test_generate_and_upload_pdf_usa_renderer_de_comprobante(db_session):
     cliente = make_cliente(db_session, tenant, "PDF02", numero_documento="20191308868")
     quote = make_quote_via_crud(db_session, tenant, user, cliente)
     fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
+    fiscal.estado = "facturada"
+    fiscal.sunat_xml_content = SAMPLE_INVOICE_XML
+    fiscal.sunat_cdr_content = "<ApplicationResponse>offline accepted fixture</ApplicationResponse>"
+    db_session.commit()
     private_ref = storage_service.build_private_storage_reference(
         "cotizaciones/tenant_2/comprobante.pdf"
     )
@@ -643,6 +647,10 @@ def test_generate_and_upload_pdf_usa_renderer_de_comprobante_para_nota(db_sessio
         "01",
         "ANULACION DE LA OPERACION",
     )
+    nota.estado = "facturada"
+    nota.sunat_xml_content = SAMPLE_INVOICE_XML
+    nota.sunat_cdr_content = "<ApplicationResponse>offline accepted fixture</ApplicationResponse>"
+    db_session.commit()
 
     with patch(
         "services.pdf_storage_service.pdf_generator.generar_pdf_cotizacion",

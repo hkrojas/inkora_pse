@@ -538,7 +538,7 @@ class TestConteoDocumental:
         crud.guardar_respuesta_sunat(
             db_session,
             fiscal.id,
-            {"success": True, "serie": "F001", "correlativo": "000001"},
+            {"success": True, "serie": "F001", "correlativo": "000001", "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>"},
             tenant_id=tenant.id,
         )
         db_session.refresh(sub)
@@ -547,7 +547,7 @@ class TestConteoDocumental:
         crud.guardar_respuesta_sunat(
             db_session,
             fiscal.id,
-            {"success": True, "serie": "F001", "correlativo": "000001"},
+            {"success": True, "serie": "F001", "correlativo": "000001", "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>"},
             tenant_id=tenant.id,
         )
         db_session.refresh(sub)

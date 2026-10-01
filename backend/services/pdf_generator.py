@@ -2722,7 +2722,7 @@ def _build_modern_pdf_buffer(document_data, tenant: models.Tenant, is_comprobant
         )
         qr_link = Paragraph("www.sunat.gob.pe", footer_body_style)
         qr_summary_text = _resolve_qr_visible_summary(document_data)
-        bottom_left_text = "Puedes descargar el XML, CDR y representación impresa desde nuestro portal."
+        bottom_left_text = "Consulta los archivos disponibles de tu comprobante en nuestro portal."
     else:
         qr_flowable = _build_uploaded_payment_qr_flowable(
             company_data["raw_bank_accounts"],
