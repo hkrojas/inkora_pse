@@ -24,7 +24,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from services import pdf_generator, smartpse_response
+from services import gre_qr_service, pdf_generator, smartpse_response
 
 
 _STATUS_META = {
@@ -36,15 +36,6 @@ _STATUS_META = {
     "cancelado": ("CANCELADA", "CANCELADA"),
     "cancelled": ("CANCELADA", "CANCELADA"),
 }
-
-_PROVIDER_QR_KEYS = (
-    "qr_content",
-    "qrContent",
-    "codigo_qr",
-    "codigoQr",
-    "contenido_qr",
-    "contenidoQr",
-)
 
 
 def _text(value, fallback="-") -> str:
@@ -184,28 +175,6 @@ def _recipient(guide) -> tuple[str, str, str]:
     return str(name), str(document), str(address)
 
 
-def _extract_provider_qr(value) -> str | None:
-    """Return only a QR payload explicitly supplied by the provider/SUNAT response."""
-    if not isinstance(value, dict):
-        return None
-    for key in _PROVIDER_QR_KEYS:
-        candidate = value.get(key)
-        if isinstance(candidate, str) and candidate.strip():
-            return candidate.strip()
-    qr_payload = value.get("qr_payload")
-    if isinstance(qr_payload, str) and qr_payload.strip():
-        return qr_payload.strip()
-    if isinstance(qr_payload, dict):
-        candidate = _extract_provider_qr(qr_payload)
-        if candidate:
-            return candidate
-    for key in ("process", "verification", "data", "sunat_response", "resultado", "response"):
-        candidate = _extract_provider_qr(value.get(key))
-        if candidate:
-            return candidate
-    return None
-
-
 def _cdr_details(guide) -> dict:
     details = {"accepted": False, "code": None, "description": None, "notes": []}
     cdr_xml = smartpse_response.extract_cdr_xml(getattr(guide, "provider_response", None))
@@ -229,10 +198,25 @@ def _cdr_details(guide) -> dict:
 
 
 def _cdr_qr_content(guide, tenant) -> str | None:
-    del tenant  # The QR content must come from the accepted response, not local fields.
-    if guide.estado != "emitida" or not _cdr_details(guide)["accepted"]:
+    if guide.estado != "emitida":
         return None
-    return _extract_provider_qr(getattr(guide, "provider_response", None))
+    document_id = f"{guide.serie}-{guide.correlativo}"
+    issuer_ruc = str(getattr(tenant, "business_ruc", None) or "").strip()
+    signed_xml = getattr(guide, "sunat_xml_content", None)
+    if signed_xml:
+        identity = smartpse_response.extract_gre_document_identity(signed_xml)
+        if (
+            not gre_qr_service.document_id_matches(identity.get("document_id"), document_id)
+            or identity.get("issuer_ruc") != issuer_ruc
+            or identity.get("document_type") != guide.tipo_documento
+        ):
+            return None
+    return gre_qr_service.extract_qr_content(
+        smartpse_response.extract_cdr_xml(getattr(guide, "provider_response", None)),
+        issuer_ruc=issuer_ruc,
+        document_type=guide.tipo_documento,
+        document_id=document_id,
+    )
 
 
 def _qr_image(content: str) -> Image:
@@ -555,8 +539,9 @@ def _build_footer(guide, tenant, width: float, styles: dict, palette: dict):
                 styles["body"],
             ),
             Paragraph("Consulta disponible en SUNAT Virtual", styles["link"]),
-            Paragraph(f"Hash: {_text(getattr(guide, 'sunat_hash', None))}", styles["small"]),
         ]
+        if getattr(guide, "sunat_hash", None):
+            right.append(Paragraph(f"Hash: {_text(guide.sunat_hash)}", styles["small"]))
         if cdr_details["notes"]:
             right.append(Paragraph(f"Observación CDR: {_text(' · '.join(cdr_details['notes']))}", styles["small"]))
         right_box = KeepInFrame(width * 0.70, 1.45 * inch, right, mode="shrink", vAlign="MIDDLE")
@@ -565,8 +550,8 @@ def _build_footer(guide, tenant, width: float, styles: dict, palette: dict):
     else:
         if str(guide.estado or "").lower() == "emitida" and cdr_details["accepted"]:
             message = (
-                "Documento electrónico aceptado por SUNAT. El proveedor no entregó un contenido QR "
-                f"verificable; sustento alternativo: RUC {_text(getattr(tenant, 'business_ruc', None))}, "
+                "Documento electrónico aceptado por SUNAT. No se pudo obtener información QR válida "
+                f"del CDR; sustento alternativo: RUC {_text(getattr(tenant, 'business_ruc', None))}, "
                 f"serie y número {_text(_guide_number(guide))}."
             )
         else:

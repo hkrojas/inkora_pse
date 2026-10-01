@@ -5,16 +5,41 @@ import models
 from database import SessionLocal, apply_tenant_context, reset_tenant_context
 from fastapi.concurrency import run_in_threadpool
 from logging_utils import get_logger
-from services import pdf_generator, storage_service
+from services import fiscal_evidence_service, pdf_generator, storage_service
 from sqlalchemy.orm import Session
 
 
 logger = get_logger(__name__)
 
 
+class FiscalPdfNotReady(ValueError):
+    pass
+
+
+def has_legacy_accepted_pdf(document):
+    response = getattr(document, "provider_response", None) or {}
+    evidence = response.get("inkora_evidence", {}) if isinstance(response, dict) else {}
+    return (getattr(document, "estado", None) == "facturada"
+            and not getattr(document, "sunat_error", None)
+            and getattr(document, "provider_verification_status", None) in {None, "verified"}
+            and bool(getattr(document, "sunat_cdr_content", None) or getattr(document, "sunat_cdr_url", None))
+            and not evidence.get("signed_xml_sha256")
+            and storage_service.is_private_storage_reference(getattr(document, "sunat_pdf_url", None)))
+
+
+def ensure_fiscal_pdf_ready(document, *, allow_existing=False):
+    if allow_existing and has_legacy_accepted_pdf(document):
+        return
+    if getattr(document, "document_kind", "quotation") != "quotation" and not fiscal_evidence_service.has_deliverable_xml(document):
+        raise FiscalPdfNotReady("El PDF estara disponible cuando se reciba y verifique el XML firmado.")
+
+
 def _pdf_source_fingerprint(cotizacion: models.Cotizacion) -> str:
     payload = {
         "id": cotizacion.id,
+        "fiscal_xml_sha256": hashlib.sha256((getattr(cotizacion, "sunat_xml_content", None) or "").encode()).hexdigest(),
+        "fiscal_qr": getattr(cotizacion, "sunat_qr_payload", None),
+        "fiscal_hash": getattr(cotizacion, "sunat_hash", None),
         "cliente_id": cotizacion.cliente_id,
         "cliente_snapshot": getattr(cotizacion, "cliente_snapshot", None),
         "fecha_emision": cotizacion.fecha_emision,
@@ -53,16 +78,21 @@ async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion, *,
     """
     Genera el PDF interno, lo sube a Supabase Storage privado y persiste la referencia.
     """
+    # Preserve issued historical representations (including their payment data).
+    # Newly signed documents always use the XML/QR fingerprint below.
+    if not force and has_legacy_accepted_pdf(cotizacion):
+        return cotizacion.sunat_pdf_url
+    ensure_fiscal_pdf_ready(cotizacion)
+    source_fingerprint = _pdf_source_fingerprint(cotizacion)
     existing_reference = cotizacion.sunat_pdf_url
     if not force and existing_reference and (
         storage_service.is_private_storage_reference(existing_reference)
         or not storage_service.is_remote_url(existing_reference)
-    ):
+    ) and (getattr(cotizacion, "document_kind", "quotation") == "quotation"
+           or f"-{source_fingerprint[:12]}.pdf" in existing_reference):
         return existing_reference
 
     import time
-
-    source_fingerprint = _pdf_source_fingerprint(cotizacion)
 
     document_kind = getattr(cotizacion, "document_kind", "quotation")
     started_at = time.perf_counter()

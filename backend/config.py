@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     EMISSION_STALE_RECOVERY_INTERVAL_SECONDS: int = 60
     EMISSION_MAX_ATTEMPTS: int = 5
     EMISSION_RETRY_BASE_SECONDS: int = 15
+    # Internal tenant rollout; automatic once enabled, no operator outage toggle.
+    FISCAL_CONTINGENCY_TENANT_IDS: str = ""
+    FISCAL_RECOVERY_FIRST_SECONDS: int = Field(default=900, ge=60)
+    FISCAL_RECOVERY_MAX_SECONDS: int = Field(default=1800, ge=60)
     EMISSION_PROCESSING_TIMEOUT_SECONDS: int = 300
     EMISSION_WORKER_CONCURRENCY: int = 1
     EMISSION_WORKER_WAKE_MODE: str = "poll"

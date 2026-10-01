@@ -45,6 +45,90 @@ def migration():
     return module
 
 
+def circuit_migration():
+    path = Path(__file__).parent / "alembic/versions/0026_fiscal_provider_circuits.py"
+    spec = importlib.util.spec_from_file_location("circuit_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_shared_outage_allows_only_one_probe_across_ten_companies(factory, monkeypatch):
+    from config import settings
+    from services import fiscal_recovery_service as recovery
+    monkeypatch.setattr(settings, "FISCAL_CONTINGENCY_TENANT_IDS", "*")
+    with factory() as db:
+        db.query(models.FiscalProviderCircuit).delete()
+        tenants = [models.Tenant(business_name=f"Synthetic outage {i}", business_ruc=uuid4().hex[:11],
+                                smartpse_environment="demo", is_active=True) for i in range(10)]
+        db.add_all(tenants)
+        db.commit()
+        ids = [tenant.id for tenant in tenants]
+        recovery.service_failed(db, tenants[0])
+        circuit = db.get(models.FiscalProviderCircuit, recovery.scope_for(tenants[0]))
+        circuit.next_probe_at = leases.db_now(db) - timedelta(seconds=1)
+        db.commit()
+    def probe(tenant_id):
+        with factory() as db:
+            tenant = db.get(models.Tenant, tenant_id)
+            try:
+                return recovery.reserve_probe(db, tenant)
+            except recovery.ProviderPaused:
+                return None
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        tokens = list(executor.map(probe, ids))
+    assert sum(token is not None for token in tokens) == 1
+    with factory() as db:
+        tenant = db.get(models.Tenant, ids[0])
+        winning = next(token for token in tokens if token)
+        recovery.service_failed(db, tenant, token=winning)
+        circuit = db.get(models.FiscalProviderCircuit, recovery.scope_for(tenant))
+        assert circuit.failures == 2
+        assert 1790 < (circuit.next_probe_at - leases.db_now(db)).total_seconds() <= 1800
+        recovery.service_recovered(db, tenant, token="stale-token")
+        # A stale result from an expired probe cannot close an active newer probe.
+        circuit.probe_token = "new-probe"
+        db.commit()
+        recovery.service_recovered(db, tenant, token="stale-token")
+        assert circuit.probe_token == "new-probe"
+
+
+def test_circuit_migration_is_private_and_reversible(factory):
+    engine = factory.kw["bind"]
+    with engine.begin() as conn:
+        assert conn.scalar(text("SELECT relrowsecurity FROM pg_class WHERE oid='fiscal_provider_circuits'::regclass"))
+        assert conn.scalar(text("""SELECT count(*) FROM pg_class c,
+          LATERAL aclexplode(coalesce(c.relacl, acldefault('r',c.relowner))) a
+          WHERE c.oid='fiscal_provider_circuits'::regclass AND a.grantee=0""")) == 0
+        with Operations.context(MigrationContext.configure(conn)):
+            circuit_migration().downgrade()
+            circuit_migration().upgrade()
+
+
+def test_duplicate_cdr_callbacks_charge_document_usage_only_once(factory):
+    from test_emission_queue import _make_fiscal_document
+    from test_smartpse_response_normalization import _sale_cdr
+    with factory() as db:
+        tenant, _, document = _make_fiscal_document(db, "DUPLICATECDR")
+        tenant_id, document_id = tenant.id, document.id
+        result = {"success": True, "cdr_xml": _sale_cdr(
+            document_id=f"{document.serie}-{document.correlativo}", ruc=tenant.business_ruc),
+            "provider_verification_status": "verified"}
+    barrier = threading.Barrier(2)
+    def callback(_):
+        with factory() as db:
+            # Both callbacks deliberately begin with a stale pending ORM instance.
+            assert db.get(models.Cotizacion, document_id).estado == "pendiente"
+            barrier.wait(timeout=5)
+            persisted = crud.guardar_respuesta_sunat(db, document_id, result, tenant_id=tenant_id)
+            return persisted.estado
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        assert list(executor.map(callback, range(2))) == ["facturada", "facturada"]
+    with factory() as db:
+        subscription = db.query(models.Subscription).filter_by(tenant_id=tenant_id).one()
+        assert subscription.documents_used == 1
+
+
 def prepare_database(engine):
     # Build the prior schema in a disposable database, then run the actual migration.
     Base.metadata.drop_all(engine)
@@ -56,6 +140,8 @@ def prepare_database(engine):
             conn.execute(text(f"ALTER TABLE document_emission_attempts DROP COLUMN {name}"))
         with Operations.context(MigrationContext.configure(conn)):
             migration().upgrade()
+            conn.execute(text("DROP TABLE fiscal_provider_circuits"))
+            circuit_migration().upgrade()
 
 
 @pytest.fixture(scope="module")
@@ -289,7 +375,8 @@ def test_late_provider_response_cannot_change_fiscal_document(factory, monkeypat
         assert not worker.process_emission_job(job_id, db_session=db, lease_token=reservation[1])
         db.expire_all()
         assert db.get(models.Cotizacion, document_id).estado == original
-        assert db.get(models.DocumentEmissionJob, job_id).status == "pending_confirmation"
+        assert db.get(models.DocumentEmissionJob, job_id).status == "retry"
+        assert db.get(models.DocumentEmissionJob, job_id).action == "consult_fiscal_document"
         attempt = db.query(models.DocumentEmissionAttempt).filter_by(job_id=job_id).one()
         assert attempt.late_result_snapshot["ticket"] == "synthetic-late-ticket"
 
@@ -391,9 +478,11 @@ def test_owned_execution_preserves_fiscal_result_and_suspended_tenant_guard(fact
     def provider(*args, **kwargs):
         calls.append(1)
         return {"success":True,"serie":"F001","correlativo":"000001",
+                "cdr_xml":"<ApplicationResponse>offline accepted fixture</ApplicationResponse>",
                 "sunat_response":{"success":True,"cdrResponse":{"description":"Aceptado"}}}
     monkeypatch.setattr(worker.facturacion_service, "emitir_factura", provider)
     monkeypatch.setattr(worker.pdf_storage_service, "process_pdf_background", _noop_async)
+    monkeypatch.setattr(worker.fiscal_artifact_service, "persist_cdr_artifact", _noop_async)
     with factory() as db:
         assert worker.process_emission_job(job_id, db_session=db, lease_token=reservation[1]) is (not blocked)
         db.expire_all()

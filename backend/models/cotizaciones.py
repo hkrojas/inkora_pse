@@ -130,6 +130,11 @@ class Cotizacion(Base):
         return bool(self.sunat_xml_url or self.sunat_xml_content)
 
     @property
+    def has_deliverable_fiscal_xml(self):
+        from services.fiscal_evidence_service import has_deliverable_xml
+        return has_deliverable_xml(self)
+
+    @property
     def has_sunat_cdr(self):
         return bool(self.sunat_cdr_url or self.sunat_cdr_content)
 

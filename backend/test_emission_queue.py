@@ -7,6 +7,7 @@ import crud
 import models
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
 from services import emission_queue_service, facturacion_service
+from test_smartpse_response_normalization import _sale_cdr
 
 
 async def _noop_async(*args, **kwargs):
@@ -133,6 +134,7 @@ def test_process_emission_job_marks_success_and_updates_document(db_session):
             "correlativo": "000001",
             "provider_endpoint": "/invoice/send",
             "provider_status_code": 200,
+            "cdr_xml": _sale_cdr(document_id=f"{fiscal.serie}-{fiscal.correlativo}", ruc=user.tenant.business_ruc),
             "sunat_response": {"success": True, "cdrResponse": {"description": "Aceptado"}},
         },
     ), patch(
@@ -284,7 +286,7 @@ def test_worker_recovers_only_missing_remote_verification_as_consult_job(db_sess
     assert recovered_job.attempts == 0
 
 
-def test_worker_does_not_recover_provider_policy_as_consult_job(db_session):
+def test_worker_recovers_provider_policy_as_consult_job(db_session):
     _, user, fiscal = _make_fiscal_document(db_session, "EQ03POL")
     job, _ = emission_queue_service.enqueue_fiscal_document_job(
         db_session,
@@ -303,9 +305,9 @@ def test_worker_does_not_recover_provider_policy_as_consult_job(db_session):
 
     db_session.expire_all()
     untouched_job = crud.get_emission_job(db_session, job.id)
-    assert recovered == 0
-    assert untouched_job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL
-    assert untouched_job.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION
+    assert recovered == 1
+    assert untouched_job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    assert untouched_job.status == models.EMISSION_JOB_STATUS_RETRY
 
 
 def test_process_emission_job_holds_0111_for_confirmation(db_session):
@@ -333,10 +335,11 @@ def test_process_emission_job_holds_0111_for_confirmation(db_session):
     attempts = crud.get_emission_attempts(db_session, job.id)
 
     assert processed is False
-    assert updated_job.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION
+    assert updated_job.status == models.EMISSION_JOB_STATUS_RETRY
+    assert updated_job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
     assert updated_job.last_error == error
     assert len(attempts) == 1
-    assert attempts[0].status == models.EMISSION_ATTEMPT_STATUS_PENDING_CONFIRMATION
+    assert attempts[0].status == models.EMISSION_ATTEMPT_STATUS_RETRY
     assert attempts[0].error_classification == emission_queue_service.EMISSION_ERROR_PROVIDER_POLICY
 
 
@@ -361,7 +364,8 @@ def test_process_emission_job_holds_http_400_for_confirmation(db_session):
     attempts = crud.get_emission_attempts(db_session, job.id)
 
     assert processed is False
-    assert updated_job.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION
+    assert updated_job.status == models.EMISSION_JOB_STATUS_RETRY
+    assert updated_job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
     assert attempts[0].error_classification == emission_queue_service.EMISSION_ERROR_AMBIGUOUS
 
 
@@ -459,11 +463,11 @@ def test_exhausted_fiscal_consult_stays_pending_confirmation(db_session):
     db_session.expire_all()
     updated_job = crud.get_emission_job(db_session, job.id)
     attempts = crud.get_emission_attempts(db_session, job.id)
-    assert updated_job.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION
+    assert updated_job.status == models.EMISSION_JOB_STATUS_RETRY
     assert updated_job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
     assert updated_job.attempts == 1
     assert len(attempts) == 1
-    assert attempts[0].status == models.EMISSION_ATTEMPT_STATUS_PENDING_CONFIRMATION
+    assert attempts[0].status == models.EMISSION_ATTEMPT_STATUS_RETRY
     assert attempts[0].error_classification == emission_queue_service.EMISSION_ERROR_TRANSIENT
 
 
@@ -589,6 +593,7 @@ def test_process_emission_job_allows_explicit_active_trial_and_grace(db_session)
                 "provider_endpoint": "/invoice/send",
                 "provider_status_code": 200,
                 "sunat_response": {"success": True},
+                "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>",
             },
         ), patch(
             "services.emission_queue_service.pdf_storage_service.process_pdf_background",
@@ -806,6 +811,7 @@ def test_process_next_available_job_recovers_stale_processing_job(db_session):
             "correlativo": "000002",
             "provider_endpoint": "/invoice/send",
             "provider_status_code": 200,
+            "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>",
             "sunat_response": {"success": True, "cdrResponse": {"description": "Aceptado"}},
         },
     ), patch(

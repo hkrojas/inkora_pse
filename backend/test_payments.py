@@ -494,7 +494,7 @@ class TestPagoFiscalNeto:
         crud.guardar_respuesta_sunat(
             db_session,
             fiscal.id,
-            {"success": True, "xml": "<xml/>"},
+            {"success": True, "xml": "<xml/>", "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>"},
             tenant_id=tenant.id,
         )
 
@@ -555,7 +555,7 @@ class TestPagoFiscalNeto:
         crud.guardar_respuesta_sunat(
             db_session,
             new_fiscal.id,
-            {"success": True, "xml": "<xml/>"},
+            {"success": True, "xml": "<xml/>", "cdr_xml": "<ApplicationResponse>offline accepted fixture</ApplicationResponse>"},
             tenant_id=tenant.id,
         )
         applied_again = crud.apply_prefiscal_advances_to_fiscal_document(

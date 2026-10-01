@@ -3,7 +3,7 @@ import re
 
 import models
 from access_control import DOCUMENT_EMITTER_ROLES, get_effective_role
-from services import beta_feature_flags, inventory_service, sale_dispatch_service
+from services import beta_feature_flags, fiscal_evidence_service, inventory_service, sale_dispatch_service
 from services.fiscal_presentation_service import presentation_status
 
 
@@ -116,7 +116,7 @@ def available_actions(db, document, user):
     return {
         'retry_emission': reason is None,
         'retry_block_reason': reason,
-        'retry_artifacts': emitter and active and document.estado != 'anulada' and bool(document.sunat_cdr_content or document.sunat_cdr_url),
+        'retry_artifacts': emitter and active and document.estado != 'anulada' and fiscal_evidence_service.has_deliverable_xml(document),
         'void': void_reason is None,
         'void_block_reason': void_reason,
         'credit_note': can_operate and accepted and not active_void and enabled('credit_notes'),

@@ -309,6 +309,11 @@ def _fiscal_doc_list_columns():
         models.Cotizacion.saldo_pendiente.label("saldo_pendiente"),
         has_xml.label("has_sunat_xml"),
         has_cdr.label("has_sunat_cdr"),
+        (and_(models.Cotizacion.estado != 'anulada',
+              func.coalesce(models.Cotizacion.provider_verification_status, '') != 'rejected',
+              func.coalesce(models.Cotizacion.sunat_xml_content, '') != '',
+              or_(func.coalesce(models.Cotizacion.provider_response["inkora_evidence"]["signed_xml_sha256"].as_string(), '') != '',
+                  and_(models.Cotizacion.estado == 'facturada', has_cdr)))).label("has_deliverable_fiscal_xml"),
         models.Cliente.id.label("cliente_id"),
         models.Cliente.tipo_documento.label("cliente_tipo_documento"),
         models.Cliente.numero_documento.label("cliente_numero_documento"),
@@ -363,7 +368,7 @@ def _fiscal_doc_list_response(row) -> schemas.FiscalDocumentListResponse:
             "sunat_error", "provider_endpoint", "provider_status_code",
             "provider_document_name", "provider_verification_status",
             "provider_verified_at", "provider_verification_error", "monto_pagado",
-            "saldo_pendiente", "has_sunat_xml", "has_sunat_cdr",
+            "saldo_pendiente", "has_sunat_xml", "has_sunat_cdr", "has_deliverable_fiscal_xml",
         )
     }
     payload.update(
@@ -2199,7 +2204,7 @@ async def retry_fiscal_artifacts(
 ):
     document = _resolve_fiscal_document_or_404(db, comprobante_id, current_user.tenant_id, not_found_message='Comprobante no encontrado.')
     if not document_actions_service.available_actions(db, document, current_user)['retry_artifacts']:
-        raise HTTPException(409, 'Se requiere un comprobante vigente con CDR persistido para recuperar archivos.')
+        raise HTTPException(409, 'Se requiere un comprobante vigente con XML firmado verificado para recuperar archivos.')
     try:
         if document.sunat_cdr_content:
             await fiscal_artifact_service.persist_cdr_artifact(db, document, document.sunat_cdr_content)

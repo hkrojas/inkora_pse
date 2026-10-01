@@ -3,16 +3,33 @@ import re
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from reportlab.lib.units import cm
 
 from services import guide_pdf_service
 
 
-CDR_XML = """<?xml version="1.0" encoding="UTF-8"?>
+SUNAT_QR_URL = (
+    "https://e-factura.sunat.gob.pe/v1/contribuyente/gre/comprobantes/descargaqr"
+    "?hashqr=/tcJ/QNiVAdtOt8ZmMNJEgnYeGN+DATOS+SINTETICOS="
+)
+
+CDR_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
 <ApplicationResponse xmlns="urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2"
- xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-  <cbc:ResponseCode>0</cbc:ResponseCode>
-  <cbc:Description>Aceptado</cbc:Description>
+ xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+ xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2">
+  <cac:ReceiverParty><cac:PartyIdentification><cbc:ID>20606751509</cbc:ID></cac:PartyIdentification></cac:ReceiverParty>
+  <cac:DocumentResponse>
+    <cac:Response>
+      <cbc:ReferenceID>T001-000001</cbc:ReferenceID>
+      <cbc:ResponseCode>0</cbc:ResponseCode>
+      <cbc:Description>El Comprobante numero T001-000001, ha sido aceptado</cbc:Description>
+    </cac:Response>
+    <cac:DocumentReference>
+      <cbc:ID>T001-000001</cbc:ID>
+      <cbc:DocumentDescription>{SUNAT_QR_URL}</cbc:DocumentDescription>
+    </cac:DocumentReference>
+  </cac:DocumentResponse>
 </ApplicationResponse>
 """
 
@@ -176,6 +193,8 @@ def test_pdf_titulos_gre_09_y_31_caben_en_dos_lineas_del_recuadro():
 
 def test_pdf_traslado_interno_muestra_transferencia_y_codigos_locales_sin_factura():
     guide = _guide(
+        estado="emitida",
+        provider_response={"cdr": CDR_XML},
         motivo_traslado="04",
         descripcion_motivo="TRASLADO ENTRE ESTABLECIMIENTOS DE LA MISMA EMPRESA",
         cotizacion=None,
@@ -196,13 +215,16 @@ def test_pdf_traslado_interno_muestra_transferencia_y_codigos_locales_sin_factur
     assert any(label == "Punto de partida" and value.startswith("0000") for label, value in rendered_rows)
     assert any(label == "Punto de llegada" and value.startswith("0001") for label, value in rendered_rows)
     assert all(label not in {"Factura de bienes", "Boleta de venta"} for label, _ in rendered_rows)
+    assert guide_pdf_service._cdr_qr_content(guide, _tenant()) == SUNAT_QR_URL
 
 
-def test_pdf_guia_aceptada_incluye_qr_y_leyenda_fiscal():
+@pytest.mark.parametrize("document_type,series", [("09", "T001"), ("31", "V001")])
+def test_pdf_guia_aceptada_construye_qr_desde_cdr_sin_payload_imagen_ni_hash_del_proveedor(document_type, series):
     guide = _guide(
+        tipo_documento=document_type,
+        serie=series,
         estado="emitida",
-        provider_response={"cdr": CDR_XML, "qr_content": "QR-OFICIAL-SMARTPSE"},
-        sunat_hash="HASH-DEMO-ACEPTADO",
+        provider_response={"cdr": CDR_XML.replace("T001", series)},
     )
 
     with patch("services.guide_pdf_service._qr_image", wraps=guide_pdf_service._qr_image) as qr_image:
@@ -210,12 +232,12 @@ def test_pdf_guia_aceptada_incluye_qr_y_leyenda_fiscal():
 
     assert pdf_bytes.startswith(b"%PDF")
     assert len(re.findall(rb"/Type\s*/Page\b", pdf_bytes)) == 1
-    qr_image.assert_called_once()
-    assert guide_pdf_service._cdr_qr_content(guide, _tenant()) == "QR-OFICIAL-SMARTPSE"
+    qr_image.assert_called_once_with(SUNAT_QR_URL)
+    assert guide_pdf_service._cdr_qr_content(guide, _tenant()) == SUNAT_QR_URL
 
 
 def test_pdf_guia_aceptada_mantiene_qr_en_primera_hoja_hasta_cinco_productos():
-    provider_response = {"cdr": CDR_XML, "qr_content": "QR-OFICIAL-SMARTPSE"}
+    provider_response = {"cdr": CDR_XML}
     five_items = _guide(
         estado="emitida",
         provider_response=provider_response,
@@ -249,7 +271,7 @@ def test_pdf_guia_multipagina_coloca_qr_antes_del_primer_salto_y_balancea_solo_c
 
     guide = _guide(
         estado="emitida",
-        provider_response={"cdr": CDR_XML, "qr_content": "QR-OFICIAL-SMARTPSE"},
+        provider_response={"cdr": CDR_XML},
         items=[_item(index) for index in range(1, 26)],
     )
 
@@ -273,10 +295,13 @@ def test_pdf_guia_multipagina_coloca_qr_antes_del_primer_salto_y_balancea_solo_c
     assert elements.index(footer_marker) < first_page_break
 
 
-def test_pdf_guia_no_inventa_qr_cuando_proveedor_no_entrega_payload():
+def test_pdf_guia_no_inventa_qr_si_cdr_no_contiene_informacion_para_construirlo():
     guide = _guide(
         estado="emitida",
-        provider_response={"cdr": CDR_XML},
+        provider_response={
+            "cdr": CDR_XML.replace(f"<cbc:DocumentDescription>{SUNAT_QR_URL}</cbc:DocumentDescription>", ""),
+            "qr_content": "CAMPO-NO-VALIDADO",
+        },
         sunat_hash="HASH-DEMO-ACEPTADO",
     )
 
@@ -286,6 +311,27 @@ def test_pdf_guia_no_inventa_qr_cuando_proveedor_no_entrega_payload():
     assert pdf_bytes.startswith(b"%PDF")
     qr_image.assert_not_called()
     assert guide_pdf_service._cdr_qr_content(guide, _tenant()) is None
+
+
+def test_pdf_guia_pendiente_no_imprime_qr_aunque_tenga_cdr():
+    guide = _guide(provider_response={"cdr": CDR_XML})
+    with patch("services.guide_pdf_service._qr_image") as qr_image:
+        guide_pdf_service.build_guide_pdf(guide, _tenant())
+    qr_image.assert_not_called()
+
+
+def test_pdf_guia_no_imprime_qr_si_xml_firmado_y_cdr_identifican_documentos_distintos():
+    guide = _guide(estado="emitida", provider_response={"cdr": CDR_XML}, sunat_xml_content=SIGNED_GRE_XML)
+    with patch("services.guide_pdf_service._qr_image") as qr_image:
+        guide_pdf_service.build_guide_pdf(guide, _tenant())
+    qr_image.assert_not_called()
+
+
+def test_pdf_guia_con_cdr_de_otro_tenant_no_imprime_qr():
+    guide = _guide(estado="emitida", provider_response={"cdr": CDR_XML.replace("20606751509", "20600000001")})
+    with patch("services.guide_pdf_service._qr_image") as qr_image:
+        guide_pdf_service.build_guide_pdf(guide, _tenant())
+    qr_image.assert_not_called()
 
 
 def test_pdf_guia_prioriza_punto_de_llegada_sobre_direccion_actual_del_cliente():

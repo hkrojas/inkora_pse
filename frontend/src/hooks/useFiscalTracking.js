@@ -23,7 +23,12 @@ export default function useFiscalTracking(documentId, onComplete) {
     if (!jobId) return undefined;
     const controller = new AbortController();
     let timer;
+    let inFlight = false;
     const poll = async () => {
+      if (inFlight || controller.signal.aborted) return;
+      clearTimeout(timer);
+      if (document.visibilityState === 'hidden' || navigator.onLine === false) return;
+      inFlight = true;
       try {
         const current = await api.get(`/emission-jobs/${jobId}`, { signal: controller.signal });
         if (controller.signal.aborted) return;
@@ -32,18 +37,30 @@ export default function useFiscalTracking(documentId, onComplete) {
         const state = fiscalTrackingState(current);
         if (state.poll) {
           wasActive.current = true;
-          timer = setTimeout(poll, current.status === 'contingency_pending' ? 15000 : 2500);
+          timer = setTimeout(poll, ['retry', 'contingency_pending', 'pending_confirmation'].includes(current.status) ? 30000 : 5000);
         } else if (wasActive.current && state.terminal && notified.current !== `${jobId}:${current.status}`) {
           notified.current = `${jobId}:${current.status}`;
           wasActive.current = false;
           complete.current?.({ background: true });
         }
       } catch (requestError) {
-        if (!controller.signal.aborted) setError('No se pudo actualizar el seguimiento. Consultar de nuevo no reenvía el documento.');
+        if (!controller.signal.aborted) {
+          setError('No se pudo actualizar el seguimiento. Se intentará nuevamente.');
+          timer = setTimeout(poll, 30000);
+        }
+      } finally {
+        inFlight = false;
       }
     };
+    const resume = () => { if (document.visibilityState !== 'hidden') poll(); };
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('online', resume);
     poll();
-    return () => { controller.abort(); clearTimeout(timer); };
+    return () => {
+      controller.abort(); clearTimeout(timer);
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('online', resume);
+    };
   }, [documentId, jobId, cycle]);
   return { job, error, track, refresh: () => setCycle((value) => value + 1) };
 }
