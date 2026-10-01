@@ -30,6 +30,8 @@ Comprobación del 01/10/2026 mediante lectura:
 - API y frontend comparten base `fa6308fcb2de3ed6af31c23abcd01387e2e7a550`
   y huella `e0d499040a1208305fa297b98955c2cd70198f62dcd085df6baad7433b7edd83`.
 - El árbol de `main` coincide con esa base publicada.
+- Vercel despliegue READY anterior `dpl_2pBW5aLYWzBg7PW9VeGKkhhGc3u8`, URL
+  `inkora-e2sbv575h-kennedyrojas01064-gmailcoms-projects.vercel.app`.
 - Railway solo declara el ambiente production. No existe staging de Inkora en
   ese proyecto. El proyecto Supabase accesible por el conector corresponde a
   otro producto y no sirve como staging de Inkora.
@@ -50,3 +52,30 @@ desactivado por defecto.
 Conservar los despliegues anteriores para rollback de aplicación, sin restaurar
 documentos o correlativos. Los trabajos del nuevo flujo requieren drenaje o
 retención antes de volver al worker anterior, como detalla el informe fiscal.
+
+### Resultados conjuntos
+
+- `verify_recovery.ps1 -RequirePostgres -PythonPath pruebas/venv311/Scripts/python.exe`:
+  **854 pruebas backend, 10 GRE/migraciones PostgreSQL, 2 cotizaciones PostgreSQL,
+  18 worker PostgreSQL, 54 frontend y 133 navegador aprobadas**. Lint y build
+  aprobados. Evidencia: `pruebas/integrated-release-gate311.log`.
+- Presupuestos de bundle aprobados: `pruebas/integrated-bundle311.log`.
+- 102 pruebas focalizadas conjuntas con Python 3.11 aprobadas antes de registrar
+  los commits: `pruebas/integrated-focused311.log`.
+- PDF GRE sintético renderizado y revisado. El QR leído del PNG coincide exactamente
+  con la URL del CDR: `pruebas/integrated-gre-qr-decode.log`. La lectura se hizo con
+  herramientas locales de QA para Python 3.13; no son dependencias del producto.
+- Esquema remoto comprobado en transacción READ ONLY: Alembic `0025`, cuatro
+  columnas necesarias de evidencia presentes y tabla de circuito `0026` todavía
+  ausente. El rol de conexión backend es postgres. Evidencia sin credenciales:
+  `pruebas/production-schema-read.log`.
+- La lectura inicial encontró 18 jobs fiscales fallidos, un job de nota fallido,
+  uno de consulta GRE fallido y dos guías pendientes. Son estados anteriores al
+  candidato; estas verificaciones no modifican esos estados. No se reenviaron ni
+  reclasificaron documentos reales.
+
+El candidato conserva 223 contratos de operación y la importación completa de
+backend. La huella de runtime conjunto es
+`8650ea89ad8ed357863bb0cf29533047d62a33c988bba00d788095f2094fb6b8`.
+No se fusionó a main ni se publicó al cerrar esta preparación. El siguiente paso
+es resolver la puerta de staging y verificar otra vez main antes de la publicación.

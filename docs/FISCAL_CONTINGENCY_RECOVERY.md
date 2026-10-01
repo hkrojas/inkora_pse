@@ -3,6 +3,10 @@
 Fecha de revisión: 2026-10-01. Estado: implementado y verificado localmente;
 pendiente de validación del contrato de Smart PSE en staging aislado.
 
+Actualización: el usuario solicitó integrar QR GRE y publicar. El candidato y
+la validación conjunta posterior están en `INTEGRACION_FISCAL_QR_2026-10-01.md`;
+las referencias sin commit de este informe describen el cierre del bloque inicial.
+
 ## Base productiva comprobada
 
 - Repositorio: `hkrojas/inkora_pse`, remoto local `inkora_pse`.
