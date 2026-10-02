@@ -145,30 +145,83 @@ def test_open_service_signs_other_invoice_and_defers_send(db_session, sale, sign
     client.sign_xml.assert_called_once()
     client.send_signed_xml.assert_called_once()
     assert client.send_signed_xml.call_args.args[2] == signed
+    assert job.payload_snapshot["send_count"] == 1
+    client.consult_ticket.assert_not_called()
 
 
-def test_confirmed_not_found_resubmits_identical_xml_without_signing_again(db_session, sale, sign_xml, monkeypatch):
+def test_timeout_then_not_found_keeps_reconciliation_without_resending(db_session, sale, sign_xml, monkeypatch):
     tenant, _, document, job = sale
     prepared = job.payload_snapshot["prepared_sale"]
     signed = sign_xml(prepared["unsigned_xml"])
+    remote_acceptances = []
+    client = Mock()
+    client.sign_xml.return_value = {"xml_firmado": signed}
+    def accept_without_returning_cdr(*args, **kwargs):
+        remote_acceptances.append(_sale_cdr(
+            document_id=f"{document.serie}-{document.correlativo}", ruc=tenant.business_ruc))
+        raise smartpse_client.SmartPSEException("Timeout enviando documento")
+    client.send_signed_xml.side_effect = accept_without_returning_cdr
+    client.consult_ticket.side_effect = smartpse_client.SmartPSEException(
+        "Documento o ticket no encontrado", {"message": "Documento o ticket no encontrado"}, status_code=404)
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    assert len(remote_acceptances) == 1
+    circuit = db_session.get(models.FiscalProviderCircuit, recovery.scope_for(tenant))
+    circuit.next_probe_at = datetime.now() - timedelta(seconds=1)
+    job.available_at = datetime.now() - timedelta(seconds=1)
+    db_session.commit()
+    # Existing jobs must stay safe even after enrollment has been disabled.
+    monkeypatch.setattr(settings, "FISCAL_CONTINGENCY_TENANT_IDS", "")
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    db_session.expire_all()
+    assert job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    assert job.status == "retry"
+    assert "Documento o ticket no encontrado" in job.last_error
+    assert job.payload_snapshot["send_count"] == 1
+    assert document.estado == "pendiente"
+    assert not document.sunat_cdr_content
+    assert document.provider_verification_status == "pending_confirmation"
+    assert document.sunat_xml_content == signed
+    assert evidence.has_deliverable_xml(document)
+    assert presentation_status(document) == "pending_confirmation"
+    client.sign_xml.assert_called_once()
+    client.send_signed_xml.assert_called_once()
+    client.consult_ticket.assert_called_once()
+    assert client.send_signed_xml.call_args.args[2] == signed
+    assert document.correlativo == int(prepared["payload"]["correlativo"])
+
+
+@pytest.mark.parametrize("submission_history", [
+    {"send_started": True, "send_count": 1, "retry_signed_after_not_found": True},
+    {"retry_signed_after_not_found": True},
+])
+def test_legacy_not_found_retry_snapshot_only_consults(db_session, sale, sign_xml, monkeypatch, submission_history):
+    _, _, document, job = sale
+    prepared = job.payload_snapshot["prepared_sale"]
+    signed = sign_xml(prepared["unsigned_xml"])
     evidence.retain_sale_evidence(db_session, document, {"xml_firmado": signed}, payload=prepared["payload"])
-    job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
-    job.payload_snapshot = dict(job.payload_snapshot, send_started=True)
+    job.payload_snapshot = dict(job.payload_snapshot, **submission_history)
     db_session.commit()
     client = Mock()
     client.consult_ticket.side_effect = smartpse_client.SmartPSEException(
         "Documento o ticket no encontrado", {"message": "Documento o ticket no encontrado"}, status_code=404)
-    client.send_signed_xml.return_value = {"estado": 200,
-        "cdr": _sale_cdr(document_id=f"{document.serie}-{document.correlativo}", ruc=tenant.business_ruc)}
     monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
     crud.claim_next_emission_job(db_session)
-    assert queue.process_emission_job(job.id, db_session=db_session)
-    assert document.estado == "facturada"
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    db_session.expire_all()
+    assert job.status == "retry"
+    assert job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    assert job.payload_snapshot["send_started"] is True
+    assert "retry_signed_after_not_found" not in job.payload_snapshot
+    assert job.payload_snapshot.get("send_count") == submission_history.get("send_count")
+    assert document.estado == "pendiente"
     assert document.sunat_xml_content == signed
+    assert evidence.has_deliverable_xml(document)
+    client.consult_ticket.assert_called_once()
     client.sign_xml.assert_not_called()
-    client.send_signed_xml.assert_called_once()
-    assert client.send_signed_xml.call_args.args[2] == signed
-    assert document.correlativo == int(prepared["payload"]["correlativo"])
+    client.send_signed_xml.assert_not_called()
 
 
 def test_matching_rejection_cdr_stops_retries(db_session, sale, sign_xml, monkeypatch):

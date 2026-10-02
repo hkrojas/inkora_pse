@@ -26,6 +26,10 @@ class SmartPSEDefinitiveRejection(SmartPSEException):
         self.response_data = response_data or {}
 
 
+class SmartPSENotSubmitted(SmartPSEException):
+    """Local proof that authentication failed before attempting the CPE send."""
+
+
 def _safe_json(response) -> dict:
     try:
         data = response.json()
@@ -212,6 +216,16 @@ class SmartPSEClient:
         })
 
     def send_signed_xml(self, tenant, nombre_archivo: str, xml_content: str, *, demo: bool = False) -> dict:
+        # Resolve credentials before entering the fiscal POST path. A failure
+        # here is provably pre-submission; HTTP errors/timeouts after this point
+        # remain ambiguous and must never inherit this exception classification.
+        try:
+            self.get_cpe_token(tenant)
+        except SmartPSEException as exc:
+            raise SmartPSENotSubmitted(
+                "No se intento enviar el XML: no se pudo obtener autenticacion CPE.",
+                status_code=exc.status_code,
+            ) from None
         return self._submit_cpe("/api/cpe/enviar-demo" if demo else "/api/cpe/enviar", tenant, {
             "nombre_xml_firmado": nombre_archivo,
             "contenido_xml_firmado": base64.b64encode(xml_content.encode("utf-8")).decode("ascii"),

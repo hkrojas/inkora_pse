@@ -1,4 +1,4 @@
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     SMARTPSE_API_TOKEN: str = ""
     SMARTPSE_TIMEOUT_SECONDS: int = 30
     SMARTPSE_SERIES_FLOORS: str = ""
+    SMARTPSE_PANEL_RECOVERY_TENANT_IDS: str = ""
+    SMARTPSE_PANEL_EMAIL: SecretStr = SecretStr("")
+    SMARTPSE_PANEL_PASSWORD: SecretStr = SecretStr("")
+    SMARTPSE_PANEL_TIMEOUT_SECONDS: int = Field(default=25, ge=1, le=60)
+    SMARTPSE_PANEL_RECOVERY_BUDGET_SECONDS: int = Field(default=60, ge=10, le=120)
+    SMARTPSE_PANEL_SESSION_TTL_SECONDS: int = Field(default=900, ge=60, le=3600)
+    SMARTPSE_PANEL_AUTH_COOLDOWN_SECONDS: int = Field(default=300, ge=60, le=3600)
     DNIRUC_API_URL: str = "https://dniruc.apisperu.com/api/v1"
     DNIRUC_TOKEN: str = ""
     FACTILIZA_API_URL: str = "https://api.factiliza.com/v1"

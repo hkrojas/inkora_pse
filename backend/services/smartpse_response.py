@@ -77,9 +77,11 @@ def extract_cdr_xml(provider_response: dict | None) -> str | None:
 def extract_xml_from_signed_zip(value: str | None) -> str | None:
     if not value:
         return None
-    text = str(value).strip()
+    original_text = str(value)
+    text = original_text.strip()
     if text.startswith("<"):
-        return text
+        # The fingerprint covers the exact received text, including trailing LF.
+        return original_text
     try:
         raw = base64.b64decode(text, validate=True)
     except Exception:

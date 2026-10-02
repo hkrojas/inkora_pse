@@ -71,6 +71,14 @@ def validate_signed_sale_xml(xml: str, payload: dict) -> str:
         ns = smartpse_response.NS
         if payload.get("tipoMoneda") and verified.findtext("./cbc:DocumentCurrencyCode", namespaces=ns) != payload["tipoMoneda"]:
             raise ValueError("El XML firmado tiene otra moneda")
+        client = payload.get("client")
+        if isinstance(client, dict):
+            receivers = verified.findall("./cac:AccountingCustomerParty/cac:Party/cac:PartyIdentification/cbc:ID",
+                                         namespaces=ns)
+            if (len(receivers) != 1 or not client.get("numDoc") or not client.get("tipoDoc")
+                    or str(receivers[0].text or "").strip() != str(client["numDoc"]).strip()
+                    or str(receivers[0].get("schemeID") or "").strip() != str(client["tipoDoc"]).strip()):
+                raise ValueError("El XML firmado corresponde a otro receptor del comprobante")
         for expected, path in (("mtoImpVenta", "./cac:LegalMonetaryTotal/cbc:PayableAmount"),
                                ("mtoIGV", "./cac:TaxTotal/cbc:TaxAmount")):
             if payload.get(expected) is not None:
