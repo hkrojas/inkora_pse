@@ -4,7 +4,49 @@ from unittest.mock import MagicMock
 import pytest
 import requests
 
-from services.smartpse_client import SmartPSEClient, SmartPSEException
+from services.smartpse_client import SmartPSEClient, SmartPSEException, SmartPSENotSubmitted
+
+
+def test_signed_send_auth_failure_is_provably_not_submitted():
+    calls = []
+    def post(url, **kwargs):
+        calls.append(url)
+        assert url.endswith('/api/auth/cpe/token')
+        raise requests.Timeout('synthetic authentication timeout')
+    client = SmartPSEClient(post=post)
+    with pytest.raises(SmartPSENotSubmitted):
+        client.send_signed_xml(TenantStub(), '20123456789-01-F001-00000001', '<Invoice/>')
+    assert len(calls) == 1
+
+
+def test_signed_send_post_timeout_remains_ambiguous():
+    calls = []
+    def post(url, **kwargs):
+        calls.append(url)
+        if url.endswith('/api/auth/cpe/token'):
+            return _json_response(200, {'token_acceso':'synthetic-token','expira_en':600})
+        raise requests.Timeout('synthetic CPE timeout')
+    client = SmartPSEClient(post=post)
+    with pytest.raises(SmartPSEException) as caught:
+        client.send_signed_xml(TenantStub(), '20123456789-01-F001-00000001', '<Invoice/>')
+    assert not isinstance(caught.value, SmartPSENotSubmitted)
+    assert len(calls) == 2
+
+
+def test_signed_send_auth_refresh_after_fiscal_post_is_not_not_submitted():
+    auth_calls = 0
+    def post(url, **kwargs):
+        nonlocal auth_calls
+        if url.endswith('/api/auth/cpe/token'):
+            auth_calls += 1
+            if auth_calls == 1:
+                return _json_response(200, {'token_acceso':'synthetic-token','expira_en':600})
+            raise requests.Timeout('synthetic refresh timeout')
+        return _json_response(401, {'message':'expired'})
+    client = SmartPSEClient(post=post)
+    with pytest.raises(SmartPSEException) as caught:
+        client.send_signed_xml(TenantStub(), '20123456789-01-F001-00000001', '<Invoice/>')
+    assert not isinstance(caught.value, SmartPSENotSubmitted)
 
 
 class TenantStub:

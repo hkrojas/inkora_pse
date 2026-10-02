@@ -7,6 +7,19 @@ Actualización: el usuario solicitó integrar QR GRE y publicar. El candidato y
 la validación conjunta posterior están en `INTEGRACION_FISCAL_QR_2026-10-01.md`;
 las referencias sin commit de este informe describen el cierre del bloque inicial.
 
+Actualización 2026-10-02: la homologación demo confirmó firma, envío del mismo
+XML, CDR y PDF. La consulta devolvió 404 para facturas aceptadas, tanto demo
+como una factura productiva existente consultada por lectura. La corrección
+local retira el reenvío basado en 404 y conserva exactamente el XML firmado.
+Ver `HOMOLOGACION_SMARTPSE_DEMO_2026-10-02.md`; estas correcciones todavía no
+están publicadas y el enrolamiento productivo continúa desactivado.
+
+Alcance posterior autorizado: habilitar primero recuperación automática de CDR
+para tenant 5 y mantener desactivada la contingencia completa. El funcionamiento,
+las credenciales del panel y los límites de esta fase están documentados en
+`SMARTPSE_PANEL_RECOVERY.md`. Las secciones siguientes conservan el informe del
+bloque original; la publicación efectiva se acredita con su recibo de despliegue.
+
 ## Base productiva comprobada
 
 - Repositorio: `hkrojas/inkora_pse`, remoto local `inkora_pse`.
@@ -45,8 +58,9 @@ Archivos principales: `smartpse_client.py`, `smartpse_response.py`,
    cuotas o movimientos finales de inventario hasta obtener el resultado definitivo.
 4. Envía exactamente el XML conservado mediante `/api/cpe/enviar`.
 5. Un timeout o resultado incierto cambia el trabajo a consulta automática.
-   Una consulta HTTP 404 estructurada que confirme documento no encontrado
-   permite reenviar el mismo XML, dentro del plazo y con permisos vigentes.
+   Una consulta HTTP 404, incluso estructurada como documento no encontrado,
+   conserva la conciliación pendiente y nunca autoriza un nuevo envío: Smart PSE
+   devolvió ese resultado para documentos con CDR de aceptación en la homologación.
    Mensajes ambiguos, incluido 0111 sin CDR, mantienen consulta; no se deduce
    una caída o una mala configuración de empresa solo a partir del mensaje.
 6. Ante errores de transporte reconocidos, pausa los trabajos afectados:

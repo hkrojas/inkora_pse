@@ -16,6 +16,7 @@ from services import calculations
 from services import fiscal_xml_service
 from services import fiscal_qr_service
 from services import smartpse_client
+from services import smartpse_panel_client
 from services import smartpse_gre_credentials
 from services import smartpse_response
 from services import smartpse_ubl_service
@@ -1431,6 +1432,48 @@ def prepare_sale_document(cotizacion, db, user, tipo_comprobante):
             "provider_environment": getattr(user.tenant, "smartpse_environment", None)}
 
 
+def _recover_panel_invoice(cotizacion, tenant, prepared_sale, payload, nombre_archivo):
+    """Recover a cached CDR only for the frozen identity of an enrolled invoice."""
+    environment = (prepared_sale or {}).get("provider_environment")
+    if environment not in {"demo", "produccion"} or environment != tenant.smartpse_environment:
+        raise FacturacionException("La recuperacion del panel requiere el ambiente fiscal original confirmado.")
+    if (str(payload.get("tipoDoc")) != "01" or str(cotizacion.tipo_comprobante) != "01"
+            or str((payload.get("company") or {}).get("ruc")) != str(tenant.business_ruc)
+            or str(payload.get("serie")) != str(cotizacion.serie)
+            or _provider_correlativo(payload.get("correlativo")) != _provider_correlativo(cotizacion.correlativo)
+            or prepared_sale.get("nombre_archivo") != nombre_archivo):
+        raise FacturacionException("La identidad fiscal original no coincide; recuperacion del panel bloqueada.")
+    from services import fiscal_evidence_service
+    local_xml = cotizacion.sunat_xml_content
+    if local_xml:
+        fiscal_evidence_service.validate_signed_sale_xml(local_xml, payload)
+    try:
+        response = smartpse_panel_client.get_default_client().recover_invoice(
+            tenant, nombre_archivo, environment=environment, include_xml=not bool(local_xml),
+        )
+    except smartpse_client.SmartPSEException as exc:
+        exc.response_data = dict(exc.response_data or {}, recovery_source="smartpse_panel")
+        raise
+    response = dict(response, recovery_source="smartpse_panel")
+    if not response.get("cdr"):
+        response["estado"] = 202
+    elif local_xml:
+        response["xml_firmado"] = local_xml
+    else:
+        recovered_xml = smartpse_response.extract_xml_from_signed_zip(response.get("xml_firmado"))
+        if not recovered_xml:
+            response.pop("cdr", None)
+            response["estado"] = 202
+        else:
+            try:
+                fiscal_evidence_service.validate_signed_sale_xml(recovered_xml, payload)
+            except smartpse_client.SmartPSEException as exc:
+                exc.response_data = response
+                raise
+            response["xml_firmado"] = recovered_xml
+    return response
+
+
 def consultar_documento_fiscal(
     cotizacion: models.Cotizacion,
     user: models.User,
@@ -1456,9 +1499,20 @@ def consultar_documento_fiscal(
         payload["correlativo"] = _provider_correlativo(cotizacion.correlativo or cotizacion.id)
     nombre_archivo = smartpse_ubl_service.build_smartpse_filename(payload)
     client = smartpse_client.get_default_client()
+    panel_enabled = (str(tipo_comprobante) == "01" and str(payload.get("tipoDoc")) == "01"
+                     and smartpse_panel_client.enabled_for_tenant(tenant.id))
+    response = {}
 
     try:
-        response = client.consult_ticket(tenant, nombre_archivo)
+        try:
+            response = client.consult_ticket(tenant, nombre_archivo)
+        except smartpse_client.SmartPSEException as exc:
+            if not panel_enabled or exc.status_code != 404:
+                raise
+            response = _recover_panel_invoice(cotizacion, tenant, prepared_sale, payload, nombre_archivo)
+        else:
+            if panel_enabled and not response.get("cdr"):
+                response = _recover_panel_invoice(cotizacion, tenant, prepared_sale, payload, nombre_archivo)
         if cotizacion.sunat_xml_content and not (response.get("xml_firmado") or response.get("xml")):
             response = dict(response, xml_firmado=cotizacion.sunat_xml_content)
         result = smartpse_response.build_smartpse_result(
@@ -1468,8 +1522,10 @@ def consultar_documento_fiscal(
             status_code=200,
             require_cdr=True,
         )
+        if response.get("recovery_source") == "smartpse_panel":
+            result["recovery_source"] = "smartpse_panel"
     except smartpse_client.SmartPSEDefinitiveRejection as exc:
-        raise FacturacionRejectedException(str(exc), exc.response_data) from exc
+        raise FacturacionRejectedException(str(exc), response or exc.response_data) from exc
     except smartpse_client.SmartPSEException as exc:
         raise FacturacionException(str(exc), getattr(exc, "response_data", None),
                                   status_code=getattr(exc, "status_code", None)) from exc
@@ -1483,7 +1539,7 @@ def consultar_documento_fiscal(
     try:
         smartpse_response.validate_sale_cdr(result.get("cdr_xml") or "", payload)
     except smartpse_client.SmartPSEDefinitiveRejection as exc:
-        raise FacturacionRejectedException(str(exc), exc.response_data) from exc
+        raise FacturacionRejectedException(str(exc), response or exc.response_data) from exc
     except smartpse_client.SmartPSEException as exc:
         raise FacturacionException(str(exc), response, partial_result=result) from exc
 
