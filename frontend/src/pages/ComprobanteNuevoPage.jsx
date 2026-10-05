@@ -33,6 +33,7 @@ import ConfirmEmitDialog from '../components/documents/ConfirmEmitDialog';
 import { useToast } from '../components/ui/Toast';
 import { useInkoraDialog } from '../components/ui/InkoraDialogProvider';
 import { getEmissionOutcome } from '../lib/utils/emissionJobs';
+import { fiscalDocumentId } from '../lib/utils/fiscalDelivery';
 import {
   IGV_FACTOR,
   PAYMENT_OPTIONS,
@@ -850,9 +851,10 @@ export default function ComprobanteNuevoPage() {
         warehouse_id: form.warehouse_id ? Number(form.warehouse_id) : null,
       });
       const outcome = getEmissionOutcome(emissionResponse, tipoLabel);
+      const documentId = fiscalDocumentId(emissionResponse);
 
       if (form.enviar_correo && outcome.canShare) {
-        const share = await cotizacionesSvc.share(quote.id);
+        const share = await cotizacionesSvc.share(documentId || quote.id);
         if (share.mailto_link) {
           window.open(share.mailto_link, '_blank', 'noopener,noreferrer');
         }
@@ -861,7 +863,7 @@ export default function ComprobanteNuevoPage() {
       }
 
       toast(outcome.message, outcome.toastType);
-      navigate(`/cotizaciones/${quote.id}`);
+      navigate(`/cotizaciones/${documentId || quote.id}`);
     } catch (err) {
       toast(err.message || 'No se pudo emitir el comprobante', 'error');
     } finally {

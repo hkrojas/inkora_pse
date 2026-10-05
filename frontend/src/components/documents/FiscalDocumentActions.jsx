@@ -32,7 +32,7 @@ export default function FiscalDocumentActions({ doc, allowGuides = true, reload,
       if (signal?.aborted) return;
       setActions(result);
       // Completed jobs are inspected on demand; active work resumes after reload.
-      if (['queued', 'processing', 'retry', 'contingency_pending'].includes(result.job_status)) track(result);
+      if (['queued', 'processing', 'retry', 'contingency_pending', 'pending_confirmation'].includes(result.job_status)) track(result);
       return result;
     } catch (error) {
       if (!signal?.aborted) setActionError(error.message || 'No se pudieron comprobar las acciones fiscales.');
