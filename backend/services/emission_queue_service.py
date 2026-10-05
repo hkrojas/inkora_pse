@@ -1,16 +1,21 @@
 """services/emission_queue_service.py — Cola durable para emisión fiscal."""
 import asyncio
+import hashlib
+import json
+import math
 import signal
 import threading
 from datetime import datetime, timedelta
 from threading import Thread
 from types import SimpleNamespace
+from uuid import uuid4
+from xml.etree import ElementTree as ET
 
 from sqlalchemy.orm import Session, joinedload
 
 import crud
 import models
-from services import fiscal_evidence_service, fiscal_recovery_service, smartpse_response, smartpse_client
+from services import fiscal_evidence_service, fiscal_recovery_service, fiscal_submission_state, smartpse_response, smartpse_client, smartpse_panel_client, panel_retry_state
 from access_control import DOCUMENT_EMITTER_ROLES, get_effective_role
 from config import settings
 from database import SessionLocal, apply_tenant_context, reset_tenant_context
@@ -174,6 +179,7 @@ def enqueue_fiscal_document_job(
         return existing, False
 
     prepared = facturacion_service.prepare_sale_document(fiscal_document, db, user, tipo_comprobante)
+    submission_state = fiscal_submission_state.initial_state() if tipo_comprobante == "01" else {}
     job = crud.create_emission_job(
         db,
         tenant_id=fiscal_document.tenant_id,
@@ -184,7 +190,8 @@ def enqueue_fiscal_document_job(
         provider=provider,
         idempotency_key=idempotency_key,
         payload_snapshot={"tipo_comprobante": tipo_comprobante, "prepared_sale": prepared,
-                          "recovery_flow": tipo_comprobante == "01" and fiscal_recovery_service.enabled(user.tenant_id)},
+                          "recovery_flow": tipo_comprobante == "01" and fiscal_recovery_service.enabled(user.tenant_id),
+                          **submission_state},
         max_attempts=settings.EMISSION_MAX_ATTEMPTS,
         initial_status=initial_status,
     )
@@ -719,6 +726,116 @@ def _get_tenant_guia(db: Session, tenant_id: int, guia_id: int):
     ).first()
 
 
+def _stored_sale_rejection(document, payload):
+    """Only a readable rejection CDR matching document and issuer is terminal."""
+    if not document.sunat_cdr_content:
+        return None
+    company = payload.get("company") if isinstance(payload, dict) else None
+    if not isinstance(company, dict) or not company.get("ruc"):
+        return None
+    try:
+        root = ET.fromstring(document.sunat_cdr_content)
+        issuer = root.findtext(".//cac:ReceiverParty/cac:PartyIdentification/cbc:ID", namespaces=smartpse_response.NS)
+        if str(issuer or "").strip() != str(company["ruc"]).strip():
+            return None
+        smartpse_response.validate_sale_cdr(document.sunat_cdr_content, payload)
+    except smartpse_client.SmartPSEDefinitiveRejection as exc:
+        return facturacion_service.FacturacionRejectedException(str(exc),
+            {"cdr": document.sunat_cdr_content, "recovery_source": "inkora_existing_cdr"})
+    except (ET.ParseError, smartpse_client.SmartPSEException):
+        pass
+    return None
+
+
+def _sale_response_payload(job, document, tenant):
+    prepared = (job.payload_snapshot or {}).get("prepared_sale") or {}
+    return prepared.get("payload") or fiscal_evidence_service.expected_sale_payload(document, tenant)
+
+
+def _lock_sale_response_document(db, job, document, tenant, response, *, api_failure_recorded=False):
+    """A late provider response cannot replace a locally proven rejection."""
+    document = db.query(models.Cotizacion).filter_by(id=document.id, tenant_id=job.tenant_id).populate_existing().with_for_update().one()
+    if not (document.estado == "facturada" and document.sunat_accepted):
+        rejection = _stored_sale_rejection(document, fiscal_evidence_service.expected_sale_payload(document, tenant))
+        if rejection:
+            rejection.provider_response = response
+            if response.get("api_transport_failure") is True and not api_failure_recorded:
+                rejection.partial_result = {"api_transport_failure": True}
+            raise rejection
+    return document
+
+
+def _matching_cdr_acceptance_conflict(document, payload, response):
+    if not isinstance(response, dict):
+        return None
+    cdr = response.get("cdr_xml") or smartpse_response.extract_cdr_xml(response.get("provider_response") or response)
+    if not cdr:
+        return None
+    try:
+        root = ET.fromstring(cdr)
+        issuer = root.findtext(".//cac:ReceiverParty/cac:PartyIdentification/cbc:ID", namespaces=smartpse_response.NS)
+        if str(issuer or "").strip() != str(payload["company"]["ruc"]).strip():
+            return None
+        smartpse_response.validate_sale_cdr(cdr, payload)
+    except (ET.ParseError, smartpse_client.SmartPSEException):
+        return None
+    return {"kind": "contradictory_cdr", "document_id": document.id,
+        "identity": f"{document.serie}-{document.correlativo}", "issuer_ruc": str(payload["company"]["ruc"]),
+        "stored_cdr_sha256": hashlib.sha256(document.sunat_cdr_content.encode()).hexdigest(),
+        "received_cdr_sha256": hashlib.sha256(cdr.encode()).hexdigest()}
+
+
+def _finish_stored_sale_rejection(db, job, document, payload, response):
+    rejection = _stored_sale_rejection(document, payload)
+    if not rejection:
+        return False
+    document.provider_verification_status = "rejected"
+    document.sunat_error = document.sunat_error or str(rejection)
+    document.provider_verification_error = document.provider_verification_error or str(rejection)
+    inventory_service.release_document_holds(db, document, reason=document.sunat_error)
+    conflict = _matching_cdr_acceptance_conflict(document, payload, response)
+    if conflict:
+        details = json.dumps(conflict, sort_keys=True)
+        if not db.query(models.AuditLog.id).filter_by(action="fiscal_cdr_conflict", entity_type="cotizacion",
+                entity_id=document.id, details=details).first():
+            db.add(models.AuditLog(user_id=job.created_by_user_id, action="fiscal_cdr_conflict",
+                entity_type="cotizacion", entity_id=document.id, details=details))
+        previous = job.result_snapshot if isinstance(job.result_snapshot, dict) else {}
+        job.result_snapshot = dict(previous, cdr_conflict=conflict)
+    crud.mark_emission_job_failed(db, job.id,
+        error_message="CDR contradictorios para el mismo documento; requiere conciliacion fiscal." if conflict else str(rejection),
+        error_classification=EMISSION_ERROR_AMBIGUOUS if conflict else EMISSION_ERROR_TERMINAL)
+    return True
+
+
+def _sale_network_user(user):
+    """Read the fiscal transport columns before committing the HTTP boundary."""
+    tenant = user.tenant
+    network_tenant = SimpleNamespace(**{
+        key: getattr(tenant, key) for key in (
+            "id", "business_ruc", "smartpse_company_id", "smartpse_environment",
+            "smartpse_usuario_secundaria", "smartpse_token_acceso",
+        )
+    })
+    return SimpleNamespace(id=user.id, tenant_id=user.tenant_id, tenant=network_tenant)
+
+
+def _transition_uncertain_invoice(db, job):
+    snapshot = dict(job.payload_snapshot or {})
+    snapshot.pop("sign_only", None)
+    if snapshot.get("retry_signed_after_not_found"):
+        snapshot["send_started"] = True
+        snapshot.pop("retry_signed_after_not_found", None)
+    job.payload_snapshot = snapshot
+    job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    db.commit()
+
+
+def _reconcile_uncertain_invoice(db, job, user):
+    _transition_uncertain_invoice(db, job)
+    return _process_consult_fiscal_job(db, job, user)
+
+
 def _process_emit_fiscal_job(
     db: Session,
     job: models.DocumentEmissionJob,
@@ -729,23 +846,34 @@ def _process_emit_fiscal_job(
         raise RuntimeError("No se encontró el documento fiscal a emitir.")
 
     payload_snapshot = job.payload_snapshot or {}
+    guarded_invoice = job.provider == "smartpse" and fiscal_document.tipo_comprobante == "01"
+    if guarded_invoice and (not fiscal_submission_state.can_submit(payload_snapshot)
+                            or not payload_snapshot.get("prepared_sale")):
+        return _reconcile_uncertain_invoice(db, job, user)
     if fiscal_recovery_service.enabled_for_job(job) and fiscal_document.tipo_comprobante == "01":
         return _process_recoverable_invoice(db, job, user, fiscal_document)
+    network_user = user
+    if guarded_invoice:
+        network_user = _sale_network_user(user)
+        payload_snapshot = fiscal_submission_state.mark_possible(payload_snapshot)
+        job.payload_snapshot = payload_snapshot
     emission_leases.before_provider(db)
     result = facturacion_service.emitir_factura(
         fiscal_document,
         db,
-        user,
+        network_user,
         tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
         prepared_sale=payload_snapshot.get("prepared_sale"),
     )
     emission_leases.check(db, result)
+    fiscal_document = _lock_sale_response_document(db, job, fiscal_document, user.tenant, result)
     if result.get("pending"):
         prepared = payload_snapshot.get("prepared_sale") or {}
         fiscal_evidence_service.retain_sale_evidence(db, fiscal_document,
             result.get("provider_response") or {},
             payload=prepared.get("payload") or fiscal_evidence_service.expected_sale_payload(fiscal_document, user.tenant),
             partial_result=result)
+    fiscal_document = _lock_sale_response_document(db, job, fiscal_document, user.tenant, result)
     persisted_document = crud.guardar_respuesta_sunat(
         db,
         fiscal_document.id,
@@ -787,12 +915,231 @@ def _process_emit_fiscal_job(
     return result
 
 
+def _panel_retry_enabled(job, tenant):
+    snapshot = job.payload_snapshot
+    return (
+        isinstance(snapshot, dict) and type(snapshot.get("submission_state_version")) is int
+        and snapshot.get("submission_state_version") == fiscal_submission_state.VERSION
+        and snapshot.get("submission_phase") == fiscal_submission_state.POSSIBLE_SUBMISSION
+        and snapshot.get("send_started") is True and snapshot.get("recovery_flow") is True
+        and job.provider == "smartpse" and job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+        and job.resource_type == models.EMISSION_JOB_RESOURCE_COTIZACION
+        and smartpse_panel_client.retry_enabled_for_tenant(job.tenant_id)
+        and smartpse_panel_client.enabled_for_tenant(job.tenant_id)
+        and fiscal_recovery_service.enabled(job.tenant_id)
+        and tenant and tenant.id == job.tenant_id
+    )
+
+
+def _panel_retry_xml(job, document, tenant):
+    if (document.tenant_id != job.tenant_id or document.document_kind != "fiscal_document"
+            or document.tipo_comprobante != "01" or document.estado in {"facturada", "anulada"}
+            or document.sunat_accepted or document.provider_verification_status == "rejected"
+            or document.sunat_cdr_content or document.sunat_cdr_url
+            or not fiscal_evidence_service.has_deliverable_xml(document)):
+        return None
+    prepared = (job.payload_snapshot or {}).get("prepared_sale")
+    if not isinstance(prepared, dict) or not isinstance(prepared.get("payload"), dict):
+        return None
+    payload = prepared["payload"]
+    company = payload.get("company")
+    if (not isinstance(company, dict)
+            or prepared.get("provider_environment") not in {"demo", "produccion"}
+            or prepared["provider_environment"] != tenant.smartpse_environment
+            or str(payload.get("tipoDoc")) != "01"
+            or str(company.get("ruc")) != str(tenant.business_ruc)
+            or str(payload.get("serie")) != str(document.serie)
+            or str(payload.get("correlativo")).lstrip("0") != str(document.correlativo).lstrip("0")
+            or prepared.get("nombre_archivo") != facturacion_service.smartpse_ubl_service.build_smartpse_filename(payload)):
+        return None
+    try:
+        fiscal_evidence_service.validate_signed_sale_xml(document.sunat_xml_content, payload)
+    except smartpse_client.SmartPSEException:
+        return None
+    return document.sunat_xml_content
+
+
+def _reserve_panel_retry_attempt(db, job_id, user_id, expected_xml, metadata,
+                                 *, expected_previous_id=None, receipt=None):
+    """Persist a fenced attempt under the document lock before allowing panel I/O."""
+    if db.info.get("emission_lease", (None, None))[0] != job_id:
+        return False
+    emission_leases.check(db)
+    job = crud.get_emission_job(db, job_id)
+    user = db.query(models.User).options(joinedload(models.User.tenant).joinedload(models.Tenant.subscription)).filter_by(
+        id=user_id, tenant_id=job.tenant_id).populate_existing().first()
+    if not user or job.created_by_user_id != user.id or not _panel_retry_enabled(job, user.tenant):
+        db.rollback()
+        return False
+    try:
+        _ensure_user_can_run_emission_job(job, user)
+        _ensure_tenant_can_run_emission_job(db, user.tenant)
+        _ensure_provider_available_for_job(job, user.tenant)
+        if user.tenant.fiscal_contingency_mode:
+            db.rollback()
+            return False
+        fiscal_recovery_service.reserve_probe(db, user.tenant)
+    except (NonRetryableEmissionValidationError, fiscal_recovery_service.ProviderPaused):
+        db.rollback()
+        return False
+    # reserve_probe commits, so acquire both fences and the document lock anew.
+    emission_leases.check(db)
+    job = db.query(models.DocumentEmissionJob).filter_by(id=job_id).populate_existing().one()
+    document = db.query(models.Cotizacion).filter_by(
+        id=job.resource_id, tenant_id=job.tenant_id).populate_existing().with_for_update().first()
+    user = db.query(models.User).options(joinedload(models.User.tenant).joinedload(models.Tenant.subscription)).filter_by(
+        id=user_id, tenant_id=job.tenant_id).populate_existing().first()
+    try:
+        if not user or job.created_by_user_id != user.id or user.tenant.fiscal_contingency_mode:
+            db.rollback()
+            return False
+        _ensure_user_can_run_emission_job(job, user)
+        _ensure_tenant_can_run_emission_job(db, user.tenant)
+        _ensure_provider_available_for_job(job, user.tenant)
+        facturacion_service._smartpse_demo_mode(user)
+    except (NonRetryableEmissionValidationError, facturacion_service.FacturacionException):
+        db.rollback()
+        return False
+    if (not document or not _panel_retry_enabled(job, user.tenant)
+            or _panel_retry_xml(job, document, user.tenant) != expected_xml
+            or metadata.get("environment") != user.tenant.smartpse_environment
+            or str(metadata.get("provider_company_id") or "") != str(user.tenant.smartpse_company_id or "")
+            or metadata.get("xml_sha256") != hashlib.sha256(expected_xml.encode()).hexdigest()
+            or metadata.get("state") != "error"
+            or not smartpse_panel_client.transient_retry_error(metadata.get("provider_error_message"))
+            or not str(metadata.get("provider_document_id") or "").isdigit()
+            or int(metadata["provider_document_id"]) < 1):
+        db.rollback()
+        return False
+    if fiscal_recovery_service.note_deadline_alert(db, job, document):
+        db.rollback()
+        return False
+    response = document.provider_response if isinstance(document.provider_response, dict) else {}
+    evidence = response.get("inkora_evidence") or {}
+    eligible, previous = panel_retry_state.eligibility(db, job, document)
+    if (not eligible or (previous or {}).get("id") != expected_previous_id
+            or (previous and any(previous.get(key) != str(metadata.get(key))
+                for key in ("environment", "xml_sha256", "provider_company_id", "provider_document_id")))):
+        db.rollback()
+        return False
+    marker = {"version": 1, "id": str(uuid4()), "state": "possible_submission", "job_id": job.id,
+              "sequence": previous["sequence"] + 1 if previous else 1,
+              "previous_attempt_id": previous["id"] if previous else None,
+              "started_at": emission_leases.db_now(db).isoformat(),
+              "environment": metadata["environment"], "xml_sha256": metadata["xml_sha256"],
+              "provider_company_id": str(metadata["provider_company_id"]),
+              "provider_document_id": str(metadata["provider_document_id"])}
+    job.payload_snapshot = dict(job.payload_snapshot, panel_retry_attempt=marker)
+    document.provider_response = dict(response, inkora_evidence=dict(evidence, panel_retry_attempt=marker))
+    db.add(models.AuditLog(user_id=user.id, action="fiscal_panel_retry_started", entity_type="cotizacion",
+        entity_id=document.id, details=json.dumps(marker, sort_keys=True)))
+    emission_leases.before_provider(db)  # Last operation: fenced commit, no ORM reads before POST.
+    if receipt is not None:
+        receipt.update(marker)
+    return True
+
+
+def _complete_panel_retry_attempt(db, job_id, receipt, response):
+    """Only the synchronous result of this reserved POST can complete its marker."""
+    outcome = response.get("panel_retry_outcome")
+    if (not receipt or response.get("panel_retry_attempted") is not True
+            or response.get("panel_retry_status") != "confirmed_transient_failure"
+            or type(response.get("provider_status_code")) is not int
+            or response["provider_status_code"] != 200
+            or not isinstance(outcome, dict)
+            or set(outcome) != {"source", "response_sha256", "message"}
+            or outcome.get("source") != "retry_response"
+            or not isinstance(outcome.get("response_sha256"), str)
+            or len(outcome["response_sha256"]) != 64
+            or any(ch not in "0123456789abcdef" for ch in outcome["response_sha256"])
+            or not smartpse_panel_client.confirmed_transient_retry_error(outcome.get("message"))):
+        return None
+    if db.info.get("emission_lease", (None, None))[0] != job_id:
+        return None
+    emission_leases.check(db, response)
+    job = db.query(models.DocumentEmissionJob).filter_by(id=job_id).populate_existing().one()
+    document = db.query(models.Cotizacion).filter_by(
+        id=job.resource_id, tenant_id=job.tenant_id).populate_existing().with_for_update().one()
+    provider_response = document.provider_response if isinstance(document.provider_response, dict) else {}
+    evidence = provider_response.get("inkora_evidence")
+    if (not isinstance(evidence, dict) or evidence.get("panel_retry_attempt") != receipt
+            or (job.payload_snapshot or {}).get("panel_retry_attempt") != receipt
+            or receipt.get("state") != "possible_submission"
+            or document.sunat_accepted or document.sunat_cdr_content or document.sunat_cdr_url
+            or document.estado in {"facturada", "anulada"}
+            or document.provider_verification_status == "rejected"):
+        return None
+    now = emission_leases.db_now(db)
+    marker = dict(receipt, state="confirmed_transient_failure", completed_at=now.isoformat(),
+                  next_retry_at=(now + timedelta(seconds=fiscal_recovery_service.retry_seconds(
+                      receipt["sequence"]))).isoformat(), outcome=dict(outcome))
+    job.payload_snapshot = dict(job.payload_snapshot, panel_retry_attempt=marker)
+    document.provider_response = dict(provider_response, inkora_evidence=dict(evidence, panel_retry_attempt=marker))
+    db.add(models.AuditLog(user_id=job.created_by_user_id, action="fiscal_panel_retry_completed",
+        entity_type="cotizacion", entity_id=document.id, details=json.dumps(marker, sort_keys=True)))
+    emission_leases.before_provider(db)
+    return marker
+
+
+def _try_panel_invoice_retry(db, job, user, document, pending_error):
+    partial = pending_error.partial_result
+    if (db.info.get("emission_lease", (None, None))[0] != job.id
+            or not isinstance(partial, dict) or partial.get("pending") is not True
+            or not _panel_retry_enabled(job, user.tenant)):
+        return None
+    xml = _panel_retry_xml(job, document, user.tenant)
+    eligible, previous = panel_retry_state.eligibility(db, job, document)
+    if (not xml or not eligible
+            or fiscal_recovery_service.note_deadline_alert(db, job, document)):
+        return None
+    prepared = job.payload_snapshot["prepared_sale"]
+    job_id, user_id = job.id, user.id
+    network_user = _sale_network_user(user)
+    emission_leases.before_provider(db)  # The client's listing/XML reads also run outside SQL transactions.
+    metadata = {"recovery_source": "smartpse_panel"}
+    receipt = {}
+    if partial.get("api_transport_failure") is True:
+        metadata["api_transport_failure"] = True
+    try:
+        response = smartpse_panel_client.get_default_client().retry_invoice(
+            network_user.tenant, prepared["nombre_archivo"], environment=prepared["provider_environment"],
+            expected_xml=xml, before_submit=lambda state: _reserve_panel_retry_attempt(
+                db, job_id, user_id, xml, state,
+                expected_previous_id=(previous or {}).get("id"), receipt=receipt))
+    except smartpse_client.SmartPSEException as exc:
+        if (getattr(exc, "response_data", None) or {}).get("panel_retry_attempted") is not True:
+            return None
+        response = exc.response_data
+    emission_leases.check(db, response)
+    if response.get("cdr"):
+        verified = facturacion_service.validate_sale_response_xml(prepared["payload"], response, frozen_xml=xml)
+        try:
+            result = smartpse_response.build_smartpse_result(prepared["payload"], verified,
+                endpoint="smartpse_panel_retry_reconciliation", status_code=200, require_cdr=True)
+        except smartpse_client.SmartPSEDefinitiveRejection as exc:
+            raise facturacion_service.FacturacionRejectedException(
+                str(exc), verified, partial_result=metadata) from exc
+        result.update(metadata, provider_verification_status="verified",
+                      provider_verified_at=datetime.now().isoformat())
+        return result
+    if response.get("panel_retry_attempted") is not True:
+        return None
+    completed = _complete_panel_retry_attempt(db, job_id, receipt, response)
+    if completed:
+        metadata["panel_retry_next_at"] = completed["next_retry_at"]
+    # An uncertain panel POST does not establish an API CPE outage. Preserve
+    # only the API transport failure independently observed before this attempt.
+    raise facturacion_service.FacturacionException(
+        "Reintento del panel pendiente de CDR; se mantiene la conciliacion.",
+        response, partial_result=dict(metadata, pending=True, xml=xml))
+
+
 def _process_consult_fiscal_job(
     db: Session,
     job: models.DocumentEmissionJob,
     user: models.User,
 ) -> dict:
-    """Reconcile an already submitted sale document without sending it again."""
+    """Recover CDR first; an explicitly enrolled invoice may retry through its panel record."""
     fiscal_document = _get_tenant_cotizacion(db, job.tenant_id, job.resource_id)
     if not fiscal_document:
         raise RuntimeError("No se encontró el documento fiscal a conciliar.")
@@ -819,20 +1166,36 @@ def _process_consult_fiscal_job(
         network_user = SimpleNamespace(id=user.id, tenant_id=user.tenant_id, tenant=network_tenant)
     db.commit()  # never hold an SQL transaction during provider consultation
     emission_leases.before_provider(db)
-    # Smart PSE can return 404 even for an accepted invoice. A missing lookup
-    # is not proof that an earlier submission failed; reconciliation never sends.
-    result = facturacion_service.consultar_documento_fiscal(
-        network_document, network_user, tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
-        prepared_sale=payload_snapshot.get("prepared_sale"))
+    # Smart PSE can return 404 even for an accepted invoice. Only positively
+    # identified panel failures may enter the independently gated retry path.
+    try:
+        result = facturacion_service.consultar_documento_fiscal(
+            network_document, network_user, tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
+            prepared_sale=payload_snapshot.get("prepared_sale"))
+    except facturacion_service.FacturacionException as exc:
+        if isinstance(exc, facturacion_service.FacturacionRejectedException):
+            raise
+        result = _try_panel_invoice_retry(db, job, user, fiscal_document, exc)
+        if result is None:
+            raise
     emission_leases.check(db, result)
-    if fiscal_recovery_service.enabled_for_job(job) and result.get("recovery_source") != "smartpse_panel":
-        fiscal_recovery_service.service_recovered(db, user.tenant, token=probe_token)
+    api_failure_recorded = False
+    if fiscal_recovery_service.enabled_for_job(job):
+        if result.get("api_transport_failure") is True:
+            fiscal_recovery_service.service_failed(db, user.tenant, token=probe_token)
+            api_failure_recorded = True
+        elif result.get("recovery_source") != "smartpse_panel":
+            fiscal_recovery_service.service_recovered(db, user.tenant, token=probe_token)
     if result.get("recovery_source") == "smartpse_panel" and not fiscal_document.sunat_xml_content:
+        fiscal_document = _lock_sale_response_document(db, job, fiscal_document, user.tenant, result,
+            api_failure_recorded=api_failure_recorded)
         if not fiscal_evidence_service.retain_sale_evidence(db, fiscal_document,
                 result.get("provider_response") or {},
                 payload=payload_snapshot["prepared_sale"]["payload"], partial_result=result):
             raise facturacion_service.FacturacionException("No se pudo conservar el XML firmado recuperado.",
                 result.get("provider_response"), partial_result=result)
+    fiscal_document = _lock_sale_response_document(db, job, fiscal_document, user.tenant, result,
+        api_failure_recorded=api_failure_recorded)
     persisted_document = crud.guardar_respuesta_sunat(
         db,
         fiscal_document.id,
@@ -877,34 +1240,24 @@ def _process_consult_fiscal_job(
 
 def _process_recoverable_invoice(db, job, user, document):
     snapshot = dict(job.payload_snapshot or {})
+    if not fiscal_submission_state.can_submit(snapshot) or not snapshot.get("prepared_sale"):
+        return _reconcile_uncertain_invoice(db, job, user)
     if not snapshot.get("recovery_flow"):
         snapshot["recovery_flow"] = True
         job.payload_snapshot = dict(snapshot)
         db.commit()
-    if snapshot.get("send_started") or snapshot.get("retry_signed_after_not_found"):
-        # Old snapshots may authorize another send after a 404. Preserve their
-        # submission history, but retire that authorization before any provider I/O.
-        snapshot["send_started"] = True
-        snapshot.pop("retry_signed_after_not_found", None)
-        job.payload_snapshot = snapshot
-        job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
-        db.commit()
-        return _process_consult_fiscal_job(db, job, user)
     prepared = snapshot.get("prepared_sale")
-    if not prepared:
-        prepared = facturacion_service.prepare_sale_document(document, db, user, document.tipo_comprobante)
-        snapshot["prepared_sale"] = prepared
-        job.payload_snapshot = snapshot
-        db.commit()
     client = smartpse_client.get_default_client()
     demo = facturacion_service._smartpse_demo_mode(user)
     if fiscal_recovery_service.note_deadline_alert(db, job, document):
         raise NonRetryableEmissionValidationError("Vencio el plazo de envio de la factura; requiere revision fiscal.")
     if not fiscal_evidence_service.has_deliverable_xml(document):
+        sign_probe = fiscal_recovery_service.reserve_probe(db, user.tenant, service="cpe:sign")
         snapshot["sign_only"] = True
         job.payload_snapshot = dict(snapshot)
+        network_user = _sale_network_user(user)
         emission_leases.before_provider(db)
-        response = client.sign_xml(user.tenant, prepared["nombre_archivo"], prepared["unsigned_xml"], demo=demo)
+        response = client.sign_xml(network_user.tenant, prepared["nombre_archivo"], prepared["unsigned_xml"], demo=demo)
         emission_leases.check(db, response)
         if not fiscal_evidence_service.retain_sale_evidence(db, document, response, payload=prepared["payload"]):
             raise facturacion_service.FacturacionException("Evidencia XML invalida: no se obtuvo firma verificable.", response)
@@ -912,6 +1265,7 @@ def _process_recoverable_invoice(db, job, user, document):
         snapshot["signed_ready"] = True
         job.payload_snapshot = dict(snapshot)
         db.commit()
+        fiscal_recovery_service.service_recovered(db, user.tenant, token=sign_probe, service="cpe:sign")
         try:
             _run_async_syncsafe(pdf_storage_service.process_pdf_background(document.id, job.tenant_id))
         except Exception:
@@ -921,16 +1275,17 @@ def _process_recoverable_invoice(db, job, user, document):
     if user.tenant.fiscal_contingency_mode:
         raise fiscal_recovery_service.ProviderPaused(emission_leases.db_now(db) + timedelta(seconds=settings.FISCAL_RECOVERY_MAX_SECONDS))
     token = fiscal_recovery_service.reserve_probe(db, user.tenant)
-    snapshot = dict(job.payload_snapshot or {})
-    snapshot["send_started"] = True
-    snapshot.pop("retry_signed_after_not_found", None)
+    snapshot = fiscal_submission_state.mark_possible(job.payload_snapshot or {})
     snapshot["send_count"] = int(snapshot.get("send_count") or 0) + 1
     job.payload_snapshot = snapshot
+    network_user = _sale_network_user(user)
+    signed_xml = document.sunat_xml_content
     emission_leases.before_provider(db)
-    response = client.send_signed_xml(user.tenant, prepared["nombre_archivo"], document.sunat_xml_content, demo=demo)
+    response = client.send_signed_xml(network_user.tenant, prepared["nombre_archivo"], signed_xml, demo=demo)
     response = dict(response)
-    response.setdefault("xml_firmado", document.sunat_xml_content)
     try:
+        response = facturacion_service.validate_sale_response_xml(
+            prepared["payload"], response, frozen_xml=signed_xml)
         result = smartpse_response.build_smartpse_result(prepared["payload"], response,
             endpoint="/api/cpe/enviar-demo" if demo else "/api/cpe/enviar", status_code=200, require_cdr=True)
     except smartpse_client.SmartPSEDefinitiveRejection as exc:
@@ -940,6 +1295,7 @@ def _process_recoverable_invoice(db, job, user, document):
         result["provider_verified_at"] = datetime.now().isoformat()
         fiscal_recovery_service.service_recovered(db, user.tenant, token=token)
     emission_leases.check(db, result)
+    document = _lock_sale_response_document(db, job, document, user.tenant, result)
     persisted = crud.guardar_respuesta_sunat(db, document.id, result, tenant_id=job.tenant_id)
     if result.get("cdr_xml") and persisted:
         try:
@@ -1143,6 +1499,8 @@ def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> 
 
         if job.lease_token and db.info.get("emission_lease") != (job.id, job.lease_token):
             raise emission_leases.LeaseLost()
+        if job.payload_snapshot is not None and not isinstance(job.payload_snapshot, dict):
+            raise NonRetryableEmissionValidationError("Snapshot fiscal no reconocido; requiere revisión.")
         tenant_token = _apply_optional_tenant_context(db, job.tenant_id)
         user = _load_job_user(db, job)
         if not user:
@@ -1150,6 +1508,15 @@ def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> 
         crud.mark_emission_job_attempt_started(db, job.id)
         db.expire(job)
         job = crud.get_emission_job(db, job.id)
+        if job.provider == "smartpse" and job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL:
+            document = _get_tenant_cotizacion(db, job.tenant_id, job.resource_id)
+            if document and document.tipo_comprobante == "01":
+                snapshot = job.payload_snapshot or {}
+                if not fiscal_submission_state.can_submit(snapshot) or not snapshot.get("prepared_sale"):
+                    # Change only the action before checking the execution
+                    # context. Reconciliation keeps its existing tenant checks
+                    # and cannot submit, even if the creator is now inactive.
+                    _transition_uncertain_invoice(db, job)
         _validate_job_execution_context(db, job, user)
 
         if job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL:
@@ -1202,6 +1569,13 @@ def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> 
         job = crud.get_emission_job(db, job_id)
         if job:
             seconds = max(1, int((exc.until - emission_leases.db_now(db)).total_seconds()))
+            if (job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL
+                    and fiscal_submission_state.can_submit(job.payload_snapshot)):
+                document = _get_tenant_cotizacion(db, job.tenant_id, job.resource_id)
+                if document and document.tipo_comprobante == "01":
+                    remaining = max(1, int((fiscal_recovery_service.invoice_deadline(document)
+                                          - emission_leases.db_now(db)).total_seconds()))
+                    seconds = min(seconds, remaining)
             crud.mark_emission_job_retry(db, job.id, error_message=str(exc),
                 retry_in_seconds=seconds, error_classification=EMISSION_ERROR_TRANSIENT)
         return False
@@ -1229,8 +1603,7 @@ def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> 
         job = crud.get_emission_job(db, job_id)
         if (job and job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL
                 and fiscal_recovery_service.enabled_for_job(job)):
-            snapshot = dict(job.payload_snapshot or {})
-            snapshot["send_started"] = False
+            snapshot = fiscal_submission_state.mark_not_submitted(job.payload_snapshot or {})
             snapshot.pop("sign_only", None)
             job.payload_snapshot = snapshot
             db.commit()
@@ -1249,18 +1622,36 @@ def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> 
             error_classification = _classify_emission_error(message)
             sale_job = job.action in {models.EMISSION_JOB_ACTION_EMIT_FISCAL, models.EMISSION_JOB_ACTION_CONSULT_FISCAL}
             sign_only = (job.payload_snapshot or {}).get("sign_only") and not (job.payload_snapshot or {}).get("send_started")
+            if sign_only and 400 <= (getattr(exc, "status_code", None) or 0) < 500:
+                error_classification = EMISSION_ERROR_VALIDATION
+            partial = getattr(exc, "partial_result", None)
+            internal_api_failure = isinstance(partial, dict) and partial.get("api_transport_failure") is True
+            api_failure_recorded = False
+            if sale_job and not sign_only and internal_api_failure and fiscal_recovery_service.enabled_for_job(job):
+                # This commits; record the outage before acquiring the document's terminal-state lock.
+                fiscal_recovery_service.service_failed(db, user.tenant)
+                api_failure_recorded = True
             if sale_job:
                 document = _get_tenant_cotizacion(db, job.tenant_id, job.resource_id)
                 if document:
-                    prepared = (job.payload_snapshot or {}).get("prepared_sale") or {}
-                    payload = prepared.get("payload") or fiscal_evidence_service.expected_sale_payload(document, user.tenant)
+                    document = db.query(models.Cotizacion).filter_by(id=document.id, tenant_id=job.tenant_id).populate_existing().with_for_update().one()
+                    if document.estado == "facturada" and document.sunat_accepted:
+                        crud.mark_emission_job_succeeded(db, job.id, result_snapshot={"success": True, "source": "existing_accepted_cdr"})
+                        return True
+                    payload = _sale_response_payload(job, document, user.tenant)
+                    terminal_payload = fiscal_evidence_service.expected_sale_payload(document, user.tenant)
                     response = getattr(exc, "provider_response", None) or getattr(exc, "response_data", None) or {}
+                    if _finish_stored_sale_rejection(db, job, document, terminal_payload, response):
+                        return False
                     fiscal_evidence_service.retain_sale_evidence(db, document, response, payload=payload,
                         status_code=getattr(exc, "status_code", None), partial_result=getattr(exc, "partial_result", None))
                     document = db.query(models.Cotizacion).filter_by(id=document.id, tenant_id=job.tenant_id).populate_existing().with_for_update().one()
                     if document.estado == "facturada" and document.sunat_accepted:
                         crud.mark_emission_job_succeeded(db, job.id, result_snapshot={"success": True, "source": "existing_accepted_cdr"})
                         return True
+                    terminal_payload = fiscal_evidence_service.expected_sale_payload(document, user.tenant)
+                    if _finish_stored_sale_rejection(db, job, document, terminal_payload, response):
+                        return False
                     if document.estado != "facturada":
                         document.sunat_error = message
                         document.provider_verification_status = "pending_confirmation"
@@ -1272,22 +1663,57 @@ def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> 
                         except Exception:
                             logger.exception("retained_invoice_pdf_pending document_id=%s", document.id)
             transport_error = ((getattr(exc, "status_code", None) or 0) >= 500
-                or any(fragment in message.lower() for fragment in ("timeout", "timed out", "connection", "conexion", "conexión", "service unavailable", "servicio no disponible")))
+                or any(fragment in message.lower() for fragment in ("timeout", "timed out", "connection", "conexion", "conexión", "no se pudo conectar", "service unavailable", "servicio no disponible")))
             probe = (db.info.get("fiscal_probe") or (None, None))[1]
             provider_response = getattr(exc, "provider_response", None) or getattr(exc, "response_data", None) or {}
+            partial_result = getattr(exc, "partial_result", None)
+            api_transport_failure = (isinstance(partial_result, dict)
+                                     and partial_result.get("api_transport_failure") is True)
+            if api_transport_failure:
+                transport_error = True
             if probe and str(provider_response.get("estado")) == "202":
                 transport_error = True
-            if (sale_job and transport_error and fiscal_recovery_service.enabled_for_job(job) and not sign_only
-                    and provider_response.get("recovery_source") != "smartpse_panel"):
+            retry_signing = (
+                sale_job and job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL
+                and sign_only and transport_error
+                and isinstance(exc, (smartpse_client.SmartPSEException, facturacion_service.FacturacionException))
+                and not (400 <= (getattr(exc, "status_code", None) or 0) < 500)
+                and fiscal_recovery_service.enabled_for_job(job)
+                and fiscal_submission_state.can_submit(job.payload_snapshot)
+            )
+            if retry_signing:
+                fiscal_recovery_service.service_failed(db, user.tenant, service="cpe:sign")
+                if fiscal_recovery_service.note_deadline_alert(db, job, document):
+                    crud.mark_emission_job_failed(db, job.id,
+                        error_message="Vencio el plazo de firma/envio de la factura; requiere revision fiscal.",
+                        error_classification=EMISSION_ERROR_VALIDATION)
+                else:
+                    remaining = max(1, int((fiscal_recovery_service.invoice_deadline(document)
+                                          - emission_leases.db_now(db)).total_seconds()))
+                    crud.mark_emission_job_retry(db, job.id, error_message=message,
+                        retry_in_seconds=min(fiscal_recovery_service.retry_seconds(job.attempts), remaining),
+                        error_classification=EMISSION_ERROR_TRANSIENT,
+                        action=models.EMISSION_JOB_ACTION_EMIT_FISCAL)
+                return False
+            if (sale_job and transport_error and not api_failure_recorded
+                    and fiscal_recovery_service.enabled_for_job(job) and not sign_only
+                    and (api_transport_failure or provider_response.get("recovery_source") != "smartpse_panel")):
                 fiscal_recovery_service.service_failed(db, user.tenant)
             should_reconcile_fiscal = (
                 sale_job and not sign_only and not isinstance(exc, facturacion_service.FacturacionRejectedException)
                 and (error_classification in {EMISSION_ERROR_AMBIGUOUS, EMISSION_ERROR_PROVIDER_POLICY, EMISSION_ERROR_TRANSIENT}
+                     or ((job.payload_snapshot or {}).get("submission_phase") == fiscal_submission_state.POSSIBLE_SUBMISSION)
                      or transport_error or (job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
                                             and not isinstance(exc, facturacion_service.FacturacionRejectedException)))
             )
             if should_reconcile_fiscal:
                 retry_in = fiscal_recovery_service.retry_seconds(job.attempts or 1)
+                # Panel cooldown counts actual POSTs, not intervening CDR reads.
+                # The reservation rechecks the durable deadline even if another
+                # operation wakes this job early.
+                if isinstance(partial_result, dict) and partial_result.get("panel_retry_next_at"):
+                    retry_in = max(1, math.ceil((datetime.fromisoformat(
+                        partial_result["panel_retry_next_at"]) - emission_leases.db_now(db)).total_seconds()))
                 crud.mark_emission_job_retry(
                     db,
                     job.id,
@@ -1298,23 +1724,26 @@ def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> 
                 )
             elif sale_job and isinstance(exc, facturacion_service.FacturacionRejectedException):
                 # A rejection becomes definitive only with a matching rejection CDR.
-                document = _get_tenant_cotizacion(db, job.tenant_id, job.resource_id)
+                document = db.query(models.Cotizacion).filter_by(id=job.resource_id,
+                    tenant_id=job.tenant_id).populate_existing().with_for_update().first()
+                if document and document.estado == "facturada" and document.sunat_accepted:
+                    crud.mark_emission_job_succeeded(db, job.id,
+                        result_snapshot={"success": True, "source": "existing_accepted_cdr"})
+                    return True
+                if document and _finish_stored_sale_rejection(db, job, document,
+                        fiscal_evidence_service.expected_sale_payload(document, user.tenant), provider_response):
+                    return False
                 cdr = smartpse_response.extract_cdr_xml(getattr(exc, "provider_response", None))
                 confirmed = False
                 if cdr and document:
                     payload = fiscal_evidence_service.expected_sale_payload(document, user.tenant)
-                    try:
-                        smartpse_response.validate_sale_cdr(cdr, payload)
-                    except smartpse_client.SmartPSEDefinitiveRejection:
-                        confirmed = True
-                    except smartpse_client.SmartPSEException:
-                        pass
+                    confirmed = _stored_sale_rejection(SimpleNamespace(sunat_cdr_content=cdr), payload) is not None
                 if confirmed:
                     document.sunat_cdr_content = cdr
                     document.provider_verification_status = "rejected"
                     inventory_service.release_document_holds(db, document, reason=message)
                     db.commit()
-                    if (fiscal_recovery_service.enabled_for_job(job)
+                    if (fiscal_recovery_service.enabled_for_job(job) and not api_failure_recorded
                             and provider_response.get("recovery_source") != "smartpse_panel"):
                         fiscal_recovery_service.service_recovered(db, user.tenant, token=probe)
                     crud.mark_emission_job_failed(db, job.id, error_message=message,
@@ -1399,6 +1828,7 @@ def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> 
         return False
     finally:
         db.info.pop("fiscal_probe", None)
+        db.info.pop("fiscal_sign_probe", None)
         if tenant_token is not None:
             reset_tenant_context(tenant_token)
         if owns_session:

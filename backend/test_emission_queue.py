@@ -267,6 +267,12 @@ def test_worker_recovers_only_missing_remote_verification_as_consult_job(db_sess
         user,
         tipo_comprobante="01",
     )
+    # This case represents a historical job, with no positive submission phase.
+    snapshot = dict(job.payload_snapshot)
+    snapshot.pop("submission_state_version", None)
+    snapshot.pop("submission_phase", None)
+    job.payload_snapshot = snapshot
+    db_session.commit()
     crud.mark_emission_job_pending_confirmation(
         db_session,
         job.id,
@@ -294,6 +300,10 @@ def test_worker_recovers_provider_policy_as_consult_job(db_session):
         user,
         tipo_comprobante="01",
     )
+    # A provider response is only possible after the committed HTTP boundary.
+    from services.fiscal_submission_state import mark_possible
+    job.payload_snapshot = mark_possible(job.payload_snapshot)
+    db_session.commit()
     crud.mark_emission_job_pending_confirmation(
         db_session,
         job.id,

@@ -117,6 +117,14 @@ def guardar_respuesta_sunat(
         if was_issued and db_cot.sunat_accepted:
             db.commit()
             return db_cot
+        if (db_cot.sunat_xml_content and data_sunat.get("xml")
+                and data_sunat["xml"] != db_cot.sunat_xml_content):
+            from services.smartpse_client import SmartPSEException
+
+            raise SmartPSEException(
+                "El proveedor devolvio otro XML para una identidad ya firmada; requiere conciliacion.",
+                data_sunat.get("provider_response") or data_sunat,
+            )
         links = _extract_provider_links(data_sunat)
         if links:
             db_cot.sunat_xml_url = links.get("xml")

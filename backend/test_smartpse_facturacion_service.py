@@ -9,6 +9,7 @@ import pytest
 import crud
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
 from services import facturacion_service
+from test_fiscal_contingency_recovery import sign_xml
 
 
 def _zip_b64(filename: str, content: str) -> str:
@@ -246,13 +247,10 @@ def test_emitir_factura_reintenta_solo_consulta_hasta_obtener_cdr(db_session):
     assert sleep_mock.call_count == 2
 
 
-def test_consultar_documento_fiscal_recupera_aceptacion_sin_reenviar(db_session):
+def test_consultar_documento_fiscal_recupera_aceptacion_sin_reenviar(db_session, sign_xml):
     tenant, user, fiscal = _make_smartpse_fiscal_document(db_session)
-    signed_xml = _sale_xml(
-        tenant,
-        doc_id=f"{fiscal.serie}-{int(fiscal.correlativo):08d}",
-        issue_date=fiscal.fecha_emision.date().isoformat(),
-    )
+    prepared = facturacion_service.prepare_sale_document(fiscal, db_session, user, "01")
+    signed_xml = sign_xml(prepared["unsigned_xml"])
     fake_client = MagicMock()
     fake_client.consult_ticket.return_value = {
         "estado": 200,

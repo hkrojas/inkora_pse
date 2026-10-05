@@ -4,16 +4,44 @@ No advisory/row lock is held while calling a fiscal provider. An expired send is
 ambiguous, never automatically sent again. Database fencing cannot cancel HTTP.
 """
 from datetime import datetime, timedelta
+from collections.abc import Mapping
 from uuid import uuid4
 
 from sqlalchemy import event, func, or_, select, text, update
 
 import models
+from services.fiscal_submission_state import can_submit
 
 Job = models.DocumentEmissionJob
 Attempt = models.DocumentEmissionAttempt
 RUNNABLE = ("queued", "retry")
 CLAIM_LOCK = 482190317  # stable across every replica / mode
+
+# Mirror can_submit, including JSON types. Reading the original version text
+# rejects 1.0/1e0 that JSONB numeric equality would otherwise equate with 1.
+_CAN_SUBMIT_SQL = """coalesce(
+    jsonb_typeof(j.payload_snapshot::jsonb) = 'object'
+    AND jsonb_typeof(j.payload_snapshot::jsonb->'submission_state_version') = 'number'
+    AND j.payload_snapshot->>'submission_state_version' = '1'
+    AND j.payload_snapshot::jsonb->'submission_phase' IN ('"not_started"'::jsonb, '"not_submitted"'::jsonb)
+    AND (j.payload_snapshot::jsonb->'send_started' IS NULL
+         OR j.payload_snapshot::jsonb->'send_started' = 'false'::jsonb)
+    AND (j.payload_snapshot::jsonb->'retry_signed_after_not_found' IS NULL
+         OR j.payload_snapshot::jsonb->'retry_signed_after_not_found' = 'false'::jsonb), FALSE)"""
+
+_REQUIRES_CONSULT_SQL = f"""CASE
+    WHEN j.payload_snapshot::jsonb->'tipo_comprobante' = '"03"'::jsonb
+    THEN (j.execution_started_at IS NOT NULL OR (j.lease_token IS NULL AND coalesce(j.attempts,0) > 0))
+    ELSE NOT ({_CAN_SUBMIT_SQL}) END"""
+
+
+def requires_fiscal_consult(job, *, pending_confirmation=False):
+    """Invoice proof is explicit; an unexecuted boleta keeps its normal flow."""
+    snapshot = job.payload_snapshot
+    if isinstance(snapshot, Mapping) and snapshot.get("tipo_comprobante") == "03":
+        return (pending_confirmation or job.execution_started_at is not None
+                or (job.lease_token is None and (job.attempts or 0) > 0))
+    return not can_submit(snapshot)
 
 
 class LeaseLost(RuntimeError):
@@ -111,7 +139,7 @@ def recover_coordinator(db, *, legacy_timeout):
         count = recover_stale_processing_jobs(db, stale_before=datetime.now()-timedelta(seconds=legacy_timeout))
         count += recover_pending_fiscal_reconciliations(db)
         return count + recover(db)
-    row = db.execute(text("""
+    row = db.execute(text(f"""
         WITH expired AS (
           SELECT id FROM document_emission_jobs WHERE status='processing' AND (
             (lease_token IS NOT NULL AND lease_expires_at <= clock_timestamp()::timestamp) OR
@@ -121,16 +149,16 @@ def recover_coordinator(db, *, legacy_timeout):
         ), recovered AS (
           UPDATE document_emission_jobs j SET
             action=CASE WHEN j.provider='smartpse' AND j.action IN ('emit_fiscal_document','consult_fiscal_document')
-                         AND (j.execution_started_at IS NOT NULL OR (j.lease_token IS NULL AND j.attempts > 0))
-                         AND NOT (coalesce(j.payload_snapshot->>'sign_only','false')='true'
-                                  AND coalesce(j.payload_snapshot->>'send_started','false')!='true')
+                         AND ({_REQUIRES_CONSULT_SQL})
                          THEN 'consult_fiscal_document' ELSE j.action END,
             status=CASE WHEN j.provider='smartpse' AND j.action IN ('emit_fiscal_document','consult_fiscal_document') THEN 'retry'
                         WHEN j.lease_token IS NOT NULL AND j.execution_started_at IS NOT NULL
                          THEN 'pending_confirmation'
                         WHEN j.lease_token IS NULL AND j.attempts >= j.max_attempts THEN 'failed'
                         ELSE 'retry' END,
-            last_error=CASE WHEN j.lease_token IS NOT NULL AND j.execution_started_at IS NOT NULL
+            last_error=CASE WHEN j.provider='smartpse' AND j.action IN ('emit_fiscal_document','consult_fiscal_document')
+                         AND NOT ({_REQUIRES_CONSULT_SQL}) THEN 'Reserva recuperada antes de iniciar envio fiscal.'
+                        WHEN j.lease_token IS NOT NULL AND j.execution_started_at IS NOT NULL
                          THEN 'Reserva vencida tras iniciar ejecución; conciliar antes de reenviar.'
                         ELSE 'Reserva recuperada tras interrupción del worker.' END,
             locked_at=NULL, processing_started_at=NULL,
@@ -138,21 +166,23 @@ def recover_coordinator(db, *, legacy_timeout):
                         WHEN j.execution_started_at IS NOT NULL OR j.attempts >= j.max_attempts
                          THEN clock_timestamp()::timestamp ELSE NULL END,
             available_at=clock_timestamp()::timestamp,updated_at=clock_timestamp()::timestamp
-          FROM expired e WHERE j.id=e.id RETURNING j.id,j.attempts,j.status,j.last_error,j.lease_token
+          FROM expired e WHERE j.id=e.id RETURNING j.id,j.attempts,j.status,j.last_error,j.lease_token,j.provider,j.action
         ), attempts AS (
           UPDATE document_emission_attempts a SET status=r.status,error_message=r.last_error,
-            error_classification=CASE WHEN r.status='pending_confirmation' THEN 'ambiguous' ELSE 'transient' END,
+            error_classification=CASE WHEN r.status='pending_confirmation'
+              OR (r.provider='smartpse' AND r.action='consult_fiscal_document')
+              THEN 'ambiguous' ELSE 'transient' END,
             finished_at=clock_timestamp()::timestamp
           FROM recovered r WHERE a.job_id=r.id AND a.attempt_number=r.attempts
             AND a.lease_token IS NOT DISTINCT FROM r.lease_token RETURNING a.id
         ), reconciled AS (
-          UPDATE document_emission_jobs SET action='consult_fiscal_document',status='retry',
+          UPDATE document_emission_jobs j SET
+            action=CASE WHEN j.payload_snapshot::jsonb->'tipo_comprobante' = '"03"'::jsonb THEN 'consult_fiscal_document'
+                        WHEN {_CAN_SUBMIT_SQL} THEN j.action ELSE 'consult_fiscal_document' END,status='retry',
             available_at=clock_timestamp()::timestamp,finished_at=NULL,locked_at=NULL,
             processing_started_at=NULL,updated_at=clock_timestamp()::timestamp
           WHERE id IN (SELECT id FROM document_emission_jobs WHERE provider='smartpse'
             AND action IN ('emit_fiscal_document','consult_fiscal_document') AND status='pending_confirmation'
-            AND NOT (coalesce(payload_snapshot->>'sign_only','false')='true'
-                     AND coalesce(payload_snapshot->>'send_started','false')!='true')
             FOR UPDATE SKIP LOCKED) RETURNING id
         ) SELECT (SELECT count(*) FROM recovered) + (SELECT count(*) FROM reconciled) AS n
     """), {"timeout": legacy_timeout}).one()
@@ -188,20 +218,22 @@ def recover(db):
     for job in jobs:
         started = job.execution_started_at is not None
         sale = job.provider == "smartpse" and job.action in {"emit_fiscal_document", "consult_fiscal_document"}
-        snapshot = job.payload_snapshot or {}
-        signing = snapshot.get("sign_only") and not snapshot.get("send_started")
+        safe_to_submit = not requires_fiscal_consult(job)
         job.status = "retry" if sale or not started else "pending_confirmation"
-        if sale and started and not signing:
+        if sale and not safe_to_submit:
             job.action = "consult_fiscal_document"
-        job.last_error = ("Reserva vencida tras iniciar ejecución; conciliar antes de reenviar."
+        job.last_error = ("Reserva recuperada antes de iniciar envio fiscal." if sale and safe_to_submit else
+                          "Reserva vencida tras iniciar ejecución; conciliar antes de reenviar."
                           if started else "Reserva vencida antes de iniciar ejecución.")
         job.available_at = now
-        job.finished_at = now if started else None
+        job.finished_at = now if started and not sale else None
         job.locked_at = None
+        job.processing_started_at = None
         job.updated_at = now
         if started:
             db.query(Attempt).filter(Attempt.job_id == job.id, Attempt.lease_token == job.lease_token).update({
-                Attempt.status: "pending_confirmation", Attempt.error_classification: "ambiguous",
+                Attempt.status: job.status,
+                Attempt.error_classification: "ambiguous" if not sale or job.action == "consult_fiscal_document" else "transient",
                 Attempt.error_message: job.last_error, Attempt.finished_at: now,
             }, synchronize_session=False)
     if jobs:

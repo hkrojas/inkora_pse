@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     SMARTPSE_TIMEOUT_SECONDS: int = 30
     SMARTPSE_SERIES_FLOORS: str = ""
     SMARTPSE_PANEL_RECOVERY_TENANT_IDS: str = ""
+    SMARTPSE_PANEL_RETRY_TENANT_IDS: str = ""
     SMARTPSE_PANEL_EMAIL: SecretStr = SecretStr("")
     SMARTPSE_PANEL_PASSWORD: SecretStr = SecretStr("")
     SMARTPSE_PANEL_TIMEOUT_SECONDS: int = Field(default=25, ge=1, le=60)

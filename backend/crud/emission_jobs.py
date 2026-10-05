@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 import models
+from services.emission_leases import requires_fiscal_consult
 
 ACTIVE_JOB_STATUSES = {
     models.EMISSION_JOB_STATUS_QUEUED,
@@ -269,17 +270,16 @@ def mark_emission_job_retry(
 
 
 def recover_pending_fiscal_reconciliations(db: Session):
-    """Convert old ambiguous sends into consult-only jobs without resending XML."""
+    """Resume proven pre-submission jobs; reconcile every ambiguous history."""
     jobs = db.query(models.DocumentEmissionJob).filter(
         models.DocumentEmissionJob.provider == "smartpse",
         models.DocumentEmissionJob.action.in_([models.EMISSION_JOB_ACTION_EMIT_FISCAL, models.EMISSION_JOB_ACTION_CONSULT_FISCAL]),
         models.DocumentEmissionJob.status == models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION,
-    ).all()
+    ).with_for_update(skip_locked=True).all()
 
     now = datetime.now()
     for job in jobs:
-        snapshot = job.payload_snapshot or {}
-        if not (snapshot.get("sign_only") and not snapshot.get("send_started")):
+        if requires_fiscal_consult(job, pending_confirmation=True):
             job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
         job.status = models.EMISSION_JOB_STATUS_RETRY
         job.available_at = now
@@ -454,8 +454,7 @@ def recover_stale_processing_jobs(
     recovered = 0
     for job in jobs:
         sale = job.provider == "smartpse" and job.action in {models.EMISSION_JOB_ACTION_EMIT_FISCAL, models.EMISSION_JOB_ACTION_CONSULT_FISCAL}
-        snapshot = job.payload_snapshot or {}
-        if sale and job.attempts and not (snapshot.get("sign_only") and not snapshot.get("send_started")):
+        if sale and requires_fiscal_consult(job):
             job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
         if not sale and (job.attempts or 0) >= (job.max_attempts or 1):
             job.status = models.EMISSION_JOB_STATUS_FAILED
@@ -479,7 +478,7 @@ def recover_stale_processing_jobs(
                 db,
                 job,
                 status=models.EMISSION_ATTEMPT_STATUS_RETRY,
-                error_classification="transient",
+                error_classification="ambiguous" if sale and job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL else "transient",
                 error_message=job.last_error,
             )
         job.locked_at = None
