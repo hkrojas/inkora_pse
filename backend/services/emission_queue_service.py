@@ -90,11 +90,16 @@ def _install_signal_handlers() -> None:
         pass
 
 
-def resolve_emission_mode(requested_mode: str | None = None) -> str:
+def resolve_emission_mode(requested_mode: str | None = None, *,
+                          tenant_id: int | None = None, tipo_comprobante: str | None = None) -> str:
     mode_candidate = requested_mode if isinstance(requested_mode, str) else None
     mode = (mode_candidate or settings.EMISSION_MODE_DEFAULT or EMISSION_MODE_SYNC).strip().lower()
     if mode not in {EMISSION_MODE_SYNC, EMISSION_MODE_ASYNC}:
         raise ValueError("Modo de emision invalido. Use 'sync' o 'async'.")
+    # Enrolled invoices must persist their submission fence through the worker,
+    # even when an older client explicitly asks to send synchronously.
+    if tenant_id is not None and tipo_comprobante == "01" and fiscal_recovery_service.enabled(tenant_id):
+        return EMISSION_MODE_ASYNC
     return mode
 
 

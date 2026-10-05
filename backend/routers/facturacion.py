@@ -947,7 +947,8 @@ def emitir_comprobante(
             payload.serie_override,
         )
 
-        resolved_mode = emission_queue_service.resolve_emission_mode(mode)
+        resolved_mode = emission_queue_service.resolve_emission_mode(
+            mode, tenant_id=current_user.tenant_id, tipo_comprobante=payload.tipo_comprobante)
         if resolved_mode == emission_queue_service.EMISSION_MODE_ASYNC:
             if payload.warehouse_id is not None:
                 fiscal_document.warehouse_id = payload.warehouse_id

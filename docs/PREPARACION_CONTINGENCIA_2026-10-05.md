@@ -22,6 +22,14 @@ respuesta temporal real del proveedor.
 
 ## Flujo preparado
 
+Corrección durante el cierre de publicación: la API impone cola durable para
+facturas tipo 01 del tenant incorporado, incluso si un cliente solicita
+`mode=sync` o el default del ambiente fuera sync. El tenant procede del usuario
+autenticado. Ocho pruebas aprobaron, incluidas tres llamadas al router real que
+crean un único documento/job sin contactar al proveedor. Los demás tipos y
+empresas conservan su contrato. La huella inicial indicada arriba se sustituye
+por la del paquete canónico del recibo de despliegue.
+
 1. Congelar empresa, ambiente, identidad y datos de la factura. Firmar una vez,
    validar y conservar el XML. Preparar PDF/QR con esos datos aunque falte CDR.
 2. Registrar duraderamente el posible envío antes de HTTP. Usar el mismo XML,
