@@ -43,6 +43,54 @@ def _ensure_pdf_ready(document):
         raise HTTPException(409, str(exc)) from exc
 
 
+def _resolve_pdf_document(db, source):
+    linked_id = getattr(source, "linked_fiscal_document_id", None)
+    if getattr(source, "document_kind", "quotation") != "quotation" or not linked_id:
+        return source
+    document = db.query(models.Cotizacion).filter(
+        models.Cotizacion.id == linked_id,
+        models.Cotizacion.tenant_id == source.tenant_id,
+        models.Cotizacion.source_quote_id == source.id,
+        models.Cotizacion.document_kind == "fiscal_document",
+    ).first()
+    if not document:
+        raise HTTPException(404, "Comprobante vinculado no encontrado.")
+    return document
+
+
+def _refresh_pdf_delivery(db, document):
+    if getattr(document, "document_kind", "quotation") == "quotation":
+        return document
+    current = db.query(models.Cotizacion).filter(
+        models.Cotizacion.id == document.id,
+        models.Cotizacion.tenant_id == document.tenant_id,
+    ).populate_existing().first()
+    if not current:
+        raise HTTPException(404, "Comprobante no encontrado.")
+    _ensure_pdf_ready(current)
+    return current
+
+
+async def _prepare_pdf(db, document):
+    try:
+        return await pdf_storage_service.generate_and_upload_pdf(db, document)
+    except pdf_storage_service.FiscalPdfNotReady as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+def _pdf_delivery_version(document):
+    fingerprint = (pdf_storage_service._pdf_source_fingerprint(document)
+                   if getattr(document, "document_kind", "quotation") != "quotation" else None)
+    return document.sunat_pdf_url, fingerprint
+
+
+def _check_pdf_delivery(db, document, version):
+    current = _refresh_pdf_delivery(db, document)
+    if _pdf_delivery_version(current) != version:
+        raise HTTPException(202, "El PDF cambio durante la descarga. Reintente.")
+    return current
+
+
 @router.get("/cotizaciones/", response_model=List[schemas.CotizacionListResponse])
 def read_cotizaciones(
     skip: int = Query(default=0, ge=0),
@@ -192,10 +240,14 @@ async def descargar_pdf_publico(
         raise HTTPException(404, "Enlace no valido o expirado.")
     _ensure_pdf_ready(cotizacion)
     if getattr(cotizacion, "document_kind", "quotation") != "quotation":
-        reference = await pdf_storage_service.generate_and_upload_pdf(db, cotizacion)
+        reference = await _prepare_pdf(db, cotizacion)
         if not reference:
             raise HTTPException(202, "El comprobante cambio durante la generacion del PDF. Reintente.")
-    return RedirectResponse(url=_resolve_pdf_download_url(cotizacion), status_code=307)
+        cotizacion = _refresh_pdf_delivery(db, cotizacion)
+    version = _pdf_delivery_version(cotizacion)
+    url = _resolve_pdf_download_url(cotizacion)
+    _check_pdf_delivery(db, cotizacion, version)
+    return RedirectResponse(url=url, status_code=307)
 
 
 @router.get("/cotizaciones/{cotizacion_id}/pdf")
@@ -212,17 +264,18 @@ async def descargar_pdf_interno(
     if not cotizacion:
         raise HTTPException(404)
 
-    documento_pdf = cotizacion
-    if cotizacion.document_kind == "quotation" and cotizacion.linked_fiscal_document:
-        documento_pdf = cotizacion.linked_fiscal_document
+    documento_pdf = _resolve_pdf_document(db, cotizacion)
 
     _ensure_pdf_ready(documento_pdf)
     if not documento_pdf.sunat_pdf_url or documento_pdf.document_kind != "quotation":
-        reference = await pdf_storage_service.generate_and_upload_pdf(db, documento_pdf)
+        reference = await _prepare_pdf(db, documento_pdf)
         if not reference:
             raise HTTPException(202, "La cotizacion cambio mientras se generaba el PDF. Reintente.")
         db.refresh(documento_pdf)
+    documento_pdf = _refresh_pdf_delivery(db, documento_pdf)
+    version = _pdf_delivery_version(documento_pdf)
     resolved_url = _resolve_pdf_download_url(documento_pdf)
+    _check_pdf_delivery(db, documento_pdf, version)
     if redirect:
         return RedirectResponse(url=resolved_url, status_code=307)
     return {"url": resolved_url}
@@ -239,20 +292,23 @@ async def descargar_pdf_interno_como_archivo(
     cotizacion = crud.get_cotizacion(db, cotizacion_id, current_user)
     if not cotizacion:
         raise HTTPException(404, "Cotizacion no encontrada")
-    documento_pdf = cotizacion.linked_fiscal_document if (
-        cotizacion.document_kind == "quotation" and cotizacion.linked_fiscal_document
-    ) else cotizacion
+    documento_pdf = _resolve_pdf_document(db, cotizacion)
 
     reference = getattr(documento_pdf, "sunat_pdf_url", None)
     _ensure_pdf_ready(documento_pdf)
     if documento_pdf.document_kind != "quotation" or not storage_service.is_private_storage_reference(reference):
-        reference = await pdf_storage_service.generate_and_upload_pdf(db, documento_pdf)
+        reference = await _prepare_pdf(db, documento_pdf)
         if not reference:
             raise HTTPException(202, "La cotizacion cambio mientras se generaba el PDF. Reintente.")
+    version = _pdf_delivery_version(documento_pdf)
+    if version[0] != reference:
+        raise HTTPException(202, "El PDF cambio durante la descarga. Reintente.")
     try:
         content = await run_in_threadpool(storage_service.download_private_storage_reference, reference)
     except Exception as exc:
         raise HTTPException(502, "No se pudo recuperar el PDF almacenado.") from exc
+
+    documento_pdf = _check_pdf_delivery(db, documento_pdf, version)
 
     filename = document_download_service.build_document_download_filename(documento_pdf)
     return Response(
@@ -271,6 +327,11 @@ async def compartir_cotizacion(
     cotizacion = crud.get_cotizacion(db, cotizacion_id, current_user)
     if not cotizacion:
         raise HTTPException(404, "Documento no encontrado o sin acceso")
+
+    # Share the same fiscal document as the internal PDF download. Existing
+    # public UUIDs for quotations continue to identify those quotations.
+    cotizacion = _resolve_pdf_document(db, cotizacion)
+    _ensure_pdf_ready(cotizacion)
 
     base_url = settings.BACKEND_URL.rstrip("/")
     url_publica = f"{base_url}/public/cotizaciones/{cotizacion.uuid_publico}/pdf"

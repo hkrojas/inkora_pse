@@ -78,6 +78,7 @@ async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion, *,
     """
     Genera el PDF interno, lo sube a Supabase Storage privado y persiste la referencia.
     """
+    document_id, tenant_id = cotizacion.id, cotizacion.tenant_id
     # Preserve issued historical representations (including their payment data).
     # Newly signed documents always use the XML/QR fingerprint below.
     if not force and has_legacy_accepted_pdf(cotizacion):
@@ -136,18 +137,21 @@ async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion, *,
 
     db.expire_all()
     current = db.query(models.Cotizacion).filter(
-        models.Cotizacion.id == cotizacion.id,
-        models.Cotizacion.tenant_id == cotizacion.tenant_id,
-    ).first()
+        models.Cotizacion.id == document_id,
+        models.Cotizacion.tenant_id == tenant_id,
+    ).populate_existing().with_for_update().first()
     if not current or _pdf_source_fingerprint(current) != source_fingerprint:
         logger.info(
             "pdf_generation_discarded_stale",
             extra={
                 "event": "pdf_generation_discarded_stale",
-                "context": f"tenant_id={cotizacion.tenant_id} cotizacion_id={cotizacion.id}",
+                "context": f"tenant_id={tenant_id} cotizacion_id={document_id}",
             },
         )
         return None
+    # A rejection/void may arrive while the renderer or Storage is running.
+    # The row lock covers only this final check and reference persistence.
+    ensure_fiscal_pdf_ready(current)
     current.sunat_pdf_url = private_reference
     db.commit()
 
@@ -172,6 +176,12 @@ async def process_pdf_background(cotizacion_id: int, tenant_id: int):
         )
         if cotizacion:
             await generate_and_upload_pdf(db, cotizacion)
+    except FiscalPdfNotReady:
+        db.rollback()
+        logger.info("pdf_generation_no_longer_deliverable", extra={
+            "event": "pdf_generation_no_longer_deliverable",
+            "context": f"tenant_id={tenant_id} cotizacion_id={cotizacion_id}",
+        })
     finally:
         if tenant_token is not None:
             reset_tenant_context(tenant_token)

@@ -2414,9 +2414,14 @@ def descargar_archivo(tipo_archivo: str, comprobante: models.Cotizacion, user: m
 
     if tipo_archivo == "cdr":
         cdr_reference = getattr(comprobante, "sunat_cdr_url", None)
-        if storage_service.is_private_storage_reference(cdr_reference):
-            return storage_service.download_private_storage_reference(cdr_reference)
         cdr_content = getattr(comprobante, "sunat_cdr_content", None)
+        if storage_service.is_private_storage_reference(cdr_reference):
+            try:
+                return storage_service.download_private_storage_reference(cdr_reference)
+            except Exception:
+                if not isinstance(cdr_content, str) or not cdr_content.strip():
+                    raise
+                logging.getLogger(__name__).warning("cdr_storage_fallback_to_retained_xml")
         if isinstance(cdr_content, str) and cdr_content.strip():
             from services import fiscal_artifact_service
 
