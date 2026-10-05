@@ -178,18 +178,23 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
       if (filters.moneda !== 'all') params.set('moneda', filters.moneda);
       const url = endpoint || `/facturas-emitidas/page?${params.toString()}`;
       const data = await api.get(url);
-      if (requestSeq.current !== seq) return;
+      if (requestSeq.current !== seq) return false;
       const items = Array.isArray(data) ? data : data.items || [];
       setDocs(items);
       setTotal(Array.isArray(data) ? items.length : data.total || 0);
       setTabCounts(data.counts || { all: items.length, draft: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 });
+      return true;
     } catch (err) {
-      if (requestSeq.current !== seq) return;
-      setError(err);
-      setDocs([]);
-      setTotal(0);
-      setTabCounts({ all: 0, draft: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 });
+      if (requestSeq.current !== seq) return false;
+      // Keep active tracking mounted when a background refresh fails.
+      if (!background) {
+        setError(err);
+        setDocs([]);
+        setTotal(0);
+        setTabCounts({ all: 0, draft: 0, emitted: 0, pending: 0, rejected: 0, voided: 0 });
+      }
       toast(err.message || 'No se pudo cargar la información. Revisa tu conexión e inténtalo nuevamente.', 'error');
+      return false;
     } finally {
       if (requestSeq.current === seq) setLoading(false);
     }
@@ -198,6 +203,41 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  const refreshQueue = useRef({ timer: null, running: false, pending: false, active: true, waiters: [] });
+  const reload = useCallback((options = {}) => {
+    if (!options.background) return loadRef.current(options);
+    const queue = refreshQueue.current;
+    queue.pending = true;
+    const completion = new Promise((resolve) => queue.waiters.push(resolve));
+    if (queue.running || queue.timer) return completion;
+    const drain = async () => {
+      queue.timer = null;
+      if (!queue.active) return;
+      queue.running = true;
+      queue.pending = false;
+      const waiters = queue.waiters.splice(0);
+      let loaded = false;
+      try { loaded = await loadRef.current({ background: true }); }
+      finally {
+        waiters.forEach((resolve) => resolve(loaded));
+        queue.running = false;
+        if (queue.pending && queue.active) queue.timer = setTimeout(drain, 100);
+      }
+    };
+    queue.timer = setTimeout(drain, 100);
+    return completion;
+  }, []);
+  useEffect(() => {
+    const queue = refreshQueue.current;
+    queue.active = true;
+    return () => {
+      queue.active = false; clearTimeout(queue.timer); queue.timer = null; queue.pending = false;
+      queue.waiters.splice(0).forEach((resolve) => resolve(false));
+    };
+  }, []);
 
   useEffect(() => {
     setPage(1);
@@ -563,7 +603,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
                           )}
                         </td>
                         <td data-label="Acciones">
-                          <FiscalDocumentActions doc={doc} allowGuides={allowGuides} accepted={sunat?.kind === 'ok'} reload={load} />
+                          <FiscalDocumentActions doc={doc} allowGuides={allowGuides} reload={reload} />
                         </td>
                       </tr>
                     );

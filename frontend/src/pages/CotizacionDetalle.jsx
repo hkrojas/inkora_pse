@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, FileText, Plus, Receipt, Share2 } from 'lucide-react';
 import { cotizaciones as svc } from '../services/cotizaciones';
@@ -14,6 +14,7 @@ import { getDispatchStatusLabel, getGuideStatusMeta } from '../lib/utils/fiscalS
 import FiscalDocumentActions from '../components/documents/FiscalDocumentActions';
 import { getFiscalDocumentStatus } from '../lib/utils/documentArtifacts';
 import { getEmissionOutcome } from '../lib/utils/emissionJobs';
+import { isLinkedFiscalDocument } from '../lib/utils/fiscalDelivery';
 
 function getDocumentDisplayNumber(doc) {
   if (!doc) return '--';
@@ -127,6 +128,9 @@ export default function CotizacionDetalle() {
   const { id } = useParams();
   const toast = useToast();
   const [cot, setCot] = useState(null);
+  const [linkedFiscalDocument, setLinkedFiscalDocument] = useState(null);
+  const [linkedFiscalError, setLinkedFiscalError] = useState('');
+  const requestSeq = useRef(0);
   const [pagos, setPagos] = useState([]);
   const [relatedGuides, setRelatedGuides] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -138,14 +142,37 @@ export default function CotizacionDetalle() {
   const [availability, setAvailability] = useState(null);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
 
-  const load = ({ background = false } = {}) => {
-    if (!background) setLoading(true);
-    Promise.all([svc.get(id), svc.pagos(id)])
-      .then(([cotizacionResponse, pagosResponse]) => {
+  const load = useCallback(async ({ background = false } = {}) => {
+    const seq = ++requestSeq.current;
+    if (!background) {
+      setLoading(true);
+      setCot(null);
+      setLinkedFiscalDocument(null);
+      setLinkedFiscalError('');
+      setShareUrl('');
+    }
+    try {
+        const [cotizacionResponse, pagosResponse] = await Promise.all([svc.get(id), svc.pagos(id)]);
+        if (seq !== requestSeq.current) return false;
+        let linked = null;
+        let linkedError = '';
+        if (cotizacionResponse.document_kind === 'quotation' && cotizacionResponse.linked_fiscal_document_id) {
+          try {
+            linked = await svc.get(cotizacionResponse.linked_fiscal_document_id);
+            if (!isLinkedFiscalDocument(cotizacionResponse, linked)) throw new Error('El comprobante no corresponde a esta cotización.');
+          } catch {
+            linked = null;
+            linkedError = 'No se pudo verificar el comprobante vinculado. Actualiza la vista para consultar su estado.';
+          }
+        }
+        if (seq !== requestSeq.current) return false;
         setCot(cotizacionResponse);
+        setLinkedFiscalDocument(linked);
+        setLinkedFiscalError(linkedError);
         setPagos(Array.isArray(pagosResponse) ? pagosResponse : []);
         if (cotizacionResponse.document_kind === 'fiscal_document' && ['01', '03'].includes(cotizacionResponse.tipo_comprobante)) {
           guideSvc.documentGuides(id).then((dispatches) => {
+            if (seq !== requestSeq.current) return;
             const guides = (dispatches || []).flatMap((dispatch) =>
               (dispatch.guides || []).map((guide) => ({
                 ...guide,
@@ -156,16 +183,20 @@ export default function CotizacionDetalle() {
               })),
             );
             setRelatedGuides(guides);
-          }).catch(() => setRelatedGuides([]));
+          }).catch(() => { if (seq === requestSeq.current) setRelatedGuides([]); });
         } else {
           setRelatedGuides([]);
         }
-      })
-      .catch(() => toast('No se pudo cargar la cotización. Revisa tu conexión e inténtalo nuevamente.', 'error'))
-      .finally(() => setLoading(false));
-  };
+        return true;
+    } catch {
+      if (seq === requestSeq.current) toast('No se pudo cargar la cotización. Revisa tu conexión e inténtalo nuevamente.', 'error');
+      return false;
+    } finally {
+      if (seq === requestSeq.current) setLoading(false);
+    }
+  }, [id, toast]);
 
-  useEffect(load, [id]);
+  useEffect(() => { load(); return () => { requestSeq.current += 1; }; }, [load]);
   useEffect(() => {
     if (!emitirModal) {
       setAvailability(null);
@@ -251,6 +282,8 @@ export default function CotizacionDetalle() {
   if (!cot) {
     return <div className="text-sm text-[var(--text-secondary)]">Cotizacion no encontrada.</div>;
   }
+  const fiscalDocument = cot.document_kind === 'fiscal_document' ? cot : linkedFiscalDocument;
+  const fiscalStatus = fiscalDocument ? getFiscalDocumentStatus(fiscalDocument) : null;
 
   return (
     <div className="page-shell max-w-6xl">
@@ -266,9 +299,9 @@ export default function CotizacionDetalle() {
         </div>
 
         <div className="page-actions">
-          {cot.document_kind === 'fiscal_document' && ['01', '03'].includes(cot.tipo_comprobante) ? (
-            <FiscalDocumentActions doc={cot} reload={load} hideDetail />
-          ) : <>
+          {fiscalDocument && ['01', '03'].includes(fiscalDocument.tipo_comprobante) ? (
+            <FiscalDocumentActions doc={fiscalDocument} reload={load} hideDetail={cot.document_kind === 'fiscal_document'} />
+          ) : !cot.linked_fiscal_document_id && <>
           <button onClick={handleShare} className="btn-secondary flex items-center gap-2">
             <Share2 className="h-4 w-4" />
             Compartir
@@ -301,12 +334,14 @@ export default function CotizacionDetalle() {
             </>
           )}
           {cot.linked_fiscal_document_id && (
-            <span style={{ fontSize: 12, color: 'var(--color-success)', fontFamily: 'var(--font-mono)', fontWeight: 700, padding: '0 8px' }}>
-              ✓ {cot.linked_fiscal_document_number || 'Emitido'}
-            </span>
+            <Link to={`/cotizaciones/${cot.linked_fiscal_document_id}`} className="btn-secondary">
+              {cot.linked_fiscal_document_number || 'Ver comprobante'}
+            </Link>
           )}
         </div>
       </div>
+
+      {linkedFiscalError && <div role="alert" className="ink-inline-alert ink-inline-alert-warning">{linkedFiscalError}<button className="btn-secondary" onClick={() => load({ background: true })}>Actualizar</button></div>}
 
       {shareUrl && (
         <div className="ink-inline-alert ink-inline-alert-info">
@@ -418,7 +453,7 @@ export default function CotizacionDetalle() {
         </div>
       </div>
 
-      {cot.document_kind === 'fiscal_document' && <p className="mb-4" role="status">Estado fiscal: {getFiscalDocumentStatus(cot)?.label}</p>}
+      {fiscalDocument && <p className="mb-4" role="status">Estado fiscal: {fiscalStatus?.label}</p>}
       {cot.document_kind === 'fiscal_document' && ['01', '03'].includes(cot.tipo_comprobante) && (
         <section className="ink-table-card">
           <div className="ink-card-header">

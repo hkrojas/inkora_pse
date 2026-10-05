@@ -9,15 +9,14 @@ export default function useFiscalTracking(documentId, onComplete) {
   const complete = useRef(onComplete);
   complete.current = onComplete;
   const notified = useRef('');
-  const wasActive = useRef(false);
+  const refreshed = useRef({ jobId: null, signature: '', at: 0 });
   const track = useCallback((actions) => {
     if (actions?.job_id) {
       const next = { id: actions.job_id, status: actions.job_status || 'queued', action: actions.job_action };
-      wasActive.current = fiscalTrackingState(next).poll;
       setJob(next);
     }
   }, []);
-  useEffect(() => { setJob(null); setError(''); notified.current = ''; wasActive.current = false; }, [documentId]);
+  useEffect(() => { setJob(null); setError(''); notified.current = ''; refreshed.current = { jobId: null, signature: '', at: 0 }; }, [documentId]);
   const jobId = job?.id;
   useEffect(() => {
     if (!jobId) return undefined;
@@ -35,13 +34,24 @@ export default function useFiscalTracking(documentId, onComplete) {
         if (current.resource_id && Number(current.resource_id) !== Number(documentId)) throw new Error('El seguimiento no corresponde al documento.');
         setJob(current); setError('');
         const state = fiscalTrackingState(current);
+        const signature = JSON.stringify([jobId, current.status, current.action, current.updated_at]);
+        const previous = refreshed.current;
+        const terminalKey = `${jobId}:${current.status}`;
+        const shouldRefresh = state.terminal
+          ? notified.current !== terminalKey
+          : previous.jobId !== jobId || (previous.signature !== signature && Date.now() - previous.at >= 15000);
+        if (shouldRefresh) {
+          // Keep the last *refreshed* signature: a throttled change is picked
+          // up on a later poll even if the job stops changing in the meantime.
+          const loaded = await complete.current?.({ background: true });
+          if (loaded === false) throw new Error('La actualización del documento quedó pendiente.');
+          if (controller.signal.aborted) return;
+          refreshed.current = { jobId, signature, at: Date.now() };
+          if (state.terminal) notified.current = terminalKey;
+        }
+        if (controller.signal.aborted) return;
         if (state.poll) {
-          wasActive.current = true;
           timer = setTimeout(poll, ['retry', 'contingency_pending', 'pending_confirmation'].includes(current.status) ? 30000 : 5000);
-        } else if (wasActive.current && state.terminal && notified.current !== `${jobId}:${current.status}`) {
-          notified.current = `${jobId}:${current.status}`;
-          wasActive.current = false;
-          complete.current?.({ background: true });
         }
       } catch (requestError) {
         if (!controller.signal.aborted) {
