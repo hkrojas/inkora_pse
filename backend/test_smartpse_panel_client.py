@@ -346,18 +346,60 @@ def test_foreign_or_unsafe_recovered_xml_cannot_complete_recovery(tenant, raw):
         client.recover_invoice(tenant, NAME, environment="produccion", include_xml=True)
 
 
-def test_xml_absent_after_cdr_stays_pending(tenant):
+def test_xml_absent_after_cdr_preserves_evidence_without_claiming_completion(tenant):
     client, _ = client_for(login() + [listing(), Response(body=cdr()), Response(404)])
     result = client.recover_invoice(tenant, NAME, environment="produccion", include_xml=True)
-    assert result["estado"] == 202 and not result["cdr"]
+    assert result["estado"] == 202
+    assert base64.b64decode(result["cdr"]) == cdr()
+    assert result["provider_document_id"] == "444364"
+    assert result["environment"] == "produccion"
     assert not result.get("xml_firmado")
 
 
-def test_include_xml_does_not_download_unsigned_evidence_without_cdr(tenant):
-    client, sessions = client_for(login() + [listing([row(has_cdr=False)])])
+@pytest.mark.parametrize("signed_metadata", [{}, {"has_signed_xml": False}, {"has_signed_xml": "true"}])
+def test_include_xml_does_not_download_unsigned_evidence_without_cdr(tenant, signed_metadata):
+    client, sessions = client_for(login() + [listing([row(has_cdr=False, **signed_metadata)])])
     result = client.recover_invoice(tenant, NAME, environment="produccion", include_xml=True)
     assert result["estado"] == 202
     assert len(sessions[0].calls) == 3
+
+
+def test_signed_xml_without_cdr_is_recovered_as_pending(tenant):
+    raw = invoice_xml()
+    client, sessions = client_for(login() + [listing([row(has_cdr=False, has_signed_xml=True)]),
+        Response(body=raw, content_type="application/xml")])
+    result = client.recover_invoice(tenant, NAME, environment="produccion", include_xml=True)
+    assert result["estado"] == 202 and result["cdr"] is None
+    assert result["provider_document_id"] == "444364"
+    assert result["environment"] == "produccion"
+    assert base64.b64decode(result["xml_firmado"]) == raw
+    assert sessions[0].calls[-1][1] == panel.ORIGIN + "/panel/documentos/444364/xml"
+    assert not any(url.endswith("/cdr") for _, url, _ in sessions[0].calls)
+
+
+def test_signed_xml_without_cdr_is_not_requested_if_include_xml_is_false(tenant):
+    client, sessions = client_for(login() + [listing([row(has_cdr=False, has_signed_xml=True)])])
+    result = client.recover_invoice(tenant, NAME, environment="produccion")
+    assert result["estado"] == 202 and result["cdr"] is None
+    assert len(sessions[0].calls) == 3
+
+
+def test_pending_signed_xml_download_absent_preserves_remote_identity(tenant):
+    client, _ = client_for(login() + [listing([row(has_cdr=False, has_signed_xml=True)]), Response(404)])
+    result = client.recover_invoice(tenant, NAME, environment="produccion", include_xml=True)
+    assert result["estado"] == 202 and result["cdr"] is None
+    assert result["provider_document_id"] == "444364"
+    assert result["environment"] == "produccion"
+    assert not result.get("xml_firmado")
+
+
+@pytest.mark.parametrize("raw", [invoice_xml(issuer="20999999999"), invoice_xml(reference="FA01-229"),
+    invoice_xml(kind="03"), b'<!DOCTYPE x><x/>'])
+def test_invalid_pending_xml_cannot_complete_recovery(tenant, raw):
+    client, _ = client_for(login() + [listing([row(has_cdr=False, has_signed_xml=True)]),
+        Response(body=raw, content_type="application/xml")])
+    with pytest.raises(panel.SmartPSEPanelException):
+        client.recover_invoice(tenant, NAME, environment="produccion", include_xml=True)
 
 
 def test_rollout_is_explicit_and_invalid_ids_never_match_wildcard(monkeypatch):

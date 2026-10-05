@@ -1,5 +1,15 @@
 # Recuperación fiscal y entrega con XML firmado
 
+Preparación vigente del 5 de octubre: `PREPARACION_CONTINGENCIA_2026-10-05.md`.
+Incluye flags por servicio, observación del primer fallo natural productivo y
+contención. Actualiza los límites históricos de las secciones siguientes.
+
+Último bloque local: `REINTENTO_PANEL_SMARTPSE_2026-10-02.md` incorpora un
+reintento opt-in del registro existente del panel, precedido por recuperación
+de CDR y una reserva durable. Está desactivado y no desplegado; el POST real
+sin CDR permanece pendiente de homologación aislada. No confundir ese nuevo
+bloque con la recuperación CDR ya publicada.
+
 Fecha de revisión: 2026-10-01. Estado: implementado y verificado localmente;
 pendiente de validación del contrato de Smart PSE en staging aislado.
 
@@ -21,6 +31,78 @@ las credenciales del panel y los límites de esta fase están documentados en
 bloque original; la publicación efectiva se acredita con su recibo de despliegue.
 
 ## Base productiva comprobada
+
+### Continuación: fases de envío (2026-10-02)
+
+La continuación posterior cierra recuperación de XML sin CDR, inmutabilidad de
+evidencia y coordinación separada de firma/envío. Resultados de pruebas y límite
+pendiente de homologación: `CIERRE_CONTINGENCIA_2026-10-02.md`.
+
+El bloque de endurecimiento posterior parte de `main`
+`c336060527eafc9f438633557d85c9a936e83313`, cuyo árbol coincide con el candidato
+`9152c3fac714e06a97708b0879807c1eb4b1d331` desplegado. Los datos del bloque
+original que aparecen después se conservan como historial.
+
+Los trabajos nuevos de factura Smart PSE guardan en su snapshot
+`submission_state_version=1` y `submission_phase`. No requiere migración.
+
+| Fase | Evidencia local | Acción permitida |
+|---|---|---|
+| `not_started` | Trabajo creado bajo este contrato; todavía no se inició envío | Firmar si falta XML válido y efectuar el primer envío |
+| `possible_submission` | Marcador confirmado antes del POST fiscal | Consultar y recuperar evidencia; nunca reenviar por timeout o 404 |
+| `not_submitted` | El cliente comprobó fallo de autenticación antes del POST de ese intento | Reintentar con el mismo XML conservado |
+| Ausente, desconocida o contradictoria | Historia no acreditada | Conciliar; no inferir seguridad a partir de `attempts=0`, `sign_only` o falta de CDR |
+
+La fase segura exige versión entera 1 y ausencia de indicadores de envío previo.
+Valores de tipo incorrecto no se reinterpretan como evidencia. Reencolar un
+trabajo antiguo nunca le asigna retroactivamente una historia segura. El camino
+normal `/procesar` también marca el inicio para que activar el piloto más tarde
+no convierta una operación ya intentada en un nuevo envío.
+
+Si el snapshot completo no es un objeto JSON, el worker conserva ese contenido
+y termina con un error de validación para revisión, sin llamadas fiscales. Las
+boletas explícitamente identificadas como tipo 03 conservan su recuperación
+anterior cuando la ejecución no comenzó; esta fase no amplía contingencia a boletas.
+Antes de publicar, revisar la cola de facturas antiguas: la falta de marcadores
+no se corrige reiniciando ni reenviando automáticamente esos documentos.
+
+La recuperación de reservas vencidas utiliza el mismo criterio en Python y
+PostgreSQL: un trabajo probado como no enviado conserva emisión; uno incierto
+pasa a consulta. Una consulta existente siempre sigue siendo consulta. Se
+mantienen límites por empresa, bloqueo de reservas y protección contra resultados
+de workers que perdieron su reserva.
+
+Durante firma y envío se usan copias mínimas de los datos y del XML, tomadas
+antes de confirmar la transacción. No se accede a relaciones ORM expiradas durante
+HTTP. El XML firmado, QR, identidad y correlativo se conservan. La aceptación,
+cuota y efectos finales continúan sujetos al resultado fiscal validado.
+
+La repetición real de FDEM-1 en `/enviar-demo` conservó registro y XML, devolvió
+un CDR actualizado y no aumentó el contador de firmas. Esto no acredita el
+reenvío productivo tras una respuesta perdida. Los estados inciertos siguen
+en conciliación y el enrolamiento completo depende de la homologación pendiente.
+
+Este bloque no activa flags remotos ni cambia el PDF. La recuperación de CDR ya
+publicada continúa siendo independiente de habilitar contingencia completa.
+
+#### Validación del bloque de fases
+
+- 155 pruebas de backend: fases, cola, contratos de publicación, acciones de
+  documentos, recuperación fiscal y de panel, cliente Smart PSE. HTTP externo
+  bloqueado; 85,05 segundos, sin fallos.
+- 11 pruebas de recuperación SQLite: snapshots válidos y malformados, reserva
+  anterior/posterior al marcador, preautenticación y boletas no ejecutadas.
+- 34 pruebas PostgreSQL 17 local: paridad Python/SQL, reservas, protección de
+  resultados tardíos, concurrencia global/por empresa, notificaciones y circuito
+  compartido entre diez empresas; 14,93 segundos, sin fallos.
+- Total: 200 pruebas. Evidencia local en `pruebas/phase-backend-tests.log`,
+  `pruebas/phase-postgres-tests.log` (los 11 casos SQLite) y
+  `pruebas/phase-postgres-retry.log` (34 PostgreSQL). La primera ejecución de
+  PostgreSQL encontró el servidor local detenido y no ejecutó esos casos; se
+  reinició y la ejecución posterior pasó. El servidor local quedó detenido.
+- `git diff --check` sin errores; sin cambios de esquema, frontend, PDF ni
+  configuración remota. No se ejecutó un despliegue ni la puerta integral de
+  publicación (lint/build/E2E) en este bloque de backend.
 
 - Repositorio: `hkrojas/inkora_pse`, remoto local `inkora_pse`.
 - Rama: `codex/fiscal-contingency-recovery`.

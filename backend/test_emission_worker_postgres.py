@@ -21,6 +21,7 @@ import crud
 import models
 from database import Base
 from services import emission_leases as leases
+from services.fiscal_submission_state import can_submit, initial_state, mark_not_submitted, mark_possible
 from services.emission_worker_runtime import CHANNEL, Listener, Metrics, WakeSignal
 
 
@@ -53,7 +54,8 @@ def circuit_migration():
     return module
 
 
-def test_shared_outage_allows_only_one_probe_across_ten_companies(factory, monkeypatch):
+@pytest.mark.parametrize("service", ["cpe", "cpe:sign"])
+def test_shared_outage_allows_only_one_probe_across_ten_companies(factory, monkeypatch, service):
     from config import settings
     from services import fiscal_recovery_service as recovery
     monkeypatch.setattr(settings, "FISCAL_CONTINGENCY_TENANT_IDS", "*")
@@ -64,15 +66,15 @@ def test_shared_outage_allows_only_one_probe_across_ten_companies(factory, monke
         db.add_all(tenants)
         db.commit()
         ids = [tenant.id for tenant in tenants]
-        recovery.service_failed(db, tenants[0])
-        circuit = db.get(models.FiscalProviderCircuit, recovery.scope_for(tenants[0]))
+        recovery.service_failed(db, tenants[0], service=service)
+        circuit = db.get(models.FiscalProviderCircuit, recovery.scope_for(tenants[0], service=service))
         circuit.next_probe_at = leases.db_now(db) - timedelta(seconds=1)
         db.commit()
     def probe(tenant_id):
         with factory() as db:
             tenant = db.get(models.Tenant, tenant_id)
             try:
-                return recovery.reserve_probe(db, tenant)
+                return recovery.reserve_probe(db, tenant, service=service)
             except recovery.ProviderPaused:
                 return None
     with ThreadPoolExecutor(max_workers=10) as executor:
@@ -81,16 +83,159 @@ def test_shared_outage_allows_only_one_probe_across_ten_companies(factory, monke
     with factory() as db:
         tenant = db.get(models.Tenant, ids[0])
         winning = next(token for token in tokens if token)
-        recovery.service_failed(db, tenant, token=winning)
-        circuit = db.get(models.FiscalProviderCircuit, recovery.scope_for(tenant))
+        recovery.service_failed(db, tenant, token=winning, service=service)
+        circuit = db.get(models.FiscalProviderCircuit, recovery.scope_for(tenant, service=service))
         assert circuit.failures == 2
         assert 1790 < (circuit.next_probe_at - leases.db_now(db)).total_seconds() <= 1800
-        recovery.service_recovered(db, tenant, token="stale-token")
+        recovery.service_recovered(db, tenant, token="stale-token", service=service)
         # A stale result from an expired probe cannot close an active newer probe.
         circuit.probe_token = "new-probe"
         db.commit()
-        recovery.service_recovered(db, tenant, token="stale-token")
+        recovery.service_recovered(db, tenant, token="stale-token", service=service)
         assert circuit.probe_token == "new-probe"
+
+
+@pytest.mark.parametrize("service", ["cpe", "cpe:sign"])
+@pytest.mark.parametrize("rollout", ["*", ""])
+def test_circuit_bulk_survives_malformed_snapshot_flags(factory, monkeypatch, service, rollout):
+    from config import settings
+    from services import fiscal_recovery_service as recovery
+    monkeypatch.setattr(settings, "FISCAL_CONTINGENCY_TENANT_IDS", rollout)
+    with factory() as db:
+        db.query(models.FiscalProviderCircuit).delete()
+        tenant = models.Tenant(business_name="Synthetic circuit flags", business_ruc=uuid4().hex[:11],
+                               smartpse_environment="demo", is_active=True)
+        db.add(tenant)
+        db.commit()
+        tenant_id = tenant.id
+    ready = service == "cpe"
+    valid, _ = enqueue(factory, tenant_id, provider="smartpse",
+                       payload_snapshot={**initial_state(), "signed_ready": ready, "recovery_flow": True})
+    for malformed in ("broken", {"value": True}, [True], 7):
+        enqueue(factory, tenant_id, provider="smartpse",
+                payload_snapshot={"signed_ready": malformed, "recovery_flow": True})
+        enqueue(factory, tenant_id, provider="smartpse",
+                payload_snapshot={"signed_ready": ready, "recovery_flow": malformed})
+    with factory() as db:
+        tenant = db.get(models.Tenant, tenant_id)
+        recovery.service_failed(db, tenant, service=service)
+        db.expire_all()
+        assert db.get(models.DocumentEmissionJob, valid).available_at > leases.db_now(db) + timedelta(minutes=14)
+        recovery.service_recovered(db, tenant, service=service)
+        db.expire_all()
+        assert db.get(models.DocumentEmissionJob, valid).available_at <= leases.db_now(db)
+
+
+def test_submission_evidence_sql_matches_python_for_malformed_json(factory):
+    import json
+    from test_fiscal_submission_leases import SUBMISSION_CASES
+    samples = [(name, json.dumps(snapshot), safe) for name, snapshot, safe in SUBMISSION_CASES]
+    samples += [("exponent_version", '{"submission_state_version":1e0,"submission_phase":"not_started"}', False),
+                ("positive_exponent_version", '{"submission_state_version":1E+0,"submission_phase":"not_started"}', False)]
+    with factory() as db:
+        for name, encoded, expected in samples:
+            python_result = can_submit(json.loads(encoded))
+            sql_result = db.scalar(text(f"SELECT {leases._CAN_SUBMIT_SQL} "
+                                        "FROM (SELECT CAST(:snapshot AS json) AS payload_snapshot) j"), {"snapshot": encoded})
+            assert python_result is expected, name
+            assert sql_result is python_result, name
+
+
+@pytest.mark.parametrize("mode", ["lease_sql", "lease_python", "legacy_sql", "legacy_python", "pending_sql", "pending_python"])
+def test_submission_phase_recovery_matches_all_coordinators(factory, mode):
+    from test_fiscal_submission_leases import _assert_recovered, _jobs
+    with factory() as db:
+        kind = "pending" if mode.startswith("pending") else "legacy" if mode.startswith("legacy") else "lease"
+        jobs = _jobs(db, mode=kind)
+        if mode.endswith("sql"):
+            count = leases.recover_coordinator(db, legacy_timeout=30)
+        elif kind == "pending":
+            count = crud.recover_pending_fiscal_reconciliations(db)
+        elif kind == "legacy":
+            count = crud.recover_stale_processing_jobs(db, stale_before=datetime.now()-timedelta(seconds=30))
+        else:
+            count = leases.recover(db)
+        assert count == len(jobs)
+        _assert_recovered(db, jobs)
+        if kind != "pending":
+            for name, job_id, _, _ in jobs:
+                job = db.get(models.DocumentEmissionJob, job_id)
+                attempt = db.query(models.DocumentEmissionAttempt).filter_by(job_id=job_id).one()
+                assert attempt.status == "retry", name
+                expected = "ambiguous" if job.action == "consult_fiscal_document" else "transient"
+                assert attempt.error_classification == expected, name
+
+
+def test_preauth_failure_then_crash_preserves_emit_until_new_submission_marker(factory):
+    job_id, _ = enqueue(factory, provider="smartpse", payload_snapshot=initial_state(), max_attempts=1)
+    reservation = claim(factory)
+    with factory() as db:
+        leases.attach(db, *reservation)
+        crud.mark_emission_job_attempt_started(db, job_id)
+        job = db.get(models.DocumentEmissionJob, job_id)
+        # The typed client pre-auth failure is represented by this transition.
+        job.payload_snapshot = mark_not_submitted(mark_possible(job.payload_snapshot))
+        db.commit()
+        leases.detach(db)
+        job.lease_expires_at = datetime.now()-timedelta(seconds=1)
+        db.commit()
+        assert leases.recover_coordinator(db, legacy_timeout=30) == 1
+        db.refresh(job)
+        assert job.action == "emit_fiscal_document" and can_submit(job.payload_snapshot)
+        first = db.query(models.DocumentEmissionAttempt).filter_by(job_id=job_id, attempt_number=1).one()
+        assert first.status == "retry" and first.error_classification == "transient"
+    new_reservation = claim(factory)
+    with factory() as db:
+        leases.attach(db, *new_reservation)
+        crud.mark_emission_job_attempt_started(db, job_id)
+        job = db.get(models.DocumentEmissionJob, job_id)
+        job.payload_snapshot = mark_possible(job.payload_snapshot)
+        leases.before_provider(db)  # commit before an unobserved POST
+        leases.detach(db)
+        job.lease_expires_at = datetime.now()-timedelta(seconds=1)
+        db.commit()
+        assert leases.recover_coordinator(db, legacy_timeout=30) == 1
+        db.refresh(job)
+        assert job.action == "consult_fiscal_document" and not can_submit(job.payload_snapshot)
+        second = db.query(models.DocumentEmissionAttempt).filter_by(job_id=job_id, attempt_number=2).one()
+        assert second.status == "retry" and second.error_classification == "ambiguous"
+        leases.attach(db, *new_reservation)
+        with pytest.raises(leases.LeaseLost):
+            crud.mark_emission_job_succeeded(db, job_id, result_snapshot={"success": True})
+        db.rollback()
+        leases.detach(db)
+
+
+@pytest.mark.parametrize("sql", [False, True])
+def test_pending_consult_action_never_becomes_emit(factory, sql):
+    from test_fiscal_submission_leases import _assert_recovered, _jobs
+    with factory() as db:
+        jobs = _jobs(db, mode="pending", action="consult_fiscal_document")
+        count = leases.recover_coordinator(db, legacy_timeout=30) if sql else crud.recover_pending_fiscal_reconciliations(db)
+        assert count == len(jobs)
+        _assert_recovered(db, jobs, original_action="consult_fiscal_document")
+
+
+@pytest.mark.parametrize("mode", ["lease_sql", "lease_python", "legacy_sql", "legacy_python", "pending_sql", "pending_python"])
+def test_boleta_recovery_preserves_unexecuted_normal_flow(factory, mode):
+    from test_fiscal_submission_leases import _boleta_jobs
+    kind = "pending" if mode.startswith("pending") else "legacy" if mode.startswith("legacy") else "lease"
+    with factory() as db:
+        jobs = _boleta_jobs(db, mode=kind)
+        if mode.endswith("sql"):
+            count = leases.recover_coordinator(db, legacy_timeout=30)
+        elif kind == "pending":
+            count = crud.recover_pending_fiscal_reconciliations(db)
+        elif kind == "legacy":
+            count = crud.recover_stale_processing_jobs(db, stale_before=datetime.now()-timedelta(seconds=30))
+        else:
+            count = leases.recover(db)
+        assert count == len(jobs)
+        db.expire_all()
+        for name, job_id, safe in jobs:
+            job = db.get(models.DocumentEmissionJob, job_id)
+            assert job.action == ("emit_fiscal_document" if safe else "consult_fiscal_document"), name
+            assert job.status == "retry" and job.finished_at is None, name
 
 
 def test_circuit_migration_is_private_and_reversible(factory):

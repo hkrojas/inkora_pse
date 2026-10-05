@@ -16,6 +16,7 @@ import models
 from config import settings
 from services import emission_queue_service as queue, fiscal_evidence_service as evidence
 from services import fiscal_recovery_service as recovery, pdf_storage_service, smartpse_client
+from services import fiscal_submission_state as submission
 from services.fiscal_presentation_service import presentation_status, presentation_status_expression
 from test_emission_queue import _make_fiscal_document
 from test_smartpse_response_normalization import _sale_cdr
@@ -260,6 +261,8 @@ def test_legacy_0111_recovers_to_consult_without_signing(db_session, sale):
     _, _, _, job = sale
     job.status = "pending_confirmation"
     job.last_error = "[0111] Rejected by policy"
+    job.payload_snapshot = {key: value for key, value in job.payload_snapshot.items()
+                            if key not in {"submission_state_version", "submission_phase"}}
     db_session.commit()
     assert crud.recover_pending_fiscal_reconciliations(db_session) == 1
     assert job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
@@ -299,6 +302,164 @@ def test_deadline_is_calendar_based_and_never_sends_expired_invoice(db_session, 
     client.sign_xml.assert_not_called()
     client.send_signed_xml.assert_not_called()
     assert db_session.query(models.AuditLog).filter(models.AuditLog.action == "fiscal_recovery_deadline").count() == 1
+
+
+@pytest.mark.parametrize("failure", [
+    smartpse_client.SmartPSEException("Timeout firmando documento"),
+    smartpse_client.SmartPSEException("No se pudo conectar con Smart PSE"),
+    smartpse_client.SmartPSEException("Respuesta HTTP 503", status_code=503),
+])
+def test_signing_outage_retries_past_max_attempts_then_recovers(
+    db_session, sale, sign_xml, monkeypatch, failure,
+):
+    tenant, _, document, job = sale
+    signed = sign_xml(job.payload_snapshot["prepared_sale"]["unsigned_xml"])
+    client = Mock()
+    client.sign_xml.side_effect = [failure] * 7 + [{"xml_firmado": signed}]
+    client.send_signed_xml.return_value = {"estado": 200,
+        "cdr": _sale_cdr(document_id=f"{document.serie}-{document.correlativo}", ruc=tenant.business_ruc)}
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    for attempt in range(1, 8):
+        job.available_at = datetime.now() - timedelta(seconds=1)
+        circuit = db_session.get(models.FiscalProviderCircuit, recovery.scope_for(tenant, service="cpe:sign"))
+        if circuit:
+            circuit.next_probe_at = datetime.now() - timedelta(seconds=1)
+        db_session.commit()
+        assert crud.claim_next_emission_job(db_session).id == job.id
+        assert not queue.process_emission_job(job.id, db_session=db_session)
+        assert job.status == "retry" and job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL
+        assert job.attempts == attempt
+        assert submission.can_submit(job.payload_snapshot)
+        assert job.payload_snapshot["submission_phase"] == submission.NOT_STARTED
+        assert not document.sunat_xml_content and not document.sunat_cdr_content
+        assert (job.available_at - datetime.now()).total_seconds() > settings.FISCAL_RECOVERY_FIRST_SECONDS - 5
+        client.send_signed_xml.assert_not_called()
+        client.consult_ticket.assert_not_called()
+    circuit = db_session.get(models.FiscalProviderCircuit, recovery.scope_for(tenant, service="cpe:sign"))
+    assert circuit.failures == 7
+    assert db_session.get(models.FiscalProviderCircuit, recovery.scope_for(tenant)) is None
+    circuit.next_probe_at = job.available_at = datetime.now() - timedelta(seconds=1)
+    db_session.commit()
+    crud.claim_next_emission_job(db_session)
+    assert queue.process_emission_job(job.id, db_session=db_session)
+    assert job.status == "succeeded" and document.sunat_accepted
+    assert document.sunat_xml_content == signed
+    assert circuit.failures == 0
+    assert client.sign_xml.call_count == 8
+    client.send_signed_xml.assert_called_once()
+    client.consult_ticket.assert_not_called()
+
+
+def test_signing_outage_stops_at_deadline_with_single_alert(db_session, sale, monkeypatch):
+    tenant, _, document, job = sale
+    client = Mock()
+    client.sign_xml.side_effect = smartpse_client.SmartPSEException("Timeout firmando documento")
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    document.fecha_emision = datetime(2026, 1, 1)
+    for _ in range(2):
+        job.status = "retry"
+        job.available_at = datetime.now() - timedelta(seconds=1)
+        db_session.commit()
+        crud.claim_next_emission_job(db_session)
+        assert not queue.process_emission_job(job.id, db_session=db_session)
+        assert job.status == "failed" and submission.can_submit(job.payload_snapshot)
+    assert client.sign_xml.call_count == 1
+    client.send_signed_xml.assert_not_called()
+    client.consult_ticket.assert_not_called()
+    assert db_session.query(models.AuditLog).filter_by(action="fiscal_recovery_deadline").count() == 1
+    assert db_session.get(models.FiscalProviderCircuit, recovery.scope_for(tenant, service="cpe:sign")).failures == 1
+
+
+@pytest.mark.parametrize("failure", [
+    smartpse_client.SmartPSEException("Respuesta HTTP 422: XML invalido", status_code=422),
+    smartpse_client.SmartPSEException("Respuesta HTTP 422: valor timeout invalido", status_code=422),
+    None,
+])
+def test_signing_validation_is_terminal_without_transport_retries(db_session, sale, monkeypatch, failure):
+    tenant, _, _, job = sale
+    client = Mock()
+    if failure:
+        client.sign_xml.side_effect = failure
+    else:
+        client.sign_xml.return_value = {"xml_firmado": "invalid-signature"}
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    assert job.status == "failed" and job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL
+    assert submission.can_submit(job.payload_snapshot)
+    assert crud.recover_pending_fiscal_reconciliations(db_session) == 0
+    client.sign_xml.assert_called_once()
+    client.send_signed_xml.assert_not_called()
+    client.consult_ticket.assert_not_called()
+    assert db_session.get(models.FiscalProviderCircuit, recovery.scope_for(tenant, service="cpe:sign")).failures == 0
+
+
+def test_signing_circuit_pauses_other_tenants_without_pausing_submission(db_session, sale, sign_xml, monkeypatch):
+    tenant, _, _, job = sale
+    other_tenant, other_user, other_document = _make_fiscal_document(db_session, "OTHER-SIGN")
+    other_job, _ = queue.enqueue_fiscal_document_job(db_session, other_document, other_user, tipo_comprobante="01")
+    signed_tenant, signed_user, signed_document = _make_fiscal_document(db_session, "ALREADY-SIGNED")
+    signed_job, _ = queue.enqueue_fiscal_document_job(db_session, signed_document, signed_user, tipo_comprobante="01")
+    signed = sign_xml(signed_job.payload_snapshot["prepared_sale"]["unsigned_xml"])
+    evidence.retain_sale_evidence(db_session, signed_document, {"xml_firmado": signed},
+                                payload=signed_job.payload_snapshot["prepared_sale"]["payload"])
+    signed_job.payload_snapshot = dict(signed_job.payload_snapshot, signed_ready=True)
+    consult_job = models.DocumentEmissionJob(tenant_id=other_tenant.id, created_by_user_id=other_user.id,
+        action=models.EMISSION_JOB_ACTION_CONSULT_FISCAL, provider="smartpse", resource_type="cotizacion",
+        resource_id=other_document.id, idempotency_key="sign-circuit-consult", status="queued",
+        available_at=datetime.now(), payload_snapshot={"recovery_flow": True})
+    db_session.add(consult_job)
+    db_session.commit()
+    consult_available = consult_job.available_at
+    signed_available = signed_job.available_at
+    client = Mock()
+    client.sign_xml.side_effect = smartpse_client.SmartPSEException("Respuesta HTTP 503", status_code=503)
+    client.send_signed_xml.return_value = {"estado": 200,
+        "cdr": _sale_cdr(document_id=f"{signed_document.serie}-{signed_document.correlativo}", ruc=signed_tenant.business_ruc)}
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    db_session.expire_all()
+    assert other_job.available_at > datetime.now() + timedelta(seconds=800)
+    assert signed_job.available_at == signed_available and consult_job.available_at == consult_available
+    # A forced early claim is still guarded by the persistent signing circuit.
+    other_job.available_at = datetime.now() - timedelta(seconds=1)
+    db_session.commit()
+    assert not queue.process_emission_job(other_job.id, db_session=db_session)
+    assert client.sign_xml.call_count == 1
+    assert queue.process_emission_job(signed_job.id, db_session=db_session)
+    assert signed_document.sunat_accepted
+    assert db_session.get(models.FiscalProviderCircuit, recovery.scope_for(tenant, service="cpe:sign")).failures == 1
+
+
+@pytest.mark.parametrize("recovering_service", ["cpe", "cpe:sign"])
+def test_recovering_one_circuit_does_not_release_the_other_queue(db_session, sale, recovering_service):
+    tenant, _, _, unsigned_job = sale
+    user = db_session.query(models.User).filter_by(tenant_id=tenant.id).first()
+    signed_job = models.DocumentEmissionJob(tenant_id=tenant.id, created_by_user_id=user.id,
+        action=models.EMISSION_JOB_ACTION_EMIT_FISCAL, provider="smartpse", resource_type="cotizacion",
+        resource_id=unsigned_job.resource_id, idempotency_key="already-signed-separate-circuit", status="queued",
+        available_at=datetime.now(), payload_snapshot={"recovery_flow": True, "signed_ready": True})
+    consult_job = models.DocumentEmissionJob(tenant_id=tenant.id, created_by_user_id=user.id,
+        action=models.EMISSION_JOB_ACTION_CONSULT_FISCAL, provider="smartpse", resource_type="cotizacion",
+        resource_id=unsigned_job.resource_id, idempotency_key="consult-separate-circuit", status="queued",
+        available_at=datetime.now(), payload_snapshot={"recovery_flow": True})
+    db_session.add_all([signed_job, consult_job])
+    db_session.commit()
+    recovery.service_failed(db_session, tenant, service="cpe")
+    recovery.service_failed(db_session, tenant, service="cpe:sign")
+    db_session.expire_all()
+    unsigned_at, signed_at, consult_at = unsigned_job.available_at, signed_job.available_at, consult_job.available_at
+    recovery.service_recovered(db_session, tenant, service=recovering_service)
+    db_session.expire_all()
+    if recovering_service == "cpe":
+        assert unsigned_job.available_at == unsigned_at
+        assert signed_job.available_at < signed_at and consult_job.available_at < consult_at
+    else:
+        assert unsigned_job.available_at < unsigned_at
+        assert signed_job.available_at == signed_at and consult_job.available_at == consult_at
 
 
 def test_consult_is_allowed_when_creator_or_subscription_is_inactive(db_session, sale):
@@ -355,3 +516,288 @@ def test_accepted_historical_pdf_is_not_regenerated(db_session, sale, monkeypatc
     monkeypatch.setattr(pdf_storage_service.pdf_generator, "create_comprobante_pdf", renderer)
     assert asyncio.run(pdf_storage_service.generate_and_upload_pdf(db_session, document)) == document.sunat_pdf_url
     renderer.assert_not_called()
+
+
+@pytest.mark.parametrize("enrollment", ["", "*"])
+def test_new_invoice_submission_state_is_initialized_once(db_session, sale, monkeypatch, enrollment):
+    tenant, user, _, _ = sale
+    monkeypatch.setattr(settings, "FISCAL_CONTINGENCY_TENANT_IDS", enrollment)
+    _, _, document = _make_fiscal_document(db_session, "INITIAL_PHASE")
+    user = document.usuario
+    job, created = queue.enqueue_fiscal_document_job(db_session, document, user, tipo_comprobante="01")
+    assert created
+    assert job.payload_snapshot["submission_phase"] == submission.NOT_STARTED
+    assert submission.can_submit(job.payload_snapshot)
+    assert job.payload_snapshot["recovery_flow"] is bool(enrollment)
+    # Requeue cannot promote a historical unknown into a safe first submission.
+    job.payload_snapshot = {key: value for key, value in job.payload_snapshot.items()
+                            if key not in {"submission_state_version", "submission_phase"}}
+    job.status = "failed"
+    db_session.commit()
+    same_job, created = queue.enqueue_fiscal_document_job(db_session, document, user, tipo_comprobante="01")
+    assert not created and same_job.id == job.id
+    assert not submission.can_submit(same_job.payload_snapshot)
+    assert "submission_phase" not in same_job.payload_snapshot
+
+
+@pytest.mark.parametrize("enrollment", ["", "*"])
+@pytest.mark.parametrize("legacy_fields", [{}, {"send_started": False, "sign_only": True}])
+def test_unknown_invoice_history_never_signs_or_sends(db_session, sale, monkeypatch, enrollment, legacy_fields):
+    _, _, document, job = sale
+    snapshot = {key: value for key, value in job.payload_snapshot.items()
+                if key not in {"submission_state_version", "submission_phase"}}
+    job.payload_snapshot = dict(snapshot, recovery_flow=bool(enrollment), **legacy_fields)
+    monkeypatch.setattr(settings, "FISCAL_CONTINGENCY_TENANT_IDS", enrollment)
+    monkeypatch.setattr(settings, "SMARTPSE_PANEL_RECOVERY_TENANT_IDS", "")
+    db_session.commit()
+    client = Mock()
+    client.consult_ticket.side_effect = smartpse_client.SmartPSEException("Documento no encontrado", status_code=404)
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    assert job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    assert job.status == "retry"
+    assert "submission_phase" not in job.payload_snapshot
+    assert not document.sunat_xml_content
+    client.consult_ticket.assert_called_once()
+    client.sign_xml.assert_not_called()
+    client.send_signed_xml.assert_not_called()
+    client.process_xml.assert_not_called()
+
+
+def test_sign_and_send_are_outside_sql_transactions(db_session, sale, sign_xml, monkeypatch):
+    tenant, _, document, job = sale
+    prepared = job.payload_snapshot["prepared_sale"]
+    signed = sign_xml(prepared["unsigned_xml"])
+    expected_credentials = (tenant.id, tenant.smartpse_usuario_secundaria, tenant.smartpse_token_acceso)
+    client = Mock()
+    def sign(network_tenant, name, xml, **kwargs):
+        assert not db_session.in_transaction()
+        assert (network_tenant.id, network_tenant.smartpse_usuario_secundaria,
+                network_tenant.smartpse_token_acceso) == expected_credentials
+        assert name == prepared["nombre_archivo"] and xml == prepared["unsigned_xml"]
+        return {"xml_firmado": signed}
+    def send(network_tenant, name, xml, **kwargs):
+        assert not db_session.in_transaction()
+        assert (network_tenant.id, network_tenant.smartpse_usuario_secundaria,
+                network_tenant.smartpse_token_acceso) == expected_credentials
+        assert name == prepared["nombre_archivo"] and xml == signed
+        return {"estado": 200, "cdr": _sale_cdr(
+            document_id=f"{prepared['payload']['serie']}-{prepared['payload']['correlativo']}",
+            ruc=prepared["payload"]["company"]["ruc"])}
+    client.sign_xml.side_effect = sign
+    client.send_signed_xml.side_effect = send
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    crud.claim_next_emission_job(db_session)
+    assert queue.process_emission_job(job.id, db_session=db_session)
+    assert job.payload_snapshot["submission_phase"] == submission.POSSIBLE_SUBMISSION
+    assert document.sunat_xml_content == signed
+    client.sign_xml.assert_called_once()
+    client.send_signed_xml.assert_called_once()
+
+
+def test_normal_process_marks_possible_before_http_and_cannot_send_after_flag_flip(
+    db_session, sale, monkeypatch,
+):
+    _, _, _, _ = sale
+    monkeypatch.setattr(settings, "FISCAL_CONTINGENCY_TENANT_IDS", "")
+    _, user, document = _make_fiscal_document(db_session, "PROCESS_PHASE")
+    job, _ = queue.enqueue_fiscal_document_job(db_session, document, user, tipo_comprobante="01")
+    assert submission.can_submit(job.payload_snapshot)
+    job_id = job.id
+    client = Mock()
+    def process(*args, **kwargs):
+        assert not db_session.in_transaction()
+        # Inspect committed state using a separate Session, not an ORM refresh
+        # on the session whose HTTP boundary is under test.
+        from sqlalchemy.orm import Session
+        with Session(db_session.bind) as reader:
+            persisted = reader.get(models.DocumentEmissionJob, job_id)
+            assert persisted.payload_snapshot["submission_phase"] == submission.POSSIBLE_SUBMISSION
+            assert persisted.payload_snapshot["send_started"] is True
+        assert not db_session.in_transaction()
+        raise smartpse_client.SmartPSEException("Timeout enviando documento")
+    client.process_xml.side_effect = process
+    client.consult_ticket.side_effect = smartpse_client.SmartPSEException("Documento no encontrado", status_code=404)
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    assert job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    assert job.payload_snapshot["submission_phase"] == submission.POSSIBLE_SUBMISSION
+    # Even an emit action restored during rollout must consult the prior send.
+    monkeypatch.setattr(settings, "FISCAL_CONTINGENCY_TENANT_IDS", "*")
+    monkeypatch.setattr(settings, "SMARTPSE_PANEL_RECOVERY_TENANT_IDS", "")
+    job.action = models.EMISSION_JOB_ACTION_EMIT_FISCAL
+    job.available_at = datetime.now() - timedelta(seconds=1)
+    db_session.commit()
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    assert job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    client.process_xml.assert_called_once()
+    client.consult_ticket.assert_called_once()
+    client.sign_xml.assert_not_called()
+    client.send_signed_xml.assert_not_called()
+
+
+def test_proven_preauth_failure_retries_same_xml_once(db_session, sale, sign_xml, monkeypatch):
+    tenant, _, document, job = sale
+    prepared = job.payload_snapshot["prepared_sale"]
+    signed = sign_xml(prepared["unsigned_xml"]) + "\n"
+    number = document.correlativo
+    client = Mock()
+    client.sign_xml.return_value = {"xml_firmado": signed}
+    client.send_signed_xml.side_effect = [
+        smartpse_client.SmartPSENotSubmitted("CPE preauthentication failed"),
+        {"estado": 200, "cdr": _sale_cdr(
+            document_id=f"{document.serie}-{document.correlativo}", ruc=tenant.business_ruc)},
+    ]
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    assert job.action == models.EMISSION_JOB_ACTION_EMIT_FISCAL
+    assert job.payload_snapshot["submission_phase"] == submission.NOT_SUBMITTED
+    assert submission.can_submit(job.payload_snapshot)
+    assert document.sunat_xml_content == signed
+    job.available_at = datetime.now() - timedelta(seconds=1)
+    db_session.commit()
+    crud.claim_next_emission_job(db_session)
+    assert queue.process_emission_job(job.id, db_session=db_session)
+    assert job.payload_snapshot["submission_phase"] == submission.POSSIBLE_SUBMISSION
+    assert document.sunat_xml_content == signed and document.correlativo == number
+    client.sign_xml.assert_called_once()
+    assert client.send_signed_xml.call_count == 2
+    assert all(call.args[2] == signed for call in client.send_signed_xml.call_args_list)
+    client.consult_ticket.assert_not_called()
+    client.process_xml.assert_not_called()
+
+
+def test_unknown_history_consults_when_creator_and_tenant_are_inactive(db_session, sale, monkeypatch):
+    tenant, user, _, job = sale
+    job.payload_snapshot = {key: value for key, value in job.payload_snapshot.items()
+                            if key not in {"submission_state_version", "submission_phase"}}
+    user.is_active = False
+    tenant.is_active = False
+    tenant.subscription.status = "expired"
+    db_session.commit()
+    client = Mock()
+    client.consult_ticket.side_effect = smartpse_client.SmartPSEException("Documento no encontrado", status_code=404)
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    assert job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    assert job.status == "retry"
+    client.consult_ticket.assert_called_once()
+    client.process_xml.assert_not_called()
+    client.sign_xml.assert_not_called()
+    client.send_signed_xml.assert_not_called()
+
+
+@pytest.mark.parametrize("foreign_scope", ["user", "document"])
+def test_unknown_history_cannot_cross_tenant_scope(db_session, sale, monkeypatch, foreign_scope):
+    _, _, _, job = sale
+    _, foreign_user, foreign_document = _make_fiscal_document(db_session, "FOREIGN_PHASE")
+    job.payload_snapshot = {key: value for key, value in job.payload_snapshot.items()
+                            if key not in {"submission_state_version", "submission_phase"}}
+    if foreign_scope == "user":
+        monkeypatch.setattr(queue, "_load_job_user", lambda *args: foreign_user)
+    else:
+        job.resource_id = foreign_document.id
+    db_session.commit()
+    client = Mock()
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    assert job.status == "failed"
+    client.consult_ticket.assert_not_called()
+    client.process_xml.assert_not_called()
+    client.sign_xml.assert_not_called()
+    client.send_signed_xml.assert_not_called()
+
+
+@pytest.mark.parametrize("malformed", [[], "legacy snapshot", 7, False])
+def test_malformed_snapshot_fails_validation_without_discarding_evidence(db_session, sale, monkeypatch, malformed):
+    _, _, _, job = sale
+    job.payload_snapshot = malformed
+    db_session.commit()
+    client = Mock()
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    crud.claim_next_emission_job(db_session)
+    assert not queue.process_emission_job(job.id, db_session=db_session)
+    assert job.status == "failed"
+    assert job.last_error == "Snapshot fiscal no reconocido; requiere revisión."
+    assert job.payload_snapshot == malformed
+    client.consult_ticket.assert_not_called()
+    client.process_xml.assert_not_called()
+    client.sign_xml.assert_not_called()
+    client.send_signed_xml.assert_not_called()
+
+
+@pytest.mark.parametrize("primary_error", ["503", "timeout", "connection", "404"])
+@pytest.mark.parametrize("panel_outcome", ["accepted", "pending", "rejected"])
+def test_panel_recovery_preserves_primary_transport_failure_and_shared_backoff(
+    db_session, sale, sign_xml, monkeypatch, primary_error, panel_outcome,
+):
+    import requests
+    from services import smartpse_panel_client
+
+    tenant, _, document, job = sale
+    signed = sign_xml(job.payload_snapshot["prepared_sale"]["unsigned_xml"])
+    evidence.retain_sale_evidence(db_session, document, {"xml_firmado": signed},
+                                payload=job.payload_snapshot["prepared_sale"]["payload"])
+    other_tenant, other_user, other_document = _make_fiscal_document(db_session, "OTHER-PANEL-OUTAGE")
+    other_job, _ = queue.enqueue_fiscal_document_job(db_session, other_document, other_user, tipo_comprobante="01")
+    other_job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+    db_session.commit()
+    other_available = other_job.available_at
+    client, panel = Mock(), Mock()
+    if primary_error in {"503", "404"}:
+        original = smartpse_client.SmartPSEException("API lookup error", status_code=int(primary_error))
+    else:
+        original = smartpse_client.SmartPSEException("API transport error")
+        original.__cause__ = (requests.exceptions.Timeout() if primary_error == "timeout"
+                              else requests.exceptions.ConnectionError())
+    client.consult_ticket.side_effect = original
+    response = {"estado": 202 if panel_outcome == "pending" else 200,
+                "cdr": None if panel_outcome == "pending" else _sale_cdr(
+                    document_id=f"{document.serie}-{document.correlativo}", ruc=tenant.business_ruc,
+                    response_code="2335" if panel_outcome == "rejected" else "0"),
+                "recovery_source": "smartpse_panel"}
+    panel.recover_invoice.return_value = response
+    monkeypatch.setattr(smartpse_client, "get_default_client", lambda: client)
+    monkeypatch.setattr(smartpse_panel_client, "get_default_client", lambda: panel)
+    monkeypatch.setattr(smartpse_panel_client, "enabled_for_tenant", lambda tenant_id: tenant_id == tenant.id)
+    assert crud.claim_next_emission_job(db_session).id == job.id
+    result = queue.process_emission_job(job.id, db_session=db_session)
+    db_session.expire_all()
+    circuit = db_session.get(models.FiscalProviderCircuit, recovery.scope_for(tenant))
+    if primary_error == "404":
+        assert circuit.failures == 0 and circuit.next_probe_at is None
+        assert other_job.available_at == other_available
+    else:
+        assert circuit.failures == 1
+        assert (circuit.next_probe_at - datetime.now()).total_seconds() > 895
+        assert other_job.available_at == circuit.next_probe_at
+    assert document.sunat_xml_content == signed
+    if panel_outcome == "accepted":
+        assert result and job.status == "succeeded"
+        assert document.sunat_accepted and document.estado == "facturada"
+        assert document.sunat_cdr_content
+        assert tenant.subscription.documents_used == 1
+    elif panel_outcome == "pending":
+        assert not result and job.status == "retry"
+        assert document.estado == "pendiente" and not document.sunat_accepted
+        assert not document.sunat_cdr_content
+        assert evidence.has_deliverable_xml(document)
+        assert tenant.subscription.documents_used == 0
+    else:
+        assert not result and job.status == "failed"
+        assert document.provider_verification_status == "rejected"
+        assert document.sunat_cdr_content
+        assert not document.sunat_accepted
+        assert tenant.subscription.documents_used == 0
+    client.consult_ticket.assert_called_once()
+    panel.recover_invoice.assert_called_once()
+    client.process_xml.assert_not_called()
+    client.sign_xml.assert_not_called()
+    client.send_signed_xml.assert_not_called()
