@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -74,7 +74,7 @@ def _create_cliente(db_session, tenant, suffix: str):
 def _create_quote(db_session, tenant, user, cliente):
     payload = schemas.CotizacionCreate(
         cliente_id=cliente.id,
-        fecha_vencimiento=datetime.now(timezone.utc),
+        fecha_vencimiento=datetime.now(timezone.utc) + timedelta(days=15),
         moneda="PEN",
         tipo_comprobante="00",
         items=[

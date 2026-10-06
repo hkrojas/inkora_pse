@@ -7,6 +7,7 @@ import models
 from conftest import make_cliente, make_producto, make_tenant, make_user, make_quote_via_crud
 import crud
 import schemas
+import fiscal_time
 
 
 def test_duplicar_cotizacion_crea_copia_con_nueva_orden_y_mismos_items(db_session):
@@ -401,7 +402,9 @@ def test_duplicar_cotizacion_preserva_snapshot_y_billetera_seleccionada(db_sessi
     ]
 
 
-def test_documento_fiscal_conserva_fecha_emision_de_la_cotizacion(db_session):
+def test_documento_fiscal_tiene_fecha_propia_y_conserva_origen(db_session, monkeypatch):
+    issue_datetime = datetime(2026, 5, 6, 10, 0)
+    monkeypatch.setattr(fiscal_time, "now_lima_naive", lambda: issue_datetime)
     tenant = make_tenant(db_session, "COT02D")
     user = make_user(db_session, tenant, email="cot02d@test.com")
     cliente = make_cliente(db_session, tenant, "COT02D")
@@ -431,10 +434,11 @@ def test_documento_fiscal_conserva_fecha_emision_de_la_cotizacion(db_session):
     fiscal = crud.create_fiscal_document_from_quote(db_session, quote, user.id, "01")
 
     assert quote.fecha_emision.date() == fecha_emision.date()
-    assert fiscal.fecha_emision.date() == fecha_emision.date()
+    assert fiscal.fecha_emision == issue_datetime
 
 
-def test_documento_fiscal_conserva_cuotas_pago_de_la_cotizacion(db_session):
+def test_documento_fiscal_conserva_cuotas_pago_de_la_cotizacion(db_session, monkeypatch):
+    monkeypatch.setattr(fiscal_time, "now_lima_naive", lambda: datetime(2026, 5, 6, 10, 0))
     tenant = make_tenant(db_session, "COT02E")
     user = make_user(db_session, tenant, email="cot02e@test.com")
     cliente = make_cliente(db_session, tenant, "COT02E")

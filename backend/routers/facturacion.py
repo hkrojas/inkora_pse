@@ -707,82 +707,13 @@ def _validate_sunat_line_item(item, index: int) -> None:
         ) from exc
 
 
-def _parse_credit_due_date(value) -> datetime | None:
-    if isinstance(value, datetime):
-        return value
-    if not value:
-        return None
+def _validate_credit_payment_schedule(quote, *, issue_datetime=None) -> None:
+    from services.fiscal_issue_service import validate_credit_payment_schedule
+
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
-def _validate_credit_payment_schedule(quote) -> None:
-    condicion_pago = str(getattr(quote, "condicion_pago", "") or "").strip().lower()
-    if not condicion_pago or condicion_pago == "contado":
-        return
-
-    total_venta = calculations.redondear(getattr(quote, "total_venta", 0))
-    fecha_emision = getattr(quote, "fecha_emision", None)
-    cuotas_raw = getattr(quote, "cuotas_pago", None) or []
-    cuotas = []
-
-    for index, cuota in enumerate(cuotas_raw, start=1):
-        if not isinstance(cuota, dict):
-            raise HTTPException(
-                400,
-                f"Pre-validacion fallida: La cuota {index} no tiene formato valido.",
-            )
-        fecha_pago = _parse_credit_due_date(cuota.get("fecha_pago") or cuota.get("fechaPago"))
-        monto = calculations.redondear(cuota.get("monto", 0))
-        if not fecha_pago:
-            raise HTTPException(
-                400,
-                f"Pre-validacion fallida: La cuota {index} no tiene fecha de vencimiento valida.",
-            )
-        if monto <= 0:
-            raise HTTPException(
-                400,
-                f"Pre-validacion fallida: El monto de la cuota {index} debe ser mayor a cero.",
-            )
-        cuotas.append({"fecha_pago": fecha_pago, "monto": monto})
-
-    if not cuotas:
-        fecha_vencimiento = getattr(quote, "fecha_vencimiento", None)
-        if not fecha_vencimiento:
-            raise HTTPException(
-                400,
-                "Pre-validacion fallida: Las facturas al credito requieren al menos una cuota.",
-            )
-        cuotas.append({"fecha_pago": fecha_vencimiento, "monto": total_venta})
-
-    if len(cuotas) > 999:
-        raise HTTPException(
-            400,
-            "Pre-validacion fallida: SUNAT admite como maximo 999 cuotas.",
-        )
-
-    if fecha_emision:
-        emission_date = fecha_emision.date()
-        for index, cuota in enumerate(cuotas, start=1):
-            if cuota["fecha_pago"].date() <= emission_date:
-                raise HTTPException(
-                    400,
-                    f"Pre-validacion fallida: La cuota {index} debe vencer despues de la fecha de emision.",
-                )
-
-    total_cuotas = calculations.redondear(
-        sum((cuota["monto"] for cuota in cuotas), calculations.Decimal("0.00"))
-    )
-    if total_cuotas != total_venta:
-        raise HTTPException(
-            400,
-            (
-                "Pre-validacion fallida: La suma de cuotas "
-                f"({total_cuotas}) debe coincidir con el total del comprobante ({total_venta})."
-            ),
-        )
+        validate_credit_payment_schedule(quote, issue_datetime=issue_datetime)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _require_beta_fiscal_feature(
@@ -836,7 +767,7 @@ def _validate_serie_override(tipo_comprobante: str, serie_override: str | None) 
         )
 
 
-def _validar_pre_emision(quote, tipo_comprobante: str):
+def _validar_pre_emision(quote, tipo_comprobante: str, *, issue_datetime=None):
     """
     Valida los pre-requisitos antes de enviar a SUNAT.
     Lanza HTTPException 400 con mensaje claro si algo no está listo.
@@ -890,7 +821,7 @@ def _validar_pre_emision(quote, tipo_comprobante: str):
 
     # 7-8. Fecha y lineas fiscales listas para APISPeru/SUNAT
     _validate_issue_date_not_future(quote)
-    _validate_credit_payment_schedule(quote)
+    _validate_credit_payment_schedule(quote, issue_datetime=issue_datetime)
 
     for index, item in enumerate(quote.items, start=1):
         _validate_sunat_line_item(item, index)
@@ -918,7 +849,7 @@ def emitir_comprobante(
     _ensure_commercial_quote(quote)
 
     # Pre-validación estructural antes de crear registro o contactar SUNAT
-    _validar_pre_emision(quote, payload.tipo_comprobante)
+    _validar_pre_emision(quote, payload.tipo_comprobante, issue_datetime=fiscal_time.now_lima_naive())
     _validate_launch_operation(payload.tipo_operacion)
     _validate_serie_override(payload.tipo_comprobante, payload.serie_override)
 

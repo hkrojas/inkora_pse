@@ -1,4 +1,5 @@
 // Shared helpers for document emission module
+import { limaToday } from './dashboardPeriods.js';
 
 import {
   SUNAT_TAX_AFFECTATION_OPTIONS,
@@ -52,13 +53,8 @@ export const MOTIVOS_ND = [
   { value: '03', label: '03 – Penalidades / otros conceptos' },
 ];
 
-export function inputDateToday() {
-  const now = new Date();
-  return [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, '0'),
-    String(now.getDate()).padStart(2, '0'),
-  ].join('-');
+export function inputDateToday(now = new Date()) {
+  return limaToday(now);
 }
 
 export function addDays(dateString, days) {
