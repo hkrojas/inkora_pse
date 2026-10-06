@@ -16,6 +16,7 @@ from crud._base import (
 )
 from crud.tenants import get_subscription_by_tenant
 from services import calculations
+from services.fiscal_issue_service import validate_credit_payment_schedule
 from services.document_flow_service import (
     DOCUMENT_KIND_FISCAL_DOCUMENT,
     DOCUMENT_STATUS_PENDING,
@@ -277,13 +278,17 @@ def _build_fiscal_document(
     serie: str,
     nuevo_correlativo: int,
 ):
+    # The quotation is a commercial origin, not the fiscal issuance event.
+    # Recheck under its row lock so concurrent edits cannot bypass validation.
+    issue_datetime = fiscal_time.now_lima_naive()
+    validate_credit_payment_schedule(quote, issue_datetime=issue_datetime)
     return models.Cotizacion(
         serie=serie,
         correlativo=nuevo_correlativo,
         cliente_id=quote.cliente_id,
         usuario_id=usuario_id,
         tenant_id=quote.tenant_id,
-        fecha_emision=quote.fecha_emision or fiscal_time.now_lima_naive(),
+        fecha_emision=issue_datetime,
         fecha_vencimiento=quote.fecha_vencimiento,
         moneda=quote.moneda,
         tipo_comprobante=tipo_comprobante,
