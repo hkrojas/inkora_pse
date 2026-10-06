@@ -757,7 +757,17 @@ export default function ComprobanteNuevoPage() {
     }
   };
 
+  const ensureCurrentIssueDate = () => {
+    const today = inputDateToday();
+    if (form.fecha_emision === today) return true;
+    setForm((current) => ({ ...current, fecha_emision: today }));
+    setConfirmOpen(false);
+    toast('La fecha de emisión se actualizó al día actual de Perú. Revisa los vencimientos antes de confirmar.', 'warning');
+    return false;
+  };
+
   const handleEmitClick = () => {
+    if (!ensureCurrentIssueDate()) return;
     const values = {
       razon_social: form.cliente.razon_social,
       numero_documento: form.cliente.numero_documento,
@@ -808,6 +818,7 @@ export default function ComprobanteNuevoPage() {
   };
 
   const handleEmitConfirmed = async () => {
+    if (!ensureCurrentIssueDate()) return;
     setSaving(true);
     try {
       const catalogOverrides = getCatalogProductOverrides(form.items);
@@ -1063,7 +1074,8 @@ export default function ComprobanteNuevoPage() {
 
                   <div className="field span-4">
                     <label>Fecha de emisión</label>
-                    <DatePicker value={form.fecha_emision} onChange={(v) => setRootField('fecha_emision', v)} />
+                    <input type="date" value={form.fecha_emision} readOnly aria-label="Fecha de emisión" />
+                    <span className="tx-meta">Se asigna al emitir, con la fecha actual de Perú.</span>
                   </div>
 
                   <div className="field span-4">

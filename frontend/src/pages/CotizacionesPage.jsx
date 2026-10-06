@@ -82,6 +82,7 @@ import { formatFiscalDate, getFiscalDocumentStatus } from '../lib/utils/document
 import { computeDocumentTotals, computeLine } from '../lib/utils/documents';
 import { isPositiveDecimal, normalizeQuantity, normalizeUnitPrice, sumMoney } from '../lib/utils/ublCalculations';
 import { useAuth } from '../context/AuthContext';
+import { getEmissionOutcome } from '../lib/utils/emissionJobs';
 
 // ─── Constantes de dominio ────────────────────────────────────────────────────
 
@@ -986,10 +987,11 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
     if (comprobanteInvalido) return;
     setSaving(true);
     try {
-      await svc.facturar(cotizacion.id, {
+      const response = await svc.facturar(cotizacion.id, {
         tipo_comprobante: tipo,
       });
-      toast(`Comprobante ${tipo === '01' ? 'Factura' : 'Boleta'} emitido correctamente`);
+      const outcome = getEmissionOutcome(response, tipo === '01' ? 'Factura' : 'Boleta');
+      toast(outcome.message, outcome.toastType);
       onSuccess();
     } catch (err) {
       toast(err.message, 'error');
@@ -1015,8 +1017,9 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
         toast('El ingreso fue registrado. Aún falta stock en otra línea.', 'warning');
         return;
       }
-      await svc.facturar(cotizacion.id, { tipo_comprobante: tipo });
-      toast(`Comprobante ${tipo === '01' ? 'Factura' : 'Boleta'} emitido correctamente`);
+      const response = await svc.facturar(cotizacion.id, { tipo_comprobante: tipo });
+      const outcome = getEmissionOutcome(response, tipo === '01' ? 'Factura' : 'Boleta');
+      toast(outcome.message, outcome.toastType);
       onSuccess();
     } catch (err) {
       toast(err.message || 'No se pudo registrar el ingreso de stock.', 'error');
@@ -1036,6 +1039,9 @@ function EmitirModal({ cotizacion, onClose, onSuccess }) {
         </p>
         <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
           Doc. cliente: {cliente?.numero_documento} ({tipoDocCliente === '6' ? 'RUC' : tipoDocCliente === '1' ? 'DNI' : tipoDocCliente || 'sin tipo'})
+        </p>
+        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+          El comprobante se emitirá con la fecha actual de Perú.
         </p>
       </div>
 

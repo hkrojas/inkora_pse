@@ -511,6 +511,7 @@ export default function CotizacionDetalle() {
               </p>
               <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
                 Se emitirá un comprobante tipo <strong>{emitirModal === '01' ? 'Factura (01)' : 'Boleta de Venta (03)'}</strong> ante SUNAT.
+                {' '}La fecha de emisión será la fecha actual de Perú.
               </p>
             </div>
           </div>
