@@ -298,10 +298,18 @@ test.describe('Smart PSE GRE QA visual', () => {
 
       for (const width of [320, 390, 768, 1024]) {
         await tenantPages.page.setViewportSize({ width, height: 844 });
-        const titleOverflow = await tenantPages.page.locator('.app-topbar h1').evaluate(
-          (title) => title.scrollWidth - title.clientWidth,
-        );
-        expect(titleOverflow).toBeLessThanOrEqual(2);
+        const title = tenantPages.page.locator('.app-topbar h1');
+        await expect(title).toHaveText('Guías de remisión');
+        await expect(title).toHaveAttribute('title', 'Guías de remisión');
+        const titleLayout = await title.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { overflow: element.scrollWidth - element.clientWidth,
+            textOverflow: style.textOverflow, whiteSpace: style.whiteSpace };
+        });
+        if (width === 320) {
+          expect(titleLayout.textOverflow).toBe('ellipsis');
+          expect(titleLayout.whiteSpace).toBe('nowrap');
+        } else expect(titleLayout.overflow).toBeLessThanOrEqual(2);
         const guideLayout = await tenantPages.page.locator('.guide-table-list').evaluate((card) => {
           const table = card.querySelector('.guide-document-table');
           const row = table.querySelector('tbody tr');

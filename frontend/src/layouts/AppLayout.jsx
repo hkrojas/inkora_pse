@@ -384,17 +384,17 @@ export default function AppLayout() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
           className={cn(
-            'app-topbar sticky top-0 z-30 grid min-h-[72px] flex-shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-[var(--color-border)] bg-[rgba(255,255,255,0.94)] px-4 backdrop-blur-[18px] transition-shadow duration-200 sm:px-6',
+            'app-topbar sticky top-0 z-30 grid min-h-[72px] flex-shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 backdrop-blur-[18px] transition-shadow duration-200 sm:px-6',
             isContentScrolled && 'shadow-[0_8px_20px_rgba(18,30,24,0.08)]',
           )}
         >
           <div className="app-topbar__title flex min-w-0 flex-col pl-10 lg:pl-0">
             <div className="flex items-center gap-2.5">
-              <TopbarTitle className="m-0 truncate text-[18px] font-extrabold leading-tight tracking-[-0.04em] text-[var(--color-text)]">
+              <TopbarTitle title={meta.title} className="m-0 truncate text-[18px] font-extrabold leading-tight tracking-[-0.04em] text-[var(--color-text)]">
                 {meta.title}
               </TopbarTitle>
               {isSuperadmin && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--color-primary-text)]">
+                <span className="hidden items-center gap-1 rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--color-primary-text)] sm:inline-flex">
                   <ShieldCheck size={10} />
                   SA
                 </span>
