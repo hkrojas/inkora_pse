@@ -87,7 +87,7 @@ class _FakeSmartPSEClient:
             raise response
         if response.get("cdr"):
             filename_parts = nombre_archivo.split("-")
-            document_id = "-".join(filename_parts[-2:])
+            document_id = "-".join(filename_parts[1:] if filename_parts[1] in {"RC", "RA", "RR"} else filename_parts[-2:])
             response = dict(response)
             response["xml_firmado"] = xml_content.decode("utf-8")
             response["cdr"] = f"""<ApplicationResponse
@@ -105,7 +105,7 @@ class _FakeSmartPSEClient:
             response = _smartpse_accepted()
             response["xml_firmado"] = self.process_calls[-1][2].decode("utf-8")
             filename_parts = nombre_archivo.split("-")
-            document_id = "-".join(filename_parts[-2:])
+            document_id = "-".join(filename_parts[1:] if filename_parts[1] in {"RC", "RA", "RR"} else filename_parts[-2:])
             response["cdr"] = f"""<ApplicationResponse
                 xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'>
               <cbc:ReferenceID>{document_id}</cbc:ReferenceID>
