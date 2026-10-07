@@ -100,6 +100,7 @@ for (const theme of ['light', 'dark']) {
           expect(Math.abs(titleBlock.y + titleBlock.height / 2 - action.y - action.height / 2), path).toBeLessThan(2);
           expect(heading.x + heading.width, path).toBeLessThanOrEqual(action.x - 3);
           expect(heading.width, path).toBeGreaterThan(20);
+          if (path === '/superadmin' && width < 640) expect(heading.width).toBeGreaterThanOrEqual(70);
           expect(bounds.height, path).toBeLessThanOrEqual(width < 640 ? 80 : 145);
           const controls = header.getByRole('button').filter({ visible: true });
           for (const button of await controls.all()) {

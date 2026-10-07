@@ -394,7 +394,7 @@ export default function AppLayout() {
                 {meta.title}
               </TopbarTitle>
               {isSuperadmin && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--color-primary-text)]">
+                <span className="hidden items-center gap-1 rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--color-primary-text)] sm:inline-flex">
                   <ShieldCheck size={10} />
                   SA
                 </span>
