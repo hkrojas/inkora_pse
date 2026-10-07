@@ -6,11 +6,12 @@ const user = { id: 9, tenant_id: 74, rol: 'admin', is_active: true, is_superadmi
 const client = { id: 1, razon_social: 'CLIENTE QA', tipo_documento: '6', numero_documento: '20191308868', direccion: 'AV. LIMA 100', ubigeo: '150101' };
 const quote = { id: 7, serie: 'COT', correlativo: 7, document_kind: 'quotation', tipo_comprobante: '00', estado: 'pendiente', fecha_emision: '2026-09-22T09:15:00', moneda: 'PEN', total_venta: 118, saldo_pendiente: 118, condicion_pago: 'contado', cliente: client, items: [] };
 
-async function harness(browser, baseURL, width = 1440) {
+async function harness(browser, baseURL, width = 1440, now = '2026-10-07T04:45:00Z') {
   const context = await browser.newContext({ baseURL, timezoneId: 'UTC', viewport: { width, height: 900 }, storageState: { cookies: [], origins: [] } });
   await context.addInitScript(() => localStorage.setItem('token', 'offline-date-qa'));
+  await context.addInitScript((theme) => localStorage.setItem('inkora-theme', theme), width < 500 ? 'dark' : 'light');
   const page = await context.newPage();
-  await page.clock.install({ time: new Date('2026-10-07T04:45:00Z') });
+  await page.clock.install({ time: new Date(now) });
   const errors = attachCriticalErrorCollector(page);
   const unexpected = [], posts = [], creations = [];
   await page.route('**/*', async (route) => {
@@ -63,13 +64,29 @@ for (const tipo of ['01', '03']) {
     try {
       await h.page.goto(`/comprobantes/nuevo?tipo=${tipo}`);
       const field = h.page.getByLabel('Fecha de emisión', { exact: true });
-      await expect(field).toHaveValue('2026-10-06');
+      await expect(field).toHaveText('06/10/2026');
       const chosen = tipo === '03' ? '2026-10-01' : '2026-10-03';
-      await expect(field).toHaveAttribute('min', chosen);
-      await expect(field).toHaveAttribute('max', '2026-10-06');
-      expect(await field.evaluate((node) => node.readOnly)).toBe(false);
-      await field.fill(chosen);
-      await expect(field).toHaveValue(chosen);
+      await expect(h.page.getByText(`Fechas disponibles: ${tipo === '03' ? '01' : '03'}/10/2026 al 06/10/2026 (hora de Perú).`, { exact: true })).toBeVisible();
+      await field.click();
+      const calendar = h.page.getByRole('dialog', { name: 'Seleccionar fecha', exact: true });
+      await expect(calendar).toHaveClass('ink-date-popover');
+      for (let day = 1; day <= 31; day += 1) {
+        const date = calendar.getByRole('button', { name: `${day} de octubre de 2026`, exact: true });
+        if (day >= (tipo === '03' ? 1 : 3) && day <= 6) await expect(date).toBeEnabled();
+        else await expect(date).toBeDisabled();
+      }
+      await expect(calendar.getByRole('button', { name: 'Mes anterior' })).toBeDisabled();
+      await expect(calendar.getByRole('button', { name: 'Mes siguiente' })).toBeDisabled();
+      await expect(calendar.getByRole('button', { name: 'Borrar', exact: true })).toHaveCount(0);
+      await calendar.getByRole('button', { name: `${tipo === '03' ? 1 : 3} de octubre de 2026`, exact: true }).click();
+      await expect(field).toHaveText(`${tipo === '03' ? '01' : '03'}/10/2026`);
+      await expect(field).toBeFocused();
+      await field.click();
+      await expect(calendar.getByRole('button', { name: 'Hoy', exact: true })).toBeEnabled();
+      await calendar.getByRole('button', { name: 'Hoy', exact: true }).click();
+      await expect(field).toHaveText('06/10/2026');
+      await field.click();
+      await calendar.getByRole('button', { name: `${tipo === '03' ? 1 : 3} de octubre de 2026`, exact: true }).click();
       await h.page.getByRole('textbox', { name: 'Número de documento', exact: true }).fill(client.numero_documento);
       await h.page.getByRole('textbox', { name: 'Razón social o nombre', exact: true }).fill(client.razon_social);
       await h.page.getByRole('textbox', { name: 'Dirección fiscal', exact: true }).fill(client.direccion);
@@ -107,15 +124,54 @@ test('cotización antigua: el listado anuncia procesamiento y muestra la fecha f
   } finally { await h.context.close(); }
 });
 
+for (const tipo of ['01', '03']) {
+  test(`calendario ${tipo}: permite el mes anterior dentro del plazo y respeta el tema`, async ({ browser, baseURL }, testInfo) => {
+    const width = tipo === '03' ? 390 : 1440;
+    const h = await harness(browser, baseURL, width, '2026-11-03T04:45:00Z');
+    try {
+      await h.page.goto(`/comprobantes/nuevo?tipo=${tipo}`);
+      const field = h.page.getByLabel('Fecha de emisión', { exact: true });
+      await expect(field).toHaveText('02/11/2026');
+      await field.click();
+      const calendar = h.page.getByRole('dialog', { name: 'Seleccionar fecha', exact: true });
+      await expect(calendar.getByRole('button', { name: 'Mes anterior' })).toBeEnabled();
+      await expect(calendar.getByRole('button', { name: 'Mes siguiente' })).toBeDisabled();
+      await calendar.getByRole('button', { name: 'Mes anterior' }).click();
+      const firstDay = tipo === '03' ? 28 : 30;
+      await expect(calendar.getByRole('button', { name: `${firstDay - 1} de octubre de 2026`, exact: true })).toBeDisabled();
+      await expect(calendar.getByRole('button', { name: `${firstDay} de octubre de 2026`, exact: true })).toBeEnabled();
+      await expect(calendar.getByRole('button', { name: 'Mes anterior' })).toBeDisabled();
+      const bounds = await calendar.boundingBox();
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+      await expect(h.page.locator('html')).toHaveAttribute('data-theme', width < 500 ? 'dark' : 'light');
+      await h.page.screenshot({ path: testInfo.outputPath('calendar-range.png') });
+      await calendar.getByRole('button', { name: `${firstDay} de octubre de 2026`, exact: true }).click();
+      await expect(field).toHaveText(`${firstDay}/10/2026`);
+      await field.click();
+      await calendar.getByRole('button', { name: 'Mes siguiente' }).click();
+      await expect(calendar.getByRole('button', { name: '3 de noviembre de 2026', exact: true })).toBeDisabled();
+      await calendar.getByRole('button', { name: 'Hoy', exact: true }).click();
+      await expect(field).toHaveText('02/11/2026');
+      expect(h.posts).toEqual([]);
+      h.clean();
+    } finally { await h.context.close(); }
+  });
+}
+
 test('una fecha vencida se bloquea; cambiar boleta a factura revalida su propio plazo', async ({ browser, baseURL }) => {
   const h = await harness(browser, baseURL);
   try {
     await h.page.goto('/comprobantes/nuevo?tipo=03');
     const field = h.page.getByLabel('Fecha de emisión', { exact: true });
-    await field.fill('2026-10-01');
+    await field.click();
+    await h.page.getByRole('button', { name: '1 de octubre de 2026', exact: true }).click();
     await h.page.getByRole('tab', { name: 'F Factura', exact: true }).click();
-    await expect(field).toHaveAttribute('min', '2026-10-03');
-    await expect(field).toHaveValue('2026-10-01');
+    await expect(field).toHaveText('01/10/2026');
+    await field.click();
+    await expect(h.page.getByRole('button', { name: '1 de octubre de 2026', exact: true })).toBeDisabled();
+    await expect(h.page.getByRole('button', { name: '3 de octubre de 2026', exact: true })).toBeEnabled();
+    await h.page.keyboard.press('Escape');
     await expect(h.page.getByRole('button', { name: 'Emitir factura', exact: true })).toBeDisabled();
     expect(h.posts).toEqual([]);
     h.clean();

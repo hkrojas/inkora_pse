@@ -41,6 +41,7 @@ export default function DatePicker({
   mode = 'day',
   min,
   max,
+  todayDate,
   ariaLabel,
   ariaLabelledby,
 }) {
@@ -48,7 +49,7 @@ export default function DatePicker({
   const selected = parseDate(value, monthOnly);
   const minDate = parseDate(min, monthOnly);
   const maxDate = parseDate(max, monthOnly);
-  const today = new Date();
+  const today = parseDate(todayDate) || new Date();
   today.setHours(0, 0, 0, 0);
   const generatedId = useId();
   const triggerId = id || `ink-date-${generatedId}`;

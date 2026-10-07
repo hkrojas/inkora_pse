@@ -1048,8 +1048,9 @@ export default function ComprobanteNuevoPage() {
                   )}
 
                   <div className="field span-4">
-                    <label>Fecha de emisión</label>
-                    <input type="date" value={form.fecha_emision} min={issueWindow.min} max={issueWindow.max} onChange={(event) => setRootField('fecha_emision', event.target.value)} aria-label="Fecha de emisión" />
+                    <label htmlFor="comprobante-fecha-emision">Fecha de emisión</label>
+                    <DatePicker id="comprobante-fecha-emision" value={form.fecha_emision} min={issueWindow.min} max={issueWindow.max} todayDate={issueWindow.max} onChange={(value) => setRootField('fecha_emision', value)} required ariaLabel="Fecha de emisión" />
+                    <span className="tx-meta">Fechas disponibles: {issueWindow.min.split('-').reverse().join('/')} al {issueWindow.max.split('-').reverse().join('/')} (hora de Perú).</span>
                     <span className="tx-meta">Elige la fecha real del comprobante. El envío individual debe hacerse hasta {issueWindow.days} días calendario después; no admite fechas futuras.</span>
                     <FieldError message={errors.fecha_emision} />
                   </div>
