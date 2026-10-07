@@ -6,7 +6,6 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session, joinedload
 
 import models
-import fiscal_time
 import schemas
 from access_control import can_access_all_tenant_resources
 from crud._base import (
@@ -16,7 +15,7 @@ from crud._base import (
 )
 from crud.tenants import get_subscription_by_tenant
 from services import calculations
-from services.fiscal_issue_service import validate_credit_payment_schedule
+from services.fiscal_issue_service import resolve_issue_datetime, validate_credit_payment_schedule
 from services.document_flow_service import (
     DOCUMENT_KIND_FISCAL_DOCUMENT,
     DOCUMENT_STATUS_PENDING,
@@ -277,10 +276,11 @@ def _build_fiscal_document(
     tipo_comprobante: str,
     serie: str,
     nuevo_correlativo: int,
+    issue_datetime=None,
 ):
     # The quotation is a commercial origin, not the fiscal issuance event.
     # Recheck under its row lock so concurrent edits cannot bypass validation.
-    issue_datetime = fiscal_time.now_lima_naive()
+    issue_datetime = issue_datetime or resolve_issue_datetime(tipo_comprobante)
     validate_credit_payment_schedule(quote, issue_datetime=issue_datetime)
     return models.Cotizacion(
         serie=serie,

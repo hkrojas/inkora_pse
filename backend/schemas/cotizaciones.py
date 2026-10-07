@@ -1,5 +1,5 @@
 """schemas/cotizaciones.py — Cotizacion, Pago, Cobranza, Facturación schemas."""
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Dict, List, Optional
 
@@ -467,6 +467,7 @@ class CobranzaPageResponse(BaseModel):
 
 class FacturarPayload(StrictInputModel):
     tipo_comprobante: str
+    fecha_emision: Optional[date] = None
     tipo_operacion: Optional[str] = None
     serie_override: Optional[str] = None
     warehouse_id: Optional[int] = None
