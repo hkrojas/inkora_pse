@@ -34,6 +34,7 @@ import { useToast } from '../components/ui/Toast';
 import { useInkoraDialog } from '../components/ui/InkoraDialogProvider';
 import { getEmissionOutcome } from '../lib/utils/emissionJobs';
 import { fiscalDocumentId } from '../lib/utils/fiscalDelivery';
+import { fiscalIssueDateError, fiscalIssueDateWindow } from '../lib/utils/fiscalIssueDate';
 import {
   IGV_FACTOR,
   PAYMENT_OPTIONS,
@@ -106,13 +107,6 @@ function parseInputDate(dateString) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function isFutureInputDate(dateString) {
-  const date = parseInputDate(dateString);
-  if (!date) return false;
-  const today = parseInputDate(inputDateToday());
-  return today ? date > today : false;
-}
-
 function isCreditCondition(value) {
   return Boolean(value && value !== 'contado');
 }
@@ -164,12 +158,7 @@ function buildValidationRules(form) {
       }
       return null;
     },
-    fecha_emision: (v) => {
-      if (!v) return 'Fecha de emision es obligatoria';
-      if (!parseInputDate(v)) return 'Fecha de emision no es valida';
-      if (isFutureInputDate(v)) return 'La fecha de emision no puede ser futura';
-      return null;
-    },
+    fecha_emision: (v) => fiscalIssueDateError(v, form.tipo_comprobante),
     cuotas_pago: () => {
       if (!isCreditCondition(form.condicion_pago)) return null;
 
@@ -535,22 +524,7 @@ export default function ComprobanteNuevoPage() {
       }
 
       if (key === 'fecha_emision') {
-        const days = paymentDays(current.condicion_pago);
-        const fechaVencimiento = days > 0 ? addDays(value, days) : current.fecha_vencimiento;
-        const shouldSyncSingleCuota = isCreditCondition(current.condicion_pago)
-          && (current.cuotas_pago || []).length <= 1;
-        return {
-          ...current,
-          fecha_emision: value,
-          fecha_vencimiento: fechaVencimiento,
-          cuotas_pago: shouldSyncSingleCuota
-            ? buildDefaultCuotas(
-                value,
-                current.condicion_pago,
-                computeDocumentTotals(current.items, current.incluye_igv).total,
-              )
-            : current.cuotas_pago,
-        };
+        return { ...current, fecha_emision: value };
       }
 
       if (key === 'fecha_vencimiento') {
@@ -757,17 +731,16 @@ export default function ComprobanteNuevoPage() {
     }
   };
 
-  const ensureCurrentIssueDate = () => {
-    const today = inputDateToday();
-    if (form.fecha_emision === today) return true;
-    setForm((current) => ({ ...current, fecha_emision: today }));
+  const ensureValidIssueDate = () => {
+    const error = fiscalIssueDateError(form.fecha_emision, form.tipo_comprobante);
+    if (!error) return true;
     setConfirmOpen(false);
-    toast('La fecha de emisión se actualizó al día actual de Perú. Revisa los vencimientos antes de confirmar.', 'warning');
+    toast(error, 'warning');
     return false;
   };
 
   const handleEmitClick = () => {
-    if (!ensureCurrentIssueDate()) return;
+    if (!ensureValidIssueDate()) return;
     const values = {
       razon_social: form.cliente.razon_social,
       numero_documento: form.cliente.numero_documento,
@@ -818,7 +791,7 @@ export default function ComprobanteNuevoPage() {
   };
 
   const handleEmitConfirmed = async () => {
-    if (!ensureCurrentIssueDate()) return;
+    if (!ensureValidIssueDate()) return;
     setSaving(true);
     try {
       const catalogOverrides = getCatalogProductOverrides(form.items);
@@ -837,7 +810,7 @@ export default function ComprobanteNuevoPage() {
         : 'document';
       const shouldSyncCatalog = catalogChoice === 'catalog';
 
-      const clienteId = await upsertCliente({
+      const { id: clienteId } = await upsertCliente({
         id: form.cliente_id,
         isNew: clienteState.isNew,
         isDirty: clienteState.isDirty,
@@ -857,6 +830,7 @@ export default function ComprobanteNuevoPage() {
       const quote = await cotizacionesSvc.create(buildQuotePayload(clienteId, resolvedItems));
       const emissionResponse = await cotizacionesSvc.facturar(quote.id, {
         tipo_comprobante: form.tipo_comprobante,
+        fecha_emision: form.fecha_emision,
         tipo_operacion: form.tipo_operacion,
         serie_override: seriesPreview,
         warehouse_id: form.warehouse_id ? Number(form.warehouse_id) : null,
@@ -916,6 +890,7 @@ export default function ComprobanteNuevoPage() {
     : canEmit
       ? 'Listo para revisión fiscal'
       : 'Completa cliente y líneas';
+  const issueWindow = fiscalIssueDateWindow(form.tipo_comprobante);
   const documentSections = [
     { id: 'document-emission', label: 'Documento', status: 'Configurado' },
     { id: 'document-client', label: 'Cliente', status: form.cliente.razon_social ? 'Listo' : 'Pendiente' },
@@ -1074,8 +1049,9 @@ export default function ComprobanteNuevoPage() {
 
                   <div className="field span-4">
                     <label>Fecha de emisión</label>
-                    <input type="date" value={form.fecha_emision} readOnly aria-label="Fecha de emisión" />
-                    <span className="tx-meta">Se asigna al emitir, con la fecha actual de Perú.</span>
+                    <input type="date" value={form.fecha_emision} min={issueWindow.min} max={issueWindow.max} onChange={(event) => setRootField('fecha_emision', event.target.value)} aria-label="Fecha de emisión" />
+                    <span className="tx-meta">Elige la fecha real del comprobante. El envío individual debe hacerse hasta {issueWindow.days} días calendario después; no admite fechas futuras.</span>
+                    <FieldError message={errors.fecha_emision} />
                   </div>
 
                   <div className="field span-4">
@@ -1395,6 +1371,7 @@ export default function ComprobanteNuevoPage() {
         total={totals.total}
         moneda={form.moneda}
         extraLines={[
+          `Fecha de emisión: ${issueDateLabel}`,
           `${getIdentityLabel(form.cliente.tipo_documento)} ${form.cliente.numero_documento}`,
           `${form.items.length} línea${form.items.length !== 1 ? 's' : ''} · ${paymentLabel}`,
         ]}
