@@ -390,7 +390,7 @@ export default function AppLayout() {
         >
           <div className="app-topbar__title flex min-w-0 flex-col pl-10 lg:pl-0">
             <div className="flex items-center gap-2.5">
-              <TopbarTitle className="m-0 truncate text-[18px] font-extrabold leading-tight tracking-[-0.04em] text-[var(--color-text)]">
+              <TopbarTitle title={meta.title} className="m-0 truncate text-[18px] font-extrabold leading-tight tracking-[-0.04em] text-[var(--color-text)]">
                 {meta.title}
               </TopbarTitle>
               {isSuperadmin && (

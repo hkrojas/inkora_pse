@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { attachCriticalErrorCollector } from './helpers/assertions';
 
+test.describe.configure({ mode: 'parallel' });
+
 const apiOrigin = new URL(process.env.E2E_API_URL || 'http://localhost:8000').origin;
 const screens = [
   ['/dashboard', 'Resumen'], ['/clientes', 'Clientes'], ['/productos', 'Productos'],
@@ -89,6 +91,7 @@ for (const theme of ['light', 'dark']) {
           await page.goto(path);
           const title = page.locator('.app-topbar__title').locator('h1, p');
           await expect(title).toHaveText(text);
+          await expect(title).toHaveAttribute('title', text);
           await expect(page.getByText('Cargando...', { exact: true })).toHaveCount(0);
           await expect(page.locator('main').first()).toBeVisible();
           const header = page.locator('.app-topbar');
