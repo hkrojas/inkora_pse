@@ -1031,18 +1031,17 @@ export default function ComprobanteNuevoPage() {
 
                   {warehouses.length > 0 && (
                     <div className="field span-4">
-                      <label>Almacén de salida</label>
-                      <select
-                        className="input"
+                      <label htmlFor="comprobante-almacen">Almacén de salida</label>
+                      <CustomSelect
+                        id="comprobante-almacen"
+                        ariaLabel="Almacén de salida"
                         value={form.warehouse_id}
-                        onChange={(event) => setRootField('warehouse_id', event.target.value)}
-                      >
-                        {warehouses.map((warehouse) => (
-                          <option key={warehouse.id} value={warehouse.id}>
-                            {warehouse.name}{warehouse.is_default ? ' · Principal' : ''}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(value) => setRootField('warehouse_id', value)}
+                        options={warehouses.map((warehouse) => ({
+                          value: String(warehouse.id),
+                          label: `${warehouse.name}${warehouse.is_default ? ' · Principal' : ''}`,
+                        }))}
+                      />
                       <span className="tx-meta">El stock se compromete al enviar y se descuenta solo tras aceptación SUNAT.</span>
                     </div>
                   )}
