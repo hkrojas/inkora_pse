@@ -48,6 +48,8 @@ async function harness(browser, baseURL, width = 1440) {
     else if (path === '/cotizaciones/42') payload = { ...quote, id: 42, source_quote_id: 7, document_kind: 'fiscal_document', tipo_comprobante: posts[0]?.tipo_comprobante || '01' };
     else if (path === '/cotizaciones/42/pagos') payload = [];
     else if (path === '/facturacion/comprobantes/42/guias') payload = [];
+    else if (path === '/facturas-emitidas/42/acciones') payload = { retry_emission: false, retry_block_reason: 'Resultado fiscal pendiente', job_id: 1007, job_status: 'queued', job_action: 'emit_fiscal_document' };
+    else if (path === '/emission-jobs/1007') payload = { id: 1007, resource_id: 42, status: 'queued', action: 'emit_fiscal_document', updated_at: '2026-10-06T23:45:00-05:00' };
     else if (path === '/facturacion/comprobantes/7/guias') payload = [];
     else { unexpected.push(`${method} ${path}`); await route.abort(); return; }
     await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(payload) });
@@ -76,7 +78,11 @@ for (const tipo of ['01', '03']) {
       await h.page.getByPlaceholder('0.00', { exact: true }).fill('118');
       await h.page.getByRole('button', { name: tipo === '03' ? 'Emitir boleta' : 'Emitir factura', exact: true }).click();
       await expect(h.page.getByText(`Fecha de emisión: ${tipo === '03' ? '1' : '3'}/10/2026`, { exact: true })).toBeVisible();
+      const actionsReady = h.page.waitForResponse((response) => new URL(response.url()).pathname === '/facturas-emitidas/42/acciones');
+      const jobReady = h.page.waitForResponse((response) => new URL(response.url()).pathname === '/emission-jobs/1007');
       await h.page.getByRole('button', { name: 'Emitir comprobante', exact: true }).click();
+      await actionsReady;
+      await jobReady;
       await expect.poll(() => h.posts.length).toBe(1);
       expect(h.posts[0].fecha_emision).toBe(chosen);
       expect(h.creations[0].cliente_id).toBe(1);
