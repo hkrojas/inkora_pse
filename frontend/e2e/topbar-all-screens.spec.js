@@ -92,6 +92,21 @@ for (const theme of ['light', 'dark']) {
           const title = page.locator('.app-topbar__title').locator('h1, p');
           await expect(title).toHaveText(text);
           await expect(title).toHaveAttribute('title', text);
+          const contrast = await title.evaluate(element => {
+            const rgb = color => color.match(/[\d.]+/g).map(Number);
+            const foreground = rgb(getComputedStyle(element).color);
+            const surface = rgb(getComputedStyle(element.closest('header')).backgroundColor);
+            const shell = rgb(getComputedStyle(element.closest('.app-dashboard-shell')).backgroundColor);
+            const opacity = surface[3] ?? 1;
+            const background = surface.slice(0, 3).map((value, index) => value * opacity + shell[index] * (1 - opacity));
+            const luminance = channels => channels.slice(0, 3).map(value => {
+              const channel = value / 255;
+              return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+            }).reduce((total, value, index) => total + value * [0.2126, 0.7152, 0.0722][index], 0);
+            const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+            return (values[0] + 0.05) / (values[1] + 0.05);
+          });
+          expect(contrast, `${path}: contraste del título`).toBeGreaterThanOrEqual(4.5);
           await expect(page.getByText('Cargando...', { exact: true })).toHaveCount(0);
           await expect(page.locator('main').first()).toBeVisible();
           const header = page.locator('.app-topbar');

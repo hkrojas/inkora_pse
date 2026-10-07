@@ -384,7 +384,7 @@ export default function AppLayout() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
           className={cn(
-            'app-topbar sticky top-0 z-30 grid min-h-[72px] flex-shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-[var(--color-border)] bg-[rgba(255,255,255,0.94)] px-4 backdrop-blur-[18px] transition-shadow duration-200 sm:px-6',
+            'app-topbar sticky top-0 z-30 grid min-h-[72px] flex-shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 backdrop-blur-[18px] transition-shadow duration-200 sm:px-6',
             isContentScrolled && 'shadow-[0_8px_20px_rgba(18,30,24,0.08)]',
           )}
         >
