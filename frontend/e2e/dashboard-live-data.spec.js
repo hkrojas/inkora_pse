@@ -555,6 +555,70 @@ for (const mode of ['desktop', 'mobile', 'reduced', 'keyboard']) {
   });
 }
 
+for (const theme of ['light', 'dark']) {
+  for (const width of [320, 390]) {
+    test(`cotizaciones sin cortar la pantalla al tocar el interruptor (${theme}, ${width}px)`, async ({ browser, baseURL }, testInfo) => {
+      const { context, page, state } = await createDashboardContext(browser, baseURL, {
+        viewport: { width, height: 780 }, hasTouch: true,
+        payloadForQuery: variedQuotesPayload, reducedMotion: 'no-preference',
+      });
+      const errors = attachCriticalErrorCollector(page);
+      try {
+        await context.addInitScript((selected) => localStorage.setItem('inkora-theme', selected), theme);
+        await page.clock.setFixedTime(new Date('2026-09-30T15:00:00Z'));
+        await page.goto('/dashboard');
+        await expect(page.locator('g.business-chart__quoted')).toHaveCSS('opacity', '1');
+        await page.locator('.business-dashboard__rankings').evaluate(async (element) => {
+          await Promise.all(element.getAnimations().map((animation) => animation.finished));
+        });
+        const label = page.locator('.business-toggle');
+        const checkbox = page.getByRole('checkbox', { name: 'Mostrar importe cotizado' });
+        const sales = page.locator('.business-chart__line--sales');
+        const calls = state.dashboardCalls.length;
+        for (const expanded of [false, true]) {
+          if (expanded) await page.getByRole('button', { name: 'Ampliar gráfico', exact: true }).tap();
+          await label.evaluate((element) => {
+            const main = element.closest('main');
+            main.scrollTop += element.getBoundingClientRect().top - main.getBoundingClientRect().top - 100;
+          });
+          await afterChartPaint(page);
+          const geometry = () => checkbox.evaluate((input) => {
+            const rect = (element) => { const r = element.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, height: r.height }; };
+            const main = input.closest('main');
+            return { windowY: window.scrollY, main: rect(main), scroll: main.scrollTop,
+              input: rect(input), label: rect(input.closest('label')),
+              canvas: rect(document.querySelector('.business-chart__canvas')),
+              conversion: rect(document.querySelector('.business-sales__conversion')),
+              ranking: rect(document.querySelector('.business-ranking')) };
+          });
+          const before = await geometry();
+          expect(before.scroll).toBeGreaterThan(0);
+          expect(before.input.top).toBeGreaterThanOrEqual(before.label.top);
+          expect(before.input.bottom).toBeLessThanOrEqual(before.label.bottom);
+          expect(before.input.left).toBeGreaterThanOrEqual(before.label.left);
+          expect(before.input.right).toBeLessThanOrEqual(before.label.right);
+          const salesPath = await sales.getAttribute('d');
+          for (const checked of [false, true, false, true]) {
+            await label.tap();
+            await expect(checkbox).toBeChecked({ checked });
+            await expect(page.locator('g.business-chart__quoted')).toHaveCSS('opacity', checked ? '1' : '0');
+            expect(await geometry()).toEqual(before);
+            await expect(sales).toHaveAttribute('d', salesPath);
+          }
+          const path = testInfo.outputPath(`toggle-${theme}-${width}-${expanded ? 'expanded' : 'normal'}.png`);
+          await page.screenshot({ path });
+          await testInfo.attach('Pantalla tras alternar sin desplazar', { path, contentType: 'image/png' });
+        }
+        expect(state.dashboardCalls).toHaveLength(calls);
+        expect(state.unexpectedRequests).toEqual([]);
+        errors.assertClean();
+      } finally {
+        await context.close();
+      }
+    });
+  }
+}
+
 for (const width of [320, 390, 600, 768, 1024, 1440]) {
   test(`conversión legible: porcentaje decimal sin choques a ${width}px`, async ({ browser, baseURL }, testInfo) => {
     const payload = {
