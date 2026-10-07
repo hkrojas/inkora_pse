@@ -36,6 +36,7 @@ from api_dependencies import (
 from api_utils import raise_internal_server_error
 from rate_limit import limiter
 from services import fiscal_artifact_service, pdf_storage_service
+from services.fiscal_issue_service import resolve_issue_datetime, validate_credit_payment_schedule
 from services.facturacion_background_service import process_direct_sunat_emission_bg
 from models.tenants import (
     USAGE_LIMIT_KIND_BOLETA,
@@ -708,8 +709,6 @@ def _validate_sunat_line_item(item, index: int) -> None:
 
 
 def _validate_credit_payment_schedule(quote, *, issue_datetime=None) -> None:
-    from services.fiscal_issue_service import validate_credit_payment_schedule
-
     try:
         validate_credit_payment_schedule(quote, issue_datetime=issue_datetime)
     except ValueError as exc:
@@ -849,7 +848,11 @@ def emitir_comprobante(
     _ensure_commercial_quote(quote)
 
     # Pre-validación estructural antes de crear registro o contactar SUNAT
-    _validar_pre_emision(quote, payload.tipo_comprobante, issue_datetime=fiscal_time.now_lima_naive())
+    try:
+        issue_datetime = resolve_issue_datetime(payload.tipo_comprobante, payload.fecha_emision)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    _validar_pre_emision(quote, payload.tipo_comprobante, issue_datetime=issue_datetime)
     _validate_launch_operation(payload.tipo_operacion)
     _validate_serie_override(payload.tipo_comprobante, payload.serie_override)
 
@@ -876,6 +879,7 @@ def emitir_comprobante(
             current_user.id,
             payload.tipo_comprobante,
             payload.serie_override,
+            fecha_emision=payload.fecha_emision,
         )
 
         resolved_mode = emission_queue_service.resolve_emission_mode(

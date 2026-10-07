@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
@@ -32,6 +32,7 @@ from services.document_flow_service import (
 from services import fiscal_qr_service
 from services import inventory_service
 from services.fiscal_balance_service import ensure_credit_note_within_available_amount
+from services.fiscal_issue_service import resolve_issue_datetime
 
 
 def _parse_provider_verified_at(value):
@@ -52,6 +53,7 @@ def create_fiscal_document_from_quote(
     usuario_id: int,
     tipo_comprobante: str,
     serie_override: str | None = None,
+    fecha_emision: date | None = None,
 ):
     return _retry_on_correlativo_conflict(
         _create_fiscal_document_from_quote_inner,
@@ -60,6 +62,7 @@ def create_fiscal_document_from_quote(
         usuario_id,
         tipo_comprobante,
         serie_override,
+        fecha_emision,
     )
 
 
@@ -69,6 +72,7 @@ def _create_fiscal_document_from_quote_inner(
     usuario_id: int,
     tipo_comprobante: str,
     serie_override: str | None = None,
+    fecha_emision: date | None = None,
 ):
     if not is_quote_document(quote):
         raise ValueError("Solo se puede facturar una cotizacion comercial.")
@@ -81,6 +85,7 @@ def _create_fiscal_document_from_quote_inner(
     if not tenant:
         raise ValueError("No se encontro la empresa emisora.")
 
+    issue_datetime = resolve_issue_datetime(tipo_comprobante, fecha_emision)
     serie = _resolve_fiscal_series(tenant, tipo_comprobante, serie_override)
     nuevo_correlativo = _next_correlativo_for_series(db, quote.tenant_id, serie)
     fiscal_document = _build_fiscal_document(
@@ -89,6 +94,7 @@ def _create_fiscal_document_from_quote_inner(
         tipo_comprobante,
         serie,
         nuevo_correlativo,
+        issue_datetime,
     )
 
     try:

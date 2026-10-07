@@ -53,11 +53,60 @@ def _setup(db, tipo):
     return tenant, user, quote
 
 
-def _emit(db, user, quote, tipo):
+def _emit(db, user, quote, tipo, selected_date=None):
     request = Request({"type": "http", "method": "POST", "path": "/cotizaciones/facturar",
                        "headers": [], "client": ("127.0.0.1", 1234)})
-    return facturacion.emitir_comprobante(request, quote.id, FacturarPayload(tipo_comprobante=tipo),
+    return facturacion.emitir_comprobante(request, quote.id, FacturarPayload(tipo_comprobante=tipo, fecha_emision=selected_date),
         BackgroundTasks(), db=db, current_user=user, _emission_check=user, mode="async")
+
+
+@pytest.mark.parametrize("tipo,age", [("01", 0), ("01", 1), ("01", 3), ("03", 0), ("03", 3), ("03", 5)])
+def test_explicit_issue_date_reaches_frozen_payload_and_xml(db_session, tipo, age, monkeypatch):
+    _, user, quote = _setup(db_session, tipo)
+    chosen = (ISSUE_DATE - timedelta(days=age)).date()
+    response = _emit(db_session, user, quote, tipo, chosen)
+    result = json.loads(response.body)
+    document = db_session.get(models.Cotizacion, result["resource_id"])
+    job = db_session.get(models.DocumentEmissionJob, result["job_id"])
+    prepared = job.payload_snapshot["prepared_sale"]
+    assert document.fecha_emision.date() == chosen
+    assert prepared["payload"]["fechaEmision"][:10] == chosen.isoformat()
+    assert f"<cbc:IssueDate>{chosen}</cbc:IssueDate>" in prepared["unsigned_xml"]
+    assert quote.fecha_emision == OLD_DATE
+    monkeypatch.setattr(fiscal_time, "now_lima", lambda: (ISSUE_DATE + timedelta(days=1)).replace(tzinfo=fiscal_time.LIMA_TZ))
+    same_job, created = emission_queue_service.enqueue_fiscal_document_job(db_session, document, user, tipo_comprobante=tipo)
+    assert not created and same_job.id == job.id
+    assert same_job.payload_snapshot["prepared_sale"] == prepared
+    assert document.fecha_emision.date() == chosen
+
+
+@pytest.mark.parametrize("tipo,age", [("01", -1), ("01", 4), ("03", -1), ("03", 6)])
+def test_expired_or_future_explicit_date_fails_before_document_job_or_correlativo(db_session, tipo, age):
+    _, user, quote = _setup(db_session, tipo)
+    chosen = (ISSUE_DATE - timedelta(days=age)).date()
+    with patch("crud._cotizaciones_fiscal._next_correlativo_for_series", side_effect=AssertionError("Reserved fiscal number")):
+        with pytest.raises(HTTPException) as exc:
+            _emit(db_session, user, quote, tipo, chosen)
+    assert exc.value.status_code == 400
+    assert db_session.query(models.Cotizacion).filter_by(source_quote_id=quote.id).count() == 0
+    assert db_session.query(models.DocumentEmissionJob).count() == 0
+    with pytest.raises(ValueError):
+        crud.create_fiscal_document_from_quote(db_session, quote, user.id, tipo, fecha_emision=chosen)
+    assert db_session.query(models.Cotizacion).filter_by(source_quote_id=quote.id).count() == 0
+
+
+@pytest.mark.parametrize("tipo", ["01", "03"])
+def test_explicit_past_issue_date_validates_credit_against_that_date_without_shifting(db_session, tipo):
+    _, user, quote = _setup(db_session, tipo)
+    chosen = (ISSUE_DATE - timedelta(days=3)).date()
+    quote.condicion_pago = "credito_7"
+    quote.fecha_vencimiento = ISSUE_DATE - timedelta(days=1)
+    quote.cuotas_pago = [{"fecha_pago": quote.fecha_vencimiento.isoformat(), "monto": "118.00"}]
+    db_session.commit()
+    response = _emit(db_session, user, quote, tipo, chosen)
+    job = db_session.get(models.DocumentEmissionJob, json.loads(response.body)["job_id"])
+    assert job.payload_snapshot["prepared_sale"]["payload"]["cuotas"][0]["fechaPago"][:10] == "2026-10-05"
+    assert quote.cuotas_pago[0]["fecha_pago"] == "2026-10-05T23:45:00"
 
 
 @pytest.mark.parametrize("tipo", ["01", "03"])

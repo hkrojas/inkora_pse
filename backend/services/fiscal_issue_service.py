@@ -1,7 +1,29 @@
 """Validate payment dates against the date of the new fiscal document."""
-from datetime import datetime
+from datetime import date, datetime, timedelta
+
+import fiscal_time
 
 from services import calculations
+
+
+def resolve_issue_datetime(tipo_comprobante: str, requested_date: date | None = None) -> datetime:
+    """Choose a fiscal date explicitly, never inherit the quotation's date.
+
+    This flow submits each document individually. The following-calendar-day
+    limits are three for invoices and five for individual receipts; summary
+    reference dates have their own contract and are not handled here.
+    """
+    now = fiscal_time.now_lima_naive()
+    if requested_date is None:
+        return now
+    max_days = {"01": 3, "03": 5}.get(tipo_comprobante)
+    if max_days is None:
+        raise ValueError("El tipo de comprobante no admite seleccionar esta fecha de emision.")
+    if requested_date > now.date():
+        raise ValueError("La fecha de emision no puede ser futura.")
+    if requested_date < now.date() - timedelta(days=max_days):
+        raise ValueError(f"Vencio el plazo de envio individual: elija una fecha dentro de los {max_days} dias calendario anteriores o de hoy.")
+    return datetime.combine(requested_date, now.time())
 
 
 def _parse_due_date(value) -> datetime | None:
