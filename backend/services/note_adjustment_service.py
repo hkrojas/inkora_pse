@@ -396,7 +396,13 @@ def update_draft(db, tenant_id, user_id, note_id, payload):
     ).first()
     if not probe or probe.estado != "borrador" or probe.nota_ajuste_metadata is None:
         raise ValueError("Solo se pueden editar borradores de la empresa.")
-    _source_document(db, tenant_id, probe.nota_referencia_id, lock=True)
+    # A draft may change its source. Lock both sources in stable order before
+    # the note, preserving source -> note ordering used by its emission worker.
+    source_ids = {payload.comprobante_afectado_id}
+    if probe.nota_referencia_id is not None:
+        source_ids.add(probe.nota_referencia_id)
+    for source_id in sorted(source_ids):
+        _source_document(db, tenant_id, source_id, lock=True)
     note = db.query(models.Cotizacion).filter(
         models.Cotizacion.id == note_id,
         models.Cotizacion.tenant_id == tenant_id,

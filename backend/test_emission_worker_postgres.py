@@ -854,3 +854,31 @@ def test_void_and_note_creation_race_has_one_winner(factory):
         notes = db.query(models.Cotizacion).filter_by(nota_referencia_id=document_id).count()
         jobs = db.query(models.DocumentEmissionJob).filter_by(resource_id=document_id, action=models.EMISSION_JOB_ACTION_VOID_FISCAL).count()
         assert notes + jobs == 1
+
+
+def test_void_guards_preserve_note_draft_source_lock_order(factory):
+    from test_void_recovery import accepted_document
+    from test_notes_v2 import _payload
+    from conftest import make_quote_via_crud
+    from services import note_adjustment_service as notes
+    with factory() as db:
+        tenant, user, first = accepted_document(db, "VPG06", kind="01")
+        quote = make_quote_via_crud(db, tenant, user, first.cliente)
+        second = crud.create_fiscal_document_from_quote(db, quote, user.id, "01")
+        second.estado = "facturada"
+        db.commit()
+        draft1, _ = notes.create_draft(db, tenant.id, user.id, _payload(first), "source-1")
+        draft2, _ = notes.create_draft(db, tenant.id, user.id, _payload(second), "source-2")
+        tenant_id, user_id = tenant.id, user.id
+        swaps = [(draft1.id, second.id), (draft2.id, first.id)]
+    barrier = threading.Barrier(2)
+    def swap(pair):
+        with factory() as db:
+            target = db.get(models.Cotizacion, pair[1])
+            payload = _payload(target)
+            barrier.wait(timeout=5)
+            note = notes.update_draft(db, tenant_id, user_id, pair[0], payload)
+            return note.nota_referencia_id
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        result = list(executor.map(swap, swaps))
+    assert result == [pair[1] for pair in swaps]
