@@ -152,6 +152,8 @@ def recover_coordinator(db, *, legacy_timeout):
                          AND ({_REQUIRES_CONSULT_SQL})
                          THEN 'consult_fiscal_document' ELSE j.action END,
             status=CASE WHEN j.provider='smartpse' AND j.action IN ('emit_fiscal_document','consult_fiscal_document') THEN 'retry'
+                        WHEN j.provider='smartpse' AND j.action='void_fiscal_document'
+                         AND j.payload_snapshot->>'void_protocol_version'='1' THEN 'retry'
                         WHEN j.lease_token IS NOT NULL AND j.execution_started_at IS NOT NULL
                          THEN 'pending_confirmation'
                         WHEN j.lease_token IS NULL AND j.attempts >= j.max_attempts THEN 'failed'
@@ -163,6 +165,8 @@ def recover_coordinator(db, *, legacy_timeout):
                         ELSE 'Reserva recuperada tras interrupción del worker.' END,
             locked_at=NULL, processing_started_at=NULL,
             finished_at=CASE WHEN j.provider='smartpse' AND j.action IN ('emit_fiscal_document','consult_fiscal_document') THEN NULL
+                        WHEN j.provider='smartpse' AND j.action='void_fiscal_document'
+                         AND j.payload_snapshot->>'void_protocol_version'='1' THEN NULL
                         WHEN j.execution_started_at IS NOT NULL OR j.attempts >= j.max_attempts
                          THEN clock_timestamp()::timestamp ELSE NULL END,
             available_at=clock_timestamp()::timestamp,updated_at=clock_timestamp()::timestamp
@@ -219,14 +223,15 @@ def recover(db):
         started = job.execution_started_at is not None
         sale = job.provider == "smartpse" and job.action in {"emit_fiscal_document", "consult_fiscal_document"}
         safe_to_submit = not requires_fiscal_consult(job)
-        job.status = "retry" if sale or not started else "pending_confirmation"
+        void = job.provider == "smartpse" and job.action == "void_fiscal_document" and (job.payload_snapshot or {}).get("void_protocol_version") == 1
+        job.status = "retry" if sale or void or not started else "pending_confirmation"
         if sale and not safe_to_submit:
             job.action = "consult_fiscal_document"
         job.last_error = ("Reserva recuperada antes de iniciar envio fiscal." if sale and safe_to_submit else
                           "Reserva vencida tras iniciar ejecución; conciliar antes de reenviar."
                           if started else "Reserva vencida antes de iniciar ejecución.")
         job.available_at = now
-        job.finished_at = now if started and not sale else None
+        job.finished_at = now if started and not (sale or void) else None
         job.locked_at = None
         job.processing_started_at = None
         job.updated_at = now

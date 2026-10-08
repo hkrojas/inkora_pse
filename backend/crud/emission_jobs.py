@@ -454,9 +454,10 @@ def recover_stale_processing_jobs(
     recovered = 0
     for job in jobs:
         sale = job.provider == "smartpse" and job.action in {models.EMISSION_JOB_ACTION_EMIT_FISCAL, models.EMISSION_JOB_ACTION_CONSULT_FISCAL}
+        void = job.provider == "smartpse" and job.action == models.EMISSION_JOB_ACTION_VOID_FISCAL and (job.payload_snapshot or {}).get("void_protocol_version") == 1
         if sale and requires_fiscal_consult(job):
             job.action = models.EMISSION_JOB_ACTION_CONSULT_FISCAL
-        if not sale and (job.attempts or 0) >= (job.max_attempts or 1):
+        if not sale and not void and (job.attempts or 0) >= (job.max_attempts or 1):
             job.status = models.EMISSION_JOB_STATUS_FAILED
             job.finished_at = now
             job.last_error = (
