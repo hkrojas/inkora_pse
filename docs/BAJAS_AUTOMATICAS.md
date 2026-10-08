@@ -31,7 +31,7 @@ Un fallo posterior a un posible envío también bloquea nuevas notas y preparaci
 
 Este cambio afecta estados fiscales e inventario. La regla 12 de `AGENTS.md` exige staging aislado antes de producción. PostgreSQL local y mocks no equivalen a homologación Smart PSE/SUNAT. En staging deben comprobarse RC y RA con CDR auténtico, su nombre de archivo, recuperación tras interrupción, rechazo sin reversión y stock después de aceptación. No usar documentos ni correlativos productivos para esas pruebas.
 
-El endurecimiento separado del resumen **manual** de PR 43 no está incorporado en esta rama: es otro bloque revisable y tampoco debe considerarse publicado. Este bloque cubre las bajas automáticas; no añade un cron de resúmenes de aceptación o modificación.
+El endurecimiento del resumen **manual** de PR 43 se incorporó al candidato el 8 de octubre. Comparte la validación del CDR y la reserva del correlativo RC con las bajas automáticas; consultar un resumen pendiente no lo reenvía. Los alias numéricos, por ejemplo `-1` y `-00001`, no permiten reservar el mismo lote dos veces. La aceptación definitiva no puede retroceder por una respuesta tardía. Esta integración no añade un cron de resúmenes de aceptación o modificación ni habilita `daily_summary` en empresas nuevas. Continúa pendiente su publicación.
 
 Para la entrega, incorporar cualquier avance posterior de main y repetir las puertas pertinentes. Aplicar exclusivamente `docs/RELEASE_CANONICO.md`, con la misma huella para API, worker y frontend, API compatible primero y verificación posterior por lectura. Sin migraciones remotas en este bloque. Registrar commit de main, huella e IDs de servicios solo después de un despliegue efectivo.
 
@@ -44,6 +44,15 @@ real. Los mismos trabajos se recuperaron sin reenviar; la repetición posterior
 no realizó llamadas fiscales. Series, identificadores, evidencias y límites en
 [SERIES_DEMO_BAJAS_2026-10-08.md](SERIES_DEMO_BAJAS_2026-10-08.md).
 La puerta de staging aislado antes de producción continúa pendiente.
+
+La ampliación demo aceptó BBAJ-2 y sus notas BCBJ-1/BDBJ-1, bloqueó la baja
+del origen mientras las notas seguían vigentes y terminó las tres bajas RC con
+CDR código 0. La consulta manual recuperó el RC anterior sin otro POST fiscal.
+En PostgreSQL local aislado, la baja aceptada repuso stock 8 → 10 una sola vez.
+La reserva inicial de inventario se completó mediante el servicio real después
+de la emisión demo, por una omisión del harness; no se reenvió el comprobante.
+Esto valida la baja y su idempotencia sobre evidencia demo real, pero no acredita
+un recorrido de inventario desde la interfaz desplegada.
 
 ## Referencias oficiales
 
