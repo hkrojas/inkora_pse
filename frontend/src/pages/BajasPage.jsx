@@ -12,6 +12,8 @@ import {
   XOctagon,
 } from 'lucide-react';
 import { api } from '../lib/utils/api';
+import useFiscalTracking from '../hooks/useFiscalTracking';
+import { fiscalTrackingState } from '../lib/utils/fiscalTracking';
 import { useToast } from '../components/ui/Toast';
 import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
@@ -114,6 +116,9 @@ export default function BajasPage() {
     }
   };
 
+  const { job, error: trackingError, track } = useFiscalTracking(selected?.id, load);
+  const tracking = fiscalTrackingState(job || {});
+
   useEffect(() => {
     const controller = new AbortController();
     const debounce = setTimeout(() => load({ signal: controller.signal }), 300);
@@ -184,13 +189,13 @@ export default function BajasPage() {
     setConfirmOpen(true);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (notDelivered) => {
     setSubmitting(true);
     try {
-      await api.post('/bajas/anular', { comprobante_id: selected.id, motivo });
-      toast(`${selected.serie}-${String(selected.correlativo).padStart(6, '0')} enviado para baja`, 'success');
+      const response = await api.post('/bajas/anular', { comprobante_id: selected.id, motivo, confirmed_not_delivered: notDelivered === true });
+      track({ job_id: response.job_id, job_status: response.job_status, job_action: 'void_fiscal_document' });
+      toast('Solicitud de baja registrada. Inkora consultará automáticamente su aceptación; el documento conserva su estado hasta confirmarse.', 'info');
       setConfirmOpen(false);
-      setSelected(null);
       load();
     } catch (err) {
       toast(err?.message || 'No se pudo procesar la baja. Revisa los datos e intentalo nuevamente.', 'error');
@@ -201,6 +206,9 @@ export default function BajasPage() {
 
   return (
     <div className="page-shell page-shell--dense bajas-page">
+      {job && <div className="ink-inline-alert ink-inline-alert-warning" role="status">
+        <span>{selected?.serie}-{selected?.correlativo}: {tracking.label}. {job.last_error || trackingError}</span>
+      </div>}
       <div className="page-head ink-enter-1">
         <div className="page-actions document-list-page-actions">
           <button
