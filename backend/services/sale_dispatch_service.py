@@ -24,7 +24,7 @@ from services.document_flow_service import (
     DOCUMENT_STATUS_PENDING,
     DOCUMENT_STATUS_VOIDED,
 )
-from services import internal_transfer_service
+from services import internal_transfer_service, smartpse_response
 
 
 ZERO = Decimal("0.0000")
@@ -145,6 +145,8 @@ def _accepted_summary_for_receipt(db: Session, receipt):
         models.ResumenDiario.sunat_error.is_(None),
     ).order_by(models.ResumenDiario.id.desc()).all()
     for summary in summaries:
+        if not smartpse_response.has_accepted_summary_cdr(summary.payload_snapshot, summary.provider_response):
+            continue
         details = (summary.payload_snapshot or {}).get("details") or []
         if any(
             str(row.get("tipoDoc") or "").zfill(2) == "03"

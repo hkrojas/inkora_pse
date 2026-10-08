@@ -2101,6 +2101,29 @@ def emitir_resumen_diario(payload: dict, user, *, prepared: bool = False):
     )
 
 
+def consultar_resumen_diario(resumen, user):
+    """Consult the frozen RC identity once, using the existing fiscal client."""
+    if resumen.tenant_id != user.tenant_id:
+        raise FacturacionException("Resumen diario no encontrado para esta empresa.")
+    payload = dict(resumen.payload_snapshot or {})
+    if not payload.get("correlativo") or not (payload.get("company") or {}).get("ruc"):
+        raise FacturacionException("El resumen no conserva su identidad fiscal; requiere revisión.")
+    provider_payload = _prepare_smartpse_payload(payload, "/summary/send")
+    nombre_archivo = smartpse_ubl_service.build_smartpse_filename(provider_payload)
+    try:
+        data = smartpse_client.get_default_client().consult_ticket(user.tenant, nombre_archivo)
+        return smartpse_response.build_smartpse_result(
+            provider_payload, data,
+            endpoint=f"/api/cpe/consultar/{nombre_archivo}",
+            status_code=200, ticket=resumen.ticket,
+        )
+    except smartpse_client.SmartPSEDefinitiveRejection as exc:
+        raise FacturacionRejectedException(str(exc), exc.response_data) from exc
+    except smartpse_client.SmartPSEException as exc:
+        raise FacturacionException(str(exc), exc.response_data,
+                                  status_code=exc.status_code) from exc
+
+
 def emitir_comunicacion_baja(payload: dict, user):
     return _enviar_a_api(
         payload,

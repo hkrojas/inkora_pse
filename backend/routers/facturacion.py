@@ -15,7 +15,7 @@ from fiscal_catalogs import (
     normalize_sunat_unit_code,
     normalize_tax_affectation_code,
 )
-from services import emission_queue_service, facturacion_service
+from services import emission_queue_service, facturacion_service, smartpse_response
 from services import sale_dispatch_service
 from services import inventory_service
 from services import document_actions_service
@@ -1854,26 +1854,71 @@ def enviar_resumen_diario(
             result=result,
             tenant_id=current_user.tenant_id,
         )
+    except facturacion_service.FacturacionRejectedException as exc:
+        crud.mark_resumen_diario_rejected(
+            db, resumen.id, error=str(exc), tenant_id=current_user.tenant_id,
+            provider_response=exc.provider_response,
+        )
+        raise HTTPException(400, str(exc))
     except facturacion_service.FacturacionException as exc:
         crud.mark_resumen_diario_rejected(
             db,
             resumen.id,
             error=str(exc),
             tenant_id=current_user.tenant_id,
+            provider_response=exc.provider_response,
+            pending=True,
         )
-        raise HTTPException(400, str(exc))
+        raise HTTPException(502, str(exc))
     except Exception as exc:
         crud.mark_resumen_diario_rejected(
             db,
             resumen.id,
             error="Error interno al enviar resumen diario.",
             tenant_id=current_user.tenant_id,
+            pending=True,
         )
         raise_internal_server_error(
             "enviar_resumen_diario",
             "Error al enviar resumen diario.",
             exc,
         )
+
+
+@router.post("/resumen-diario/{resumen_id}/consultar", response_model=schemas.ResumenDiarioResponse)
+@limiter.limit("10/minute")
+def consultar_resumen_diario(
+    request: Request,
+    resumen_id: int,
+    db: Session = Depends(get_db_tenant),
+    current_user: models.User = Depends(require_document_emitter),
+    _emission_check: models.User = Depends(require_emission_allowed),
+):
+    resumen = db.query(models.ResumenDiario).filter(
+        models.ResumenDiario.id == resumen_id,
+        models.ResumenDiario.tenant_id == current_user.tenant_id,
+    ).first()
+    if not resumen:
+        _raise_not_found("Resumen diario no encontrado.")
+    _require_beta_fiscal_feature(db, current_user, beta_feature_flags.FISCAL_FEATURE_DAILY_SUMMARY)
+    if smartpse_response.summary_cdr_status(resumen.payload_snapshot, resumen.provider_response) is not None:
+        return crud.mark_resumen_diario_sent(
+            db, resumen.id, result=resumen.provider_response, tenant_id=current_user.tenant_id,
+        )
+    try:
+        result = facturacion_service.consultar_resumen_diario(resumen, current_user)
+        return crud.mark_resumen_diario_sent(db, resumen.id, result=result, tenant_id=current_user.tenant_id)
+    except facturacion_service.FacturacionRejectedException as exc:
+        return crud.mark_resumen_diario_rejected(
+            db, resumen.id, error=str(exc), tenant_id=current_user.tenant_id,
+            provider_response=exc.provider_response,
+        )
+    except facturacion_service.FacturacionException as exc:
+        crud.mark_resumen_diario_rejected(
+            db, resumen.id, error=str(exc), tenant_id=current_user.tenant_id,
+            provider_response=exc.provider_response, pending=True,
+        )
+        raise HTTPException(502, str(exc))
 
 
 @router.get("/reversiones/", response_model=List[schemas.ReversionResponse])

@@ -8,12 +8,26 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 import models
+from services import smartpse_response
 
 
 def _as_datetime(value: Any) -> datetime:
     if isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _preserve_confirmed_summary(db: Session, resumen: models.ResumenDiario) -> bool:
+    status = smartpse_response.summary_cdr_status(resumen.payload_snapshot, resumen.provider_response)
+    if status is None:
+        return False
+    resumen.status = models.RESUMEN_DIARIO_STATUS_SENT if status == "accepted" else models.RESUMEN_DIARIO_STATUS_REJECTED
+    resumen.success = status == "accepted"
+    if resumen.success:
+        resumen.sunat_error = None
+    db.commit()
+    db.refresh(resumen)
+    return True
 
 
 def list_resumenes_diarios(
@@ -78,6 +92,7 @@ def mark_resumen_diario_sent(
     resumen = (
         db.query(models.ResumenDiario)
         .filter(models.ResumenDiario.id == resumen_id, models.ResumenDiario.tenant_id == tenant_id)
+        .populate_existing().with_for_update()
         .first()
     )
     if not resumen:
@@ -85,21 +100,26 @@ def mark_resumen_diario_sent(
 
     sunat_response = result.get("sunat_response") or result.get("sunatResponse") or {}
     ticket = result.get("ticket") or sunat_response.get("ticket")
-    cdr_response = sunat_response.get("cdrResponse") or {}
-    is_pending = bool(result.get("pending")) or bool(ticket and not cdr_response)
+    # Do not let a slower pending consultation erase an accepted CDR.
+    if _preserve_confirmed_summary(db, resumen):
+        return resumen
+    cdr = smartpse_response.extract_cdr_xml(result)
+    if cdr:
+        smartpse_response.validate_summary_cdr(cdr, resumen.payload_snapshot or {})
+    is_pending = not bool(cdr)
 
     resumen.status = (
         models.RESUMEN_DIARIO_STATUS_PENDING
         if is_pending
         else models.RESUMEN_DIARIO_STATUS_SENT
     )
-    resumen.success = bool(result.get("success"))
-    resumen.ticket = ticket
+    resumen.success = not is_pending
+    resumen.ticket = ticket or resumen.ticket
     resumen.sunat_error = None
     resumen.sunat_hash = result.get("hash")
     resumen.provider_endpoint = result.get("provider_endpoint")
     resumen.provider_status_code = result.get("provider_status_code")
-    resumen.provider_response = jsonable_encoder(result.get("provider_response") or result)
+    resumen.provider_response = jsonable_encoder(result)
     resumen.updated_at = datetime.now()
     db.commit()
     db.refresh(resumen)
@@ -112,18 +132,25 @@ def mark_resumen_diario_rejected(
     *,
     error: str,
     tenant_id: int,
+    provider_response: dict | None = None,
+    pending: bool = False,
 ) -> models.ResumenDiario | None:
     resumen = (
         db.query(models.ResumenDiario)
         .filter(models.ResumenDiario.id == resumen_id, models.ResumenDiario.tenant_id == tenant_id)
+        .populate_existing().with_for_update()
         .first()
     )
     if not resumen:
         return None
 
-    resumen.status = models.RESUMEN_DIARIO_STATUS_REJECTED
+    if _preserve_confirmed_summary(db, resumen):
+        return resumen
+    resumen.status = models.RESUMEN_DIARIO_STATUS_PENDING if pending else models.RESUMEN_DIARIO_STATUS_REJECTED
     resumen.success = False
     resumen.sunat_error = str(error)
+    if provider_response:
+        resumen.provider_response = jsonable_encoder(provider_response)
     resumen.updated_at = datetime.now()
     db.commit()
     db.refresh(resumen)

@@ -98,11 +98,13 @@ def test_ticket_response_is_pending_and_keeps_ticket_for_polling():
 
 
 def test_consult_response_with_cdr_completes_ticket_flow():
-    payload = {"serie": "RC", "correlativo": "20260505-001", "tipoDoc": "RC"}
+    payload = {"serie": "RC", "correlativo": "20260505-001", "tipoDoc": "RC",
+               "company": {"ruc": "20123456789"}}
+    cdr = _sale_cdr(document_id="RC-20260505-001")
     data = {
         "estado": 200,
         "mensaje": "Procesado",
-        "cdr": "<ApplicationResponse/>",
+        "cdr": cdr,
         "rechazado": False,
     }
 
@@ -116,7 +118,8 @@ def test_consult_response_with_cdr_completes_ticket_flow():
 
     assert result["success"] is True
     assert result["ticket"] == "20123456789-RC-20260505-001"
-    assert result["cdr_xml"] == "<ApplicationResponse/>"
+    assert result["cdr_xml"] == cdr
+    assert result["pending"] is False
 
 
 def test_cdr_zip_base64_is_normalized_to_xml_content():
