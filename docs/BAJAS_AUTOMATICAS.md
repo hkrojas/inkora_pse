@@ -1,6 +1,6 @@
 # Bajas automáticas por el worker existente
 
-Base: `origin/main` `210ac3f7fe57675545e42e93d193c3fc634abf83`, que conserva la base productiva PR 36 y las correcciones posteriores de contingencia, PDF, CDR, fechas y diseño móvil. Implementación en un worktree limpio y rama `codex/boletas-bajas-auto`.
+Base: `inkora_pse/main` `210ac3f7fe57675545e42e93d193c3fc634abf83`, que conserva la base productiva PR 36 y las correcciones posteriores de contingencia, PDF, CDR, fechas y diseño móvil. Implementación en un worktree limpio y rama `codex/boletas-bajas-auto`.
 
 ## Alcance operativo
 
