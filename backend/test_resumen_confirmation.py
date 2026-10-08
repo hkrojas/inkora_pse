@@ -168,6 +168,51 @@ def test_cross_tenant_consultation_is_404_without_provider_access(context, db_se
     provider.assert_not_called()
 
 
+@pytest.mark.parametrize("environment", ["demo", "produccion"])
+def test_manual_consultation_selects_environment_without_changing_frozen_identity(context, db_session, monkeypatch, environment):
+    tenant, _, row, client = context
+    tenant.smartpse_environment = environment
+    monkeypatch.setattr(facturacion_service.settings, "FISCAL_ENV", "beta" if environment == "demo" else "production")
+    db_session.commit()
+    provider = Mock()
+    provider.consult_ticket.return_value = {"estado": 200, "cdr": _cdr()}
+    with patch("services.facturacion_service.smartpse_client.get_default_client", return_value=provider):
+        response = client.post(f"/resumen-diario/{row.id}/consultar")
+    assert response.status_code == 200 and response.json()["status"] == "sent"
+    kwargs = {"extra_payload": {"environment": "demo"}} if environment == "demo" else {}
+    provider.consult_ticket.assert_called_once_with(tenant, "20123456789-RC-20261005-1", **kwargs)
+    provider.process_xml.assert_not_called()
+
+
+def test_same_tenant_row_with_wrong_frozen_issuer_never_queries_provider(context, db_session):
+    _, _, row, client = context
+    row.payload_snapshot = dict(row.payload_snapshot, company={"ruc": "20987654321"})
+    db_session.commit()
+    with patch("services.facturacion_service.smartpse_client.get_default_client") as provider:
+        response = client.post(f"/resumen-diario/{row.id}/consultar")
+    assert response.status_code == 502
+    assert row.status == "pending" and row.success is False
+    provider.assert_not_called()
+
+
+@pytest.mark.parametrize("shape", ["wrong_root", "multiple_documents", "contradictory_ids"])
+def test_ambiguous_summary_constance_is_not_accepted(shape):
+    from xml.etree import ElementTree as ET
+    root = ET.fromstring(_cdr())
+    if shape == "wrong_root":
+        root.tag = "Invoice"
+    elif shape == "multiple_documents":
+        root.append(ET.fromstring(_cdr()).find("cac:DocumentResponse", smartpse_response.NS))
+    else:
+        response = root.find("cac:DocumentResponse", smartpse_response.NS)
+        reference = ET.SubElement(response, "{" + smartpse_response.NS["cac"] + "}DocumentReference")
+        ET.SubElement(reference, "{" + smartpse_response.NS["cbc"] + "}ID").text = "RC-20261005-999"
+    cdr = ET.tostring(root, encoding="unicode")
+    assert smartpse_response.summary_cdr_status(_payload(), {"cdr": cdr}) is None
+    with pytest.raises(SmartPSEException):
+        _result({"estado": 200, "cdr": cdr})
+
+
 @pytest.mark.parametrize("block", ["flag", "role", "suspended"])
 def test_consultation_requires_tenant_permissions_and_flag(context, db_session, block):
     tenant, user, row, client = context

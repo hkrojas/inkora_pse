@@ -156,18 +156,24 @@ def prepare_snapshot(db, document, user, reason):
 def ensure_manual_batch_available(db, tenant_id, payload):
     """Manual and automatic RC batches share the same serialized namespace."""
     db.query(models.Tenant).filter(models.Tenant.id == tenant_id).with_for_update(key_share=True).one()
-    correlativo = payload["correlativo"]
-    reserved = db.query(models.DocumentEmissionJob.id).filter(
+    correlativo = smartpse_ubl_service.normalize_batch_correlativo(payload, "RC")
+    day = correlativo.split("-")[0]
+
+    def identity(value):
+        return tuple(str(int(part)) if part.isdigit() else part for part in str(value).split("-"))
+
+    reserved = db.query(models.DocumentEmissionJob.payload_snapshot).filter(
         models.DocumentEmissionJob.tenant_id == tenant_id,
         models.DocumentEmissionJob.action == models.EMISSION_JOB_ACTION_VOID_FISCAL,
         models.DocumentEmissionJob.payload_snapshot["void_payload"]["tipoDoc"].as_string() == "RC",
-        models.DocumentEmissionJob.payload_snapshot["void_payload"]["correlativo"].as_string() == correlativo,
-    ).first()
-    previous = db.query(models.ResumenDiario.id).filter(
+        models.DocumentEmissionJob.payload_snapshot["void_payload"]["correlativo"].as_string().like(day + "-%"),
+    ).all()
+    previous = db.query(models.ResumenDiario.correlativo).filter(
         models.ResumenDiario.tenant_id == tenant_id,
-        models.ResumenDiario.correlativo == correlativo,
-    ).first()
-    if reserved or previous:
+        models.ResumenDiario.correlativo.like(day + "-%"),
+    ).all()
+    used = [snapshot["void_payload"]["correlativo"] for (snapshot,) in reserved] + [value for (value,) in previous]
+    if any(identity(value) == identity(correlativo) for value in used):
         raise ValueError("Este lote de resumen ya está registrado o reservado para una baja. Consulte su resultado; no lo reenvíe.")
 
 

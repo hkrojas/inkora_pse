@@ -234,6 +234,16 @@ def validate_summary_cdr(cdr_xml: str, payload: dict) -> None:
 
     if not payload.get("correlativo") or not (payload.get("company") or {}).get("ruc"):
         raise SmartPSEException("El resumen no conserva su identidad fiscal; requiere revisión.")
+    try:
+        root = ET.fromstring(cdr_xml)
+    except (ET.ParseError, TypeError) as exc:
+        raise SmartPSEException("El CDR del resumen no es XML legible; requiere conciliación.") from exc
+    if root.tag.rsplit("}", 1)[-1] != "ApplicationResponse" or len(root.findall("cac:DocumentResponse", NS)) != 1:
+        raise SmartPSEException("El CDR del resumen no identifica un único lote; requiere conciliación.")
+    reference = root.findtext(".//cac:Response/cbc:ReferenceID", namespaces=NS)
+    document_id = root.findtext(".//cac:DocumentReference/cbc:ID", namespaces=NS)
+    if reference and document_id and _normalize_document_id(reference) != _normalize_document_id(document_id):
+        raise SmartPSEException("El CDR del resumen contiene identidades contradictorias; requiere conciliación.")
     validate_sale_cdr(cdr_xml, {
         **payload,
         "serie": "RC",

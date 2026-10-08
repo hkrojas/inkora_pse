@@ -12,6 +12,7 @@ import schemas
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
 from services import facturacion_service, gre_ubl_service, sale_dispatch_service, smartpse_response
 from services.smartpse_client import SmartPSEDefinitiveRejection, SmartPSEException
+from test_smartpse_response_normalization import _sale_cdr
 
 
 def _accepted_invoice(db, suffix="DSP01", quantity=Decimal("100")):
@@ -75,11 +76,7 @@ def _accepted_receipt(db, suffix="DSPB01", *, direct=True):
             payload_snapshot={"correlativo": "20260918-1", "company": {"ruc": tenant.business_ruc}, "details": [{
                 "tipoDoc": "03", "serieNro": receipt.document_number, "estado": "1"
             }]},
-            provider_response={"cdr": """<ApplicationResponse
-                xmlns:cbc='urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'>
-                <cbc:ReferenceID>RC-20260918-1</cbc:ReferenceID>
-                <cbc:ResponseCode>0</cbc:ResponseCode>
-                </ApplicationResponse>"""},
+            provider_response={"cdr": _sale_cdr(document_id="RC-20260918-1", ruc=tenant.business_ruc)},
         )
         db.add(summary)
     db.commit()

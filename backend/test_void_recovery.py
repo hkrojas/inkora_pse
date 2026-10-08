@@ -272,6 +272,22 @@ def test_manual_summary_cannot_reuse_automatic_void_identity(db_session):
         recovery.ensure_manual_batch_available(db_session, user.tenant_id, job.payload_snapshot["void_payload"])
 
 
+@pytest.mark.parametrize("previous", ["automatic", "manual"])
+def test_manual_summary_cannot_bypass_reserved_counter_by_removing_zeroes(db_session, previous):
+    _, user, document = accepted_document(db_session)
+    job = enqueue(db_session, user, document)
+    payload = dict(job.payload_snapshot["void_payload"])
+    if previous == "manual":
+        crud.create_resumen_diario(db_session, tenant_id=user.tenant_id, usuario_id=user.id,
+            payload=dict(payload, fecResumen=payload["fecResumen"], fecGeneracion=payload["fecGeneracion"]))
+        db_session.delete(job)
+        db_session.commit()
+    day, number = payload["correlativo"].split("-")
+    payload["correlativo"] = f"{day}-{int(number)}"
+    with pytest.raises(ValueError, match="registrado o reservado"):
+        recovery.ensure_manual_batch_available(db_session, user.tenant_id, payload)
+
+
 def test_boleta_note_with_inventory_impact_requires_manual_reconciliation(db_session):
     _, user, document = accepted_document(db_session, kind="07")
     document.inventory_impact = "physical_return"

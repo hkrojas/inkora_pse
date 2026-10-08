@@ -2108,10 +2108,13 @@ def consultar_resumen_diario(resumen, user):
     payload = dict(resumen.payload_snapshot or {})
     if not payload.get("correlativo") or not (payload.get("company") or {}).get("ruc"):
         raise FacturacionException("El resumen no conserva su identidad fiscal; requiere revisión.")
+    if str(payload["company"]["ruc"]).strip() != _get_company_ruc(user):
+        raise FacturacionException("El resumen conserva una identidad de otra empresa; requiere revisión.")
     provider_payload = _prepare_smartpse_payload(payload, "/summary/send")
     nombre_archivo = smartpse_ubl_service.build_smartpse_filename(provider_payload)
     try:
-        data = smartpse_client.get_default_client().consult_ticket(user.tenant, nombre_archivo)
+        consult_kwargs = {"extra_payload": {"environment": "demo"}} if _smartpse_demo_mode(user) else {}
+        data = smartpse_client.get_default_client().consult_ticket(user.tenant, nombre_archivo, **consult_kwargs)
         return smartpse_response.build_smartpse_result(
             provider_payload, data,
             endpoint=f"/api/cpe/consultar/{nombre_archivo}",
