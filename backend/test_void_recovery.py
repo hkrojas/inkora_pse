@@ -73,7 +73,7 @@ def test_pending_batch_never_voids_or_reverses_inventory_then_accepts_once(db_se
     assert job.status == "succeeded"
     assert job.payload_snapshot["void_result"]["cdr_xml"]
     assert client.process_xml.call_count == 1
-    client.consult_ticket.assert_called_once_with(user.tenant, frozen)
+    client.consult_ticket.assert_called_once_with(user.tenant, frozen, extra_payload={"environment": "demo"})
     assert void.call_count == 1
     assert enqueue(db_session, user, document).id == job.id
 
@@ -95,6 +95,27 @@ def test_uncertain_first_submission_only_queries_frozen_batch(db_session, monkey
     assert document.estado == "anulada"
     assert send.call_count == 1
     assert client.consult_ticket.call_count == 1
+
+
+@pytest.mark.parametrize("kind", ["01", "03"])
+@pytest.mark.parametrize("environment", ["demo", "produccion"])
+def test_batch_consultation_selects_demo_explicitly_without_changing_production(db_session, monkeypatch, kind, environment):
+    tenant, user, document = accepted_document(db_session, kind=kind)
+    tenant.smartpse_environment = environment
+    monkeypatch.setattr(facturacion_service.settings, "FISCAL_ENV", "beta" if environment == "demo" else "production")
+    db_session.commit()
+    job = enqueue(db_session, user, document)
+    client = Mock()
+    client.process_xml.return_value = {"estado": 202, "ticket": "synthetic-ticket"}
+    client.consult_ticket.return_value = {"cdr": batch_cdr(job, tenant.business_ruc), "estado": 200}
+    monkeypatch.setattr(facturacion_service.smartpse_client, "get_default_client", lambda: client)
+    assert run_job(db_session, job)
+    assert document.estado == "facturada" and job.status == "retry"
+    assert run_job(db_session, job)
+    expected_kwargs = {"extra_payload": {"environment": "demo"}} if environment == "demo" else {}
+    client.consult_ticket.assert_called_once_with(user.tenant, job.payload_snapshot["void_filename"], **expected_kwargs)
+    assert document.estado == "anulada" and job.status == "succeeded"
+    assert client.process_xml.call_count == 1
 
 
 @pytest.mark.parametrize("cdr", [None, "not-xml", "<Invoice/>", _sale_cdr(),

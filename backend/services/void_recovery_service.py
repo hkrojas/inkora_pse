@@ -220,7 +220,10 @@ def process(db, job, document, user):
     emission_leases.before_provider(db)
     try:
         if started:
-            data = smartpse_client.get_default_client().consult_ticket(user.tenant, snapshot["void_filename"])
+            # Demo summary tickets require an explicit environment in the GET
+            # body; otherwise the provider returns 404 for the existing batch.
+            consult_kwargs = {"extra_payload": {"environment": "demo"}} if facturacion_service._smartpse_demo_mode(user) else {}
+            data = smartpse_client.get_default_client().consult_ticket(user.tenant, snapshot["void_filename"], **consult_kwargs)
             result = {
                 "success": True, "provider_response": data,
                 "cdr_xml": smartpse_response.extract_cdr_xml(data),
