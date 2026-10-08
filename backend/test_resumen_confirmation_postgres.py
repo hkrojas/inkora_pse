@@ -82,3 +82,68 @@ def test_concurrent_late_consultation_cannot_regress_confirmed_summary(summary_p
         saved = db.get(models.ResumenDiario, summary_id)
         assert saved.status == ("sent" if code == "0" else "rejected")
         assert saved.success is (code == "0")
+
+
+def test_concurrent_manual_and_automatic_rc_share_one_counter_namespace(summary_pg_factory):
+    from services import emission_queue_service as queue, void_recovery_service as recovery
+    from test_void_recovery import accepted_document
+    with summary_pg_factory() as db:
+        tenant, user, document = accepted_document(db, "SUMRACE1")
+        payload = recovery.prepare_snapshot(db, document, user, "No otorgado")["void_payload"]
+        tenant_id, user_id, document_id = tenant.id, user.id, document.id
+    start = Barrier(2)
+
+    def automatic():
+        with summary_pg_factory() as db:
+            user, document = db.get(models.User, user_id), db.get(models.Cotizacion, document_id)
+            start.wait(timeout=10)
+            job, _ = queue.enqueue_void_document_job(db, document, user, motivo="No otorgado")
+            return job.payload_snapshot["void_payload"]["correlativo"]
+
+    def manual():
+        with summary_pg_factory() as db:
+            start.wait(timeout=10)
+            try:
+                recovery.ensure_manual_batch_available(db, tenant_id, payload)
+                return crud.create_resumen_diario(db, tenant_id=tenant_id, usuario_id=user_id, payload=payload).correlativo
+            except ValueError:
+                db.rollback()
+                return None
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        automated, manually = executor.submit(automatic), executor.submit(manual)
+        auto_counter, manual_counter = automated.result(timeout=20), manually.result(timeout=20)
+    assert auto_counter != manual_counter
+    if manual_counter:
+        assert manual_counter == payload["correlativo"]
+        assert int(auto_counter.split("-")[-1]) == int(manual_counter.split("-")[-1]) + 1
+
+
+def test_concurrent_manual_aliases_cannot_reserve_the_same_numeric_counter_twice(summary_pg_factory):
+    from services import void_recovery_service as recovery
+    from test_void_recovery import accepted_document
+    with summary_pg_factory() as db:
+        tenant, user, document = accepted_document(db, "SUMRACE2")
+        payload = recovery.prepare_snapshot(db, document, user, "No otorgado")["void_payload"]
+        tenant_id, user_id = tenant.id, user.id
+    day, counter = payload["correlativo"].split("-")
+    aliases = [f"{day}-{int(counter)}", f"{day}-{int(counter):05d}"]
+    start = Barrier(2)
+
+    def reserve(value):
+        with summary_pg_factory() as db:
+            candidate = dict(payload, correlativo=value)
+            start.wait(timeout=10)
+            try:
+                recovery.ensure_manual_batch_available(db, tenant_id, candidate)
+                crud.create_resumen_diario(db, tenant_id=tenant_id, usuario_id=user_id, payload=candidate)
+                return True
+            except ValueError:
+                db.rollback()
+                return False
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(reserve, aliases))
+    assert sorted(results) == [False, True]
+    with summary_pg_factory() as db:
+        assert db.query(models.ResumenDiario).filter_by(tenant_id=tenant_id).count() == 1
