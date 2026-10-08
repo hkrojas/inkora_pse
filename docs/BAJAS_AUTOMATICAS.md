@@ -35,6 +35,16 @@ El endurecimiento separado del resumen **manual** de PR 43 no está incorporado 
 
 Para la entrega, incorporar cualquier avance posterior de main y repetir las puertas pertinentes. Aplicar exclusivamente `docs/RELEASE_CANONICO.md`, con la misma huella para API, worker y frontend, API compatible primero y verificación posterior por lectura. Sin migraciones remotas en este bloque. Registrar commit de main, huella e IDs de servicios solo después de un despliegue efectivo.
 
+## Homologación demo posterior
+
+El 8 de octubre se probaron BBAJ-1 y FBAJ-1 en la empresa demo 688, su envío
+individual y sus bajas RC/RA con CDR código 0. La consulta de bajas demo ahora
+indica explícitamente `environment=demo`, requisito confirmado con el proveedor
+real. Los mismos trabajos se recuperaron sin reenviar; la repetición posterior
+no realizó llamadas fiscales. Series, identificadores, evidencias y límites en
+[SERIES_DEMO_BAJAS_2026-10-08.md](SERIES_DEMO_BAJAS_2026-10-08.md).
+La puerta de staging aislado antes de producción continúa pendiente.
+
 ## Referencias oficiales
 
 - [SUNAT: SEE-OSE, envío individual de boletas y bajas](https://cpe.sunat.gob.pe/informacion_general/operador_servicios_electronicos).
