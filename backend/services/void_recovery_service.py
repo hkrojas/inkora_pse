@@ -67,7 +67,7 @@ def ensure_note_source_available(db, document, *, jobs=None):
             continue
         if job.status == models.EMISSION_JOB_STATUS_FAILED:
             snapshot = job.payload_snapshot or {}
-            if not snapshot.get("void_send_started"):
+            if snapshot.get("void_protocol_version") == 1 and snapshot.get("void_send_started") is False:
                 continue
             from services.facturacion_service import FacturacionRejectedException
             try:

@@ -20,7 +20,7 @@ Antes de la primera llamada al proveedor se confirma en la base `void_send_start
 
 Solo un ApplicationResponse con un único DocumentResponse, identidad del lote correcta y código SUNAT 0 permite marcar el documento anulado y aplicar la reversión existente de inventario. Un HTTP 200 o ticket no son aceptación. La evidencia se confirma antes de aplicar el resultado local para poder recuperarlo si el proceso se interrumpe. La reversión conserva la idempotencia existente de movimientos. Las bajas históricas sin este protocolo congelado necesitan revisión manual y no se reenviarán automáticamente.
 
-Un fallo posterior a un posible envío también bloquea nuevas notas sobre el origen hasta conciliarlo; un CDR de rechazo definitivo que corresponda al lote sí libera ese bloqueo. El worker conserva sus contratos actuales de leases y tenant suspendido.
+Un fallo posterior a un posible envío también bloquea nuevas notas y preparación de guías sobre el origen hasta conciliarlo; un CDR de rechazo definitivo que corresponda al lote sí libera ese bloqueo. Una baja histórica sin evidencia de envío fiable también queda bloqueada para conciliación. La reserva de bajas respeta el orden de locks documento origen → empresa usado por las GRE. El worker conserva sus contratos actuales de leases y tenant suspendido.
 
 ## Pruebas y publicación
 

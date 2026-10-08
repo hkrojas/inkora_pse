@@ -290,6 +290,7 @@ def test_source_void_is_blocked_until_linked_notes_are_resolved(db_session):
 
 @pytest.mark.parametrize("definitive", [False, True])
 def test_failed_void_with_possible_submission_blocks_notes_unless_matching_rejection(db_session, definitive):
+    from services.sale_dispatch_service import _void_job_pending
     tenant, user, document = accepted_document(db_session)
     job = enqueue(db_session, user, document)
     job.status = "failed"
@@ -298,9 +299,11 @@ def test_failed_void_with_possible_submission_blocks_notes_unless_matching_rejec
     db_session.commit()
     if definitive:
         recovery.ensure_note_source_available(db_session, document)
+        assert not _void_job_pending(db_session, document)
     else:
         with pytest.raises(ValueError, match="baja pendiente"):
             recovery.ensure_note_source_available(db_session, document)
+        assert _void_job_pending(db_session, document)
 
 
 def test_missing_original_issue_date_requires_reconciliation(db_session):
@@ -309,3 +312,15 @@ def test_missing_original_issue_date_requires_reconciliation(db_session):
     db_session.commit()
     with pytest.raises(ValueError, match="fecha de emisión original"):
         enqueue(db_session, user, document)
+
+
+def test_failed_historical_void_without_submission_fence_requires_reconciliation_before_notes(db_session):
+    from services.sale_dispatch_service import _void_job_pending
+    _, user, document = accepted_document(db_session)
+    job = enqueue(db_session, user, document)
+    job.status = "failed"
+    job.payload_snapshot = {"motivo": "Baja histórica con resultado desconocido"}
+    db_session.commit()
+    with pytest.raises(ValueError, match="baja pendiente"):
+        recovery.ensure_note_source_available(db_session, document)
+    assert _void_job_pending(db_session, document)

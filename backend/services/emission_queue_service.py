@@ -266,15 +266,14 @@ def enqueue_void_document_job(
     *,
     motivo: str,
 ):
-    # Serialize duplicate requests and batch reservation across API replicas.
-    # NO KEY UPDATE serializes reservations without blocking the FK KEY SHARE
-    # used by a concurrent note INSERT that already owns its source row.
-    db.query(models.Tenant).filter(models.Tenant.id == user.tenant_id).with_for_update(key_share=True).one()
     if comprobante.tenant_id != user.tenant_id:
         raise ValueError("El comprobante no pertenece a la empresa autenticada.")
     comprobante = db.query(models.Cotizacion).filter_by(
         id=comprobante.id, tenant_id=user.tenant_id,
     ).populate_existing().with_for_update().one()
+    # Preserve source -> tenant ordering used by GRE preparation. NO KEY
+    # UPDATE serializes batch reservations without blocking tenant FK inserts.
+    db.query(models.Tenant).filter(models.Tenant.id == user.tenant_id).with_for_update(key_share=True).one()
     idempotency_key = f"void:fiscal:{comprobante.id}"
     existing = crud.get_emission_job_by_key(db, comprobante.tenant_id, idempotency_key)
     if existing:

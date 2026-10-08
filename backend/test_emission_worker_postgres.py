@@ -882,3 +882,36 @@ def test_void_guards_preserve_note_draft_source_lock_order(factory):
     with ThreadPoolExecutor(max_workers=2) as executor:
         result = list(executor.map(swap, swaps))
     assert result == [pair[1] for pair in swaps]
+
+
+def test_void_waiting_for_source_never_owns_tenant_lock_ahead_of_gre(factory):
+    from sqlalchemy import event
+    from test_void_recovery import accepted_document
+    from services import emission_queue_service as queue
+    with factory() as db:
+        tenant, user, document = accepted_document(db, "VPG07")
+        tenant_id, user_id, document_id = tenant.id, user.id, document.id
+        engine = db.get_bind()
+    source_attempted = threading.Event()
+    def observe(connection, cursor, statement, parameters, context, executemany):
+        if (threading.current_thread().name.startswith("void-order")
+                and "cotizaciones" in statement and "FOR UPDATE" in statement):
+            source_attempted.set()
+    def request():
+        with factory() as db:
+            return queue.enqueue_void_document_job(db, db.get(models.Cotizacion, document_id),
+                db.get(models.User, user_id), motivo="No otorgado")[0].id
+    event.listen(engine, "before_cursor_execute", observe)
+    try:
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="void-order") as executor:
+            with factory() as holder:
+                holder.query(models.Cotizacion).filter_by(id=document_id).with_for_update().one()
+                future = executor.submit(request)
+                assert source_attempted.wait(5)
+                # GRE preparation owns the source before reserving a tenant
+                # correlativo. A waiting cancellation must not invert that order.
+                holder.query(models.Tenant).filter_by(id=tenant_id).with_for_update(nowait=True).one()
+                holder.commit()
+            assert future.result(timeout=5)
+    finally:
+        event.remove(engine, "before_cursor_execute", observe)

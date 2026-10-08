@@ -179,19 +179,12 @@ def _source_acceptance(db: Session, document) -> tuple[dict | None, object | Non
 
 
 def _void_job_pending(db: Session, invoice) -> bool:
-    return db.query(models.DocumentEmissionJob.id).filter(
-        models.DocumentEmissionJob.tenant_id == invoice.tenant_id,
-        models.DocumentEmissionJob.resource_type == models.EMISSION_JOB_RESOURCE_COTIZACION,
-        models.DocumentEmissionJob.resource_id == invoice.id,
-        models.DocumentEmissionJob.action == models.EMISSION_JOB_ACTION_VOID_FISCAL,
-        models.DocumentEmissionJob.status.in_([
-            models.EMISSION_JOB_STATUS_QUEUED,
-            models.EMISSION_JOB_STATUS_PROCESSING,
-            models.EMISSION_JOB_STATUS_RETRY,
-            models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION,
-            models.EMISSION_JOB_STATUS_CONTINGENCY_PENDING,
-        ]),
-    ).first() is not None
+    from services.void_recovery_service import ensure_note_source_available
+    try:
+        ensure_note_source_available(db, invoice)
+        return False
+    except ValueError:
+        return True
 
 
 def document_eligibility(db: Session, invoice) -> dict:
