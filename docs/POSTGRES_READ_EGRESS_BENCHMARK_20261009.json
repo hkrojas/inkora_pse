@@ -1,0 +1,81 @@
+{
+  "baseline": "0298d26ec08ccaec4bbabfacab788b8c1aed7b2e",
+  "synthetic_rows": {
+    "quotes": 100,
+    "fiscal": 100,
+    "guides": 100
+  },
+  "note": "Decoded result-value bytes; not protocol bytes or billable egress. Local warm measurements, three repetitions.",
+  "comparisons": {
+    "guides_15": {
+      "before": {
+        "selects": 8,
+        "result_value_bytes": 4505536,
+        "median_application_ms": 35.511,
+        "server_execution_ms": 2.353
+      },
+      "after": {
+        "selects": 2,
+        "result_value_bytes": 1993,
+        "median_application_ms": 15.197,
+        "server_execution_ms": 3.963
+      }
+    },
+    "quotes_15": {
+      "before": {
+        "selects": 2,
+        "result_value_bytes": 6009875,
+        "median_application_ms": 27.906,
+        "server_execution_ms": 0.749
+      },
+      "after": {
+        "selects": 2,
+        "result_value_bytes": 2735,
+        "median_application_ms": 19.918,
+        "server_execution_ms": 1.339
+      }
+    },
+    "guides_100": {
+      "before": {
+        "selects": 8,
+        "result_value_bytes": 30036679,
+        "median_application_ms": 123.79,
+        "server_execution_ms": 1.888
+      },
+      "after": {
+        "selects": 2,
+        "result_value_bytes": 13140,
+        "median_application_ms": 17.865,
+        "server_execution_ms": 3.66
+      }
+    },
+    "quotes_100": {
+      "before": {
+        "selects": 2,
+        "result_value_bytes": 40065624,
+        "median_application_ms": 120.719,
+        "server_execution_ms": 1.896
+      },
+      "after": {
+        "selects": 2,
+        "result_value_bytes": 18079,
+        "median_application_ms": 17.844,
+        "server_execution_ms": 1.511
+      }
+    },
+    "monthly_excel_100": {
+      "before": {
+        "selects": 502,
+        "result_value_bytes": 40037693,
+        "median_application_ms": 946.226,
+        "server_execution_ms": 14.881
+      },
+      "after": {
+        "selects": 2,
+        "result_value_bytes": 11864,
+        "median_application_ms": 139.362,
+        "server_execution_ms": 0.758
+      }
+    }
+  }
+}

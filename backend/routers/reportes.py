@@ -29,7 +29,6 @@ from services.document_flow_service import (
     DOCUMENT_KIND_DEBIT_NOTE,
     DOCUMENT_KIND_FISCAL_DOCUMENT,
 )
-from services.fiscal_balance_service import get_fiscal_document_balance
 from services.quote_observation_service import observation_lines_to_plain_text
 
 router = APIRouter(tags=["reportes"])
@@ -99,10 +98,9 @@ def _monthly_collection_amounts(
         doc.document_kind == DOCUMENT_KIND_FISCAL_DOCUMENT
         and doc.tipo_comprobante in {"01", "03"}
     ):
-        balance = get_fiscal_document_balance(db, tenant_id, doc.id)
         return (
-            _report_decimal(balance.payments_total),
-            _report_decimal(balance.saldo_pendiente),
+            _report_decimal(doc.collection_paid),
+            _report_decimal(doc.collection_balance),
         )
 
     if doc.document_kind in {DOCUMENT_KIND_CREDIT_NOTE, DOCUMENT_KIND_DEBIT_NOTE}:
@@ -273,7 +271,7 @@ def reporte_mensual_excel(
 
     # ── Cabecera empresa ──────────────────────────────────────────────────────
     tenant = (
-        db.query(models.Tenant)
+        db.query(models.Tenant.business_name, models.Tenant.business_ruc)
         .filter(models.Tenant.id == current_user.tenant_id)
         .first()
     )
