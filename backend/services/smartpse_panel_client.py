@@ -65,7 +65,7 @@ def retry_enabled_for_tenant(tenant_id: int) -> bool:
 
 
 def transient_retry_error(message) -> bool:
-    """Admit concrete temporary HTTP categories, never a generic error or timeout."""
+    """Admit known temporary provider failures, never a generic error or timeout."""
     if not isinstance(message, str) or not message.strip() or len(message) > 4000:
         return False
     lowered = message.lower()
@@ -74,6 +74,11 @@ def transient_retry_error(message) -> bool:
                  "permiso", "aceptad", "accepted", "informado", "registrado", "ticket")
     if any(value in lowered for value in forbidden):
         return False
+    # Observed on an existing signed invoice without CDR. The marker alone
+    # does not prove a retryable SUNAT failure; require its specific message.
+    normalized = re.sub(r"\s+", " ", lowered).strip()
+    if re.fullmatch(r"\[circuit_open\] sunat no responde, reintente en unos segundos[.!]?", normalized):
+        return True
     return bool(re.search(r"\b(?:http|status(?:_code)?)\s*[:=]?\s*(?:500|502|503|504)\b", lowered)
                 or re.search(r"\[http\]\s*(?:service unavailable|bad gateway|gateway timeout)\b", lowered))
 
