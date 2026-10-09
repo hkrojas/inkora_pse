@@ -20,6 +20,7 @@ from test_smartpse_panel_client import NAME, PASSWORD, Response, Session, cdr, i
 
 RAW = invoice_xml()
 XML = RAW.decode()
+CIRCUIT_OPEN = "[CIRCUIT_OPEN] SUNAT no responde, reintente en unos segundos"
 
 
 def retry_row(**changes):
@@ -155,9 +156,10 @@ def test_non_invoice_retry_is_forbidden_before_login(tenant, name):
 
 @pytest.mark.parametrize("state", ["aceptado", "accepted", "observado", "observed", "rechazado", "rejected",
                                   "pendiente", "pending", "firmado", "processing", "ERROR", None])
-def test_only_exact_error_state_may_retry(tenant, state):
+@pytest.mark.parametrize("error", ["[HTTP] Service Unavailable", CIRCUIT_OPEN])
+def test_only_exact_error_state_may_retry(tenant, state, error):
     callback = Mock()
-    client, sessions = retry_client(login() + [listing([retry_row(state=state)])])
+    client, sessions = retry_client(login() + [listing([retry_row(state=state, error_message=error)])])
     result = attempt(client, tenant, callback)
     assert result["panel_retry_status"] == "blocked"
     assert result["panel_retry_attempted"] is False
@@ -187,6 +189,37 @@ def test_concrete_temporary_http_categories_are_eligible(tenant, error):
     assert len(fiscal_posts(sessions)) == 1
 
 
+@pytest.mark.parametrize("error", [CIRCUIT_OPEN, CIRCUIT_OPEN + ".", CIRCUIT_OPEN.lower(),
+                                  "  " + CIRCUIT_OPEN.replace(" ", "\n\t") + "  "])
+def test_known_sunat_circuit_open_retries_only_existing_invoice(tenant, error):
+    candidate = retry_row(error_message=error)
+    callback = Mock(return_value=True)
+    client, sessions = retry_client(ready(initial=candidate, latest=candidate))
+    result = attempt(client, tenant, callback)
+    assert result["panel_retry_attempted"] is True
+    callback.assert_called_once()
+    assert callback.call_args.args[0]["provider_error_message"] == error
+    posts = fiscal_posts(sessions)
+    assert len(posts) == 1
+    assert posts[0][1] == panel.ORIGIN + "/panel/documentos/444364/reintentar"
+    assert "json" not in posts[0][2] and "data" not in posts[0][2]
+    assert panel.confirmed_transient_retry_error(error) is True
+
+
+@pytest.mark.parametrize("error", ["[CIRCUIT_OPEN]", "SUNAT no responde, reintente en unos segundos",
+    "[CIRCUIT_OPEN] Smart PSE no responde, reintente en unos segundos",
+    CIRCUIT_OPEN + " duplicado", CIRCUIT_OPEN + " [1033]", CIRCUIT_OPEN + " credencial invalida",
+    CIRCUIT_OPEN + " aceptado", CIRCUIT_OPEN + " procesando", CIRCUIT_OPEN + " ticket 123",
+    CIRCUIT_OPEN + " pendiente", CIRCUIT_OPEN + " error desconocido"])
+def test_circuit_marker_or_conflicting_message_does_not_authorize_retry(tenant, error):
+    callback = Mock()
+    client, sessions = retry_client(login() + [listing([retry_row(error_message=error)])])
+    assert attempt(client, tenant, callback)["panel_retry_status"] == "blocked"
+    assert panel.confirmed_transient_retry_error(error) is False
+    callback.assert_not_called()
+    assert not fiscal_posts(sessions)
+
+
 @pytest.mark.parametrize("changes", [{"has_cdr": None}, {"has_cdr": "false"}, {"has_cdr": 0},
     {"has_signed_xml": False}, {"has_signed_xml": "true"}, {"has_signed_xml": 1}, {"ticket": "known-ticket"}])
 def test_retry_requires_literal_evidence_flags_and_no_ticket(tenant, changes):
@@ -198,7 +231,7 @@ def test_retry_requires_literal_evidence_flags_and_no_ticket(tenant, changes):
 
 
 @pytest.mark.parametrize("error", ["[1033] El comprobante fue registrado previamente con otros datos", "[HTTP] Unauthorized",
-                                  "[HTTP] Service Unavailable"])
+                                  "[HTTP] Service Unavailable", CIRCUIT_OPEN])
 def test_existing_cdr_blocks_retry_even_when_panel_shows_error(tenant, error):
     callback = Mock()
     client, sessions = retry_client(login() + [listing([retry_row(has_cdr=True, error_message=error)]), Response(body=cdr())])
@@ -229,11 +262,12 @@ def test_cdr_appearing_during_revalidation_is_recovered_without_post(tenant):
     assert not fiscal_posts(sessions)
 
 
+@pytest.mark.parametrize("error", ["[HTTP] Service Unavailable", CIRCUIT_OPEN])
 @pytest.mark.parametrize("raw", [RAW + b"\n", invoice_xml(issuer="20999999999"), invoice_xml(reference="FA01-229"),
                                  invoice_xml(kind="03"), b'<!DOCTYPE x><x/>'])
-def test_changed_or_unsafe_remote_xml_never_retries(tenant, raw):
+def test_changed_or_unsafe_remote_xml_never_retries(tenant, raw, error):
     callback = Mock()
-    client, sessions = retry_client(login() + [listing([retry_row()]), Response(body=raw, content_type="application/xml")])
+    client, sessions = retry_client(login() + [listing([retry_row(error_message=error)]), Response(body=raw, content_type="application/xml")])
     if raw == RAW + b"\n":
         assert attempt(client, tenant, callback)["panel_retry_reason"] == "xml_mismatch"
     else:
@@ -310,8 +344,8 @@ def test_post_errors_are_ambiguous_and_never_retry_or_refresh_auth(tenant, respo
 
 
 @pytest.mark.parametrize("content_type", ["application/json", "application/json; charset=utf-8", "Application/JSON"])
-def test_same_post_negative_transient_json_confirms_failure_without_acceptance(tenant, content_type):
-    message = "[HTTP] Service Unavailable"
+@pytest.mark.parametrize("message", ["[HTTP] Service Unavailable", CIRCUIT_OPEN])
+def test_same_post_negative_transient_json_confirms_failure_without_acceptance(tenant, content_type, message):
     raw = json.dumps({"ok": False, "message": message}).encode()
     client, sessions = retry_client(ready(post=Response(body=raw, content_type=content_type)))
     callback = Mock(return_value=True)
@@ -427,10 +461,11 @@ def test_confirmed_failure_message_redacts_known_credentials_but_hashes_original
     assert len(fiscal_posts(sessions)) == 1
 
 
-def test_panel_failure_shape_with_explicit_error_state_confirms_temporary_failure(tenant):
+@pytest.mark.parametrize("message", ["[HTTP] Service Unavailable", CIRCUIT_OPEN])
+def test_panel_failure_shape_with_explicit_error_state_confirms_temporary_failure(tenant, message):
     # FERR-1 proved the panel response includes state. Its temporary error
     # variant remains synthetic: the real FERR-1 response was a 2074 rejection.
-    raw = json.dumps({"ok": False, "message": "[HTTP] Service Unavailable", "state": "error"}).encode()
+    raw = json.dumps({"ok": False, "message": message, "state": "error"}).encode()
     client, sessions = retry_client(ready(post=Response(body=raw)))
     result = attempt(client, tenant)
     assert result["panel_retry_status"] == "confirmed_transient_failure"
@@ -501,9 +536,11 @@ def test_retry_flag_cannot_authorize_a_post_through_read_only_request(tenant):
     assert not fiscal_posts(sessions)
 
 
-def test_concurrent_retry_calls_share_one_session_and_are_serialized(tenant):
-    second = [listing([retry_row()]), Response(body=RAW, content_type="application/xml"), listing([retry_row()]), Response(200)]
-    client, sessions = retry_client(ready() + second)
+@pytest.mark.parametrize("error", ["[HTTP] Service Unavailable", CIRCUIT_OPEN])
+def test_concurrent_retry_calls_share_one_session_and_are_serialized(tenant, error):
+    candidate = retry_row(error_message=error)
+    second = [listing([candidate]), Response(body=RAW, content_type="application/xml"), listing([candidate]), Response(200)]
+    client, sessions = retry_client(ready(initial=candidate, latest=candidate) + second)
     original = sessions[0].request
     guard = threading.Lock()
     active = [0, 0]

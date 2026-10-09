@@ -81,8 +81,11 @@ def reserve(db, job, user, xml, metadata):
         leases.detach(db)
 
 
-def test_panel_ack_stays_pending_until_matching_cdr(db_session, pending_sale):
-    tenant, _, document, job, xml, client, panel, _, attempts = pending_sale
+@pytest.mark.parametrize("error", ["HTTP 503 Service Unavailable",
+    "[CIRCUIT_OPEN] SUNAT no responde, reintente en unos segundos"])
+def test_panel_ack_stays_pending_until_matching_cdr(db_session, pending_sale, error):
+    tenant, _, document, job, xml, client, panel, metadata, attempts = pending_sale
+    metadata["provider_error_message"] = error
     assert not run(db_session, job)
     assert len(attempts) == 1
     assert job.status == "retry" and job.action == models.EMISSION_JOB_ACTION_CONSULT_FISCAL
@@ -129,8 +132,11 @@ def test_demo_observed_2074_body_estado_500_is_not_http_outage(db_session, pendi
     client.send_signed_xml.assert_not_called()
 
 
-def test_lost_panel_response_never_allows_second_attempt(db_session, pending_sale):
-    tenant, _, document, job, xml, client, panel, _, attempts = pending_sale
+@pytest.mark.parametrize("error", ["HTTP 503 Service Unavailable",
+    "[CIRCUIT_OPEN] SUNAT no responde, reintente en unos segundos"])
+def test_lost_panel_response_never_allows_second_attempt(db_session, pending_sale, error):
+    tenant, _, document, job, xml, client, panel, metadata, attempts = pending_sale
+    metadata["provider_error_message"] = error
     acknowledged = panel.retry_invoice.side_effect
     def lose(*args, **kwargs):
         result = acknowledged(*args, **kwargs)

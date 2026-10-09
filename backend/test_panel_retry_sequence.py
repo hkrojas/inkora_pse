@@ -20,25 +20,30 @@ def confirmed_failure(response=None):
                              "message": "HTTP 503 Service Unavailable"})
 
 
-def install_confirmed_failures(panel):
+def install_confirmed_failures(panel, *, message="HTTP 503 Service Unavailable"):
     acknowledged = panel.retry_invoice.side_effect
 
     def fail(*args, **kwargs):
         response = acknowledged(*args, **kwargs)
         if response.get("panel_retry_attempted") is not True:
             return response
-        return confirmed_failure(response)
+        result = confirmed_failure(response)
+        result["panel_retry_outcome"]["message"] = message
+        return result
 
     panel.retry_invoice.side_effect = fail
     return acknowledged
 
 
+@pytest.mark.parametrize("error", ["HTTP 503 Service Unavailable",
+    "[CIRCUIT_OPEN] SUNAT no responde, reintente en unos segundos"])
 def test_confirmed_failures_wait_then_lost_third_response_blocks_repetition(
-        db_session, pending_sale, monkeypatch):
-    tenant, _, document, job, xml, client, panel, _, attempts = pending_sale
+        db_session, pending_sale, monkeypatch, error):
+    tenant, _, document, job, xml, client, panel, metadata, attempts = pending_sale
+    metadata["provider_error_message"] = error
     clock = [datetime.now()]
     monkeypatch.setattr(leases, "db_now", lambda db: clock[0])
-    acknowledged = install_confirmed_failures(panel)
+    acknowledged = install_confirmed_failures(panel, message=error)
     other_tenant, other_user, other_document = _make_fiscal_document(db_session, "SEQUENCE_OTHER")
     other_job, _ = queue.enqueue_fiscal_document_job(
         db_session, other_document, other_user, tipo_comprobante="01")
