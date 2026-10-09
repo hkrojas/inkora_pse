@@ -46,6 +46,7 @@ from models.tenants import (
     USAGE_LIMIT_KIND_NOTA_DEBITO,
 )
 from services.fiscal_balance_service import ensure_credit_note_within_available_amount
+from crud._note_list_read import note_list_projection, note_list_response
 
 router = APIRouter(tags=["facturacion"])
 
@@ -1302,11 +1303,6 @@ def list_notas_page(
     desde_dt, hasta_dt = _parse_date_bounds(desde, hasta)
     base = (
         db.query(models.Cotizacion)
-        .options(
-            joinedload(models.Cotizacion.cliente),
-            joinedload(models.Cotizacion.source_quote),
-            joinedload(models.Cotizacion.nota_referencia),
-        )
         .filter(models.Cotizacion.document_kind.in_([DOCUMENT_KIND_CREDIT_NOTE, DOCUMENT_KIND_DEBIT_NOTE]))
         .filter(models.Cotizacion.tenant_id == current_user.tenant_id)
     )
@@ -1325,7 +1321,10 @@ def list_notas_page(
         base = base.filter(models.Cotizacion.fecha_emision <= hasta_dt)
     if q:
         term = f"%{q.strip()}%"
-        base = base.outerjoin(models.Cliente, models.Cotizacion.cliente_id == models.Cliente.id).filter(
+        base = base.outerjoin(models.Cliente, and_(
+            models.Cotizacion.cliente_id == models.Cliente.id,
+            models.Cliente.tenant_id == models.Cotizacion.tenant_id,
+        )).filter(
             or_(
                 models.Cliente.razon_social.ilike(term),
                 models.Cliente.nombre_comercial.ilike(term),
@@ -1335,13 +1334,20 @@ def list_notas_page(
             )
         )
 
-    counts = _fiscal_doc_counts(base)
+    counts = _fiscal_doc_counts_aggregate(base)
     page_query = base
     tab_filter = _fiscal_doc_tab_filter(tab)
     if tab_filter is not None:
         page_query = page_query.filter(tab_filter)
-    total = page_query.with_entities(func.count(models.Cotizacion.id)).scalar() or 0
-    items = page_query.order_by(desc(models.Cotizacion.id)).offset(skip).limit(limit).all()
+    total = counts.get((tab or "all").strip().lower(), counts["all"])
+    # Bound the page before evaluating XML evidence or joining its references.
+    page_ids = (page_query.with_entities(models.Cotizacion.id.label("note_id"))
+                .order_by(desc(models.Cotizacion.id)).offset(skip).limit(limit).subquery("note_page"))
+    page = (db.query(models.Cotizacion)
+            .join(page_ids, page_ids.c.note_id == models.Cotizacion.id)
+            .filter(models.Cotizacion.tenant_id == current_user.tenant_id))
+    rows = note_list_projection(page).order_by(desc(models.Cotizacion.id)).all()
+    items = [note_list_response(row) for row in rows]
     return {"items": items, "total": total, "skip": skip, "limit": limit, "counts": counts}
 
 

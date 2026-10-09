@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import String, cast, or_
+from sqlalchemy import String, and_, cast, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 import models
@@ -12,6 +12,7 @@ import fiscal_time
 import schemas
 from access_control import can_access_all_tenant_resources
 from crud._base import _retry_on_correlativo_conflict, get_cliente_for_tenant
+from crud._quote_list_read import quote_list_item, quote_list_projection
 from crud._cotizaciones_shared import (
     QUOTE_SERIE,
     _apply_quote_user_scope,
@@ -157,7 +158,7 @@ def get_cotizaciones(
 ):
     query = _build_quote_listing_query(db)
     query = _apply_quote_user_scope(query, usuario)
-    return query.offset(skip).limit(limit).all()
+    return [quote_list_item(row) for row in quote_list_projection(query).offset(skip).limit(limit).all()]
 
 
 def get_cotizaciones_page(
@@ -180,7 +181,8 @@ def get_cotizaciones_page(
         term = f"%{normalized_q}%"
         query = query.outerjoin(
             models.Cliente,
-            models.Cliente.id == models.Cotizacion.cliente_id,
+            and_(models.Cliente.id == models.Cotizacion.cliente_id,
+                 models.Cliente.tenant_id == models.Cotizacion.tenant_id),
         ).filter(
             or_(
                 models.Cliente.razon_social.ilike(term),
@@ -197,8 +199,8 @@ def get_cotizaciones_page(
     if date_to:
         query = query.filter(models.Cotizacion.fecha_emision <= date_to)
 
-    total = query.order_by(None).count()
-    items = query.offset(skip).limit(limit).all()
+    total = query.order_by(None).with_entities(func.count(models.Cotizacion.id)).scalar()
+    items = [quote_list_item(row) for row in quote_list_projection(query).offset(skip).limit(limit).all()]
     return {"items": items, "total": total, "skip": skip, "limit": limit}
 
 

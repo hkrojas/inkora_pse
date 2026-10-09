@@ -43,11 +43,6 @@ def _apply_quote_user_scope(query, usuario: Optional[models.User]):
 def _build_quote_listing_query(db: Session):
     return (
         db.query(models.Cotizacion)
-        .options(
-            joinedload(models.Cotizacion.cliente),
-            joinedload(models.Cotizacion.usuario).joinedload(models.User.tenant),
-            joinedload(models.Cotizacion.derived_documents),
-        )
         .filter(models.Cotizacion.source_quote_id.is_(None))
         .order_by(desc(models.Cotizacion.id))
     )

@@ -448,12 +448,27 @@ def get_reporte_mensual(db: Session, tenant_id: int, anio: int, mes: int) -> lis
     inicio = date(anio, mes, 1)
     fin = date(anio + 1, 1, 1) if mes == 12 else date(anio, mes + 1, 1)
 
-    return (
-        db.query(models.Cotizacion)
-        .options(
-            joinedload(models.Cotizacion.cliente),
-            joinedload(models.Cotizacion.items),
-        )
+    doc = models.Cotizacion
+    totals = _collection_totals(db, tenant_id)
+    fields = (
+        "id", "document_kind", "tipo_comprobante", "serie", "correlativo",
+        "fecha_emision", "fecha_vencimiento", "moneda", "condicion_pago", "observaciones",
+        "total_gravada", "total_exonerada", "total_inafecta", "total_igv", "total_venta",
+        "monto_pagado", "saldo_pendiente",
+    )
+    query = db.query(
+        *(getattr(doc, field) for field in fields),
+        models.Cliente.id.label("client_id"),
+        models.Cliente.razon_social.label("client_name"),
+        models.Cliente.numero_documento.label("client_document"),
+        models.Cliente.tipo_documento.label("client_type"),
+        totals.payments_total.label("collection_paid"),
+        totals.saldo_pendiente.label("collection_balance"),
+    ).outerjoin(models.Cliente, and_(
+        models.Cliente.id == doc.cliente_id, models.Cliente.tenant_id == doc.tenant_id,
+    ))
+    rows = (
+        _join_collection_totals(query, totals)
         .filter(
             models.Cotizacion.tenant_id == tenant_id,
             models.Cotizacion.document_kind.in_(
@@ -466,3 +481,16 @@ def get_reporte_mensual(db: Session, tenant_id: int, anio: int, mes: int) -> lis
         .order_by(models.Cotizacion.fecha_emision.asc())
         .all()
     )
+    result = []
+    for row in rows:
+        values = dict(row._mapping)
+        client_id = values.pop("client_id")
+        client = SimpleNamespace(
+            razon_social=values.pop("client_name"),
+            numero_documento=values.pop("client_document"),
+            tipo_documento=values.pop("client_type"),
+        )
+        item = SimpleNamespace(**values, cliente=client if client_id is not None else None)
+        item.payment_status = models.Cotizacion.payment_status.fget(item)
+        result.append(item)
+    return result

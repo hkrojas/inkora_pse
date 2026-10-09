@@ -1,7 +1,8 @@
 """crud/guias.py — Guías de Remisión."""
 from datetime import datetime
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, func, not_, or_
+from sqlalchemy.orm import Session, joinedload, aliased
+from sqlalchemy import and_, case, desc, func, not_, or_
+from schemas.guias import GuiaRemisionListResponse
 
 import models
 from access_control import can_access_all_tenant_resources
@@ -76,7 +77,10 @@ def _build_guias_query(
         query = query.filter(models.GuiaRemision.fecha_traslado <= hasta)
     if q:
         term = f"%{q.strip()}%"
-        query = query.outerjoin(models.GuiaRemision.cliente).filter(
+        query = query.outerjoin(models.Cliente, and_(
+            models.Cliente.id == models.GuiaRemision.cliente_id,
+            models.Cliente.tenant_id == models.GuiaRemision.tenant_id,
+        )).filter(
             or_(
                 models.GuiaRemision.serie.ilike(term),
                 models.GuiaRemision.internal_order_number.ilike(term),
@@ -90,43 +94,51 @@ def _build_guias_query(
     return query
 
 
-def _tab_filter(query, tab: str | None):
-    normalized = (tab or "all").strip().lower()
+def _guide_tab_conditions():
     status = func.lower(func.coalesce(models.GuiaRemision.estado, ""))
     is_smartpse = models.GuiaRemision.estado == "pendiente_smartpse"
     is_cancelled = status.like("%anulad%")
     is_transit = or_(status.like("%transit%"), status.like("%transito%"))
     is_emitted = status.like("%emitid%")
 
-    if normalized == "smartpse":
-        return query.filter(is_smartpse)
-    if normalized == "pending":
-        return query.filter(not_(or_(is_cancelled, is_transit, is_emitted)))
-    if normalized == "transit":
-        return query.filter(is_transit)
-    if normalized == "emitted":
-        return query.filter(is_emitted)
-    if normalized in {"cancelled", "voided"}:
-        return query.filter(is_cancelled)
-    return query
+    return {"smartpse": is_smartpse,
+            "pending": not_(or_(is_cancelled, is_transit, is_emitted)),
+            "transit": is_transit, "emitted": is_emitted,
+            "cancelled": is_cancelled, "voided": is_cancelled}
 
 
-def _count(query) -> int:
-    return query.order_by(None).count()
+def _tab_filter(query, tab: str | None):
+    condition = _guide_tab_conditions().get((tab or "all").strip().lower())
+    return query if condition is None else query.filter(condition)
 
 
 def _guide_counts(base_query) -> dict:
-    smartpse = _count(_tab_filter(base_query, "smartpse"))
-    cancelled = _count(_tab_filter(base_query, "cancelled"))
-    return {
-        "all": _count(base_query),
-        "pending": _count(_tab_filter(base_query, "pending")),
-        "smartpse": smartpse,
-        "transit": _count(_tab_filter(base_query, "transit")),
-        "emitted": _count(_tab_filter(base_query, "emitted")),
-        "cancelled": cancelled,
-        "voided": cancelled,
-    }
+    conditions = _guide_tab_conditions()
+    row = base_query.order_by(None).with_entities(
+        func.count(models.GuiaRemision.id).label("all"),
+        *(func.count(case((condition, 1))).label(name)
+          for name, condition in conditions.items()),
+    ).one()
+    return dict(row._mapping)
+
+
+def _guide_list_projection(query):
+    guide = models.GuiaRemision
+    client = aliased(models.Cliente)
+    quote = aliased(models.Cotizacion)
+    quote_client = aliased(models.Cliente)
+    columns = [getattr(guide, name) for name in GuiaRemisionListResponse.model_fields
+               if name not in {"cliente_nombre", "cliente_documento"}]
+    def name(client):
+        return func.nullif(client.razon_social, "")
+    return query.with_entities(
+        *columns,
+        case((client.id.isnot(None), name(client)), else_=name(quote_client)).label("cliente_nombre"),
+        case((client.id.isnot(None), func.nullif(client.numero_documento, "")),
+             else_=func.nullif(quote_client.numero_documento, "")).label("cliente_documento"),
+    ).outerjoin(client, and_(client.id == guide.cliente_id, client.tenant_id == guide.tenant_id)
+    ).outerjoin(quote, and_(quote.id == guide.cotizacion_id, quote.tenant_id == guide.tenant_id)
+    ).outerjoin(quote_client, and_(quote_client.id == quote.cliente_id, quote_client.tenant_id == guide.tenant_id))
 
 
 def get_guias_remision_page(
@@ -156,24 +168,21 @@ def get_guias_remision_page(
         q=q,
     )
     filtered_query = _tab_filter(base_query, tab)
-    total = _count(filtered_query)
+    counts = _guide_counts(base_query)
+    total = counts.get((tab or "all").strip().lower(), counts["all"])
     items = (
-        filtered_query
-        .options(
-            joinedload(models.GuiaRemision.cliente),
-            joinedload(models.GuiaRemision.cotizacion).joinedload(models.Cotizacion.cliente),
-        )
+        _guide_list_projection(filtered_query)
         .order_by(desc(models.GuiaRemision.id))
         .offset(skip)
         .limit(limit)
         .all()
     )
     return {
-        "items": items,
+        "items": [dict(row._mapping) for row in items],
         "total": total,
         "skip": skip,
         "limit": limit,
-        "counts": _guide_counts(base_query),
+        "counts": counts,
     }
 
 
