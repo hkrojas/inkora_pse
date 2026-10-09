@@ -64,10 +64,10 @@ def extract_cdr_xml(provider_response: dict | None) -> str | None:
     """Obtiene el CDR XML persistido en la respuesta de Smart PSE."""
     if not isinstance(provider_response, dict):
         return None
-    cdr = provider_response.get("cdr")
+    cdr = provider_response.get("cdr") or provider_response.get("cdr_xml")
     if cdr:
         return _decode_base64_text(cdr)
-    for key in ("process", "verification", "data", "sunat_response"):
+    for key in ("process", "verification", "data", "sunat_response", "provider_response"):
         resolved = extract_cdr_xml(provider_response.get(key))
         if resolved:
             return resolved
@@ -228,6 +228,50 @@ def validate_sale_cdr(cdr_xml: str, payload: dict) -> None:
         )
 
 
+def validate_summary_cdr(cdr_xml: str, payload: dict) -> None:
+    """Use the sales CDR checks for the exact RC batch sent to Smart PSE."""
+    from services.smartpse_ubl_service import normalize_batch_correlativo
+
+    if not payload.get("correlativo") or not (payload.get("company") or {}).get("ruc"):
+        raise SmartPSEException("El resumen no conserva su identidad fiscal; requiere revisión.")
+    try:
+        root = ET.fromstring(cdr_xml)
+    except (ET.ParseError, TypeError) as exc:
+        raise SmartPSEException("El CDR del resumen no es XML legible; requiere conciliación.") from exc
+    if root.tag.rsplit("}", 1)[-1] != "ApplicationResponse" or len(root.findall("cac:DocumentResponse", NS)) != 1:
+        raise SmartPSEException("El CDR del resumen no identifica un único lote; requiere conciliación.")
+    reference = root.findtext(".//cac:Response/cbc:ReferenceID", namespaces=NS)
+    document_id = root.findtext(".//cac:DocumentReference/cbc:ID", namespaces=NS)
+    if reference and document_id and _normalize_document_id(reference) != _normalize_document_id(document_id):
+        raise SmartPSEException("El CDR del resumen contiene identidades contradictorias; requiere conciliación.")
+    validate_sale_cdr(cdr_xml, {
+        **payload,
+        "serie": "RC",
+        "correlativo": normalize_batch_correlativo(payload, "RC"),
+    })
+
+
+def summary_cdr_status(payload: dict | None, response: dict | None) -> str | None:
+    from services.smartpse_client import SmartPSEDefinitiveRejection
+
+    if not payload or not (payload.get("company") or {}).get("ruc"):
+        return None
+    cdr = extract_cdr_xml(response)
+    if not cdr:
+        return None
+    try:
+        validate_summary_cdr(cdr, payload)
+    except SmartPSEDefinitiveRejection:
+        return "rejected"
+    except SmartPSEException:
+        return None
+    return "accepted"
+
+
+def has_accepted_summary_cdr(payload: dict | None, response: dict | None) -> bool:
+    return summary_cdr_status(payload, response) == "accepted"
+
+
 def validate_gre_cdr(cdr_xml: str, payload: dict) -> None:
     """Require a readable, matching, accepted CDR before a GRE becomes accepted."""
     try:
@@ -297,6 +341,8 @@ def build_smartpse_result(
             validate_gre_cdr(cdr_xml, payload)
         elif cdr_xml and document_type in {"01", "03", "07", "08"}:
             validate_sale_cdr(cdr_xml, payload)
+        elif cdr_xml and document_type == "RC":
+            validate_summary_cdr(cdr_xml, payload)
     except SmartPSEException as exc:
         exc.response_data = data
         exc.status_code = status_code
@@ -306,6 +352,9 @@ def build_smartpse_result(
         raise SmartPSEException(f"{detail or 'Respuesta fiscal incierta'}; sin CDR verificado, requiere conciliacion.",
                                 data, status_code=status_code)
     pending = not cdr_xml and (str(data.get("estado") or "").strip() == "202" or _is_pending(data))
+    if document_type == "RC":
+        # Transport success and a ticket never establish fiscal acceptance.
+        pending = not bool(cdr_xml)
     if require_cdr and not cdr_xml and not pending:
         raise SmartPSEException(
             "Smart PSE no devolvio CDR de aceptacion; el documento no puede marcarse como aceptado.", data

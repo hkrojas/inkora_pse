@@ -12,6 +12,7 @@ import schemas
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
 from services import facturacion_service, gre_ubl_service, sale_dispatch_service, smartpse_response
 from services.smartpse_client import SmartPSEDefinitiveRejection, SmartPSEException
+from test_smartpse_response_normalization import _sale_cdr
 
 
 def _accepted_invoice(db, suffix="DSP01", quantity=Decimal("100")):
@@ -72,9 +73,10 @@ def _accepted_receipt(db, suffix="DSPB01", *, direct=True):
             details_count=1,
             status=models.RESUMEN_DIARIO_STATUS_SENT,
             success=True,
-            payload_snapshot={"details": [{
+            payload_snapshot={"correlativo": "20260918-1", "company": {"ruc": tenant.business_ruc}, "details": [{
                 "tipoDoc": "03", "serieNro": receipt.document_number, "estado": "1"
             }]},
+            provider_response={"cdr": _sale_cdr(document_id="RC-20260918-1", ruc=tenant.business_ruc)},
         )
         db.add(summary)
     db.commit()
@@ -99,6 +101,14 @@ def test_receipt_source_is_reserved_and_referenced_as_type_03(db_session):
     ns = gre_ubl_service.NS
     assert root.findtext("cac:AdditionalDocumentReference/cbc:DocumentTypeCode", namespaces=ns) == "03"
     assert root.findtext("cac:AdditionalDocumentReference/cbc:DocumentType", namespaces=ns) == "BOLETA DE VENTA"
+
+
+def test_legacy_summary_without_cdr_cannot_authorize_receipt_dispatch(db_session):
+    _, _, receipt = _accepted_receipt(db_session, direct=False)
+    summary = db_session.query(models.ResumenDiario).first()
+    summary.provider_response = {"success": True}
+    db_session.commit()
+    assert sale_dispatch_service._source_acceptance(db_session, receipt) == (None, None)
 
 
 def test_receipt_accepted_by_daily_summary_persists_summary_evidence(db_session):

@@ -29,6 +29,7 @@ from services import (
     inventory_service,
     pdf_storage_service,
     sale_dispatch_service,
+    void_recovery_service,
 )
 from services.facturacion_background_service import process_direct_sunat_emission_bg
 from services.fiscal_balance_service import ensure_credit_note_within_available_amount
@@ -265,26 +266,26 @@ def enqueue_void_document_job(
     *,
     motivo: str,
 ):
+    if comprobante.tenant_id != user.tenant_id:
+        raise ValueError("El comprobante no pertenece a la empresa autenticada.")
+    comprobante = db.query(models.Cotizacion).filter_by(
+        id=comprobante.id, tenant_id=user.tenant_id,
+    ).populate_existing().with_for_update().one()
+    # Preserve source -> tenant ordering used by GRE preparation. NO KEY
+    # UPDATE serializes batch reservations without blocking tenant FK inserts.
+    db.query(models.Tenant).filter(models.Tenant.id == user.tenant_id).with_for_update(key_share=True).one()
     idempotency_key = f"void:fiscal:{comprobante.id}"
     existing = crud.get_emission_job_by_key(db, comprobante.tenant_id, idempotency_key)
     if existing:
-        if existing.status in {
-            models.EMISSION_JOB_STATUS_QUEUED,
-            models.EMISSION_JOB_STATUS_PROCESSING,
-            models.EMISSION_JOB_STATUS_RETRY,
-            models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION,
-            models.EMISSION_JOB_STATUS_CONTINGENCY_PENDING,
-            models.EMISSION_JOB_STATUS_SUCCEEDED,
-        }:
-            return existing, False
-        existing = crud.requeue_emission_job(
-            db,
-            existing.id,
-            payload_snapshot={"motivo": motivo},
-            provider="smartpse",
-        )
+        # Never erase the frozen identity/evidence or submit another batch after
+        # uncertainty or rejection. A failed cancellation requires review.
+        db.commit()
         return existing, False
-
+    void_recovery_service.ensure_no_active_notes(db, comprobante)
+    inventory_service.ensure_document_void_inventory_safe(db, comprobante)
+    if sale_dispatch_service.active_dispatch_allocation_exists(db, comprobante.tenant_id, comprobante.id):
+        raise ValueError("La baja requiere resolver antes las reservas o cobertura GRE.")
+    snapshot = void_recovery_service.prepare_snapshot(db, comprobante, user, motivo)
     job = crud.create_emission_job(
         db,
         tenant_id=comprobante.tenant_id,
@@ -294,7 +295,7 @@ def enqueue_void_document_job(
         action=models.EMISSION_JOB_ACTION_VOID_FISCAL,
         provider="smartpse",
         idempotency_key=idempotency_key,
-        payload_snapshot={"motivo": motivo},
+        payload_snapshot=snapshot,
         max_attempts=settings.EMISSION_MAX_ATTEMPTS,
     )
     return job, True
@@ -1324,6 +1325,10 @@ def _process_emit_note_job(
 
     payload_snapshot = job.payload_snapshot or {}
     try:
+        doc_afectado = db.query(models.Cotizacion).filter_by(
+            id=doc_afectado.id, tenant_id=job.tenant_id,
+        ).populate_existing().with_for_update().one()
+        void_recovery_service.ensure_note_source_available(db, doc_afectado)
         ensure_credit_note_within_available_amount(db, job.tenant_id, nota.id)
     except ValueError as exc:
         crud.guardar_error_sunat(db, nota.id, str(exc), tenant_id=job.tenant_id)
@@ -1390,21 +1395,20 @@ def _process_void_fiscal_job(
     if not comprobante:
         raise RuntimeError("No se encontró el comprobante a anular.")
 
-    payload_snapshot = job.payload_snapshot or {}
     try:
+        void_recovery_service.ensure_no_active_notes(db, comprobante)
         inventory_service.ensure_document_void_inventory_safe(db, comprobante)
         if sale_dispatch_service.active_dispatch_allocation_exists(db, comprobante.tenant_id, comprobante.id):
             raise ValueError("La baja requiere resolver antes las reservas o cobertura GRE.")
     except ValueError as exc:
         _raise_non_retryable_validation(str(exc))
-    emission_leases.before_provider(db)
-    result = facturacion_service.anular_comprobante(
-        comprobante,
-        payload_snapshot.get("motivo") or "ANULACION EN COLA",
-        user,
-    )
+    try:
+        result = void_recovery_service.process(db, job, comprobante, user)
+    except ValueError as exc:
+        _raise_non_retryable_validation(str(exc))
     emission_leases.check(db, result)
-    crud.anular_cotizacion(db, comprobante.id, tenant_id=job.tenant_id)
+    if result.get("success") and not result.get("pending"):
+        crud.anular_cotizacion(db, comprobante.id, tenant_id=job.tenant_id)
     return result
 
 
@@ -1551,6 +1555,12 @@ def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> 
                 retry_in_seconds=fiscal_recovery_service.retry_seconds(job.attempts),
                 error_classification=EMISSION_ERROR_AMBIGUOUS,
                 action=models.EMISSION_JOB_ACTION_CONSULT_FISCAL)
+        elif result.get("pending") and job.action == models.EMISSION_JOB_ACTION_VOID_FISCAL:
+            job.provider_ticket = provider_ticket or job.provider_ticket
+            crud.mark_emission_job_retry(db, job.id,
+                error_message=result.get("confirmation_error") or "Baja pendiente de CDR definitivo; se consulta sin reenviar.",
+                retry_in_seconds=fiscal_recovery_service.retry_seconds(job.attempts),
+                error_classification=EMISSION_ERROR_AMBIGUOUS)
         elif result.get("pending"):
             crud.mark_emission_job_pending_confirmation(db, job.id,
                 error_message="Smart PSE/SUNAT mantiene la guia pendiente de resultado definitivo.",

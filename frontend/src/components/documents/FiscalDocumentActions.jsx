@@ -19,6 +19,7 @@ export default function FiscalDocumentActions({ doc, allowGuides = true, reload,
   const [busy, setBusy] = useState('');
   const [confirm, setConfirm] = useState(null);
   const [reason, setReason] = useState('');
+  const [notDelivered, setNotDelivered] = useState(false);
   const [showTracking, setShowTracking] = useState(false);
   const number = `${doc.serie}-${String(doc.correlativo).padStart(6, '0')}`;
   const accepted = getFiscalDocumentStatus(doc)?.kind === 'ok';
@@ -112,7 +113,7 @@ export default function FiscalDocumentActions({ doc, allowGuides = true, reload,
       track({ job_id: response.job_id, job_status: response.job_status, job_action: 'emit_fiscal_document' });
       setShowTracking(true);
     } else {
-      const response = await api.post('/bajas/anular', { comprobante_id: doc.id, motivo: reason.trim() }, { timeoutMs: 60000 });
+      const response = await api.post('/bajas/anular', { comprobante_id: doc.id, motivo: reason.trim(), confirmed_not_delivered: notDelivered }, { timeoutMs: 60000 });
       track({ job_id: response.job_id, job_status: response.job_status, job_action: 'void_fiscal_document' });
       setShowTracking(true);
       toast('Solicitud de baja registrada. Revisa su resultado en Bajas.', 'info');
@@ -151,7 +152,7 @@ export default function FiscalDocumentActions({ doc, allowGuides = true, reload,
             <button onClick={() => share('email')}><Mail />Correo</button>
             <button onClick={() => share('both')}><Send />WhatsApp + correo</button>
           </>}
-          {actions?.void && <button className="is-danger" onClick={() => { setReason(''); setConfirm('void'); }}><XCircle />Dar de baja</button>}
+          {actions?.void && <button className="is-danger" onClick={() => { setReason(''); setNotDelivered(false); setConfirm('void'); }}><XCircle />Dar de baja</button>}
           <button onClick={() => run('reload', reload)}><RefreshCw />Actualizar lista</button>
       </ActionMenu>
       {job && trackingState.poll && <button className="fiscal-tracking-badge" onClick={() => setShowTracking(true)}><Clock3 size={13} />{trackingState.label}</button>}
@@ -165,10 +166,14 @@ export default function FiscalDocumentActions({ doc, allowGuides = true, reload,
       </Modal>
       <Modal open={Boolean(confirm)} onClose={() => { if (!busy) setConfirm(null); }} title={confirm === 'retry' ? (actions?.retry_label || 'Reintentar envío fiscal') : 'Solicitar baja'} footer={<>
         <button className="btn-secondary" disabled={Boolean(busy)} onClick={() => setConfirm(null)}>Cancelar</button>
-        <button className={confirm === 'void' ? 'btn-danger' : 'btn-primary'} disabled={Boolean(busy) || (confirm === 'void' && !reason.trim())} onClick={submit}>{busy ? 'Procesando…' : 'Confirmar'}</button>
+        <button className={confirm === 'void' ? 'btn-danger' : 'btn-primary'} disabled={Boolean(busy) || (confirm === 'void' && (!reason.trim() || !notDelivered))} onClick={submit}>{busy ? 'Procesando…' : 'Confirmar'}</button>
       </>}>
         <p>{number}</p>
         {confirm === 'retry' ? <p>Inkora comprobará nuevamente si el reintento está permitido y conservará la serie y el correlativo. La aceptación se confirma después del procesamiento.</p> : <label className="block mt-4">Motivo de baja<textarea className="input mt-2" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={500} /></label>}
+        {confirm === 'void' && <label className="flex items-start gap-3 mt-4 relative">
+          <input type="checkbox" checked={notDelivered} onChange={(event) => setNotDelivered(event.target.checked)} />
+          <span>Confirmo que el comprobante no fue entregado ni puesto a disposición del cliente. Si ya fue entregado, corresponde revisar una nota de crédito.</span>
+        </label>}
       </Modal>
     </div>
   );

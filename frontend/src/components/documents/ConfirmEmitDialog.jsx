@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import Modal from '../ui/Modal';
 import { formatCurrency } from '../../lib/utils/documents';
 import { getTypeConfig } from './DocumentType';
@@ -16,6 +17,8 @@ export default function ConfirmEmitDialog({
   moneda = 'PEN',
   extraLines = [],
 }) {
+  const [notDelivered, setNotDelivered] = useState(false);
+  useEffect(() => { setNotDelivered(false); }, [open, serie]);
   if (!open) return null;
 
   const cfg = getTypeConfig(tipo);
@@ -62,12 +65,16 @@ export default function ConfirmEmitDialog({
         <div className={`ink-inline-alert ${isVoid ? 'ink-inline-alert-danger' : 'ink-inline-alert-warning'}`}>
           <span>{warnings[mode]}</span>
         </div>
+        {isVoid && <label className="flex items-start gap-3 mt-4 relative">
+          <input type="checkbox" checked={notDelivered} onChange={(event) => setNotDelivered(event.target.checked)} />
+          <span>Confirmo que el comprobante no fue entregado ni puesto a disposición del cliente. Si ya fue entregado, corresponde revisar una nota de crédito.</span>
+        </label>}
 
         <div className="document-confirm-actions">
           <button type="button" className="btn-secondary" onClick={onClose} disabled={loading}>
             Cancelar
           </button>
-          <button type="button" className={isVoid ? 'btn-danger' : 'btn-primary'} onClick={onConfirm} disabled={loading}>
+          <button type="button" className={isVoid ? 'btn-danger' : 'btn-primary'} onClick={() => onConfirm(isVoid ? notDelivered : undefined)} disabled={loading || (isVoid && !notDelivered)}>
             {loading ? 'Procesando...' : actionLabel}
           </button>
         </div>

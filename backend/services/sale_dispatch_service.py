@@ -24,7 +24,7 @@ from services.document_flow_service import (
     DOCUMENT_STATUS_PENDING,
     DOCUMENT_STATUS_VOIDED,
 )
-from services import internal_transfer_service
+from services import internal_transfer_service, smartpse_response
 
 
 ZERO = Decimal("0.0000")
@@ -145,6 +145,8 @@ def _accepted_summary_for_receipt(db: Session, receipt):
         models.ResumenDiario.sunat_error.is_(None),
     ).order_by(models.ResumenDiario.id.desc()).all()
     for summary in summaries:
+        if not smartpse_response.has_accepted_summary_cdr(summary.payload_snapshot, summary.provider_response):
+            continue
         details = (summary.payload_snapshot or {}).get("details") or []
         if any(
             str(row.get("tipoDoc") or "").zfill(2) == "03"
@@ -179,19 +181,12 @@ def _source_acceptance(db: Session, document) -> tuple[dict | None, object | Non
 
 
 def _void_job_pending(db: Session, invoice) -> bool:
-    return db.query(models.DocumentEmissionJob.id).filter(
-        models.DocumentEmissionJob.tenant_id == invoice.tenant_id,
-        models.DocumentEmissionJob.resource_type == models.EMISSION_JOB_RESOURCE_COTIZACION,
-        models.DocumentEmissionJob.resource_id == invoice.id,
-        models.DocumentEmissionJob.action == models.EMISSION_JOB_ACTION_VOID_FISCAL,
-        models.DocumentEmissionJob.status.in_([
-            models.EMISSION_JOB_STATUS_QUEUED,
-            models.EMISSION_JOB_STATUS_PROCESSING,
-            models.EMISSION_JOB_STATUS_RETRY,
-            models.EMISSION_JOB_STATUS_PENDING_CONFIRMATION,
-            models.EMISSION_JOB_STATUS_CONTINGENCY_PENDING,
-        ]),
-    ).first() is not None
+    from services.void_recovery_service import ensure_note_source_available
+    try:
+        ensure_note_source_available(db, invoice)
+        return False
+    except ValueError:
+        return True
 
 
 def document_eligibility(db: Session, invoice) -> dict:

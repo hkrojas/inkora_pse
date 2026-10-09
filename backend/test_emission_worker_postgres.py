@@ -715,3 +715,203 @@ def test_poll_mode_drains_ready_work_immediately_on_local_completion(factory, mo
         worker.request_worker_shutdown()
         thread.join(3)
     assert completed and len(processed) == 2
+
+
+def test_void_duplicate_api_requests_share_one_frozen_batch(factory):
+    from test_void_recovery import accepted_document
+    from services import emission_queue_service as queue
+    with factory() as db:
+        tenant, user, document = accepted_document(db, "VPG01")
+        tenant_id, user_id, document_id = tenant.id, user.id, document.id
+    barrier = threading.Barrier(2)
+    def request(_):
+        with factory() as db:
+            user, document = db.get(models.User, user_id), db.get(models.Cotizacion, document_id)
+            barrier.wait(timeout=5)
+            job, _ = queue.enqueue_void_document_job(db, document, user, motivo="No otorgado")
+            return job.id, job.payload_snapshot["void_filename"]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(request, range(2)))
+    assert results[0] == results[1]
+    with factory() as db:
+        assert db.query(models.DocumentEmissionJob).filter_by(tenant_id=tenant_id).count() == 1
+
+
+def test_void_provider_call_has_durable_fence_and_no_open_row_locks(factory, monkeypatch):
+    from unittest.mock import Mock
+    from test_void_recovery import accepted_document, batch_cdr
+    from services import emission_queue_service as queue, facturacion_service
+    with factory() as db:
+        tenant, user, document = accepted_document(db, "VPG02")
+        job, _ = queue.enqueue_void_document_job(db, document, user, motivo="No otorgado")
+        job_id, tenant_id, document_id = job.id, tenant.id, document.id
+        cdr = batch_cdr(job, tenant.business_ruc)
+    def provider(*args, **kwargs):
+        with factory() as observer:
+            observed = observer.query(models.DocumentEmissionJob).filter_by(id=job_id).with_for_update(nowait=True).one()
+            observer.query(models.Tenant).filter_by(id=tenant_id).with_for_update(nowait=True).one()
+            observer.query(models.Cotizacion).filter_by(id=document_id).with_for_update(nowait=True).one()
+            assert observed.payload_snapshot["void_send_started"] is True
+            observer.rollback()
+        return {"cdr_xml": cdr}
+    monkeypatch.setattr(facturacion_service, "_enviar_a_api", Mock(side_effect=provider))
+    with factory() as db:
+        reservation = leases.claim(db, owner="void-pg", lease_seconds=60, global_limit=2, tenant_limit=1)
+        assert reservation[0] == job_id
+        leases.attach(db, *reservation)
+        try:
+            assert queue.process_emission_job(job_id, db_session=db)
+        finally:
+            leases.detach(db)
+        assert db.get(models.Cotizacion, document_id).estado == "anulada"
+
+
+def test_void_expired_execution_is_recovered_by_postgres_coordinator_without_resend(factory, monkeypatch):
+    from unittest.mock import Mock
+    from test_void_recovery import accepted_document, batch_cdr
+    from services import emission_queue_service as queue, facturacion_service
+    with factory() as db:
+        tenant, user, document = accepted_document(db, "VPG03")
+        job, _ = queue.enqueue_void_document_job(db, document, user, motivo="No otorgado")
+        job_id, document_id, ruc = job.id, document.id, tenant.business_ruc
+        job.payload_snapshot = dict(job.payload_snapshot, void_send_started=True)
+        job.status = "processing"
+        job.lease_token = str(uuid4())
+        job.lease_expires_at = leases.db_now(db) - timedelta(seconds=1)
+        job.execution_started_at = leases.db_now(db) - timedelta(seconds=5)
+        job.attempts = job.max_attempts
+        db.commit()
+        assert leases.recover_coordinator(db, legacy_timeout=60) == 1
+        db.expire_all()
+        job = db.get(models.DocumentEmissionJob, job_id)
+        assert job.status == "retry"
+        cdr = batch_cdr(job, ruc)
+    client = Mock()
+    client.consult_ticket.return_value = {"cdr": cdr}
+    monkeypatch.setattr(facturacion_service.smartpse_client, "get_default_client", lambda: client)
+    with factory() as db:
+        reservation = leases.claim(db, owner="recovered-void", lease_seconds=60, global_limit=2, tenant_limit=1)
+        leases.attach(db, *reservation)
+        try:
+            assert queue.process_emission_job(job_id, db_session=db)
+        finally:
+            leases.detach(db)
+        assert db.get(models.Cotizacion, document_id).estado == "anulada"
+    client.process_xml.assert_not_called()
+    assert client.consult_ticket.call_count == 1
+
+
+def test_void_two_documents_reserve_distinct_batch_correlatives(factory):
+    from test_void_recovery import accepted_document
+    from conftest import make_quote_via_crud
+    from services import emission_queue_service as queue
+    with factory() as db:
+        tenant, user, first = accepted_document(db, "VPG04")
+        quote = make_quote_via_crud(db, tenant, user, first.cliente)
+        second = crud.create_fiscal_document_from_quote(db, quote, user.id, "03")
+        second.estado, second.sunat_xml_content = "facturada", first.sunat_xml_content
+        second.provider_verification_status, second.provider_verified_at = "verified", first.provider_verified_at
+        from test_smartpse_response_normalization import _sale_cdr
+        second.sunat_cdr_content = _sale_cdr(document_id=f"{second.serie}-{second.correlativo}", ruc=tenant.business_ruc)
+        db.commit()
+        user_id, ids = user.id, (first.id, second.id)
+    barrier = threading.Barrier(2)
+    def request(document_id):
+        with factory() as db:
+            user, document = db.get(models.User, user_id), db.get(models.Cotizacion, document_id)
+            barrier.wait(timeout=5)
+            job, _ = queue.enqueue_void_document_job(db, document, user, motivo="No otorgado")
+            return job.payload_snapshot["void_filename"]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        names = list(executor.map(request, ids))
+    assert len(set(names)) == 2 and all("-RC-" in name for name in names)
+
+
+def test_void_and_note_creation_race_has_one_winner(factory):
+    from test_void_recovery import accepted_document
+    from services import emission_queue_service as queue
+    with factory() as db:
+        _, user, document = accepted_document(db, "VPG05")
+        user_id, document_id = user.id, document.id
+    barrier = threading.Barrier(2)
+    def request(operation):
+        with factory() as db:
+            user, document = db.get(models.User, user_id), db.get(models.Cotizacion, document_id)
+            barrier.wait(timeout=5)
+            try:
+                if operation == "void":
+                    queue.enqueue_void_document_job(db, document, user, motivo="No otorgado")
+                else:
+                    crud.crear_nota_credito_debito(db, document, user.id, "debito", "02", "Aumento")
+                return operation
+            except ValueError:
+                db.rollback()
+                return None
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(request, ["void", "note"]))
+    assert sum(result is not None for result in results) == 1
+    with factory() as db:
+        notes = db.query(models.Cotizacion).filter_by(nota_referencia_id=document_id).count()
+        jobs = db.query(models.DocumentEmissionJob).filter_by(resource_id=document_id, action=models.EMISSION_JOB_ACTION_VOID_FISCAL).count()
+        assert notes + jobs == 1
+
+
+def test_void_guards_preserve_note_draft_source_lock_order(factory):
+    from test_void_recovery import accepted_document
+    from test_notes_v2 import _payload
+    from conftest import make_quote_via_crud
+    from services import note_adjustment_service as notes
+    with factory() as db:
+        tenant, user, first = accepted_document(db, "VPG06", kind="01")
+        quote = make_quote_via_crud(db, tenant, user, first.cliente)
+        second = crud.create_fiscal_document_from_quote(db, quote, user.id, "01")
+        second.estado = "facturada"
+        db.commit()
+        draft1, _ = notes.create_draft(db, tenant.id, user.id, _payload(first), "source-1")
+        draft2, _ = notes.create_draft(db, tenant.id, user.id, _payload(second), "source-2")
+        tenant_id, user_id = tenant.id, user.id
+        swaps = [(draft1.id, second.id), (draft2.id, first.id)]
+    barrier = threading.Barrier(2)
+    def swap(pair):
+        with factory() as db:
+            target = db.get(models.Cotizacion, pair[1])
+            payload = _payload(target)
+            barrier.wait(timeout=5)
+            note = notes.update_draft(db, tenant_id, user_id, pair[0], payload)
+            return note.nota_referencia_id
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        result = list(executor.map(swap, swaps))
+    assert result == [pair[1] for pair in swaps]
+
+
+def test_void_waiting_for_source_never_owns_tenant_lock_ahead_of_gre(factory):
+    from sqlalchemy import event
+    from test_void_recovery import accepted_document
+    from services import emission_queue_service as queue
+    with factory() as db:
+        tenant, user, document = accepted_document(db, "VPG07")
+        tenant_id, user_id, document_id = tenant.id, user.id, document.id
+        engine = db.get_bind()
+    source_attempted = threading.Event()
+    def observe(connection, cursor, statement, parameters, context, executemany):
+        if (threading.current_thread().name.startswith("void-order")
+                and "cotizaciones" in statement and "FOR UPDATE" in statement):
+            source_attempted.set()
+    def request():
+        with factory() as db:
+            return queue.enqueue_void_document_job(db, db.get(models.Cotizacion, document_id),
+                db.get(models.User, user_id), motivo="No otorgado")[0].id
+    event.listen(engine, "before_cursor_execute", observe)
+    try:
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="void-order") as executor:
+            with factory() as holder:
+                holder.query(models.Cotizacion).filter_by(id=document_id).with_for_update().one()
+                future = executor.submit(request)
+                assert source_attempted.wait(5)
+                # GRE preparation owns the source before reserving a tenant
+                # correlativo. A waiting cancellation must not invert that order.
+                holder.query(models.Tenant).filter_by(id=tenant_id).with_for_update(nowait=True).one()
+                holder.commit()
+            assert future.result(timeout=5)
+    finally:
+        event.remove(engine, "before_cursor_execute", observe)

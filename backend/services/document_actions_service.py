@@ -102,16 +102,23 @@ def available_actions(db, document, user):
         void_reason = 'Se requiere un comprobante vigente y aceptado, sin resultado incierto.'
     elif not enabled('voiding'):
         void_reason = 'La baja no está habilitada para la empresa.'
-    elif any(job.action == models.EMISSION_JOB_ACTION_VOID_FISCAL and job.status != 'failed' for job in jobs):
+    elif any(job.action == models.EMISSION_JOB_ACTION_VOID_FISCAL for job in jobs):
         void_reason = 'Ya existe una solicitud de baja; revise su seguimiento.'
     else:
         try:
+            from services.void_recovery_service import ensure_no_active_notes
+            ensure_no_active_notes(db, document)
             inventory_service.ensure_document_void_inventory_safe(db, document)
             if sale_dispatch_service.active_dispatch_allocation_exists(db, document.tenant_id, document.id):
                 void_reason = 'Resuelva primero las reservas de despacho, guías o salidas vinculadas.'
         except ValueError as exc:
             void_reason = str(exc)
-    active_void = any(job.action == models.EMISSION_JOB_ACTION_VOID_FISCAL and job.status != 'failed' for job in jobs)
+    from services.void_recovery_service import ensure_note_source_available
+    try:
+        ensure_note_source_available(db, document, jobs=jobs)
+        active_void = False
+    except ValueError:
+        active_void = True
     latest_job = jobs[0] if jobs else None
     return {
         'retry_emission': reason is None,

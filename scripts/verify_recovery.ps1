@@ -11,10 +11,10 @@ if (-not (Test-Path -LiteralPath $PythonPath)) {
 }
 Push-Location (Join-Path $repoRoot 'backend')
 try {
-  & $PythonPath -m pytest -q --ignore=test_sale_dispatch_postgres.py --ignore=test_internal_transfer_postgres.py --ignore=test_internal_transfer_migration.py --ignore=test_cotizaciones_postgres.py --ignore=test_inventory_recovery_postgres.py --ignore=test_emission_worker_postgres.py --ignore=test_panel_retry_postgres.py --ignore=test_panel_retry_sequence_postgres.py
+  & $PythonPath -m pytest -q --ignore=test_sale_dispatch_postgres.py --ignore=test_internal_transfer_postgres.py --ignore=test_internal_transfer_migration.py --ignore=test_cotizaciones_postgres.py --ignore=test_inventory_recovery_postgres.py --ignore=test_emission_worker_postgres.py --ignore=test_panel_retry_postgres.py --ignore=test_panel_retry_sequence_postgres.py --ignore=test_resumen_confirmation_postgres.py
   if ($LASTEXITCODE -ne 0) { throw 'Regresión backend falló: publicación bloqueada.' }
   if ($RequirePostgres) {
-    if (-not $env:INKORA_GRE_POSTGRES_URL -or -not $env:INKORA_QUOTE_POSTGRES_URL -or -not $env:INKORA_WORKER_POSTGRES_URL) { throw 'Se requieren tres bases PostgreSQL locales desechables: GRE, cotizaciones y worker.' }
+    if (-not $env:INKORA_GRE_POSTGRES_URL -or -not $env:INKORA_QUOTE_POSTGRES_URL -or -not $env:INKORA_WORKER_POSTGRES_URL -or -not $env:INKORA_SUMMARY_POSTGRES_URL) { throw 'Se requieren cuatro bases PostgreSQL locales desechables: GRE, cotizaciones, worker y resumen diario.' }
     $previousPostgresUrl = $env:INKORA_TEST_POSTGRES_URL
     $previousRequired = $env:INKORA_REQUIRE_POSTGRES_TESTS
     try {
@@ -27,6 +27,8 @@ try {
       if ($LASTEXITCODE -ne 0) { throw 'Concurrencia cotizaciones falló.' }
       & $PythonPath -m pytest test_emission_worker_postgres.py test_panel_retry_postgres.py test_panel_retry_sequence_postgres.py -q
       if ($LASTEXITCODE -ne 0) { throw 'Concurrencia, leases, avisos o migración del worker fallaron.' }
+      & $PythonPath -m pytest test_resumen_confirmation_postgres.py -q
+      if ($LASTEXITCODE -ne 0) { throw 'Concurrencia y confirmación del resumen diario fallaron.' }
     } finally {
       $env:INKORA_TEST_POSTGRES_URL = $previousPostgresUrl
       $env:INKORA_REQUIRE_POSTGRES_TESTS = $previousRequired

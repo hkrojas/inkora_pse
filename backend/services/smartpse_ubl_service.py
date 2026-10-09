@@ -439,15 +439,42 @@ def build_summary_document_xml(payload: dict) -> str:
         _add(line, "cbc", "DocumentTypeCode", item.get("tipoDoc") or "03")
         _add(line, "cbc", "ID", item.get("serieNro") or "")
         _add_legacy_customer(line, item)
+        reference = item.get("docReferencia")
+        if reference:
+            billing = _add(line, "cac", "BillingReference")
+            invoice = _add(billing, "cac", "InvoiceDocumentReference")
+            _add(invoice, "cbc", "ID", reference["nroDoc"])
+            _add(invoice, "cbc", "DocumentTypeCode", reference["tipoDoc"])
         status = _add(line, "cac", "Status")
         _add(status, "cbc", "ConditionCode", item.get("estado") or "1")
         _add(line, "sac", "TotalAmount", _money(item.get("total")), currencyID=payload.get("moneda") or "PEN")
-        gravada = item.get("mtoOperGravadas")
-        if gravada is not None:
-            payment = _add(line, "sac", "BillingPayment")
-            _add(payment, "cbc", "PaidAmount", _money(gravada), currencyID=payload.get("moneda") or "PEN")
-            _add(payment, "cbc", "InstructionID", "01")
-        _add_tax_total(line, item.get("mtoOperGravadas") or item.get("total"), item.get("mtoIGV") or 0)
+        currency = payload.get("moneda") or "PEN"
+        for key, code in (("mtoOperGravadas", "01"), ("mtoOperExoneradas", "02"),
+                          ("mtoOperInafectas", "03"), ("mtoOperExportacion", "04"),
+                          ("mtoOperGratuitas", "05")):
+            if Decimal(_money(item.get(key))) != 0 or (key == "mtoOperGravadas" and item.get(key) is not None):
+                payment = _add(line, "sac", "BillingPayment")
+                _add(payment, "cbc", "PaidAmount", _money(item.get(key)), currencyID=currency)
+                _add(payment, "cbc", "InstructionID", code)
+        for amount_key, base_key, scheme_id, scheme_name in (
+            ("mtoIGV", "mtoOperGravadas", "1000", "IGV"),
+            (None, "mtoOperExoneradas", "9997", "EXO"),
+            (None, "mtoOperInafectas", "9998", "INA"),
+            (None, "mtoOperExportacion", "9995", "EXP"),
+        ):
+            if amount_key is None and Decimal(_money(item.get(base_key))) == 0:
+                continue
+            amount = (item.get(amount_key) or 0) if amount_key else 0
+            tax = _add(line, "cac", "TaxTotal")
+            _add(tax, "cbc", "TaxAmount", _money(amount), currencyID=currency)
+            subtotal = _add(tax, "cac", "TaxSubtotal")
+            _add(subtotal, "cbc", "TaxableAmount", _money(item.get(base_key)), currencyID=currency)
+            _add(subtotal, "cbc", "TaxAmount", _money(amount), currencyID=currency)
+            category = _add(subtotal, "cac", "TaxCategory")
+            scheme = _add(category, "cac", "TaxScheme")
+            _add(scheme, "cbc", "ID", scheme_id)
+            _add(scheme, "cbc", "Name", scheme_name)
+            _add(scheme, "cbc", "TaxTypeCode", "VAT" if scheme_id == "1000" else "FRE")
     return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
 
 

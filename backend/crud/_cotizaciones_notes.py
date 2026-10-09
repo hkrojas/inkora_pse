@@ -66,6 +66,8 @@ def _crear_nota_credito_debito_inner(
 
     if not doc_afectado:
         raise ValueError("Comprobante afectado no encontrado para el tenant.")
+    from services.void_recovery_service import ensure_note_source_available
+    ensure_note_source_available(db, doc_afectado)
     if doc_afectado.document_kind != DOCUMENT_KIND_FISCAL_DOCUMENT:
         raise ValueError("Solo se pueden emitir notas contra comprobantes fiscales.")
     if doc_afectado.estado != DOCUMENT_STATUS_ISSUED:

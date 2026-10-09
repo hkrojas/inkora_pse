@@ -185,6 +185,7 @@
   "POST /public/comprobantes/consulta",
   "POST /register",
   "POST /resumen-diario/enviar",
+  "POST /resumen-diario/{resumen_id}/consultar",
   "POST /retenciones/emitir",
   "POST /reversiones/enviar",
   "POST /superadmin/access-requests/{request_id}/approve",

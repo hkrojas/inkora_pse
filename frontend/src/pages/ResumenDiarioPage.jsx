@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
   BarChart3,
@@ -6,12 +6,21 @@ import {
   Clock3,
   Download,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   XCircle,
   XOctagon,
 } from 'lucide-react';
 import { api } from '../lib/utils/api';
+import {
+  SUMMARY_DETAIL_STATES,
+  summaryStatus,
+  summaryNumber,
+  summaryResultMessage,
+  uncertainSummarySend,
+} from '../lib/utils/dailySummary';
+import { limaToday } from '../lib/utils/dashboardPeriods';
 import { useToast } from '../components/ui/Toast';
 import CustomSelect from '../components/ui/CustomSelect';
 import DatePicker from '../components/ui/DatePicker';
@@ -20,12 +29,9 @@ import Drawer from '../components/ui/Drawer';
 import Spinner from '../components/ui/Spinner';
 import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
+import './ResumenDiarioPage.css';
 
-const ESTADO_OPTS = [
-  { value: '1', label: '1 - Emitida' },
-  { value: '2', label: '2 - Baja' },
-  { value: '3', label: '3 - Correccion' },
-];
+const ESTADO_OPTS = SUMMARY_DETAIL_STATES;
 
 const TIPO_DOC_CLIENTE_OPTS = [
   { value: '1', label: '1 - DNI' },
@@ -56,7 +62,7 @@ const TAB_DEFS = [
 ];
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return limaToday();
 }
 
 function buildCorrelativo() {
@@ -67,10 +73,6 @@ function buildCorrelativo() {
 
 function toApiDate(dateString) {
   return dateString ? `${dateString}T00:00:00-05:00` : null;
-}
-
-function onlyDate(value) {
-  return value ? String(value).slice(0, 10) : '';
 }
 
 function formatDate(value) {
@@ -94,25 +96,11 @@ function resumenTicket(resumen) {
   return resumen.ticket || resumen.sunatResponse?.ticket || resumen.sunat_response?.ticket || '';
 }
 
-function resumenDisplayNumber(resumen) {
-  const fecha = onlyDate(resumen.fec_resumen || resumen._fecha).replace(/-/g, '');
-  const correlativo = resumen.correlativo || resumen._corr || '';
-  if (fecha && correlativo) return `RC-${fecha}-${correlativo}`;
-  return correlativo || '-';
-}
-
-function getResumenStatus(resumen) {
-  if (resumen.status) return resumen.status;
-  if (resumen.sunatResponse?.success === false || resumen.sunat_response?.success === false) return 'rejected';
-  if (resumen.sunatResponse?.ticket || resumen.sunat_response?.ticket) return 'pending';
-  return 'sent';
-}
-
-function getResumenBadge(resumen) {
-  const status = getResumenStatus(resumen);
+function getResumenBadge(status) {
   if (status === 'rejected') return <Badge variant="error">Rechazado</Badge>;
-  if (status === 'pending') return <Badge variant="warning">Ticket pendiente</Badge>;
-  return <Badge variant="success">Enviado</Badge>;
+  if (status === 'unverified') return <Badge variant="warning">Enviado · consultar estado</Badge>;
+  if (status === 'pending') return <Badge variant="warning">Pendiente de confirmación</Badge>;
+  return <Badge variant="success">Aceptado</Badge>;
 }
 
 export default function ResumenDiarioPage() {
@@ -125,6 +113,10 @@ export default function ResumenDiarioPage() {
     detalles: [{ ...EMPTY_DETALLE }],
   });
   const [submitting, setSubmitting] = useState(false);
+  const requestInFlight = useRef(false);
+  const [consultingId, setConsultingId] = useState(null);
+  const [confirmedResults, setConfirmedResults] = useState({});
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [resultados, setResultados] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -173,7 +165,7 @@ export default function ResumenDiarioPage() {
       clearTimeout(debounce);
       controller.abort();
     };
-  }, [page, search, filters.desde, filters.hasta, activeTab]);
+  }, [page, search, filters.desde, filters.hasta, activeTab, refreshVersion]);
 
   useEffect(() => {
     setPage(1);
@@ -217,6 +209,8 @@ export default function ResumenDiarioPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     setSubmitting(true);
     try {
       const payload = {
@@ -236,18 +230,42 @@ export default function ResumenDiarioPage() {
         })),
       };
       const res = await api.post('/resumen-diario/enviar', payload);
-      toast(res.ticket ? `Ticket: ${res.ticket}` : 'Resumen enviado correctamente', 'success');
+      setConfirmedResults((current) => ({ ...current, [res.id]: res.updated_at }));
+      const feedback = summaryResultMessage(res);
+      toast(feedback.message, feedback.type);
       setModalOpen(false);
-      if (page === 1) load();
-      else {
-        setLoading(true);
-        setPage(1);
-      }
+      setPage(1);
     } catch (err) {
-      toast(err?.message || 'No se pudo enviar el resumen. Revisa los datos e intentalo nuevamente.', 'error');
-      load();
+      if (uncertainSummarySend(err)) {
+        toast('No se pudo confirmar el envío. Revisa el listado y consulta el estado del resumen antes de volver a enviarlo.', 'warning');
+        setModalOpen(false);
+      } else {
+        toast(err?.message || 'No se pudo enviar el resumen. Revisa los datos.', 'error');
+      }
     } finally {
+      requestInFlight.current = false;
       setSubmitting(false);
+      setRefreshVersion((value) => value + 1);
+    }
+  };
+
+  const handleConsult = async (resumen) => {
+    if (!resumen.id || requestInFlight.current) return;
+    requestInFlight.current = true;
+    setConsultingId(resumen.id);
+    try {
+      const res = await api.post(`/resumen-diario/${resumen.id}/consultar`);
+      setConfirmedResults((current) => ({ ...current, [res.id]: res.updated_at }));
+      const feedback = summaryResultMessage(res);
+      toast(feedback.message, feedback.type);
+    } catch (err) {
+      toast(err?.status && err.status < 500
+        ? err.message
+        : 'La consulta no pudo confirmarse. Conserva el resumen y vuelve a consultar su estado; no lo reenvíes.', 'warning');
+    } finally {
+      requestInFlight.current = false;
+      setConsultingId(null);
+      setRefreshVersion((value) => value + 1);
     }
   };
 
@@ -273,15 +291,15 @@ export default function ResumenDiarioPage() {
       key: 'sent',
       value: tabCounts.sent,
       label: 'Enviados',
-      text: tabCounts.sent ? 'Procesados correctamente' : 'Sin envios completados',
+      text: tabCounts.sent ? 'Consulta para confirmar aceptación' : 'Sin envíos registrados',
       link: 'Ver enviados',
       icon: <CheckCircle2 size={16} />,
     },
     {
       key: 'pending',
       value: tabCounts.pending,
-      label: 'Pendientes de ticket',
-      text: tabCounts.pending ? 'Requieren consulta SUNAT' : 'Sin tickets pendientes',
+      label: 'Pendientes de confirmación',
+      text: tabCounts.pending ? 'Requieren consulta SUNAT' : 'Sin resúmenes pendientes',
       link: 'Revisar pendientes',
       icon: <Clock3 size={16} />,
     },
@@ -324,11 +342,11 @@ export default function ResumenDiarioPage() {
 
           <div className="document-list-hero-pagecopy">
             <h2>Resumen diario</h2>
-            <p>Consolidado de boletas del dia enviado de forma asincrona con ticket SUNAT.</p>
+            <p>Consulta el estado del consolidado de boletas. Un ticket de envío todavía no confirma su aceptación.</p>
           </div>
 
           <div className="document-list-hero-kicker">
-            Flujo asincrono - {tabCounts.pending ? `${tabCounts.pending} tickets por consultar` : 'Sin pendientes'}
+            {tabCounts.pending ? `${tabCounts.pending} resúmenes por confirmar` : 'Consulta los enviados para verificar su CDR'}
           </div>
         </div>
 
@@ -472,12 +490,13 @@ export default function ResumenDiarioPage() {
                     <th>Fecha resumen</th>
                     <th>Ticket SUNAT</th>
                     <th>Enviado</th>
-                    <th>Estado</th>
+                    <th>Estado y consulta</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pageItems.map((resumen) => {
-                    const status = getResumenStatus(resumen);
+                    const status = summaryStatus(resumen, Object.hasOwn(confirmedResults, resumen.id)
+                      && confirmedResults[resumen.id] === resumen.updated_at);
                     const rowClass =
                       status === 'sent'
                         ? 'ink-table-row--accepted'
@@ -486,9 +505,9 @@ export default function ResumenDiarioPage() {
                           : '';
 
                     return (
-                      <tr key={resumen.id || resumenDisplayNumber(resumen)} className={rowClass}>
+                      <tr key={resumen.id || summaryNumber(resumen)} className={rowClass}>
                         <td data-label="Correlativo">
-                          <div className="ink-table-cell__primary document-list-folio">{resumenDisplayNumber(resumen)}</div>
+                          <div className="ink-table-cell__primary document-list-folio">{summaryNumber(resumen)}</div>
                           <div className="ink-table-cell__meta">{resumen.details_count || 0} comprobantes</div>
                         </td>
                         <td data-label="Fecha resumen">
@@ -506,8 +525,20 @@ export default function ResumenDiarioPage() {
                         <td data-label="Enviado">
                           <div className="ink-table-cell__meta">{formatDateTime(resumen.created_at || resumen._ts)}</div>
                         </td>
-                        <td data-label="Estado">
-                          {getResumenBadge(resumen)}
+                        <td data-label="Estado y consulta">
+                          <div className="summary-status-actions">
+                            {getResumenBadge(status)}
+                            <button
+                              type="button"
+                              className="btn-ghost"
+                              aria-label={`Consultar estado de ${summaryNumber(resumen)}`}
+                              disabled={!resumen.id || consultingId !== null || submitting}
+                              onClick={() => handleConsult(resumen)}
+                            >
+                              {consultingId === resumen.id ? <Spinner size={14} /> : <RefreshCw size={14} />}
+                              {consultingId === resumen.id ? 'Consultando…' : 'Consultar estado'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -536,7 +567,7 @@ export default function ResumenDiarioPage() {
         footer={(
           <>
             <button type="button" className="btn-ghost" onClick={() => setModalOpen(false)}>Cancelar</button>
-            <button type="submit" form="resumen-diario-form" className="btn-primary" disabled={submitting}>
+            <button type="submit" form="resumen-diario-form" className="btn-primary" disabled={submitting || consultingId !== null}>
               {submitting && <Spinner size={14} />}
               Enviar resumen
             </button>
@@ -549,7 +580,7 @@ export default function ResumenDiarioPage() {
               <p>Cabecera operativa</p>
             </div>
             <p className="drawer-editor-section-intro">
-              Define la fecha de generacion, el corte del resumen y el correlativo numerico que APISPeru enviara a SUNAT.
+              Define la fecha de generación, la fecha de las boletas y el correlativo numérico del resumen.
             </p>
             <div className="responsive-form-grid-1-1-2">
               <div>
@@ -564,7 +595,7 @@ export default function ResumenDiarioPage() {
                 <label className="label">Correlativo <span style={{ color: 'var(--color-error)' }}>*</span></label>
                 <input className="input" value={form.correlativo} onChange={setInput('correlativo')} placeholder="00001" required />
                 <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                  Ingresa solo el correlativo numerico. APISPeru arma el RC con la fecha.
+                  Ingresa solo el correlativo numérico. El número RC incluye la fecha del resumen.
                 </p>
               </div>
             </div>
@@ -582,7 +613,7 @@ export default function ResumenDiarioPage() {
             </p>
             <div className="drawer-editor-list">
               {form.detalles.map((detalle, index) => (
-                <div key={`${index}-${detalle.serieNro}`} className="drawer-editor-item">
+                <div key={index} className="drawer-editor-item">
                   <div className="responsive-form-grid-1-90-120" style={{ marginBottom: 8 }}>
                     <div>
                       <label className="label" style={{ fontSize: 10 }}>Serie-Correlativo</label>
@@ -626,7 +657,7 @@ export default function ResumenDiarioPage() {
           </div>
 
           <div className="proto-alert warning drawer-editor-note" style={{ fontSize: 12 }}>
-            <strong>Nota:</strong> El resumen diario se guarda primero en Inkora y luego se marca como enviado o rechazado segun la respuesta de APISPeru.
+            <strong>Nota:</strong> Un ticket deja el resumen pendiente. Consulta su estado para confirmar la aceptación o el rechazo de SUNAT. Los códigos son 1: adicionar, 2: modificar y 3: anular.
           </div>
         </form>
       </Drawer>

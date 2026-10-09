@@ -570,7 +570,15 @@ class NotaCreate(StrictInputModel):
 
 class AnulacionCreate(StrictInputModel):
     comprobante_id: int
-    motivo: str
+    motivo: str = Field(min_length=1, max_length=500)
+    confirmed_not_delivered: bool = Field(default=False, strict=True)
+
+    @field_validator("motivo")
+    @classmethod
+    def valid_void_reason(cls, value):
+        if not value.strip():
+            raise ValueError("Indique el motivo de baja.")
+        return value.strip()
 
 
 class DescargaArchivoPayload(StrictInputModel):

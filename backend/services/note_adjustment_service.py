@@ -67,10 +67,12 @@ def _source_document(db: Session, tenant_id: int, document_id: int, *, lock=Fals
             models.Cotizacion.tipo_comprobante.in_(("01", "03")),
         )
     if lock:
-        query = query.with_for_update()
+        query = query.populate_existing().with_for_update()
     document = query.first()
     if not document:
         raise ValueError("Comprobante aceptado no encontrado para la empresa.")
+    from services.void_recovery_service import ensure_note_source_available
+    ensure_note_source_available(db, document)
     return document
 
 
@@ -234,7 +236,7 @@ def _allocate(document, target: Decimal):
 
 
 def calculate_adjustment(db: Session, tenant_id: int, payload: FiscalNoteDraftCreate, *, exclude_note_id=None):
-    document = _source_document(db, tenant_id, payload.comprobante_afectado_id)
+    document = _source_document(db, tenant_id, payload.comprobante_afectado_id, lock=True)
     motives = allowed_motives(document)[payload.tipo_nota]
     if payload.cod_motivo not in motives:
         raise ValueError("El motivo SUNAT no aplica al comprobante seleccionado.")
@@ -388,10 +390,23 @@ def create_draft(db, tenant_id, user_id, payload, idempotency_key):
 
 
 def update_draft(db, tenant_id, user_id, note_id, payload):
+    probe = db.query(models.Cotizacion).filter(
+        models.Cotizacion.id == note_id,
+        models.Cotizacion.tenant_id == tenant_id,
+    ).first()
+    if not probe or probe.estado != "borrador" or probe.nota_ajuste_metadata is None:
+        raise ValueError("Solo se pueden editar borradores de la empresa.")
+    # A draft may change its source. Lock both sources in stable order before
+    # the note, preserving source -> note ordering used by its emission worker.
+    source_ids = {payload.comprobante_afectado_id}
+    if probe.nota_referencia_id is not None:
+        source_ids.add(probe.nota_referencia_id)
+    for source_id in sorted(source_ids):
+        _source_document(db, tenant_id, source_id, lock=True)
     note = db.query(models.Cotizacion).filter(
         models.Cotizacion.id == note_id,
         models.Cotizacion.tenant_id == tenant_id,
-    ).with_for_update().first()
+    ).populate_existing().with_for_update().first()
     if not note or note.estado != "borrador" or note.nota_ajuste_metadata is None:
         raise ValueError("Solo se pueden editar borradores de la empresa.")
     document, items, totals = calculate_adjustment(db, tenant_id, payload, exclude_note_id=note.id)

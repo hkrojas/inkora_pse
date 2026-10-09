@@ -8,7 +8,7 @@ export function fiscalTrackingState(job = {}, documentStatus) {
     failed: 'Requiere atención. Revisa el resultado del comprobante.',
   };
   if (status === 'succeeded') return {
-    label: isVoid ? 'Baja procesada. Actualizando resultado fiscal.'
+    label: isVoid ? 'Baja aceptada por SUNAT'
       : documentStatus === 'emitted' ? 'Aceptado por SUNAT' : 'Trabajo completado. Verificando resultado fiscal.',
     poll: false, terminal: true,
   };
