@@ -224,7 +224,8 @@ test('Notas pagina tanto comprobantes elegibles como historial', async ({ browse
     for (const number of ['000001', '000002']) {
       const downloaded = page.waitForEvent('download');
       await page.getByRole('button', { name: `Descargar PDF de F001-${number}`, exact: true }).click();
-      expect((await downloaded).suggestedFilename()).toBe('nota.pdf');
+      // Cross-origin headers are not exposed by this fixture: use the note's folio.
+      expect((await downloaded).suggestedFilename()).toBe(`F001-${number}.pdf`);
     }
     const history = page.getByRole('navigation', { name: 'Paginación del historial de notas' });
     await history.getByRole('button', { name: 'Ir a página 3' }).click();
