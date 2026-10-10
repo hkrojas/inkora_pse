@@ -9,6 +9,7 @@ import argparse
 import ast
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -140,6 +141,43 @@ def require_clean_release_tree(root):
         )
 
 
+def require_current_main(root, *, remote='inkora_pse'):
+    """Require production candidates to match a freshly fetched main exactly.
+
+    This check deliberately includes tracked tests and delivery tooling, which
+    are outside the runtime manifest. Historical rollback verification never
+    calls it.
+    """
+    def git(*arguments):
+        completed = subprocess.run(
+            ['git', '-C', str(root), *arguments],
+            capture_output=True,
+            text=True,
+            env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'},
+        )
+        if completed.returncode:
+            # Git diagnostics can include credential-bearing remote URLs.
+            raise ValueError('No se pudo comprobar main mediante Git; publicación bloqueada.')
+        return completed.stdout.strip()
+
+    if not remote or remote not in git('remote').splitlines():
+        raise ValueError('El remoto indicado no está configurado; publicación bloqueada.')
+    git('fetch', '--no-tags', '--no-recurse-submodules', '--', remote, 'refs/heads/main')
+    current_main = git('rev-parse', 'FETCH_HEAD^{commit}')
+    candidate = git('rev-parse', 'HEAD^{commit}')
+    if candidate != current_main:
+        raise ValueError(
+            f'HEAD ({candidate}) no coincide con main actualizado ({current_main}). '
+            'Integra main y vuelve a validar antes de publicar.'
+        )
+    dirty = git('status', '--porcelain=v1', '--untracked-files=no', '--ignore-submodules=none')
+    if dirty:
+        raise ValueError(
+            'Hay archivos seguidos por Git con cambios sin commit '
+            '(incluidas pruebas y herramientas). Publicación bloqueada:\n' + dirty
+        )
+
+
 def source_files(root, *, hash_mode=CURRENT_HASH_MODE):
     files = set()
     for rel in CONFIG_FILES:
@@ -260,12 +298,20 @@ def main():
     parser.add_argument('command', choices=['check', 'package', 'verify'])
     parser.add_argument('--destination', type=Path)
     parser.add_argument('--approved-sha256')
+    parser.add_argument('--require-current-main', action='store_true',
+                        help='Exige HEAD igual a main recién obtenido y todos los archivos seguidos limpios.')
+    parser.add_argument('--remote', default='inkora_pse',
+                        help='Remoto de main para --require-current-main (por defecto: inkora_pse).')
     args = parser.parse_args()
     if args.command == 'verify':
+        if args.require_current_main:
+            parser.error('--require-current-main solo se admite en check/package; verify conserva el rollback histórico.')
         if not args.destination:
             parser.error('verify requiere --destination')
         data = verify(args.destination.resolve())
     else:
+        if args.require_current_main:
+            require_current_main(ROOT, remote=args.remote)
         data = manifest(ROOT)
         if args.command == 'package':
             if args.approved_sha256 != data['content_sha256']:

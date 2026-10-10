@@ -6,10 +6,12 @@ temporary database and Playwright authentication state on exit.
 """
 from __future__ import annotations
 
+import argparse
 from contextlib import contextmanager
 from datetime import date
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import socket
@@ -25,6 +27,51 @@ BACKEND = ROOT / "backend"
 FRONTEND = ROOT / "frontend"
 AUTH_STATE = FRONTEND / ".playwright" / ".auth" / "tenant.json"
 TENANT_EMAIL = "admin@demo.inkora.pe"
+
+
+def _validate_specs(values: list[str], root: Path = ROOT) -> list[Path]:
+    """Accept existing, flat E2E specs only; never arbitrary Playwright args."""
+    selected = []
+    for value in values:
+        if not re.fullmatch(r"frontend/e2e/[A-Za-z0-9][A-Za-z0-9_.-]*\.spec\.js", value):
+            raise ValueError(f"Spec inválido: {value!r}; usa frontend/e2e/<nombre>.spec.js.")
+        relative = Path(value)
+        candidate = root / relative
+        if any((root / Path(*relative.parts[:index])).is_symlink()
+               for index in range(1, len(relative.parts) + 1)):
+            raise ValueError(f"No se permiten enlaces simbólicos en el spec: {value!r}.")
+        if not candidate.is_file() or candidate.resolve().parent != (root / "frontend/e2e").resolve():
+            raise ValueError(f"El spec no existe dentro de frontend/e2e: {value!r}.")
+        if candidate not in selected:
+            selected.append(candidate)
+    return selected
+
+
+def _parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument("--spec", action="append", default=[], metavar="frontend/e2e/NAME.spec.js",
+                        help="Ejecuta un spec existente; repite la opción para seleccionar varios.")
+    parser.add_argument("--timeout-ms", type=int, default=None, metavar="30000..120000",
+                        help="Plazo por prueba; no modifica los plazos de las aserciones.")
+    arguments = parser.parse_args(argv)
+    if arguments.timeout_ms is not None and not 30_000 <= arguments.timeout_ms <= 120_000:
+        parser.error("--timeout-ms debe estar entre 30000 y 120000.")
+    try:
+        arguments.spec = _validate_specs(arguments.spec)
+    except ValueError as exc:
+        parser.error(str(exc))
+    return arguments
+
+
+def _playwright_command(npx: str, specs: list[Path], timeout_ms: int | None) -> list[str]:
+    command = [npx, "playwright", "test"]
+    if timeout_ms is not None:
+        command.append(f"--timeout={timeout_ms}")
+    # Playwright interprets positional file filters as regular expressions.
+    # Anchor each exact validated path, accepting either OS path separator.
+    for spec in specs:
+        command.append(r"[\\/]".join(re.escape(part) for part in spec.as_posix().split("/")) + "$")
+    return command
 
 
 def _require_available_port(port: int) -> None:
@@ -83,7 +130,8 @@ def _temporary_directory():
                 time.sleep(0.25)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    arguments = _parse_arguments(argv)
     if os.getenv("E2E_BASE_URL") or os.getenv("E2E_ALLOW_REMOTE"):
         raise RuntimeError("El runner local rechaza E2E_BASE_URL y E2E_ALLOW_REMOTE.")
     npx = shutil.which("npx.cmd" if os.name == "nt" else "npx")
@@ -161,7 +209,7 @@ def main() -> int:
                 )
                 _wait_for_backend(backend_process)
                 completed = subprocess.run(
-                    [npx, "playwright", "test"],
+                    _playwright_command(npx, arguments.spec, arguments.timeout_ms),
                     cwd=FRONTEND,
                     env=environment,
                 )
