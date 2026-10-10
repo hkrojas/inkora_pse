@@ -144,6 +144,10 @@ async function openHarness(browser, baseURL) {
     calls.push({ path, params: new URLSearchParams(url.searchParams), method: request.method() });
     let payload = {};
 
+    if (/^\/cotizaciones\/\d+\/pdf\/download$/.test(path)) {
+      await route.fulfill({ status: 200, contentType: 'application/pdf', headers: { 'Content-Disposition': 'attachment; filename="nota.pdf"' }, body: '%PDF-1.4\n%%EOF' });
+      return;
+    }
     if (path === '/users/me') payload = user;
     else if (path === '/tenant') payload = { id: 74, business_name: 'Inkora QA', business_ruc: '20123456789', is_active: true };
     else if (path === '/tenant/subscription-status') payload = { fiscal_feature_flags: { retentions: true, perceptions: true, daily_summary: true, reversions: true, guides: true, internal_transfers: true } };
@@ -217,6 +221,12 @@ test('Notas pagina tanto comprobantes elegibles como historial', async ({ browse
     await sources.getByRole('button', { name: 'Ir a página 3' }).click();
     await expect.poll(() => calls.filter((call) => call.path === '/facturas-emitidas/page').at(-1)?.params.get('skip')).toBe('30');
     await page.getByRole('tab', { name: 'Historial de notas' }).click();
+    for (const number of ['000001', '000002']) {
+      const downloaded = page.waitForEvent('download');
+      await page.getByRole('button', { name: `Descargar PDF de F001-${number}`, exact: true }).click();
+      // Cross-origin headers are not exposed by this fixture: use the note's folio.
+      expect((await downloaded).suggestedFilename()).toBe(`F001-${number}.pdf`);
+    }
     const history = page.getByRole('navigation', { name: 'Paginación del historial de notas' });
     await history.getByRole('button', { name: 'Ir a página 3' }).click();
     await expect.poll(() => calls.filter((call) => call.path === '/notas/page').at(-1)?.params.get('skip')).toBe('30');
