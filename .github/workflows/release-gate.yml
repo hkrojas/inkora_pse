@@ -141,7 +141,15 @@ jobs:
 
       - name: Test isolated browser flows selected by scope
         if: steps.plan.outputs.reuse != 'true' && steps.plan.outputs.profile != 'docs'
-        run: python scripts/release_ci_evidence.py e2e --plan tmp/release-plan.json
+        env:
+          RELEASE_PROFILE: ${{ steps.plan.outputs.profile }}
+        shell: bash
+        run: |
+          if [[ "$RELEASE_PROFILE" == full ]]; then
+            python scripts/run_e2e_local.py --timeout-ms 60000
+          else
+            python scripts/release_ci_evidence.py e2e --plan tmp/release-plan.json
+          fi
 
       - name: Calculate canonical release identity
         run: python scripts/release_guard.py check
