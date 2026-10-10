@@ -152,6 +152,7 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
   const debouncedSearch = useDebouncedValue(search, 300);
 
   const family = useMemo(() => getDocumentFamily(tipo, title), [tipo, title]);
+  const isInvoiceTable = tipo === '01';
   const primaryLabel = useMemo(
     () => normalizeActionLabel(newLabel, family.newFallback),
     [newLabel, family.newFallback],
@@ -542,13 +543,13 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
             </div>
 
             <div className="ink-table-scroll">
-              <table className="ink-table ink-document-table">
+              <table className={`ink-table ink-document-table${isInvoiceTable ? ' ink-document-table--invoices' : ''}`}>
                 <thead>
                   <tr>
-                    <th>Folio</th>
-                    <th>Fecha</th>
+                    <th>{isInvoiceTable ? 'N.º de factura' : 'Folio'}</th>
+                    <th>{isInvoiceTable ? 'Fecha de emisión' : 'Fecha'}</th>
                     <th>Cliente</th>
-                    <th>Tipo</th>
+                    {!isInvoiceTable && <th>Tipo</th>}
                     <th className="text-right">Total</th>
                     <th>Estado SUNAT</th>
                     <th className="text-right">Acciones</th>
@@ -569,25 +570,25 @@ export default function DocumentList({ tipo, title, subtitle, newLabel, newHref,
 
                     return (
                       <tr key={doc.id} className={rowClass}>
-                        <td data-label="Folio">
+                        <td data-label={isInvoiceTable ? 'N.º de factura' : 'Folio'}>
                           <div className="ink-table-cell__primary document-list-folio">{num}</div>
-                          <div className="ink-table-cell__meta">
+                          {!isInvoiceTable && <div className="ink-table-cell__meta">
                             Serie {doc.serie || '-'} · Corr. {doc.correlativo || '-'}
-                          </div>
+                          </div>}
                         </td>
-                        <td data-label="Fecha">
+                        <td data-label={isInvoiceTable ? 'Fecha de emisión' : 'Fecha'}>
                           <div className="ink-table-cell__primary">
                             {doc.fecha_emision ? formatFiscalDate(doc.fecha_emision) : '-'}
                           </div>
-                          <div className="ink-table-cell__meta">{doc.moneda || 'PEN'}</div>
+                          {!isInvoiceTable && <div className="ink-table-cell__meta">{doc.moneda || 'PEN'}</div>}
                         </td>
                         <td data-label="Cliente">
                           <div className="ink-table-cell__primary">{clienteName}</div>
                           {clienteDoc && <div className="ink-table-cell__meta">{clienteDoc}</div>}
                         </td>
-                        <td data-label="Tipo">
+                        {!isInvoiceTable && <td data-label="Tipo">
                           <DocumentTypeBadge tipo={doc.tipo_comprobante} size="sm" />
-                        </td>
+                        </td>}
                         <td className="text-right" data-label="Total">
                           <div className="ink-table-cell__primary document-list-amount">
                             {formatCurrency(doc.total_venta, doc.moneda)}
