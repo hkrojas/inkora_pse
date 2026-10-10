@@ -13033,46 +13033,52 @@ textarea.input:focus,
   line-height: 1.35;
 }
 
+.document-list-panel {
+  container: fiscal-documents / inline-size;
+  min-width: 0;
+}
+
 .document-list-table .ink-document-table {
-  min-width: 1240px;
+  width: 100%;
+  min-width: 0;
   table-layout: fixed;
 }
 
 .document-list-table .ink-document-table th:nth-child(1),
 .document-list-table .ink-document-table td:nth-child(1) {
-  width: 14%;
+  width: 11%;
 }
 
 .document-list-table .ink-document-table th:nth-child(2),
 .document-list-table .ink-document-table td:nth-child(2) {
-  width: 10%;
+  width: 11%;
 }
 
 .document-list-table .ink-document-table th:nth-child(3),
 .document-list-table .ink-document-table td:nth-child(3) {
-  width: 22.5%;
+  width: auto;
 }
 
 .document-list-table .ink-document-table th:nth-child(4),
 .document-list-table .ink-document-table td:nth-child(4) {
-  width: 7%;
+  width: 8%;
   text-align: center;
 }
 
 .document-list-table .ink-document-table th:nth-child(5),
 .document-list-table .ink-document-table td:nth-child(5) {
-  width: 10.5%;
+  width: 14%;
   text-align: center;
 }
 
 .document-list-table .ink-document-table th:nth-child(6),
 .document-list-table .ink-document-table td:nth-child(6) {
-  width: 16%;
+  width: 14%;
 }
 
 .document-list-table .ink-document-table th:nth-child(7),
 .document-list-table .ink-document-table td:nth-child(7) {
-  width: 20%;
+  width: 280px;
   padding-right: 24px;
 }
 
@@ -19432,168 +19438,6 @@ textarea.input:focus,
     border-radius: 20px;
   }
 
-  .document-list-table .ink-table-scroll {
-    overflow: visible;
-  }
-
-  .document-list-table .ink-document-table {
-    display: block;
-    min-width: 0;
-    width: 100%;
-    table-layout: auto;
-  }
-
-  .document-list-table .ink-document-table thead {
-    display: none;
-  }
-
-  .document-list-table .ink-document-table tbody {
-    display: grid;
-    gap: 12px;
-    padding: 12px;
-  }
-
-  .document-list-table .ink-document-table tbody tr {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-    padding: 14px;
-    border: 1px solid var(--color-border);
-    border-radius: 18px;
-    background: var(--color-surface);
-    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
-  }
-
-  .document-list-table .ink-document-table tbody tr:hover {
-    background: var(--color-surface);
-  }
-
-  .document-list-table .ink-document-table tbody tr:hover td:first-child,
-  .document-list-table .ink-document-table tbody tr.ink-table-row--active td:first-child,
-  .document-list-table .ink-document-table tbody tr.ink-table-row--accepted td:first-child {
-    box-shadow: none;
-  }
-
-  .document-list-table .ink-document-table tbody td {
-    display: grid;
-    grid-template-columns: minmax(84px, 0.34fr) minmax(0, 1fr);
-    align-items: center;
-    justify-self: stretch;
-    gap: 12px;
-    width: 100% !important;
-    max-width: none;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    overflow: visible;
-    text-align: left;
-  }
-
-  .document-list-table .ink-document-table tbody td::before {
-    content: attr(data-label);
-    align-self: start;
-    color: var(--color-text-soft);
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 0.08em;
-    line-height: 1.25;
-    text-transform: uppercase;
-  }
-
-  .document-list-table .ink-document-table tbody td[data-label='Folio'],
-  .document-list-table .ink-document-table tbody td[data-label='Cliente'] {
-    grid-template-columns: 1fr;
-    gap: 5px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(226, 232, 240, 0.85);
-  }
-
-  .document-list-table .ink-document-table tbody td[data-label='Folio']::before,
-  .document-list-table .ink-document-table tbody td[data-label='Cliente']::before {
-    content: none;
-  }
-
-  .document-list-table .ink-document-table tbody td[data-label='Folio'] {
-    padding-right: 2px;
-  }
-
-  .document-list-table .ink-document-table tbody td[data-label='Fecha'] .ink-table-cell__primary,
-  .document-list-table .ink-document-table tbody td[data-label='Total'] .document-list-amount {
-    white-space: nowrap;
-    overflow-wrap: normal;
-    word-break: normal;
-  }
-
-  .document-list-table .ink-document-table tbody td[data-label='Tipo'],
-  .document-list-table .ink-document-table tbody td[data-label='Estado'],
-  .document-list-table .ink-document-table tbody td[data-label='Acciones'] {
-    align-items: center;
-  }
-
-  .document-list-table .ink-document-table tbody td[data-label='Acciones'] {
-    grid-template-columns: 1fr;
-    gap: 8px;
-    padding-top: 2px;
-  }
-
-  .document-list-table .document-list-folio {
-    color: var(--color-primary-text);
-    font-size: 17px;
-    letter-spacing: -0.01em;
-    white-space: nowrap;
-    overflow-wrap: normal;
-    word-break: normal;
-  }
-
-  .document-list-table .ink-table-cell__primary {
-    min-width: 0;
-    font-size: 14px;
-    line-height: 1.3;
-    overflow-wrap: anywhere;
-  }
-
-  .document-list-table .ink-table-cell__meta {
-    min-width: 0;
-    font-size: 12px;
-    line-height: 1.35;
-    overflow-wrap: anywhere;
-  }
-
-  .document-list-table .document-list-amount {
-    font-size: 15px;
-    text-align: left;
-  }
-
-  .document-list-table .ink-table-row-actions,
-  .document-list-table .document-list-row-actions {
-    justify-content: flex-start;
-    gap: 8px;
-    opacity: 1;
-    transform: none;
-  }
-
-  .document-list-table .ink-row-btn {
-    width: 38px;
-    height: 38px;
-    border-radius: 13px;
-  }
-
-  .document-list-table .document-list-action-shell,
-  .document-list-table .document-list-actions-mobile,
-  .document-list-table .document-list-actions-mobile > button {
-    width: 100%;
-  }
-
-  .document-list-table .document-list-actions-mobile {
-    justify-content: flex-start;
-  }
-
-  .document-list-table .document-list-actions-menu {
-    left: 0;
-    right: auto;
-    width: min(100%, 270px);
-  }
-
   .guide-form-tabs {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -25944,4 +25788,187 @@ body:has(.auth-expedition) {
   background: transparent;
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* Cards follow the space left by the sidebar, rather than viewport width. */
+@container fiscal-documents (max-width: 1040px) {
+  .document-list-table .ink-table-scroll {
+    overflow: visible;
+  }
+
+  .document-list-table .ink-document-table {
+    display: block;
+    min-width: 0;
+    width: 100%;
+    table-layout: auto;
+  }
+
+  .document-list-table .ink-document-table thead {
+    display: none;
+  }
+
+  .document-list-table .ink-document-table tbody {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .document-list-table .ink-document-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 18px;
+    background: var(--color-surface);
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+  }
+
+  .document-list-table .ink-document-table tbody tr:hover {
+    background: var(--color-surface);
+  }
+
+  .document-list-table .ink-document-table tbody tr:hover td:first-child,
+  .document-list-table .ink-document-table tbody tr.ink-table-row--active td:first-child,
+  .document-list-table .ink-document-table tbody tr.ink-table-row--accepted td:first-child {
+    box-shadow: none;
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label] {
+    display: grid;
+    grid-template-columns: minmax(84px, 0.34fr) minmax(0, 1fr);
+    align-items: center;
+    justify-self: stretch;
+    gap: 12px;
+    width: 100% !important;
+    max-width: none;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    overflow: visible;
+    text-align: left;
+  }
+
+  .document-list-table td[data-label='Fecha'] .ink-table-cell__meta {
+    grid-column: 2;
+  }
+
+  .document-list-table td[data-label='Tipo'] .document-type-badge,
+  .document-list-table td[data-label='Estado SUNAT'] > span {
+    justify-self: start;
+  }
+
+  .document-list-table .ink-document-table tbody td::before {
+    content: attr(data-label);
+    align-self: start;
+    color: var(--color-text-soft);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    line-height: 1.25;
+    text-transform: uppercase;
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label='Folio'],
+  .document-list-table .ink-document-table tbody td[data-label='Cliente'] {
+    grid-template-columns: 1fr;
+    gap: 5px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.85);
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label='Folio']::before,
+  .document-list-table .ink-document-table tbody td[data-label='Cliente']::before {
+    content: none;
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label='Folio'] {
+    padding-right: 2px;
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label='Fecha'] .ink-table-cell__primary,
+  .document-list-table .ink-document-table tbody td[data-label='Total'] .document-list-amount {
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label='Tipo'],
+  .document-list-table .ink-document-table tbody td[data-label='Estado SUNAT'],
+  .document-list-table .ink-document-table tbody td[data-label='Acciones'] {
+    align-items: center;
+  }
+
+  .document-list-table .ink-document-table tbody td[data-label='Acciones'] {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding-top: 2px;
+  }
+
+  .document-list-table .document-list-folio {
+    color: var(--color-primary-text);
+    font-size: 17px;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .document-list-table .ink-table-cell__primary {
+    min-width: 0;
+    font-size: 14px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+
+  .document-list-table .ink-table-cell__meta {
+    min-width: 0;
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .document-list-table .document-list-amount {
+    font-size: 15px;
+    text-align: left;
+  }
+
+  .document-list-table .ink-table-row-actions,
+  .document-list-table .document-list-row-actions {
+    justify-content: flex-start;
+    gap: 8px;
+    opacity: 1;
+    transform: none;
+  }
+
+  .document-list-table .ink-row-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 13px;
+  }
+
+  .document-list-table .document-list-action-shell,
+  .document-list-table .document-list-actions-mobile,
+  .document-list-table .document-list-actions-mobile > button {
+    width: 100%;
+  }
+
+  .document-list-table .document-list-actions-mobile {
+    justify-content: flex-start;
+  }
+
+  .document-list-table .document-list-actions-menu {
+    left: 0;
+    right: auto;
+    width: min(100%, 270px);
+  }
+
+  .document-list-table .fiscal-actions {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
+  .document-list-table .fiscal-actions .history-action-button {
+    min-height: 44px;
+  }
 }
