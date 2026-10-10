@@ -13,6 +13,9 @@ class ClassificationTests(unittest.TestCase):
     def select(self, *entries, before='', after=''):
         return scope.classify(entries, lambda path: (before, after))
 
+    def test_empty_diff_cannot_skip_runtime_validation_as_documentation(self):
+        self.assertEqual(self.select()['profile'], 'full')
+
     def test_mixed_backend_and_global_css_is_full_in_either_order(self):
         backend = ('M', 'backend/routers/documentos.py')
         css = ('M', 'frontend/src/styles/globals.css')

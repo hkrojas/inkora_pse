@@ -153,6 +153,8 @@ def document_only_css(before, after):
 
 def classify(entries, read_css=None):
     entries = list(entries)
+    if not entries:
+        return {'profile': 'full', 'specs': [], 'reasons': ['Empty diff cannot establish a documentation-only release']}
     if any(status != 'M' for status, _ in entries):
         return {'profile': 'full', 'specs': [], 'reasons': ['Added, deleted or renamed paths require full validation']}
     specs, reasons, profile = set(SMOKE), [], 'visual'
