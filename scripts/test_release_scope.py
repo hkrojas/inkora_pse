@@ -90,13 +90,20 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(result['profile'], 'frontend')
         self.assertTrue(scope.DOCUMENTS <= set(result['specs']))
 
-    def test_scoped_css_does_not_reduce_known_component_coverage(self):
+    def test_scoped_css_does_not_reduce_shared_component_coverage(self):
         result = self.select(('M', 'frontend/src/styles/globals.css'),
                              ('M', 'frontend/src/components/ui/Pagination.jsx'),
                              before='.document-list-table td { padding: 12px; }',
                              after='.document-list-table td { padding: 10px; }')
         self.assertEqual(result['profile'], 'frontend')
-        self.assertTrue(scope.COMPONENT_SPECS['frontend/src/components/ui/Pagination.jsx'] <= set(result['specs']))
+        self.assertEqual(result['specs'], [])
+
+    def test_shared_select_calendar_and_pagination_cover_all_browser_flows(self):
+        for component in ('CustomSelect', 'DatePicker', 'Pagination'):
+            with self.subTest(component=component):
+                result = self.select(('M', f'frontend/src/components/ui/{component}.jsx'))
+                self.assertEqual(result['profile'], 'frontend')
+                self.assertEqual(result['specs'], [])
 
     def test_docs_only_has_no_browser_specs(self):
         result = self.select(('M', 'docs/RELEASE_CANONICO.md'))

@@ -25,13 +25,6 @@ PAGE_SPECS = {
 }
 COMPONENT_SPECS = {
     'frontend/src/components/documents/DocumentList.jsx': DOCUMENTS,
-    'frontend/src/components/ui/Pagination.jsx': {'uniform-pagination.spec.js',
-        'operational-pagination.spec.js', 'superadmin-pagination.spec.js',
-        'dashboard-live-data.spec.js'},
-    'frontend/src/components/ui/CustomSelect.jsx': {'dashboard-live-data.spec.js',
-        'uniform-pagination.spec.js', 'clientes-directory.spec.js'},
-    'frontend/src/components/ui/DatePicker.jsx': {'dashboard-live-data.spec.js',
-        'fiscal-issue-date.spec.js'},
     'frontend/src/components/dashboard/DashboardEntityFilter.jsx': {'dashboard-live-data.spec.js'},
     'frontend/src/components/dashboard/DashboardExplorer.jsx': {'dashboard-live-data.spec.js'},
 }
@@ -39,6 +32,8 @@ GLOBAL_FRONTEND = {
     'frontend/src/styles/globals.css', 'frontend/src/components/Sidebar.jsx',
     'frontend/src/components/ui/Modal.jsx', 'frontend/src/components/ui/Drawer.jsx',
     'frontend/src/components/ui/ActionMenu.jsx', 'frontend/src/components/ui/actionMenu.css',
+    'frontend/src/components/ui/Pagination.jsx', 'frontend/src/components/ui/CustomSelect.jsx',
+    'frontend/src/components/ui/DatePicker.jsx',
 }
 
 
