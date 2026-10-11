@@ -128,11 +128,11 @@ def parse_sale_document_xml(xml_content: str | None) -> dict | None:
     if document_id and "-" in document_id:
         serie, correlativo = document_id.split("-", 1)
 
-    doc_type_code = (
-        _find_text(root, "./cbc:InvoiceTypeCode")
-        or _find_text(root, "./cbc:CreditNoteTypeCode")
-        or _find_text(root, "./cbc:DebitNoteTypeCode")
-    )
+    # A note's type-code element can describe its reason, not SUNAT's
+    # document type. The signed XML root identifies credit/debit notes.
+    doc_type_code = {"CreditNote": "07", "DebitNote": "08"}.get(root_name)
+    if root_name == "Invoice":
+        doc_type_code = _find_text(root, "./cbc:InvoiceTypeCode")
 
     note_amount_words = None
     for note in root.findall("./cbc:Note", NS):
@@ -143,6 +143,8 @@ def parse_sale_document_xml(xml_content: str | None) -> dict | None:
     supplier = _extract_party(root, "./cac:AccountingSupplierParty")
     customer = _extract_party(root, "./cac:AccountingCustomerParty")
     monetary = root.find("./cac:LegalMonetaryTotal", NS)
+    if monetary is None:
+        monetary = root.find("./cac:RequestedMonetaryTotal", NS)
 
     return {
         "root_name": root_name,

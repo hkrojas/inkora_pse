@@ -1,3 +1,7 @@
+import hashlib
+
+import pytest
+
 from services import fiscal_xml_service
 
 
@@ -74,6 +78,22 @@ SAMPLE_INVOICE_XML = """<?xml version="1.0" encoding="utf-8"?>
 """
 
 
+def sample_note_xml(root_name, reason_code="01"):
+    """Real note structure; debit notes use RequestedMonetaryTotal."""
+    credit = root_name == "CreditNote"
+    line_name = "CreditNoteLine" if credit else "DebitNoteLine"
+    quantity_name = "CreditedQuantity" if credit else "DebitedQuantity"
+    xml = SAMPLE_INVOICE_XML.replace("<Invoice ", f"<{root_name} ").replace("</Invoice>", f"</{root_name}>")
+    xml = xml.replace("xsd:Invoice-2", f"xsd:{root_name}-2")
+    xml = xml.replace("InvoiceLine", line_name).replace("InvoicedQuantity", quantity_name)
+    type_code = f"<cbc:{root_name}TypeCode>{reason_code}</cbc:{root_name}TypeCode>" if reason_code else ""
+    xml = xml.replace("<cbc:InvoiceTypeCode>01</cbc:InvoiceTypeCode>", type_code)
+    xml = xml.replace("F001-123456", "FC01-123456" if credit else "FD01-123456")
+    if not credit:
+        xml = xml.replace("LegalMonetaryTotal", "RequestedMonetaryTotal")
+    return xml
+
+
 def test_parse_sale_document_xml_extrae_campos_principales():
     parsed = fiscal_xml_service.parse_sale_document_xml(SAMPLE_INVOICE_XML)
 
@@ -101,3 +121,27 @@ def test_build_sale_qr_payload_from_xml_construye_payload():
         "clienteTipo": "6",
         "clienteNumero": "20111111111",
     }
+
+
+@pytest.mark.parametrize("root_name,expected", [("CreditNote", "07"), ("DebitNote", "08")])
+@pytest.mark.parametrize("reason_code", ["01", "02", None])
+def test_note_root_identifies_document_type_independently_of_reason(root_name, expected, reason_code):
+    xml = sample_note_xml(root_name, reason_code)
+    original_digest = hashlib.sha256(xml.encode()).hexdigest()
+
+    parsed = fiscal_xml_service.parse_sale_document_xml(xml)
+    qr = fiscal_xml_service.build_sale_qr_payload_from_xml(xml)
+
+    assert parsed["tipo_comprobante"] == expected
+    assert parsed["totals"]["payable_amount"] == 59
+    assert parsed["totals"]["line_extension_amount"] == 50
+    assert parsed["totals"]["tax_inclusive_amount"] == 59
+    assert parsed["lines"][0]["quantity"] == 1
+    assert qr["tipo"] == expected and qr["total"] == 59
+    assert hashlib.sha256(xml.encode()).hexdigest() == original_digest
+
+
+def test_boleta_keeps_invoice_type_code():
+    xml = SAMPLE_INVOICE_XML.replace("<cbc:InvoiceTypeCode>01</cbc:InvoiceTypeCode>",
+                                     "<cbc:InvoiceTypeCode>03</cbc:InvoiceTypeCode>")
+    assert fiscal_xml_service.parse_sale_document_xml(xml)["tipo_comprobante"] == "03"
