@@ -82,7 +82,7 @@ def reserve(db, job, user, xml, metadata):
 
 
 @pytest.mark.parametrize("error", ["HTTP 503 Service Unavailable",
-    "[CIRCUIT_OPEN] SUNAT no responde, reintente en unos segundos"])
+    "[CIRCUIT_OPEN] SUNAT no responde, reintente en unos segundos", "[HTTP] Error Fetching http headers"])
 def test_panel_ack_stays_pending_until_matching_cdr(db_session, pending_sale, error):
     tenant, _, document, job, xml, client, panel, metadata, attempts = pending_sale
     metadata["provider_error_message"] = error
