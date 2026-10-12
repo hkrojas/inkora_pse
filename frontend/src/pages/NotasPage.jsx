@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, CheckCircle2, Clock3, CreditCard, FileText, ReceiptText, RefreshCw, Search, XCircle, XOctagon } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock3, CreditCard, Download, FileText, ReceiptText, RefreshCw, Search, XCircle, XOctagon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/utils/api';
 import { useToast } from '../components/ui/Toast';
@@ -12,6 +12,7 @@ import { DocumentTypeBadge } from '../components/documents/DocumentType';
 import { formatCurrency, getSunatStatus } from '../lib/utils/documents';
 import { notas as notasService } from '../services/notas';
 import Pagination from '../components/ui/Pagination';
+import { hasFiscalDownload } from '../lib/utils/documentArtifacts';
 
 const PER_PAGE = 15;
 
@@ -69,6 +70,7 @@ export default function NotasPage() {
   const [noteStatus, setNoteStatus] = useState('all');
   const [notesLoading, setNotesLoading] = useState(false);
   const [notesError, setNotesError] = useState(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(null);
   const [drawer, setDrawer] = useState({ open: false, document: null, type: 'credito', context: null, loading: false, error: null });
   const sourceRequestSeq = useRef(0);
   const notesRequestSeq = useRef(0);
@@ -147,6 +149,27 @@ export default function NotasPage() {
   };
 
   const closeDrawer = () => setDrawer((current) => ({ ...current, open: false }));
+  const downloadPdf = async (note) => {
+    if (downloadingPdf !== null) return;
+    setDownloadingPdf(note.id);
+    try {
+      const result = await api.getBlob(`/cotizaciones/${note.id}/pdf/download`, { timeoutMs: 60000 });
+      if (!result.contentType.includes('application/pdf')) {
+        toast('El PDF sigue en preparación. Vuelve a intentarlo en unos segundos.', 'info');
+        return;
+      }
+      const url = URL.createObjectURL(result.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = /filename="?([^";]+)"?/i.exec(result.disposition)?.[1] || `${numberOf(note)}.pdf`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      toast(error.message || 'No se pudo descargar el PDF.', 'error');
+    } finally {
+      setDownloadingPdf(null);
+    }
+  };
   const context = drawer.context;
   const selectedMotives = context?.allowed_motives?.[drawer.type] || {};
   const canContinue = Boolean(context && Object.keys(selectedMotives).length);
@@ -249,7 +272,7 @@ export default function NotasPage() {
                   <div className="flex flex-wrap gap-2 border-b border-[var(--color-border)] px-5 py-3 text-xs text-[var(--color-text-muted)]"><span>{notesTotal} notas</span><span>·</span><span>{historySummary.accepted} aceptadas</span><span>·</span><span>{historySummary.pending} pendientes</span><span>·</span><span>{historySummary.error} observadas</span></div>
                   <div className="ink-table-scroll"><table className="ink-table ink-note-table"><thead><tr><th>Número</th><th>Tipo</th><th>Comprobante afectado</th><th>Cliente</th><th>Motivo</th><th>Estado SUNAT</th><th>Acciones</th></tr></thead><tbody>{notes.map((note) => {
                     const reference = note.nota_referencia || note.source_quote;
-                    return <tr key={note.id}><td data-label="Número"><div className="ink-table-cell__primary document-list-folio">{note.estado === 'borrador' ? 'Sin correlativo' : numberOf(note)}</div><div className="ink-table-cell__meta">{formatDate(note.fecha_emision)}</div></td><td data-label="Tipo"><DocumentTypeBadge tipo={note.document_kind === 'credit_note' ? '07' : '08'} size="sm" /></td><td data-label="Comprobante afectado"><div className="ink-table-cell__primary">{reference ? numberOf(reference) : '—'}</div></td><td data-label="Cliente"><div className="ink-table-cell__primary">{clientName(note)}</div><div className="ink-table-cell__meta">{clientDocument(note)}</div></td><td data-label="Motivo"><div className="ink-table-cell__primary">{note.nota_motivo_descripcion || '—'}</div></td><td data-label="Estado SUNAT"><NoteStatus document={note} /></td><td data-label="Acciones">{note.estado === 'borrador' ? <button type="button" className="ink-row-btn" title="Continuar borrador" aria-label="Continuar borrador" onClick={() => navigate(`/notas/nueva?draft=${note.id}`)}><ArrowRight size={14} /></button> : null}</td></tr>;
+                    return <tr key={note.id}><td data-label="Número"><div className="ink-table-cell__primary document-list-folio">{note.estado === 'borrador' ? 'Sin correlativo' : numberOf(note)}</div><div className="ink-table-cell__meta">{formatDate(note.fecha_emision)}</div></td><td data-label="Tipo"><DocumentTypeBadge tipo={note.document_kind === 'credit_note' ? '07' : '08'} size="sm" /></td><td data-label="Comprobante afectado"><div className="ink-table-cell__primary">{reference ? numberOf(reference) : '—'}</div></td><td data-label="Cliente"><div className="ink-table-cell__primary">{clientName(note)}</div><div className="ink-table-cell__meta">{clientDocument(note)}</div></td><td data-label="Motivo"><div className="ink-table-cell__primary">{note.nota_motivo_descripcion || '—'}</div></td><td data-label="Estado SUNAT"><NoteStatus document={note} /></td><td data-label="Acciones">{note.estado === 'borrador' ? <button type="button" className="ink-row-btn" title="Continuar borrador" aria-label="Continuar borrador" onClick={() => navigate(`/notas/nueva?draft=${note.id}`)}><ArrowRight size={14} /></button> : hasFiscalDownload(note, 'pdf') ? <button type="button" className="history-action-button history-action-button--info" disabled={downloadingPdf !== null} aria-label={`Descargar PDF de ${numberOf(note)}`} onClick={() => downloadPdf(note)}><Download size={15} /><span>{downloadingPdf === note.id ? 'Descargando…' : 'PDF'}</span></button> : <span className="text-sm text-[var(--color-text-muted)]">PDF en preparación</span>}</td></tr>;
                   })}</tbody></table></div>
                   <div className="ink-table-footer">
                     <span className="ink-table-count">Página <strong>{notesPage}</strong> de <strong>{historyPages}</strong> · {notesTotal} registros</span>

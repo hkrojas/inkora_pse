@@ -1,5 +1,7 @@
 """PDF delivery guards and sharing, using local evidence and mocked Storage."""
 import asyncio
+from copy import deepcopy
+import hashlib
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -239,3 +241,122 @@ def test_cdr_storage_failure_does_not_invent_missing_cdr(monkeypatch):
     monkeypatch.setattr(facturacion_service.storage_service, "download_private_storage_reference", Mock(side_effect=RuntimeError("offline")))
     with pytest.raises(RuntimeError):
         facturacion_service.descargar_archivo("cdr", doc, None)
+
+
+@pytest.mark.parametrize("kind", ["quotation", "fiscal_document", "credit_note", "debit_note"])
+def test_note_renderer_version_preserves_non_note_fingerprint_contract(monkeypatch, kind):
+    document = SimpleNamespace(
+        id=11, document_kind=kind, sunat_xml_content="<retained/>", cliente_id=22,
+        fecha_emision=None, fecha_vencimiento=None, moneda="PEN", observaciones=None,
+        condicion_pago=None, total_gravada=100, total_exonerada=0, total_inafecta=0,
+        total_igv=18, total_venta=118, items=[],
+    )
+    # Frozen identity from the pre-version contract: invoices and quotations
+    # must not invalidate their existing representations when notes are fixed.
+    legacy = "b48ca24b7bc5515a38b08d552d0bfd2efe31a9ccb20f3744bcca5b8d6477099d"
+    current = pdf._pdf_source_fingerprint(document)
+    if kind in {"quotation", "fiscal_document"}:
+        assert current == legacy
+    else:
+        assert current != legacy
+    monkeypatch.setattr(pdf, "NOTE_PDF_RENDERER_VERSION", "synthetic-next-note-renderer")
+    if kind in {"quotation", "fiscal_document"}:
+        assert pdf._pdf_source_fingerprint(document) == legacy
+    else:
+        assert pdf._pdf_source_fingerprint(document) != current
+
+
+def _retained_note(db, sale, note_type, *, verified_evidence=False, with_xml=True):
+    _, user, source, _ = sale
+    source.estado = "facturada"
+    db.commit()
+    note = crud.crear_nota_credito_debito(
+        db, source, user.id, note_type, "01", "Ajuste fiscal local",
+    )
+    note.estado = "facturada"
+    note.provider_verification_status = "verified"
+    root = "CreditNote" if note_type == "credito" else "DebitNote"
+    note.sunat_xml_content = f"<{root}>synthetic retained accepted XML</{root}>" if with_xml else None
+    note.sunat_xml_url = "supabase-private://audit/retained-note.xml" if with_xml else None
+    note.sunat_cdr_content = "<ApplicationResponse>synthetic accepted CDR</ApplicationResponse>"
+    note.sunat_cdr_url = "supabase-private://audit/retained-note-cdr.zip"
+    note.sunat_hash = "retained-note-digest"
+    note.sunat_qr_payload = {"document_type": note.tipo_comprobante, "retained": True}
+    if verified_evidence:
+        note.provider_response = {"inkora_evidence": {
+            "signed_xml_sha256": hashlib.sha256(note.sunat_xml_content.encode()).hexdigest(),
+        }}
+    db.commit()
+    return note, source
+
+
+def _fiscal_snapshot(document):
+    # Every persisted field except the representation pointer is immutable in
+    # this repair, including XML/CDR, amounts, number, status and QR evidence.
+    return {
+        "document": deepcopy({column.key: getattr(document, column.key)
+                              for column in models.Cotizacion.__table__.columns
+                              if column.key != "sunat_pdf_url"}),
+        "items": deepcopy([{column.key: getattr(item, column.key)
+                            for column in models.CotizacionItem.__table__.columns}
+                           for item in document.items]),
+    }
+
+
+@pytest.mark.parametrize("note_type", ["credito", "debito"])
+@pytest.mark.parametrize("verified_evidence", [False, True], ids=["accepted-legacy", "verified-xml"])
+def test_old_note_pdf_regenerates_once_without_changing_fiscal_data(
+    db_session, sale, monkeypatch, note_type, verified_evidence,
+):
+    note, source = _retained_note(db_session, sale, note_type, verified_evidence=verified_evidence)
+    # The old fingerprint had no kind-specific version; an invoice with these
+    # same inputs therefore produces precisely the pre-fix cache identity.
+    kind = note.document_kind
+    note.document_kind = "fiscal_document"
+    old_fingerprint = pdf._pdf_source_fingerprint(note)
+    note.document_kind = kind
+    assert old_fingerprint != pdf._pdf_source_fingerprint(note)
+    old_reference = f"supabase-private://audit/note-{old_fingerprint[:12]}.pdf"
+    note.sunat_pdf_url = old_reference
+    db_session.commit()
+    assert evidence.has_deliverable_xml(note)
+    assert pdf.has_legacy_accepted_pdf(note) is not verified_evidence
+    before = _fiscal_snapshot(note)
+    source_before = _fiscal_snapshot(source)
+    quote_before = _fiscal_snapshot(source.source_quote)
+    renderer = Mock(return_value=BytesIO(b"%PDF synthetic corrected note"))
+    uploader = Mock(side_effect=lambda content, folder, filename, mime: f"supabase-private://audit/{folder}/{filename}")
+    monkeypatch.setattr(pdf.pdf_generator, "create_comprobante_pdf", renderer)
+    monkeypatch.setattr(pdf.storage_service, "upload_to_storage", uploader)
+
+    reference = asyncio.run(pdf.generate_and_upload_pdf(db_session, note))
+    db_session.expire_all()
+    assert reference != old_reference
+    assert reference == note.sunat_pdf_url
+    assert f"-{pdf._pdf_source_fingerprint(note)[:12]}.pdf" in reference
+    assert _fiscal_snapshot(note) == before
+    assert _fiscal_snapshot(source) == source_before
+    assert _fiscal_snapshot(source.source_quote) == quote_before
+    assert asyncio.run(pdf.generate_and_upload_pdf(db_session, note)) == reference
+    renderer.assert_called_once()
+    uploader.assert_called_once()
+    assert uploader.call_args.args[0] == b"%PDF synthetic corrected note"
+    assert _fiscal_snapshot(note) == before
+
+
+@pytest.mark.parametrize("note_type", ["credito", "debito"])
+def test_legacy_note_without_deliverable_xml_keeps_stored_pdf(db_session, sale, monkeypatch, note_type):
+    note, _ = _retained_note(db_session, sale, note_type, with_xml=False)
+    note.sunat_pdf_url = "supabase-private://audit/historical-note-without-xml.pdf"
+    db_session.commit()
+    before = _fiscal_snapshot(note)
+    assert pdf.has_legacy_accepted_pdf(note)
+    assert not evidence.has_deliverable_xml(note)
+    renderer = Mock(side_effect=AssertionError("No XML: historical PDF must not be rendered"))
+    uploader = Mock(side_effect=AssertionError("No XML: historical PDF must not be replaced"))
+    monkeypatch.setattr(pdf.pdf_generator, "create_comprobante_pdf", renderer)
+    monkeypatch.setattr(pdf.storage_service, "upload_to_storage", uploader)
+    assert asyncio.run(pdf.generate_and_upload_pdf(db_session, note)) == note.sunat_pdf_url
+    assert _fiscal_snapshot(note) == before
+    renderer.assert_not_called()
+    uploader.assert_not_called()

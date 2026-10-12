@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 
 logger = get_logger(__name__)
+NOTE_PDF_RENDERER_VERSION = "fiscal-note-v2"
 
 
 class FiscalPdfNotReady(ValueError):
@@ -70,6 +71,10 @@ def _pdf_source_fingerprint(cotizacion: models.Cotizacion) -> str:
             for item in cotizacion.items or []
         ],
     }
+    if getattr(cotizacion, "document_kind", "quotation") in {"credit_note", "debit_note"}:
+        # Invalidate note representations rendered with the reason code as the
+        # document type. Invoice, receipt and quotation identities stay intact.
+        payload["note_pdf_renderer_version"] = NOTE_PDF_RENDERER_VERSION
     encoded = json.dumps(payload, sort_keys=True, default=str, ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -79,9 +84,13 @@ async def generate_and_upload_pdf(db: Session, cotizacion: models.Cotizacion, *,
     Genera el PDF interno, lo sube a Supabase Storage privado y persiste la referencia.
     """
     document_id, tenant_id = cotizacion.id, cotizacion.tenant_id
-    # Preserve issued historical representations (including their payment data).
-    # Newly signed documents always use the XML/QR fingerprint below.
-    if not force and has_legacy_accepted_pdf(cotizacion):
+    # Repair historical notes only when their retained XML is deliverable.
+    # Other historical representations (including payment data) stay intact.
+    repairable_note = (
+        getattr(cotizacion, "document_kind", "quotation") in {"credit_note", "debit_note"}
+        and fiscal_evidence_service.has_deliverable_xml(cotizacion)
+    )
+    if not force and has_legacy_accepted_pdf(cotizacion) and not repairable_note:
         return cotizacion.sunat_pdf_url
     ensure_fiscal_pdf_ready(cotizacion)
     source_fingerprint = _pdf_source_fingerprint(cotizacion)

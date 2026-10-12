@@ -4,6 +4,8 @@ import re
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import pytest
+
 from fastapi import BackgroundTasks
 from starlette.requests import Request
 
@@ -12,6 +14,7 @@ import schemas
 from conftest import make_cliente, make_quote_via_crud, make_tenant, make_user
 from routers import cotizaciones as cotizaciones_router
 from services import fiscal_xml_service, pdf_generator, pdf_storage_service, storage_service
+from test_fiscal_xml_service import sample_note_xml
 
 
 def _make_request(path: str = "/test") -> Request:
@@ -541,6 +544,35 @@ def test_create_comprobante_pdf_prioriza_xml_y_qr_oficial():
     assert isinstance(buffer, BytesIO)
     assert len(buffer.getvalue()) > 0
     qr_make.assert_not_called()
+
+
+@pytest.mark.parametrize("root_name,expected_title,expected_type", [
+    ("CreditNote", "NOTA DE CREDITO", "07"),
+    ("DebitNote", "NOTA DE DEBITO", "08"),
+])
+def test_real_note_pdf_uses_note_root_for_title_and_xml_amount(root_name, expected_title, expected_type):
+    xml = sample_note_xml(root_name, reason_code="01")
+    note = SimpleNamespace(
+        cliente=_fake_cliente(), items=[_fake_item()], moneda="PEN",
+        serie="LOCAL", correlativo=999, fecha_emision=datetime(2026, 4, 13),
+        tipo_comprobante=expected_type, sunat_xml_content=xml,
+        sunat_qr_payload=fiscal_xml_service.build_sale_qr_payload_from_xml(xml),
+    )
+    real_template = pdf_generator.SimpleDocTemplate
+    # Keep the real renderer and PDF writer; uncompressed streams expose the
+    # actual printed text without adding a PDF-parser dependency to CI.
+    with patch("services.pdf_generator.SimpleDocTemplate",
+               side_effect=lambda *args, **kwargs: real_template(*args, pageCompression=0, **kwargs)):
+        pdf_bytes = pdf_generator.create_comprobante_pdf(note, _fake_tenant()).getvalue()
+
+    assert pdf_bytes.startswith(b"%PDF-")
+    assert expected_title.encode("ascii") in pdf_bytes
+    assert b"FACTURA ELECTRONICA" not in pdf_bytes
+    assert b"BOLETA DE VENTA ELECTRONICA" not in pdf_bytes
+    assert re.search(rb"\([^)]*59\.00[^)]*\)\s*Tj", pdf_bytes)
+    assert (b"FC01-123456" if root_name == "CreditNote" else b"FD01-123456") in pdf_bytes
+    assert note.sunat_xml_content == xml
+    assert note.sunat_qr_payload["tipo"] == expected_type
 
 
 def test_generate_and_upload_pdf_usa_renderer_de_cotizacion(db_session):
