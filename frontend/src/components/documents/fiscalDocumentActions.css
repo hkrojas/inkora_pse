@@ -5,3 +5,7 @@
 .fiscal-actions.document-download-actions { flex-wrap: nowrap; min-width: 0; }
 .document-download-actions > .history-action-button { flex-shrink: 0; }
 @media (max-width: 768px) { .fiscal-actions { justify-content: flex-start; flex-wrap: wrap; } .fiscal-actions .history-action-button, .fiscal-tracking-badge { min-height: 44px; } }
+@media (max-width: 360px) {
+  .fiscal-actions.document-download-actions { gap: 5px; }
+  .document-download-actions .history-action-button { padding-inline: 8px; }
+}
