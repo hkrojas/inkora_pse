@@ -133,6 +133,55 @@ def test_expired_lease_cannot_persist_panel_attempt(factory, sign_xml, monkeypat
         assert 'panel_retry_attempt' not in db.get(models.DocumentEmissionJob,reservation[0]).payload_snapshot
 
 
+def test_quick_read_survives_session_restart_and_is_consumed_once(factory, sign_xml, monkeypatch):
+    data = prepare(factory, sign_xml, monkeypatch, jobs=1)
+    reservation = data['jobs'][0]
+    with factory() as db:
+        leases.attach(db, *reservation)
+        assert queue._reserve_panel_retry_attempt(db, reservation[0], data['user_id'], data['xml'], data['metadata'])
+        leases.detach(db)
+        job = db.get(models.DocumentEmissionJob, reservation[0])
+        marker = dict(job.payload_snapshot['panel_confirmation'])
+        due = datetime.fromisoformat(marker['not_before'])
+    monkeypatch.setattr(leases, 'db_now', lambda db: due)
+    for expected in (True, False):
+        with factory() as db:
+            leases.attach(db, *reservation)
+            job = db.get(models.DocumentEmissionJob, reservation[0])
+            assert queue._consume_panel_confirmation(db, job) is expected
+            leases.before_provider(db)
+            assert not db.in_transaction()
+            leases.detach(db)
+    with factory() as db:
+        job = db.get(models.DocumentEmissionJob, reservation[0])
+        assert job.payload_snapshot['panel_confirmation']['consumed_at'] == due.isoformat()
+        assert job.payload_snapshot['panel_retry_attempt']['state'] == 'possible_submission'
+        assert db.get(models.Cotizacion, data['document_id']).sunat_xml_content == data['xml']
+        assert db.query(models.AuditLog).filter_by(action='fiscal_panel_retry_started',
+            entity_id=data['document_id']).count() == 1
+
+
+def test_quick_read_expired_lease_cannot_consume_marker(factory, sign_xml, monkeypatch):
+    data = prepare(factory, sign_xml, monkeypatch, jobs=1)
+    reservation = data['jobs'][0]
+    with factory() as db:
+        leases.attach(db, *reservation)
+        assert queue._reserve_panel_retry_attempt(db, reservation[0], data['user_id'], data['xml'], data['metadata'])
+        leases.detach(db)
+        job = db.get(models.DocumentEmissionJob, reservation[0])
+        job.lease_expires_at = datetime.now() - timedelta(seconds=1)
+        db.commit()
+    with factory() as db:
+        leases.attach(db, *reservation)
+        job = db.get(models.DocumentEmissionJob, reservation[0])
+        with pytest.raises(leases.LeaseLost):
+            queue._consume_panel_confirmation(db, job)
+        db.rollback()
+        leases.detach(db)
+    with factory() as db:
+        assert db.get(models.DocumentEmissionJob, reservation[0]).payload_snapshot['panel_confirmation']['consumed_at'] is None
+
+
 @pytest.mark.parametrize('revocation',['user','tenant','subscription','provider_company'])
 def test_permissions_revoked_after_probe_commit_veto_post_with_cached_orm(factory, sign_xml, monkeypatch, revocation):
     data=prepare(factory,sign_xml,monkeypatch,jobs=1)
