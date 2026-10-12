@@ -35,6 +35,33 @@ def install_confirmed_failures(panel, *, message="HTTP 503 Service Unavailable")
     return acknowledged
 
 
+def test_delayed_quick_consultation_cannot_resend_after_post_cooldown(db_session, pending_sale, monkeypatch):
+    _, _, document, job, xml, client, panel, _, attempts = pending_sale
+    clock = [datetime.now()]
+    monkeypatch.setattr(leases, "db_now", lambda db: clock[0])
+    install_confirmed_failures(panel)
+    assert not run(db_session, job)
+    first = dict(job.payload_snapshot["panel_retry_attempt"])
+    # Simulate a restart after both the 15-second read and POST cooldown are due.
+    db_session.expire_all()
+    clock[0] = datetime.fromisoformat(first["next_retry_at"]) + timedelta(minutes=1)
+    assert not run(db_session, job)
+    assert len(attempts) == 1 and panel.retry_invoice.call_count == 1
+    assert job.payload_snapshot["panel_retry_attempt"] == first
+    assert job.payload_snapshot["panel_confirmation"]["consumed_at"] == clock[0].isoformat()
+    assert (job.available_at - datetime.now()).total_seconds() >= 895
+    # Only a later normal cycle can reserve a new POST and its own one-time read.
+    clock[0] += timedelta(minutes=30)
+    assert not run(db_session, job)
+    assert len(attempts) == 2
+    assert job.payload_snapshot["panel_retry_attempt"]["sequence"] == 2
+    assert job.payload_snapshot["panel_confirmation"]["attempt_id"] != first["id"]
+    assert job.payload_snapshot["panel_confirmation"]["consumed_at"] is None
+    assert document.sunat_xml_content == xml and not document.sunat_accepted
+    client.sign_xml.assert_not_called()
+    client.send_signed_xml.assert_not_called()
+
+
 @pytest.mark.parametrize("error", ["HTTP 503 Service Unavailable",
     "[CIRCUIT_OPEN] SUNAT no responde, reintente en unos segundos", "[HTTP] Error Fetching http headers"])
 def test_confirmed_failures_wait_then_lost_third_response_blocks_repetition(

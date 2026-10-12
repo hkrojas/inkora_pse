@@ -1035,7 +1035,14 @@ def _reserve_panel_retry_attempt(db, job_id, user_id, expected_xml, metadata,
               "environment": metadata["environment"], "xml_sha256": metadata["xml_sha256"],
               "provider_company_id": str(metadata["provider_company_id"]),
               "provider_document_id": str(metadata["provider_document_id"])}
-    job.payload_snapshot = dict(job.payload_snapshot, panel_retry_attempt=marker)
+    # Reserve the read with the POST fence so a crash cannot lose its intent.
+    # This separate marker never grants permission for another submission.
+    confirmation = {"version": 1, "attempt_id": marker["id"], "job_id": job.id,
+                    "tenant_id": job.tenant_id, "resource_id": job.resource_id,
+                    "not_before": (emission_leases.db_now(db) + timedelta(seconds=15)).isoformat(),
+                    "consumed_at": None}
+    job.payload_snapshot = dict(job.payload_snapshot, panel_retry_attempt=marker,
+                                panel_confirmation=confirmation)
     document.provider_response = dict(response, inkora_evidence=dict(evidence, panel_retry_attempt=marker))
     db.add(models.AuditLog(user_id=user.id, action="fiscal_panel_retry_started", entity_type="cotizacion",
         entity_id=document.id, details=json.dumps(marker, sort_keys=True)))
@@ -1087,6 +1094,56 @@ def _complete_panel_retry_attempt(db, job_id, receipt, response):
     return marker
 
 
+def _pending_panel_confirmation(job):
+    """A single durable read belonging to this job's current reserved POST."""
+    snapshot = job.payload_snapshot or {}
+    marker = snapshot.get("panel_retry_attempt")
+    confirmation = snapshot.get("panel_confirmation")
+    if (job.provider != "smartpse" or job.action != models.EMISSION_JOB_ACTION_CONSULT_FISCAL
+            or job.resource_type != "cotizacion" or snapshot.get("recovery_flow") is not True
+            or not isinstance(marker, dict) or not isinstance(confirmation, dict)
+            or confirmation.get("version") != 1 or confirmation.get("consumed_at") is not None
+            or not marker.get("id") or confirmation.get("attempt_id") != marker["id"]
+            or marker.get("job_id") != job.id
+            or any(confirmation.get(key) != getattr(job, key)
+                   for key in ("tenant_id", "resource_id"))
+            or confirmation.get("job_id") != job.id):
+        return None
+    try:
+        due = datetime.fromisoformat(confirmation["not_before"])
+        if due.tzinfo is not None:
+            return None
+    except (KeyError, TypeError, ValueError):
+        return None
+    return confirmation
+
+
+def _fiscal_consult_delay(db, job, default):
+    confirmation = _pending_panel_confirmation(job)
+    if confirmation:
+        return max(1, math.ceil((datetime.fromisoformat(confirmation["not_before"])
+                                - emission_leases.db_now(db)).total_seconds()))
+    return default
+
+
+def _consume_panel_confirmation(db, job):
+    confirmation = _pending_panel_confirmation(job)
+    if not confirmation or db.info.get("emission_lease", (None, None))[0] != job.id:
+        return False
+    emission_leases.check(db)
+    db.refresh(job, attribute_names=["payload_snapshot"])
+    confirmation = _pending_panel_confirmation(job)
+    if not confirmation:
+        return False
+    now = emission_leases.db_now(db)
+    if now >= datetime.fromisoformat(confirmation["not_before"]):
+        job.payload_snapshot = dict(job.payload_snapshot,
+            panel_confirmation=dict(confirmation, consumed_at=now.isoformat()))
+    # The caller commits before I/O. Early unrelated wakeups may consult but
+    # cannot resend or consume the scheduled read before its due time.
+    return True
+
+
 def _try_panel_invoice_retry(db, job, user, document, pending_error):
     partial = pending_error.partial_result
     if (db.info.get("emission_lease", (None, None))[0] != job.id
@@ -1133,6 +1190,12 @@ def _try_panel_invoice_retry(db, job, user, document, pending_error):
     completed = _complete_panel_retry_attempt(db, job_id, receipt, response)
     if completed:
         metadata["panel_retry_next_at"] = completed["next_retry_at"]
+    confirmation = _pending_panel_confirmation(job)
+    if confirmation and receipt.get("id") == confirmation["attempt_id"]:
+        # Count fifteen seconds from the response, not from a slow POST's start.
+        job.payload_snapshot = dict(job.payload_snapshot, panel_confirmation=dict(
+            confirmation, not_before=(emission_leases.db_now(db) + timedelta(seconds=15)).isoformat()))
+        emission_leases.before_provider(db)
     # An uncertain panel POST does not establish an API CPE outage. Preserve
     # only the API transport failure independently observed before this attempt.
     raise facturacion_service.FacturacionException(
@@ -1170,6 +1233,7 @@ def _process_consult_fiscal_job(
             )
         })
         network_user = SimpleNamespace(id=user.id, tenant_id=user.tenant_id, tenant=network_tenant)
+    confirmation_only = _consume_panel_confirmation(db, job)
     db.commit()  # never hold an SQL transaction during provider consultation
     emission_leases.before_provider(db)
     # Smart PSE can return 404 even for an accepted invoice. Only positively
@@ -1179,7 +1243,7 @@ def _process_consult_fiscal_job(
             network_document, network_user, tipo_doc_override=payload_snapshot.get("tipo_comprobante"),
             prepared_sale=payload_snapshot.get("prepared_sale"))
     except facturacion_service.FacturacionException as exc:
-        if isinstance(exc, facturacion_service.FacturacionRejectedException):
+        if confirmation_only or isinstance(exc, facturacion_service.FacturacionRejectedException):
             raise
         result = _try_panel_invoice_retry(db, job, user, fiscal_document, exc)
         if result is None:
@@ -1552,7 +1616,7 @@ def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> 
             job.provider_ticket = provider_ticket
             crud.mark_emission_job_retry(db, job.id,
                 error_message="Pendiente de respuesta fiscal definitiva.",
-                retry_in_seconds=fiscal_recovery_service.retry_seconds(job.attempts),
+                retry_in_seconds=_fiscal_consult_delay(db, job, fiscal_recovery_service.retry_seconds(job.attempts)),
                 error_classification=EMISSION_ERROR_AMBIGUOUS,
                 action=models.EMISSION_JOB_ACTION_CONSULT_FISCAL)
         elif result.get("pending") and job.action == models.EMISSION_JOB_ACTION_VOID_FISCAL:
@@ -1733,7 +1797,7 @@ def _process_emission_job(job_id: int, *, db_session: Session | None = None) -> 
                     db,
                     job.id,
                     error_message=message,
-                    retry_in_seconds=retry_in,
+                    retry_in_seconds=_fiscal_consult_delay(db, job, retry_in),
                     error_classification=error_classification,
                     action=models.EMISSION_JOB_ACTION_CONSULT_FISCAL,
                 )

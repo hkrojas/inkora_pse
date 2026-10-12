@@ -81,6 +81,106 @@ def reserve(db, job, user, xml, metadata):
         leases.detach(db)
 
 
+@pytest.mark.parametrize("outcome", ["pending", "accepted", "timeout"])
+def test_one_quick_confirmation_after_actual_retry(db_session, pending_sale, monkeypatch, outcome):
+    tenant, _, document, job, xml, client, panel, _, attempts = pending_sale
+    clock = [datetime.now()]
+    monkeypatch.setattr(leases, "db_now", lambda db: clock[0])
+    assert not run(db_session, job)
+    confirmation = deepcopy(job.payload_snapshot["panel_confirmation"])
+    assert datetime.fromisoformat(confirmation["not_before"]) == clock[0] + timedelta(seconds=15)
+    assert 13 <= (job.available_at - datetime.now()).total_seconds() <= 16
+    assert len(attempts) == 1 and confirmation["consumed_at"] is None
+    assert job.lease_token is None or job.status != "processing"
+    clock[0] += timedelta(seconds=15)
+    if outcome == "accepted":
+        client.consult_ticket.return_value = {"estado": 200,
+            "cdr": _sale_cdr(document_id=f"{document.serie}-{document.correlativo}", ruc=tenant.business_ruc)}
+    elif outcome == "timeout":
+        client.consult_ticket.side_effect = smartpse_client.SmartPSEException("timeout")
+    assert bool(run(db_session, job)) == (outcome == "accepted")
+    consumed = job.payload_snapshot["panel_confirmation"]
+    assert consumed["consumed_at"] == clock[0].isoformat()
+    assert consumed["attempt_id"] == confirmation["attempt_id"]
+    assert len(attempts) == 1 and panel.retry_invoice.call_count == 1
+    assert document.sunat_xml_content == xml
+    if outcome == "accepted":
+        assert job.status == "succeeded" and document.sunat_accepted and document.sunat_cdr_content
+        assert tenant.subscription.documents_used == 1
+    else:
+        assert job.status == "retry" and not document.sunat_accepted
+        assert (job.available_at - datetime.now()).total_seconds() >= 895
+        # A subsequent ordinary consultation cannot arm another fast read.
+        clock[0] += timedelta(minutes=30)
+        assert not run(db_session, job)
+        assert job.payload_snapshot["panel_confirmation"] == consumed
+        assert (job.available_at - datetime.now()).total_seconds() >= 895
+        assert len(attempts) == 1
+    client.sign_xml.assert_not_called()
+    client.send_signed_xml.assert_not_called()
+
+
+def test_quick_confirmation_due_from_slow_post_response(db_session, pending_sale, monkeypatch):
+    _, _, _, job, _, _, panel, _, _ = pending_sale
+    clock = [datetime.now()]
+    monkeypatch.setattr(leases, "db_now", lambda db: clock[0])
+    acknowledged = panel.retry_invoice.side_effect
+    def slow(*args, **kwargs):
+        response = acknowledged(*args, **kwargs)
+        clock[0] += timedelta(seconds=40)
+        return response
+    panel.retry_invoice.side_effect = slow
+    assert not run(db_session, job)
+    assert datetime.fromisoformat(job.payload_snapshot["panel_confirmation"]["not_before"]) == clock[0] + timedelta(seconds=15)
+
+
+def test_early_wakeup_preserves_quick_read_and_never_posts(db_session, pending_sale, monkeypatch):
+    _, _, _, job, _, _, panel, _, attempts = pending_sale
+    clock = [datetime.now()]
+    monkeypatch.setattr(leases, "db_now", lambda db: clock[0])
+    assert not run(db_session, job)
+    clock[0] += timedelta(seconds=5)
+    assert not run(db_session, job)
+    assert job.payload_snapshot["panel_confirmation"]["consumed_at"] is None
+    assert queue._fiscal_consult_delay(db_session, job, 1800) == 10
+    assert len(attempts) == 1 and panel.retry_invoice.call_count == 1
+
+
+@pytest.mark.parametrize("cdr_kind", ["rejected", "wrong_identity"])
+def test_quick_confirmation_requires_matching_definitive_cdr(db_session, pending_sale, monkeypatch, cdr_kind):
+    tenant, _, document, job, xml, client, panel, _, attempts = pending_sale
+    clock = [datetime.now()]
+    monkeypatch.setattr(leases, "db_now", lambda db: clock[0])
+    assert not run(db_session, job)
+    clock[0] += timedelta(seconds=15)
+    identity = f"{document.serie}-{document.correlativo}" if cdr_kind == "rejected" else "FA99-999"
+    cdr = _sale_cdr(document_id=identity, ruc=tenant.business_ruc,
+                    response_code="2335" if cdr_kind == "rejected" else "0")
+    client.consult_ticket.return_value = {"estado": 200, "cdr": cdr}
+    assert not run(db_session, job)
+    assert len(attempts) == 1 and panel.retry_invoice.call_count == 1
+    assert not document.sunat_accepted and document.sunat_xml_content == xml
+    assert tenant.subscription.documents_used == 0
+    assert job.payload_snapshot["panel_confirmation"]["consumed_at"] is not None
+    if cdr_kind == "rejected":
+        assert job.status == "failed" and document.provider_verification_status == "rejected"
+        assert document.sunat_cdr_content == cdr
+    else:
+        assert job.status == "retry" and not document.sunat_cdr_content
+        assert (job.available_at - datetime.now()).total_seconds() >= 895
+
+
+@pytest.mark.parametrize("field,value", [("attempt_id", "unrelated"), ("job_id", -1),
+    ("tenant_id", -1), ("resource_id", -1), ("not_before", "invalid"),
+    ("not_before", "2026-10-12T20:00:00+00:00")])
+def test_unrelated_or_invalid_quick_marker_does_not_accelerate(db_session, pending_sale, field, value):
+    _, _, _, job, _, _, _, _, _ = pending_sale
+    assert not run(db_session, job)
+    job.payload_snapshot = dict(job.payload_snapshot,
+        panel_confirmation=dict(job.payload_snapshot["panel_confirmation"], **{field: value}))
+    assert queue._fiscal_consult_delay(db_session, job, 1800) == 1800
+
+
 @pytest.mark.parametrize("error", ["HTTP 503 Service Unavailable",
     "[CIRCUIT_OPEN] SUNAT no responde, reintente en unos segundos", "[HTTP] Error Fetching http headers"])
 def test_panel_ack_stays_pending_until_matching_cdr(db_session, pending_sale, error):
