@@ -128,7 +128,7 @@ async function openHarness(browser, baseURL, { width = 1280, artifacts = false }
   await context.addInitScript(() => localStorage.setItem('token', 'uniform-pagination-token'));
   const page = await context.newPage();
   const calls = [];
-  const state = { fiscalTotal: TOTAL, delayedSearch: false, downloadError: false };
+  const state = { fiscalTotal: TOTAL, delayedSearch: false, downloadError: false, downloadWait: null };
   const documents = Array.from({ length: TOTAL }, (_, index) => fiscalDocument(index + 1));
   const notes = Array.from({ length: TOTAL }, (_, index) => fiscalNote(index + 1));
   const retenciones = Array.from({ length: TOTAL }, (_, index) => retencion(index + 1));
@@ -149,6 +149,7 @@ async function openHarness(browser, baseURL, { width = 1280, artifacts = false }
     let payload = {};
 
     if (/^\/cotizaciones\/\d+\/pdf\/download$/.test(path) || /^\/guias-remision\/\d+\/(pdf|xml|cdr)$/.test(path) || /^\/facturacion\/(xml|cdr)$/.test(path)) {
+      if (state.downloadWait) await state.downloadWait;
       if (state.downloadError) {
         await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Archivo temporalmente no disponible. Inténtalo de nuevo.' }) });
         return;
@@ -297,6 +298,35 @@ for (const width of [320, 390, 1024, 1440]) {
         await page.screenshot({ path: testInfo.outputPath(`${family}-${width}.png`), fullPage: false });
         errors.assertClean();
       } finally { await context.close(); }
+    });
+  }
+}
+
+for (const width of [320, 1440]) {
+  for (const family of ['guias', 'notas']) {
+    test(`${family}: una descarga pendiente conserva los botones dentro del margen a ${width}px`, async ({ browser, baseURL }) => {
+      const { context, page, state } = await openHarness(browser, baseURL, { width, artifacts: true });
+      let releaseDownload;
+      try {
+        await page.goto(`/${family}`);
+        if (family === 'notas') await page.getByRole('tab', { name: 'Historial de notas' }).click();
+        state.downloadWait = new Promise((resolve) => { releaseDownload = resolve; });
+        const folio = family === 'guias' ? 'T001-000001' : 'F001-000001';
+        const pdf = page.getByRole('button', { name: `Descargar PDF de ${folio}`, exact: true });
+        const downloaded = page.waitForEvent('download');
+        await pdf.click();
+        await expect(pdf).toBeDisabled();
+        await expect(pdf).toHaveAttribute('aria-busy', 'true');
+        const controls = pdf.locator('..').locator(':scope > button, :scope > a');
+        await expect(controls).toHaveText(['Ver', 'PDF', 'Más']);
+        expect(await controls.evaluateAll((elements) => elements.every((element) => {
+          const bounds = element.getBoundingClientRect(), cell = element.closest('td').getBoundingClientRect();
+          return bounds.left >= cell.left - 1 && bounds.right <= cell.right + 1;
+        }))).toBe(true);
+        releaseDownload();
+        expect((await downloaded).suggestedFilename()).toBe(`${folio}.pdf`);
+        await expect(pdf).toBeEnabled();
+      } finally { releaseDownload?.(); await context.close(); }
     });
   }
 }

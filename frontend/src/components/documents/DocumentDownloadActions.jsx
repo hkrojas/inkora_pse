@@ -62,7 +62,7 @@ export default function DocumentDownloadActions({ document: record, guide = fals
       ? <Link to={`/guias/${record.id}`} className="history-action-button history-action-button--brand" aria-label={`Ver guía ${number}`}><Eye size={15} aria-hidden="true" /><span>Ver</span></Link>
       : available.pdf && <button type="button" className="history-action-button history-action-button--brand" disabled={Boolean(busy)} aria-label={`Ver PDF de ${number}`} onClick={() => download('pdf', true)}><Eye size={15} aria-hidden="true" /><span>Ver</span></button>}
     {available.pdf
-      ? <button type="button" className="history-action-button history-action-button--info" disabled={Boolean(busy)} aria-label={`Descargar PDF de ${number}`} onClick={() => download('pdf')}><Download size={15} aria-hidden="true" /><span>{busy === 'pdf' ? 'Descargando…' : 'PDF'}</span></button>
+      ? <button type="button" className="history-action-button history-action-button--info" disabled={Boolean(busy)} aria-busy={busy === 'pdf'} aria-label={`Descargar PDF de ${number}`} onClick={() => download('pdf')}><Download size={15} aria-hidden="true" /><span>PDF</span></button>
       : <span className="text-sm text-[var(--color-text-muted)]">{record.estado === 'anulada' ? 'PDF no disponible' : 'PDF en preparación'}</span>}
     {(available.xml || available.cdr) && <ActionMenu label={`Otros archivos de ${number}`} disabled={Boolean(busy)}>
       {available.xml && <button type="button" onClick={() => download('xml')}><Download aria-hidden="true" />Descargar XML</button>}

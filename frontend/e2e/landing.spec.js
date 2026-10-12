@@ -281,6 +281,10 @@ test('mantiene lectura y reflujo al 200 por ciento', async ({ browser, baseURL }
 test('no presenta violaciones críticas o serias de accesibilidad', async ({ browser, baseURL }) => {
   const { context, page } = await openPublicPage(browser, baseURL, { width: 1440, height: 900 }, '/presentacion');
   try {
+    // Measure the rendered sheet, after its entrance animation and fonts settle.
+    await page.locator('#journey-panel').scrollIntoViewIfNeeded();
+    await expect(page.locator('#journey-panel')).toHaveCSS('opacity', '1');
+    await page.evaluate(() => document.fonts.ready);
     const results = await new AxeBuilder({ page }).analyze();
     const severe = results.violations.filter(({ impact }) => impact === 'critical' || impact === 'serious');
     expect(severe).toEqual([]);
