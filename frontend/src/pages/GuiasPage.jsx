@@ -942,13 +942,7 @@ export default function GuiasPage() {
                           </div>
                         </td>
                       <td data-label="Acción" className="guide-table-action-cell">
-                          <div className="ink-table-row-actions document-list-row-actions guide-download-actions">
-                            <Link to={`/guias/${item.id}`} className="ink-row-action-pill" title="Ver detalle">
-                              <Eye className="h-3.5 w-3.5" />
-                              Ver
-                            </Link>
-                            <DocumentDownloadActions document={item} guide />
-                          </div>
+                          <DocumentDownloadActions document={item} guide />
                         </td>
                       </tr>
                     );

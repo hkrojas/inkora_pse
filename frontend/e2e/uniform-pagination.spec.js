@@ -256,6 +256,10 @@ for (const width of [320, 390, 1024, 1440]) {
         for (const folio of folios) {
           const pdf = page.getByRole('button', { name: `Descargar PDF de ${folio}`, exact: true });
           await expect(pdf).toBeVisible();
+          const group = pdf.locator('..');
+          await expect(group.locator(':scope > button, :scope > a, :scope > div > button')).toHaveText(['Ver', 'PDF', 'Más']);
+          const positions = await group.locator(':scope > button, :scope > a, :scope > div > button').evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().top));
+          expect(Math.max(...positions) - Math.min(...positions)).toBeLessThanOrEqual(1);
           const downloaded = page.waitForEvent('download');
           await pdf.click();
           expect((await downloaded).suggestedFilename()).toBe(`${folio}.pdf`);
@@ -269,11 +273,11 @@ for (const width of [320, 390, 1024, 1440]) {
         }
         if (family === 'guias') {
           await expect(page.getByRole('button', { name: 'Otros archivos de T001-000002', exact: true })).toHaveCount(0);
-          const detail = page.locator('.guide-download-actions > a').first();
+          const detail = page.getByRole('link', { name: 'Ver guía T001-000001', exact: true });
+          await expect(detail).toHaveAttribute('href', '/guias/1');
           const lines = await detail.evaluate((element) => {
             const label = document.createRange();
-            const text = [...element.childNodes].find((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
-            label.selectNodeContents(text);
+            label.selectNodeContents(element.querySelector('span'));
             return label.getClientRects().length;
           });
           expect(lines).toBe(1);
@@ -311,6 +315,21 @@ test('Una descarga fallida informa el error y permite reintentar', async ({ brow
     const downloaded = page.waitForEvent('download');
     await button.click();
     expect((await downloaded).suggestedFilename()).toBe('F001-000001.pdf');
+  } finally { await context.close(); }
+});
+
+test('Ver abre el PDF de la nota sin descargarlo ni cambiar la lista', async ({ browser, baseURL }) => {
+  const { context, page, calls } = await openHarness(browser, baseURL, { artifacts: true });
+  try {
+    await page.addInitScript(() => {
+      window.open = (url, target) => { window.notePreview = { url, target }; return { opener: null }; };
+    });
+    await page.goto('/notas');
+    await page.getByRole('tab', { name: 'Historial de notas' }).click();
+    await page.getByRole('button', { name: 'Ver PDF de F001-000001', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.notePreview)).toEqual({ url: expect.stringMatching(/^blob:/), target: '_blank' });
+    await expect(page).toHaveURL(/\/notas$/);
+    expect(calls.filter((call) => call.path === '/cotizaciones/1/pdf/download')).toHaveLength(1);
   } finally { await context.close(); }
 });
 

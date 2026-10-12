@@ -5704,7 +5704,7 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
 
 .ink-note-table th:nth-child(7),
 .ink-note-table td:nth-child(7) {
-  width: 164px;
+  width: 252px;
 }
 
 .ink-note-table thead th {
@@ -13369,7 +13369,7 @@ textarea.input:focus,
 
 .guide-table-list .ink-table thead th:nth-child(8),
 .guide-table-list .ink-table tbody td:nth-child(8) {
-  width: 112px;
+  width: 252px;
 }
 
 .guide-table-status-cell,
