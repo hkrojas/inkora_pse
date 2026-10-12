@@ -36,7 +36,7 @@ def install_confirmed_failures(panel, *, message="HTTP 503 Service Unavailable")
 
 
 @pytest.mark.parametrize("error", ["HTTP 503 Service Unavailable",
-    "[CIRCUIT_OPEN] SUNAT no responde, reintente en unos segundos"])
+    "[CIRCUIT_OPEN] SUNAT no responde, reintente en unos segundos", "[HTTP] Error Fetching http headers"])
 def test_confirmed_failures_wait_then_lost_third_response_blocks_repetition(
         db_session, pending_sale, monkeypatch, error):
     tenant, _, document, job, xml, client, panel, metadata, attempts = pending_sale

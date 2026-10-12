@@ -58,8 +58,10 @@ def prepare(factory, sign_xml, monkeypatch, *, jobs=2):
             'jobs':[(job.id,job.lease_token) for job in all_jobs], 'xml':xml,'metadata':metadata}
 
 
-def test_two_jobs_for_same_invoice_authorize_exactly_one_panel_post(factory, sign_xml, monkeypatch):
+@pytest.mark.parametrize('message', ['HTTP 503 Service Unavailable', '[HTTP] Error Fetching http headers'])
+def test_two_jobs_for_same_invoice_authorize_exactly_one_panel_post(factory, sign_xml, monkeypatch, message):
     data = prepare(factory, sign_xml, monkeypatch)
+    data['metadata']['provider_error_message'] = message
     start = threading.Barrier(2)
     def reserve(reservation):
         with factory() as db:

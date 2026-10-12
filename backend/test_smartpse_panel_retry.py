@@ -21,6 +21,7 @@ from test_smartpse_panel_client import NAME, PASSWORD, Response, Session, cdr, i
 RAW = invoice_xml()
 XML = RAW.decode()
 CIRCUIT_OPEN = "[CIRCUIT_OPEN] SUNAT no responde, reintente en unos segundos"
+HTTP_HEADERS = "[HTTP] Error Fetching http headers"
 
 
 def retry_row(**changes):
@@ -156,7 +157,7 @@ def test_non_invoice_retry_is_forbidden_before_login(tenant, name):
 
 @pytest.mark.parametrize("state", ["aceptado", "accepted", "observado", "observed", "rechazado", "rejected",
                                   "pendiente", "pending", "firmado", "processing", "ERROR", None])
-@pytest.mark.parametrize("error", ["[HTTP] Service Unavailable", CIRCUIT_OPEN])
+@pytest.mark.parametrize("error", ["[HTTP] Service Unavailable", CIRCUIT_OPEN, HTTP_HEADERS])
 def test_only_exact_error_state_may_retry(tenant, state, error):
     callback = Mock()
     client, sessions = retry_client(login() + [listing([retry_row(state=state, error_message=error)])])
@@ -220,18 +221,49 @@ def test_circuit_marker_or_conflicting_message_does_not_authorize_retry(tenant, 
     assert not fiscal_posts(sessions)
 
 
+@pytest.mark.parametrize("error", [HTTP_HEADERS, HTTP_HEADERS.lower(), HTTP_HEADERS + ".",
+    "  " + HTTP_HEADERS.replace(" ", "\n\t") + "  "])
+def test_known_http_headers_error_retries_existing_signed_invoice_once(tenant, error):
+    candidate = retry_row(error_message=error)
+    callback = Mock(return_value=True)
+    client, sessions = retry_client(ready(initial=candidate, latest=candidate))
+    result = attempt(client, tenant, callback)
+    assert result["panel_retry_attempted"] is True and result["cdr"] is None
+    assert result["panel_retry_status"] == "response_received" and result["pending"] is True
+    callback.assert_called_once()
+    posts = fiscal_posts(sessions)
+    assert len(posts) == 1 and posts[0][1] == panel.ORIGIN + "/panel/documentos/444364/reintentar"
+    assert "json" not in posts[0][2] and "data" not in posts[0][2]
+    assert panel.confirmed_transient_retry_error(error) is True
+
+
+@pytest.mark.parametrize("error", ["Error Fetching http headers", "[HTTP] Error Fetching", "[HTTP] timeout",
+    HTTP_HEADERS + " duplicado", HTTP_HEADERS + " [1033]", HTTP_HEADERS + " [0111]",
+    HTTP_HEADERS + " aceptado", HTTP_HEADERS + " rechazado", HTTP_HEADERS + " credencial invalida",
+    HTTP_HEADERS + " procesando", HTTP_HEADERS + " en proceso", HTTP_HEADERS + " ticket 123",
+    HTTP_HEADERS + " pendiente", HTTP_HEADERS + " error desconocido"])
+def test_http_headers_partial_or_conflicting_message_never_retries(tenant, error):
+    callback = Mock()
+    client, sessions = retry_client(login() + [listing([retry_row(error_message=error)])])
+    assert attempt(client, tenant, callback)["panel_retry_status"] == "blocked"
+    assert panel.confirmed_transient_retry_error(error) is False
+    callback.assert_not_called()
+    assert not fiscal_posts(sessions)
+
+
 @pytest.mark.parametrize("changes", [{"has_cdr": None}, {"has_cdr": "false"}, {"has_cdr": 0},
     {"has_signed_xml": False}, {"has_signed_xml": "true"}, {"has_signed_xml": 1}, {"ticket": "known-ticket"}])
-def test_retry_requires_literal_evidence_flags_and_no_ticket(tenant, changes):
+@pytest.mark.parametrize("error", ["[HTTP] Service Unavailable", HTTP_HEADERS])
+def test_retry_requires_literal_evidence_flags_and_no_ticket(tenant, changes, error):
     callback = Mock()
-    client, sessions = retry_client(login() + [listing([retry_row(**changes)])])
+    client, sessions = retry_client(login() + [listing([retry_row(error_message=error, **changes)])])
     assert attempt(client, tenant, callback)["panel_retry_status"] == "blocked"
     callback.assert_not_called()
     assert not fiscal_posts(sessions)
 
 
 @pytest.mark.parametrize("error", ["[1033] El comprobante fue registrado previamente con otros datos", "[HTTP] Unauthorized",
-                                  "[HTTP] Service Unavailable", CIRCUIT_OPEN])
+                                  "[HTTP] Service Unavailable", CIRCUIT_OPEN, HTTP_HEADERS])
 def test_existing_cdr_blocks_retry_even_when_panel_shows_error(tenant, error):
     callback = Mock()
     client, sessions = retry_client(login() + [listing([retry_row(has_cdr=True, error_message=error)]), Response(body=cdr())])
@@ -262,7 +294,7 @@ def test_cdr_appearing_during_revalidation_is_recovered_without_post(tenant):
     assert not fiscal_posts(sessions)
 
 
-@pytest.mark.parametrize("error", ["[HTTP] Service Unavailable", CIRCUIT_OPEN])
+@pytest.mark.parametrize("error", ["[HTTP] Service Unavailable", CIRCUIT_OPEN, HTTP_HEADERS])
 @pytest.mark.parametrize("raw", [RAW + b"\n", invoice_xml(issuer="20999999999"), invoice_xml(reference="FA01-229"),
                                  invoice_xml(kind="03"), b'<!DOCTYPE x><x/>'])
 def test_changed_or_unsafe_remote_xml_never_retries(tenant, raw, error):
@@ -344,7 +376,7 @@ def test_post_errors_are_ambiguous_and_never_retry_or_refresh_auth(tenant, respo
 
 
 @pytest.mark.parametrize("content_type", ["application/json", "application/json; charset=utf-8", "Application/JSON"])
-@pytest.mark.parametrize("message", ["[HTTP] Service Unavailable", CIRCUIT_OPEN])
+@pytest.mark.parametrize("message", ["[HTTP] Service Unavailable", CIRCUIT_OPEN, HTTP_HEADERS])
 def test_same_post_negative_transient_json_confirms_failure_without_acceptance(tenant, content_type, message):
     raw = json.dumps({"ok": False, "message": message}).encode()
     client, sessions = retry_client(ready(post=Response(body=raw, content_type=content_type)))

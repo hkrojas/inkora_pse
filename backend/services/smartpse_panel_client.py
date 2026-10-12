@@ -79,6 +79,10 @@ def transient_retry_error(message) -> bool:
     normalized = re.sub(r"\s+", " ", lowered).strip()
     if re.fullmatch(r"\[circuit_open\] sunat no responde, reintente en unos segundos[.!]?", normalized):
         return True
+    # Observed on an existing signed invoice in the panel's error state.
+    # Admit this exact provider message; generic transport timeouts stay ambiguous.
+    if re.fullmatch(r"\[http\] error fetching http headers[.!]?", normalized):
+        return True
     return bool(re.search(r"\b(?:http|status(?:_code)?)\s*[:=]?\s*(?:500|502|503|504)\b", lowered)
                 or re.search(r"\[http\]\s*(?:service unavailable|bad gateway|gateway timeout)\b", lowered))
 
