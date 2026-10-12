@@ -123,12 +123,12 @@ function pagePayload(items, url, total = TOTAL, counts = {}) {
   };
 }
 
-async function openHarness(browser, baseURL) {
-  const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
+async function openHarness(browser, baseURL, { width = 1280, artifacts = false } = {}) {
+  const context = await browser.newContext({ baseURL, viewport: { width, height: 900 }, storageState: { cookies: [], origins: [] } });
   await context.addInitScript(() => localStorage.setItem('token', 'uniform-pagination-token'));
   const page = await context.newPage();
   const calls = [];
-  const state = { fiscalTotal: TOTAL, delayedSearch: false };
+  const state = { fiscalTotal: TOTAL, delayedSearch: false, downloadError: false, downloadWait: null };
   const documents = Array.from({ length: TOTAL }, (_, index) => fiscalDocument(index + 1));
   const notes = Array.from({ length: TOTAL }, (_, index) => fiscalNote(index + 1));
   const retenciones = Array.from({ length: TOTAL }, (_, index) => retencion(index + 1));
@@ -136,16 +136,26 @@ async function openHarness(browser, baseURL) {
   const resumenes = Array.from({ length: TOTAL }, (_, index) => resumen(index + 1));
   const reversiones = Array.from({ length: TOTAL }, (_, index) => reversion(index + 1));
   const guias = Array.from({ length: TOTAL }, (_, index) => guide(index + 1));
+  if (artifacts) {
+    notes.forEach((note) => Object.assign(note, { has_sunat_xml: true, has_sunat_cdr: true }));
+    Object.assign(guias[0], { estado: 'facturada', xml_disponible: true, cdr_disponible: true });
+  }
 
   await page.route(`${API_ORIGIN}/**`, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace(/\/$/, '');
-    calls.push({ path, params: new URLSearchParams(url.searchParams), method: request.method() });
+    calls.push({ path, params: new URLSearchParams(url.searchParams), method: request.method(), body: request.postData(), authorization: request.headers().authorization });
     let payload = {};
 
-    if (/^\/cotizaciones\/\d+\/pdf\/download$/.test(path)) {
-      await route.fulfill({ status: 200, contentType: 'application/pdf', headers: { 'Content-Disposition': 'attachment; filename="nota.pdf"' }, body: '%PDF-1.4\n%%EOF' });
+    if (/^\/cotizaciones\/\d+\/pdf\/download$/.test(path) || /^\/guias-remision\/\d+\/(pdf|xml|cdr)$/.test(path) || /^\/facturacion\/(xml|cdr)$/.test(path)) {
+      if (state.downloadWait) await state.downloadWait;
+      if (state.downloadError) {
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Archivo temporalmente no disponible. Inténtalo de nuevo.' }) });
+        return;
+      }
+      const type = path.endsWith('/download') ? 'pdf' : path.split('/').at(-1);
+      await route.fulfill({ status: 200, contentType: type === 'pdf' ? 'application/pdf' : type === 'cdr' && path.startsWith('/facturacion') ? 'application/zip' : 'application/xml', body: type === 'pdf' ? '%PDF-1.4\n%%EOF' : '<documento>Archivo sintético</documento>' });
       return;
     }
     if (path === '/users/me') payload = user;
@@ -234,6 +244,123 @@ test('Notas pagina tanto comprobantes elegibles como historial', async ({ browse
   } finally {
     await context.close();
   }
+});
+
+for (const width of [320, 390, 1024, 1440]) {
+  for (const family of ['notas', 'guias']) {
+    test(`${family}: descargas PDF/XML/CDR accesibles a ${width}px`, async ({ browser, baseURL }, testInfo) => {
+      const { context, page, calls, errors } = await openHarness(browser, baseURL, { width, artifacts: true });
+      try {
+        await page.goto(`/${family}`);
+        if (family === 'notas') await page.getByRole('tab', { name: 'Historial de notas' }).click();
+        const folios = family === 'notas' ? ['F001-000001', 'F001-000002'] : ['T001-000001'];
+        for (const folio of folios) {
+          const pdf = page.getByRole('button', { name: `Descargar PDF de ${folio}`, exact: true });
+          await expect(pdf).toBeVisible();
+          const group = pdf.locator('..');
+          await expect(group.locator(':scope > button, :scope > a, :scope > div > button')).toHaveText(['Ver', 'PDF', 'Más']);
+          const positions = await group.locator(':scope > button, :scope > a, :scope > div > button').evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().top));
+          expect(Math.max(...positions) - Math.min(...positions)).toBeLessThanOrEqual(1);
+          const downloaded = page.waitForEvent('download');
+          await pdf.click();
+          expect((await downloaded).suggestedFilename()).toBe(`${folio}.pdf`);
+          for (const type of ['xml', 'cdr']) {
+            await page.getByRole('button', { name: `Otros archivos de ${folio}`, exact: true }).click();
+            const file = page.waitForEvent('download');
+            await page.getByRole('button', { name: `Descargar ${type.toUpperCase()}`, exact: true }).click();
+            const extension = type === 'cdr' && family === 'notas' ? 'zip' : 'xml';
+            expect((await file).suggestedFilename()).toBe(`${type === 'cdr' && family === 'guias' ? 'R-' : ''}${folio}.${extension}`);
+          }
+        }
+        if (family === 'guias') {
+          await expect(page.getByRole('button', { name: 'Otros archivos de T001-000002', exact: true })).toHaveCount(0);
+          const detail = page.getByRole('link', { name: 'Ver guía T001-000001', exact: true });
+          await expect(detail).toHaveAttribute('href', '/guias/1');
+          const lines = await detail.evaluate((element) => {
+            const label = document.createRange();
+            label.selectNodeContents(element.querySelector('span'));
+            return label.getClientRects().length;
+          });
+          expect(lines).toBe(1);
+        }
+        const downloads = calls.filter((call) => /\/pdf\/download$|\/facturacion\/(xml|cdr)$|\/guias-remision\/\d+\/(pdf|xml|cdr)$/.test(call.path));
+        expect(downloads).toHaveLength(folios.length * 3);
+        expect(downloads.every((call) => call.authorization === 'Bearer uniform-pagination-token')).toBe(true);
+        if (family === 'notas') expect(downloads.filter((call) => call.method === 'POST').map((call) => JSON.parse(call.body).comprobante_id)).toEqual([1, 1, 2, 2]);
+        await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        for (const button of await page.locator('.fiscal-actions > button').all()) {
+          const inside = await button.evaluate((element) => {
+            const button = element.getBoundingClientRect(), cell = element.closest('td').getBoundingClientRect();
+            return button.left >= cell.left - 1 && button.right <= cell.right + 1;
+          });
+          expect(inside).toBe(true);
+        }
+        await page.screenshot({ path: testInfo.outputPath(`${family}-${width}.png`), fullPage: false });
+        errors.assertClean();
+      } finally { await context.close(); }
+    });
+  }
+}
+
+for (const width of [320, 1440]) {
+  for (const family of ['guias', 'notas']) {
+    test(`${family}: una descarga pendiente conserva los botones dentro del margen a ${width}px`, async ({ browser, baseURL }) => {
+      const { context, page, state } = await openHarness(browser, baseURL, { width, artifacts: true });
+      let releaseDownload;
+      try {
+        await page.goto(`/${family}`);
+        if (family === 'notas') await page.getByRole('tab', { name: 'Historial de notas' }).click();
+        state.downloadWait = new Promise((resolve) => { releaseDownload = resolve; });
+        const folio = family === 'guias' ? 'T001-000001' : 'F001-000001';
+        const pdf = page.getByRole('button', { name: `Descargar PDF de ${folio}`, exact: true });
+        const downloaded = page.waitForEvent('download');
+        await pdf.click();
+        await expect(pdf).toBeDisabled();
+        await expect(pdf).toHaveAttribute('aria-busy', 'true');
+        const controls = pdf.locator('..').locator(':scope > button, :scope > a');
+        await expect(controls).toHaveText(['Ver', 'PDF', 'Más']);
+        expect(await controls.evaluateAll((elements) => elements.every((element) => {
+          const bounds = element.getBoundingClientRect(), cell = element.closest('td').getBoundingClientRect();
+          return bounds.left >= cell.left - 1 && bounds.right <= cell.right + 1;
+        }))).toBe(true);
+        releaseDownload();
+        expect((await downloaded).suggestedFilename()).toBe(`${folio}.pdf`);
+        await expect(pdf).toBeEnabled();
+      } finally { releaseDownload?.(); await context.close(); }
+    });
+  }
+}
+
+test('Una descarga fallida informa el error y permite reintentar', async ({ browser, baseURL }) => {
+  const { context, page, state } = await openHarness(browser, baseURL, { artifacts: true });
+  try {
+    await page.goto('/notas');
+    await page.getByRole('tab', { name: 'Historial de notas' }).click();
+    state.downloadError = true;
+    const button = page.getByRole('button', { name: 'Descargar PDF de F001-000001', exact: true });
+    await button.click();
+    await expect(page.getByText('Archivo temporalmente no disponible. Inténtalo de nuevo.', { exact: true })).toBeVisible();
+    await expect(button).toBeEnabled();
+    state.downloadError = false;
+    const downloaded = page.waitForEvent('download');
+    await button.click();
+    expect((await downloaded).suggestedFilename()).toBe('F001-000001.pdf');
+  } finally { await context.close(); }
+});
+
+test('Ver abre el PDF de la nota sin descargarlo ni cambiar la lista', async ({ browser, baseURL }) => {
+  const { context, page, calls } = await openHarness(browser, baseURL, { artifacts: true });
+  try {
+    await page.addInitScript(() => {
+      window.open = (url, target) => { window.notePreview = { url, target }; return { opener: null }; };
+    });
+    await page.goto('/notas');
+    await page.getByRole('tab', { name: 'Historial de notas' }).click();
+    await page.getByRole('button', { name: 'Ver PDF de F001-000001', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.notePreview)).toEqual({ url: expect.stringMatching(/^blob:/), target: '_blank' });
+    await expect(page).toHaveURL(/\/notas$/);
+    expect(calls.filter((call) => call.path === '/cotizaciones/1/pdf/download')).toHaveLength(1);
+  } finally { await context.close(); }
 });
 
 test('Facturas conserva la búsqueda y descarta una respuesta tardía de la página anterior', async ({ browser, baseURL }) => {
