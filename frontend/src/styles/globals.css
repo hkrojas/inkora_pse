@@ -5767,6 +5767,19 @@ input:checked + .comprobante-toggle-track .comprobante-toggle-thumb,
     min-width: 0;
     justify-self: start;
   }
+
+  .ink-note-table tbody td:last-child {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ink-note-table tbody td:last-child::before {
+    grid-row: 1;
+  }
+
+  .ink-note-table tbody td:last-child > * {
+    grid-column: 1;
+    grid-row: 2;
+  }
 }
 
 .ink-summary-table {
