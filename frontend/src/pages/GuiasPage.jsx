@@ -18,6 +18,7 @@ import { getPageCount } from '../lib/utils/queryParams';
 import { SUNAT_UNIT_OPTIONS } from '../lib/utils/sunatCatalogs';
 import { useFiscalFeatures } from '../hooks/useFiscalFeatures';
 import Pagination from '../components/ui/Pagination';
+import DocumentDownloadActions from '../components/documents/DocumentDownloadActions';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -941,11 +942,12 @@ export default function GuiasPage() {
                           </div>
                         </td>
                       <td data-label="Acción" className="guide-table-action-cell">
-                          <div className="ink-table-row-actions document-list-row-actions">
+                          <div className="ink-table-row-actions document-list-row-actions guide-download-actions">
                             <Link to={`/guias/${item.id}`} className="ink-row-action-pill" title="Ver detalle">
                               <Eye className="h-3.5 w-3.5" />
                               Ver
                             </Link>
+                            <DocumentDownloadActions document={item} guide />
                           </div>
                         </td>
                       </tr>
