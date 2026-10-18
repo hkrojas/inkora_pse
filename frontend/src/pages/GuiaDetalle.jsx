@@ -248,9 +248,9 @@ export default function GuiaDetalle() {
     <div className="page-shell max-w-5xl guide-detail-page">
       <div className="page-header">
         <div className="page-header-copy">
-          <Link to="/guias" className="guide-back-link">
+          <Link to={guia.internal_transfer_id ? `/traslados-internos/${guia.internal_transfer_id}` : '/guias'} className="guide-back-link">
             <ArrowLeft className="h-4 w-4" />
-            Volver a guías
+            {guia.internal_transfer_id ? 'Volver al traslado' : 'Volver a guías'}
           </Link>
           <p className="page-kicker">Seguimiento de despacho</p>
           <h2 className="page-title">Guía {numero}</h2>
