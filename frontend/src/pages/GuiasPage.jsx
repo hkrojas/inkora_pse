@@ -693,8 +693,8 @@ export default function GuiasPage() {
             Guía desde venta
           </Link>
           {internalTransfersEnabled && (
-            <Link className="btn-secondary flex items-center gap-2" to="/traslados-internos/nuevo">
-              <ArrowLeftRight className="h-4 w-4" />Traslado interno
+            <Link className="btn-secondary flex items-center gap-2" to="/traslados-internos">
+              <ArrowLeftRight className="h-4 w-4" />Traslados internos
             </Link>
           )}
           <Link className="btn-secondary flex items-center gap-2" to="/guias/nueva-transportista">

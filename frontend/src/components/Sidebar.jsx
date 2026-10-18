@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Asterisk,
   BarChart3,
@@ -246,11 +246,14 @@ export default function Sidebar({ userOverride = null }) {
               </div>
 
               {group.items.map(({ to, label, icon: Icon, accent }) => {
-                const isActive = location.pathname === to || location.pathname.startsWith(`${to}/`);
+                const isActive = location.pathname === to || location.pathname.startsWith(`${to}/`)
+                  || (to === '/guias' && (location.pathname === '/traslados-internos'
+                    || location.pathname.startsWith('/traslados-internos/')));
                 return (
-                  <NavLink
+                  <Link
                     key={to}
                     to={to}
+                    aria-current={isActive ? 'page' : undefined}
                     onMouseEnter={(event) => showCollapsed && showTooltip(event, label)}
                     onMouseLeave={hideTooltip}
                     className={cn(
@@ -271,7 +274,7 @@ export default function Sidebar({ userOverride = null }) {
                         SA
                       </span>
                     )}
-                  </NavLink>
+                  </Link>
                 );
               })}
             </div>
