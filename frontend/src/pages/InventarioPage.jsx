@@ -303,6 +303,8 @@ export default function InventarioPage() {
   const criticalAlerts = stock.filter((row) => ['low', 'negative'].includes(row.status)).length;
   const committedTotal = stock.reduce((sum, row) => sum + Number(row.committed || 0), 0);
   const availableTotal = stock.reduce((sum, row) => sum + Number(row.available || 0), 0);
+  const selectedStockProduct = uniqueProducts.find((row) => String(row.product_id) === String(form.product_id));
+  const selectedStockWarehouse = warehouses.find((row) => String(row.id) === String(form.warehouse_id));
   const selectedStockRow = stock.find((row) => String(row.warehouse_id) === String(form.warehouse_id)
     && String(row.product_id) === String(form.product_id));
   const projectedStock = Number(selectedStockRow?.on_hand || 0) + Number(form.quantity || 0);
@@ -778,26 +780,37 @@ export default function InventarioPage() {
         status="Suma al stock"
         initialFocus="#inventory-stock-quantity"
         title="Agregar existencias"
-        subtitle={selectedStockRow ? `${selectedStockRow.product_name} · ${selectedStockRow.warehouse_name}` : 'Registra una entrada para el producto seleccionado.'}
+        subtitle={selectedStockProduct && selectedStockWarehouse ? `${selectedStockProduct.product_name} · ${selectedStockWarehouse.name}` : 'Registra una entrada para el producto seleccionado.'}
         icon={<PackageCheck size={20} />}
-        footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="inventory-stock-form" className="btn-primary" disabled={saving || Number(form.quantity) <= 0}>{saving ? 'Guardando…' : 'Agregar al stock'}</button></>}
+        footer={<><button type="button" className="btn-ghost" onClick={() => setModal(null)}>Cancelar</button><button type="submit" form="inventory-stock-form" className="btn-primary" disabled={saving || !selectedStockProduct || !selectedStockWarehouse || Number(form.quantity) <= 0}>{saving ? 'Guardando…' : 'Agregar al stock'}</button></>}
       >
-        {selectedStockRow && (
+        {selectedStockProduct && selectedStockWarehouse && (
           <form id="inventory-stock-form" className="inventory-stock-drawer" onSubmit={submitAdjustment}>
             <section className="inventory-stock-drawer__product" aria-labelledby="inventory-stock-product-title">
-              <div className="inventory-stock-drawer__product-topline"><span>Producto seleccionado</span><StockStatus status={selectedStockRow.status} /></div>
+              <div className="inventory-stock-drawer__product-topline"><span>Producto seleccionado</span><StockStatus status={selectedStockRow?.status || 'out'} /></div>
               <div className="inventory-stock-drawer__product-main">
                 <span className="inventory-stock-drawer__product-icon" aria-hidden="true"><Boxes size={19} /></span>
-                <div><h3 id="inventory-stock-product-title">{selectedStockRow.product_name}</h3><p>{selectedStockRow.product_code || 'Sin SKU'} · {selectedStockRow.unit}</p></div>
+                <div><h3 id="inventory-stock-product-title">{selectedStockProduct.product_name}</h3><p>{selectedStockProduct.product_code || 'Sin SKU'} · {selectedStockProduct.unit}</p></div>
               </div>
-              <div className="inventory-stock-drawer__warehouse"><Warehouse size={15} aria-hidden="true" /><div><span>Almacén de destino</span><strong>{selectedStockRow.warehouse_name}</strong></div></div>
+              <div className="mt-4 border-t border-dashed border-[var(--color-border)] pt-4">
+                <label htmlFor="inventory-stock-warehouse" className="mb-2 block text-xs font-semibold text-[var(--color-text-muted)]">Almacén de destino</label>
+                <CustomSelect
+                  id="inventory-stock-warehouse"
+                  required
+                  disabled={saving}
+                  ariaLabel="Almacén de destino"
+                  value={form.warehouse_id}
+                  onChange={(value) => setForm((current) => ({ ...current, warehouse_id: value }))}
+                  options={warehouses.map((row) => ({ value: row.id, label: row.name }))}
+                />
+              </div>
             </section>
 
             <section className="inventory-stock-drawer__balance" aria-labelledby="inventory-stock-balance-title">
               <div className="inventory-stock-drawer__section-heading"><div><p className="inventory-panel__eyebrow">Actualización de saldo</p><h3 id="inventory-stock-balance-title">Cantidad que ingresa</h3></div><span>Solo suma</span></div>
               <label htmlFor="inventory-stock-quantity">Unidades a agregar</label>
-              <div className="inventory-stock-drawer__quantity"><Plus size={18} aria-hidden="true" /><input id="inventory-stock-quantity" required type="number" min="0.0001" step="0.0001" inputMode="decimal" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} placeholder="0" /><span>{selectedStockRow.unit}</span></div>
-              <dl className="inventory-stock-drawer__projection"><div><dt>Stock actual</dt><dd>{qty(selectedStockRow.on_hand)}</dd></div><div><dt>Después del ingreso</dt><dd>{qty(projectedStock)}</dd></div></dl>
+              <div className="inventory-stock-drawer__quantity"><Plus size={18} aria-hidden="true" /><input id="inventory-stock-quantity" required type="number" min="0.0001" step="0.0001" inputMode="decimal" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} placeholder="0" /><span>{selectedStockProduct.unit}</span></div>
+              <dl className="inventory-stock-drawer__projection" aria-live="polite"><div><dt>Stock actual</dt><dd>{qty(selectedStockRow?.on_hand || 0)}</dd></div><div><dt>Después del ingreso</dt><dd>{qty(projectedStock)}</dd></div></dl>
             </section>
 
             <section className="inventory-stock-drawer__reason" aria-labelledby="inventory-stock-reason-title">
