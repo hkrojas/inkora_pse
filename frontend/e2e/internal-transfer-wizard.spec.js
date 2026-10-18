@@ -296,6 +296,8 @@ for (const width of [1440, 390]) {
       await expect(page.getByLabel("Apellidos del conductor", { exact: true })).toHaveValue("Rojas Pérez");
       await expect(page.getByLabel("Licencia de conducir", { exact: true })).toHaveValue("Q123456789");
       await expect(page.getByLabel("Placa del vehículo", { exact: true })).toHaveValue("ABC123");
+      const accessibility = await new AxeBuilder({ page }).include(".transfer-wizard__transport").analyze();
+      expect(accessibility.violations.filter((violation) => ["serious", "critical"].includes(violation.impact))).toEqual([]);
       await page.getByLabel("Número de documento", { exact: true }).fill("87654321");
       await page.getByRole("button", { name: "Consultar DNI", exact: true }).click();
       await expect(page.getByRole("alert")).toContainText("Completa los datos manualmente");
