@@ -230,6 +230,7 @@
   color: var(--color-text);
 }
 .transfer-wizard__transport .btn-secondary { color: var(--color-text); }
+.transfer-wizard__transport .ink-inline-alert-info { color: var(--color-text); }
 .transfer-wizard__choices input {
   margin-top: 4px;
   accent-color: var(--color-primary);
