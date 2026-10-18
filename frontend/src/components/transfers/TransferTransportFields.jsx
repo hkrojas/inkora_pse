@@ -1,4 +1,23 @@
+import { useEffect, useRef, useState } from "react";
 import CustomSelect from "../ui/CustomSelect";
+import DatePicker from "../ui/DatePicker";
+import { clientes } from "../../services/clientes";
+
+function TransportDateTime({ value, onChange, label, dateLabel, timeLabel }) {
+  const [date = "", time = ""] = value.split("T");
+  return (
+    <fieldset className="transfer-wizard__field min-w-0">
+      <legend>{label}</legend>
+      <div className="grid grid-cols-[minmax(0,1fr)_116px] gap-3 mt-2">
+        <DatePicker value={date} onChange={(next) => onChange(`${next}T${time}`)}
+          min={new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" })}
+          required ariaLabel={dateLabel} />
+        <input className="input" type="time" required aria-label={timeLabel}
+          value={time} onChange={(event) => onChange(`${date}T${event.target.value}`)} />
+      </div>
+    </fieldset>
+  );
+}
 
 export const newTransferTransport = () => ({
   fecha_traslado: "",
@@ -73,11 +92,42 @@ export function transferTransportPayload(guide) {
 }
 
 export default function TransferTransportFields({ value, onChange }) {
+  const latest = useRef(value);
+  latest.current = value;
+  const lookupSequence = useRef(0);
+  const [lookup, setLookup] = useState({ busy: false, message: "", error: false });
   const set = (patch) => onChange({ ...value, ...patch });
   const publicTransport = value.modalidad_traslado === "01";
   const driverRequired =
     !value.indicador_m1_l &&
     (!publicTransport || value.registrar_vehiculo_transportista);
+  useEffect(() => {
+    setLookup({ busy: false, message: "", error: false });
+    return () => { lookupSequence.current += 1; };
+  }, [value.conductor_nro_doc, value.conductor_tipo_doc, driverRequired]);
+  const lookupDriver = async () => {
+    const before = latest.current;
+    const number = before.conductor_nro_doc.trim();
+    if (lookup.busy || before.conductor_tipo_doc !== "1" || !/^\d{8}$/.test(number)) return;
+    const sequence = ++lookupSequence.current;
+    setLookup({ busy: true, message: "Consultando DNI…", error: false });
+    try {
+      const data = await clientes.lookupDocument(number);
+      if (sequence !== lookupSequence.current) return;
+      const current = latest.current;
+      if (current.conductor_nro_doc.trim() !== number || current.conductor_tipo_doc !== "1") return;
+      if (current.conductor_nombres !== before.conductor_nombres || current.conductor_apellidos !== before.conductor_apellidos)
+        throw new Error("Los nombres cambiaron durante la consulta. Consúltalo otra vez si deseas reemplazarlos.");
+      const surnames = [data.apellido_paterno, data.apellido_materno].filter(Boolean).join(" ");
+      if (!data.nombres || !surnames || (data.documento && data.documento !== number))
+        throw new Error("La consulta no devolvió los nombres completos. Puedes ingresarlos manualmente.");
+      onChange({ ...current, conductor_nombres: data.nombres, conductor_apellidos: surnames });
+      setLookup({ busy: false, message: "Nombres y apellidos completados. Revisa los datos del conductor.", error: false });
+    } catch (error) {
+      if (sequence === lookupSequence.current)
+        setLookup({ busy: false, message: error.message || "No se pudo consultar el DNI. Puedes ingresar los datos manualmente.", error: true });
+    }
+  };
   const field = (key, label, props = {}) => (
     <label className="transfer-wizard__field" key={key}>
       <span>{label}</span>
@@ -93,9 +143,8 @@ export default function TransferTransportFields({ value, onChange }) {
   return (
     <div className="transfer-wizard__transport">
       <div className="transfer-wizard__grid">
-        {field("fecha_traslado", "Fecha y hora de salida", {
-          type: "datetime-local",
-        })}
+        <TransportDateTime value={value.fecha_traslado} onChange={(next) => set({ fecha_traslado: next })}
+          label="Fecha y hora de salida" dateLabel="Fecha de salida" timeLabel="Hora de salida" />
         {field(
           "peso_bruto_total",
           `Peso total (${value.unidad_medida_peso === "KGM" ? "kg" : "toneladas"})`,
@@ -182,11 +231,10 @@ export default function TransferTransportFields({ value, onChange }) {
       </details>
       {publicTransport && (
         <>
-          {field(
-            "fecha_entrega_transportista",
-            "Fecha y hora de entrega al transportista",
-            { type: "datetime-local" },
-          )}
+          <TransportDateTime value={value.fecha_entrega_transportista}
+            onChange={(next) => set({ fecha_entrega_transportista: next })}
+            label="Fecha y hora de entrega al transportista"
+            dateLabel="Fecha de entrega al transportista" timeLabel="Hora de entrega al transportista" />
           {!value.indicador_m1_l && (
             <>
               <div className="transfer-wizard__grid">
@@ -240,6 +288,16 @@ export default function TransferTransportFields({ value, onChange }) {
               value.conductor_tipo_doc === "1"
                 ? { inputMode: "numeric", pattern: "[0-9]{8}", maxLength: 8 }
                 : {},
+            )}
+            {value.conductor_tipo_doc === "1" && (
+              <div className="col-span-full">
+                <button type="button" className="btn-secondary" onClick={lookupDriver}
+                  disabled={lookup.busy || !/^\d{8}$/.test(value.conductor_nro_doc.trim())}>
+                  {lookup.busy ? "Consultando DNI…" : "Consultar DNI"}
+                </button>
+                {lookup.message && <p className={`ink-inline-alert ${lookup.error ? "ink-inline-alert-error" : "ink-inline-alert-info"} mt-2`}
+                  role={lookup.error ? "alert" : "status"}>{lookup.message}</p>}
+              </div>
             )}
             {field("conductor_nombres", "Nombres del conductor")}
             {field("conductor_apellidos", "Apellidos del conductor")}
