@@ -23,6 +23,26 @@ import { internalTransfers } from "../services/internalTransfers";
 
 const qty = (value) =>
   Number(value || 0).toLocaleString("es-PE", { maximumFractionDigits: 4 });
+const dispatchLimit = (line) => {
+  const pending = Math.max(0, Number(line.pending_assignment) || 0);
+  if (!line.inventory_controlled) return pending;
+  const stock = Number(line.available_stock);
+  return line.available_stock == null || !Number.isFinite(stock)
+    ? 0
+    : Math.max(0, Math.min(pending, stock));
+};
+const dispatchQuantityError = (line, value) => {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount < 0)
+    return "Ingresa una cantidad de cero o más.";
+  if (amount > Number(line.pending_assignment))
+    return "La cantidad supera lo pendiente de preparar.";
+  if (amount > dispatchLimit(line))
+    return "La cantidad supera el stock disponible en origen.";
+  if (Math.abs(amount * 10000 - Math.round(amount * 10000)) > 0.000001)
+    return "Usa como máximo cuatro decimales.";
+  return "";
+};
 const localDateTime = () => {
   const date = new Date(Date.now() + 24 * 60 * 60 * 1000);
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
@@ -92,21 +112,28 @@ export default function InternalTransferDetailPage() {
       { requested: 0, assigned: 0, departed: 0, received: 0 },
     );
   }, [data]);
+  const dispatchLines = (data?.lines || []).filter(
+    (line) => Number(line.pending_assignment) > 0,
+  );
+  const canReserve =
+    dispatchLines.some((line) => Number(dispatchQty[line.id]) > 0) &&
+    dispatchLines.every((line) => !dispatchQuantityError(line, dispatchQty[line.id]));
   const openDispatch = () => {
     setDispatchQty(
       Object.fromEntries(
         data.lines
           .filter((line) => Number(line.pending_assignment) > 0)
-          .map((line) => [line.id, String(line.pending_assignment)]),
+          .map((line) => [line.id, String(dispatchLimit(line))]),
       ),
     );
     setDrawer("dispatch");
   };
   const createDispatch = async (event) => {
     event.preventDefault();
+    if (saving || !canReserve) return;
     setSaving(true);
     try {
-      const lines = data.lines
+      const lines = dispatchLines
         .map((line) => ({
           transfer_line_id: line.id,
           quantity: Number(dispatchQty[line.id] || 0),
@@ -117,7 +144,7 @@ export default function InternalTransferDetailPage() {
         idempotency_key: crypto.randomUUID(),
         lines,
       });
-      toast("Despacho preparado y cantidades reservadas.", "success");
+      toast("Viaje preparado con las cantidades seleccionadas.", "success");
       setDrawer(null);
       await load();
     } catch (err) {
@@ -165,6 +192,21 @@ export default function InternalTransferDetailPage() {
     }
   };
   const confirmDeparture = async (dispatch) => {
+    const movesStock = dispatch.lines.some((item) =>
+      data.lines.some((line) => line.id === item.transfer_line_id && line.inventory_controlled),
+    );
+    const confirmed = await confirmAction({
+      title: "Confirmar salida física",
+      eyebrow: "Traslados internos",
+      description: "Confirma solo cuando los bienes ya hayan salido del almacén de origen.",
+      subjectLabel: `Traslado TI-${data.id}`,
+      subject: `Viaje ${data.dispatches.findIndex((item) => item.id === dispatch.id) + 1} · ${data.source_establishment.name} → ${data.destination_establishment.name}`,
+      detail: `${movesStock ? "Se descontarán las existencias del origen y los bienes quedarán en tránsito." : "Los bienes quedarán en tránsito."} La recepción en destino se registra después.`,
+      confirmLabel: "Sí, los bienes ya salieron",
+      cancelLabel: "Todavía no",
+      tone: "warning",
+    });
+    if (!confirmed) return;
     setSaving(true);
     try {
       await internalTransfers.confirmDeparture(
@@ -334,7 +376,7 @@ export default function InternalTransferDetailPage() {
                 onClick={openDispatch}
               >
                 <Send size={15} />
-                Preparar despacho
+                Preparar viaje
               </button>
             )}
         </div>
@@ -504,7 +546,7 @@ export default function InternalTransferDetailPage() {
                     onClick={() => confirmDeparture(dispatch)}
                   >
                     <Send size={14} />
-                    Confirmar salida
+                    Confirmar salida física
                   </button>
                   <button
                     className="btn-primary btn-sm"
@@ -588,8 +630,8 @@ export default function InternalTransferDetailPage() {
       <Drawer
         open={drawer === "dispatch"}
         onClose={() => setDrawer(null)}
-        title="Preparar despacho"
-        subtitle="Las cantidades seleccionadas quedarán reservadas."
+        title="Preparar viaje"
+        subtitle="Elige cuánto llevar. Reservar no registra la salida física."
         icon={<Send size={20} />}
         footer={
           <>
@@ -598,15 +640,15 @@ export default function InternalTransferDetailPage() {
               type="button"
               onClick={() => setDrawer(null)}
             >
-              Cancelar
+              Volver
             </button>
             <button
               className="btn-primary"
               type="submit"
               form="dispatch-form"
-              disabled={saving}
+              disabled={saving || !canReserve}
             >
-              {saving ? "Reservando…" : "Crear despacho"}
+              {saving ? "Reservando…" : "Reservar para este viaje"}
             </button>
           </>
         }
@@ -616,26 +658,42 @@ export default function InternalTransferDetailPage() {
           className="internal-transfer-form"
           onSubmit={createDispatch}
         >
-          {data.lines
-            .filter((line) => Number(line.pending_assignment) > 0)
-            .map((line) => (
+          <p className="text-sm text-[var(--color-text-secondary)]">
+            Puedes preparar una parte y dejar el resto para otro viaje. Usa 0 para omitir un bien.
+          </p>
+          {dispatchLines.map((line) => {
+            const message = dispatchQuantityError(line, dispatchQty[line.id]);
+            const stockKnown = line.available_stock != null && Number.isFinite(Number(line.available_stock));
+            return (
               <label className="internal-transfer-quantity-row" key={line.id}>
                 <span>
                   <strong>{line.description}</strong>
-                  <small>
-                    Disponible para asignar: {qty(line.pending_assignment)}{" "}
+                  <small id={`dispatch-balance-${line.id}`}>
+                    Pendiente de preparar: {qty(line.pending_assignment)}{" "}
                     {line.unit_code}
-                    {line.available_stock != null
-                      ? ` · Stock libre: ${qty(line.available_stock)}`
-                      : ""}
                   </small>
+                  <small id={`dispatch-stock-${line.id}`}>
+                    {line.inventory_controlled
+                      ? stockKnown
+                        ? `Disponible en origen: ${qty(line.available_stock)} ${line.unit_code}`
+                        : "No se pudo consultar el stock en origen. Vuelve a cargar el traslado."
+                      : "Bien sin control de stock."}
+                  </small>
+                  {line.inventory_controlled && stockKnown && dispatchLimit(line) === 0 && (
+                    <small style={{ color: "var(--color-text)", fontWeight: 600 }}>Sin stock disponible. Puedes preparar los demás bienes.</small>
+                  )}
+                  {message && <small id={`dispatch-error-${line.id}`} style={{ color: "var(--color-danger)" }} role="alert">{message}</small>}
                 </span>
                 <input
                   className="input"
                   type="number"
                   min="0"
-                  max={line.pending_assignment}
+                  max={dispatchLimit(line)}
                   step="0.0001"
+                  aria-label={`Cantidad para ${line.description}`}
+                  aria-invalid={Boolean(message)}
+                  aria-describedby={`dispatch-balance-${line.id} dispatch-stock-${line.id}${message ? ` dispatch-error-${line.id}` : ""}`}
+                  disabled={saving}
                   value={dispatchQty[line.id] || ""}
                   onChange={(e) =>
                     setDispatchQty({
@@ -645,7 +703,11 @@ export default function InternalTransferDetailPage() {
                   }
                 />
               </label>
-            ))}
+            );
+          })}
+          {!canReserve && !dispatchLines.some((line) => dispatchQuantityError(line, dispatchQty[line.id])) && (
+            <p className="ink-inline-alert ink-inline-alert-warning" role="status">Ingresa una cantidad disponible mayor que 0 para preparar este viaje.</p>
+          )}
         </form>
       </Drawer>
 

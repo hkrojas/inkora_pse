@@ -56,7 +56,7 @@ FEATURES = {
     'frontend/src/pages/InventarioPage.jsx': ['submitBulk', 'openWarehouseEdit'],
     'frontend/src/pages/InternalTransfersPage.jsx': ['Nuevo traslado', 'Almacenes'],
     'frontend/src/pages/InternalTransferNewPage.jsx': ['Nuevo traslado interno', 'manual_goods_confirmed'],
-    'frontend/src/pages/InternalTransferDetailPage.jsx': ['Preparar despacho', 'Registrar recepción', 'Crear borrador GRE'],
+    'frontend/src/pages/InternalTransferDetailPage.jsx': ['Preparar viaje', 'Reservar para este viaje', 'Confirmar salida física', 'Registrar recepción', 'Crear borrador GRE'],
     'frontend/src/pages/EstablishmentsPage.jsx': ['Código SUNAT', 'Verificar datos fiscales', 'Vincular almacén'],
     'frontend/src/App.jsx': ['GuiaNuevaPage', 'AccessRequestPage', 'LandingPage'],
     'frontend/src/lib/utils/documents.js': ['tenant?.fiscal_invoice_series', 'tenant?.fiscal_boleta_series'],
