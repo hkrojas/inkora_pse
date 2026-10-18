@@ -258,16 +258,74 @@ async function goods(
     .fill("5");
 }
 
+async function selectTransportDate(page, dateLabel, timeLabel) {
+  const value = departureDate();
+  const date = new Date(`${value.slice(0, 10)}T12:00:00`);
+  await page.getByRole("button", { name: dateLabel, exact: true }).click();
+  const calendar = page.getByRole("dialog", { name: "Seleccionar fecha", exact: true });
+  const day = date.toLocaleDateString("es-PE", { day: "numeric", month: "long", year: "numeric" });
+  if (!(await calendar.getByRole("button", { name: day, exact: true }).count()))
+    await calendar.getByRole("button", { name: "Mes siguiente", exact: true }).click();
+  await calendar.getByRole("button", { name: day, exact: true }).click();
+  await page.getByLabel(timeLabel, { exact: true }).fill(value.slice(11));
+}
+
+for (const width of [1440, 390]) {
+  test(`calendario Inkora y DNI: éxito, error y respuesta atrasada a ${width}px`, async ({ browser, baseURL }) => {
+    const qa = await mockWizard(browser, baseURL, { width, theme: width === 390 ? "dark" : "light" });
+    const { page } = qa;
+    let releaseLookup;
+    const delayedLookup = new Promise((resolve) => { releaseLookup = resolve; });
+    let requestStarted;
+    const started = new Promise((resolve) => { requestStarted = resolve; });
+    await page.route(`${ORIGIN}/consultar-documento/*`, async (route) => {
+      const number = new URL(route.request().url()).pathname.split("/").pop();
+      if (number === "11112222") { requestStarted(); await delayedLookup; }
+      await route.fulfill(number === "87654321"
+        ? { status: 503, json: { detail: "Consulta temporalmente no disponible. Completa los datos manualmente." } }
+        : { json: { documento: number, nombres: "Ana María", apellido_paterno: "Rojas", apellido_materno: "Pérez" } });
+    });
+    try {
+      await goods(page);
+      await page.getByRole("button", { name: "Continuar", exact: true }).click();
+      await expect(page.locator('input[type="datetime-local"]')).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Consultar DNI", exact: true })).toBeDisabled();
+      await privateTransport(page);
+      await page.getByRole("button", { name: "Consultar DNI", exact: true }).click();
+      await expect(page.getByLabel("Nombres del conductor", { exact: true })).toHaveValue("Ana María");
+      await expect(page.getByLabel("Apellidos del conductor", { exact: true })).toHaveValue("Rojas Pérez");
+      await expect(page.getByLabel("Licencia de conducir", { exact: true })).toHaveValue("Q123456789");
+      await expect(page.getByLabel("Placa del vehículo", { exact: true })).toHaveValue("ABC123");
+      const accessibility = await new AxeBuilder({ page }).include(".transfer-wizard__transport").analyze();
+      expect(accessibility.violations.filter((violation) => ["serious", "critical"].includes(violation.impact))).toEqual([]);
+      await page.getByLabel("Número de documento", { exact: true }).fill("87654321");
+      await page.getByRole("button", { name: "Consultar DNI", exact: true }).click();
+      await expect(page.getByRole("alert")).toContainText("Completa los datos manualmente");
+      await expect(page.getByLabel("Nombres del conductor", { exact: true })).toHaveValue("Ana María");
+      await page.getByLabel("Número de documento", { exact: true }).fill("11112222");
+      await page.getByRole("button", { name: "Consultar DNI", exact: true }).click();
+      await started;
+      await page.getByLabel("Número de documento", { exact: true }).fill("33334444");
+      await page.getByLabel("Nombres del conductor", { exact: true }).fill("Nombre manual");
+      releaseLookup();
+      await expect(page.getByLabel("Nombres del conductor", { exact: true })).toHaveValue("Nombre manual");
+      await chooseInkoraOption(page, "Documento del conductor", "Carné de extranjería");
+      await expect(page.getByRole("button", { name: "Consultar DNI", exact: true })).toHaveCount(0);
+      await expect(page.locator(".transfer-wizard")).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      expect(qa.writes).toHaveLength(0);
+    } finally { releaseLookup(); await qa.context.close(); }
+  });
+}
+
 async function privateTransport(page) {
   await expect(
-    page.getByLabel("Fecha y hora de salida", { exact: true }),
-  ).toHaveValue("");
+    page.getByRole("button", { name: "Fecha de salida", exact: true }),
+  ).toHaveText("dd/mm/aaaa");
   await expect(page.getByLabel("Peso total (kg)", { exact: true })).toHaveValue(
     "",
   );
-  await page
-    .getByLabel("Fecha y hora de salida", { exact: true })
-    .fill(departureDate());
+  await selectTransportDate(page, "Fecha de salida", "Hora de salida");
   await page.getByLabel("Peso total (kg)", { exact: true }).fill("25.5");
   await page
     .getByLabel("Número de documento", { exact: true })
@@ -446,11 +504,7 @@ for (const scenario of ["public", "registered", "m1-private", "m1-public"]) {
           .getByRole("checkbox", { name: /Registrar también el vehículo/ })
           .check();
       if (scenario !== "m1-private")
-        await page
-          .getByLabel("Fecha y hora de entrega al transportista", {
-            exact: true,
-          })
-          .fill(departureDate());
+        await selectTransportDate(page, "Fecha de entrega al transportista", "Hora de entrega al transportista");
       if (["public", "registered"].includes(scenario)) {
         await page
           .getByLabel("RUC del transportista", { exact: true })

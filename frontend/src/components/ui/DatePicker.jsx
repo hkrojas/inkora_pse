@@ -217,7 +217,6 @@ export default function DatePicker({
         ref={triggerRef}
         type="button"
         disabled={disabled}
-        aria-required={required}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? calendarId : undefined}

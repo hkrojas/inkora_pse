@@ -303,6 +303,14 @@ export default function InternalTransferNewPage() {
       setError("La creación de guías no está habilitada para esta empresa.");
       return;
     }
+    if (step === 1 && requiresGuide) {
+      const dates = [guide.fecha_traslado];
+      if (guide.modalidad_traslado === "01") dates.push(guide.fecha_entrega_transportista);
+      if (dates.some((date) => !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(date) || Number.isNaN(new Date(date).getTime()))) {
+        setError("Selecciona la fecha y completa la hora de salida y, cuando corresponda, de entrega al transportista.");
+        return;
+      }
+    }
     if (
       step === 1 &&
       requiresGuide &&

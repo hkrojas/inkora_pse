@@ -224,11 +224,13 @@
 .transfer-wizard__choices label.is-selected {
   border-color: var(--color-primary);
   background: var(--color-primary-soft);
-  color: var(--color-primary-text);
+  color: var(--color-text);
 }
 .transfer-wizard__choices label.is-selected small {
-  color: var(--color-primary-text);
+  color: var(--color-text);
 }
+.transfer-wizard__transport .btn-secondary { color: var(--color-text); }
+.transfer-wizard__transport .ink-inline-alert-info { color: var(--color-text); }
 .transfer-wizard__choices input {
   margin-top: 4px;
   accent-color: var(--color-primary);
