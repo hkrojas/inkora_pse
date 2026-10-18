@@ -1,21 +1,49 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeftRight, Eye, Plus, RefreshCw, Warehouse } from "lucide-react";
+import { ArrowLeftRight, CircleHelp, Eye, Plus, RefreshCw, Warehouse } from "lucide-react";
 import EmptyState from "../components/ui/EmptyState";
 import Pagination from "../components/ui/Pagination";
 import Spinner from "../components/ui/Spinner";
 import { PageError } from "../components/ui/PageState";
 import { internalTransfers } from "../services/internalTransfers";
+import "../styles/internalTransfersList.css";
 
 const PAGE_SIZE = 15;
 const STATUS = {
-  draft: "Borrador",
-  pending: "Pendiente",
-  in_transit: "En tránsito",
-  partially_received: "Recepción parcial",
-  completed: "Completado",
-  cancelled: "Cancelado",
+  draft: { label: "Borrador", help: "La solicitud está creada y tiene bienes pendientes de asignar a un viaje." },
+  pending: { label: "Pendiente", help: "Hay bienes asignados a viajes. La salida aún no está confirmada." },
+  in_transit: { label: "En tránsito", help: "Hay bienes enviados que todavía están pendientes de recepción." },
+  partially_received: { label: "Recepción parcial", help: "Se recibió una parte de los bienes solicitados. El traslado todavía no está completo." },
+  completed: { label: "Completado", help: "Se completó la recepción de los bienes del traslado." },
+  cancelled: { label: "Cancelado", help: "El traslado fue cancelado y no permite preparar nuevos viajes." },
 };
+
+function TransferStatus({ status }) {
+  const [open, setOpen] = useState(false);
+  const helpId = useId();
+  const meta = STATUS[status] || { label: "Sin información", help: "Revisa el detalle del traslado para consultar su situación." };
+
+  return (
+    <div className="transfer-status-help">
+      <button
+        type="button"
+        className={`internal-transfer-status is-${status}`}
+        aria-label={`${meta.label}: ayuda del estado`}
+        aria-expanded={open}
+        aria-controls={helpId}
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
+      >
+        {meta.label}<CircleHelp size={13} aria-hidden="true" />
+      </button>
+      <p id={helpId} className="transfer-status-help__text" hidden={!open}>{meta.help}</p>
+    </div>
+  );
+}
+
+function TransferDate({ value }) {
+  return <time dateTime={value}>{new Date(value).toLocaleDateString("es-PE")}</time>;
+}
 
 export default function InternalTransfersPage() {
   const [page, setPage] = useState(1);
@@ -43,7 +71,7 @@ export default function InternalTransfersPage() {
 
   return (
     <div className="page-shell internal-transfer-page">
-      <header className="page-header internal-transfer-hero">
+      <header className="page-header internal-transfer-hero ink-enter-1">
         <div className="page-header-copy">
           <span className="internal-transfer-kicker">
             <ArrowLeftRight size={15} /> Logística nacional
@@ -73,9 +101,9 @@ export default function InternalTransfersPage() {
       {loading ? (
         <Spinner />
       ) : error ? (
-        <PageError message={error} onRetry={load} />
+        <PageError description={error} onRetry={load} />
       ) : (
-        <section className="internal-transfer-card">
+        <section className="internal-transfer-card transfer-list ink-enter-2" aria-label="Bandeja de traslados internos">
           {data.items.length === 0 ? (
             <EmptyState
               icon={<ArrowLeftRight size={24} />}
@@ -89,13 +117,16 @@ export default function InternalTransfersPage() {
               }
             />
           ) : (
-            <div className="ink-table-wrap">
-              <table className="ink-table">
+            <>
+            <p className="transfer-list__intro">Cada traslado puede incluir varios bienes y realizarse en uno o más viajes.</p>
+            <div className="ink-table-wrap transfer-list__desktop">
+              <table className="ink-table" aria-label="Traslados internos">
                 <thead>
                   <tr>
                     <th>Traslado</th>
-                    <th>Ruta</th>
-                    <th>Bienes</th>
+                    <th>Origen → Destino</th>
+                    <th className="transfer-list__number">Ítems</th>
+                    <th className="transfer-list__number">Viajes</th>
                     <th>Estado</th>
                     <th className="text-right">Acciones</th>
                   </tr>
@@ -103,41 +134,30 @@ export default function InternalTransfersPage() {
                 <tbody>
                   {data.items.map((item) => (
                     <tr key={item.id}>
-                      <td>
-                        <strong>TI-{item.id}</strong>
-                        <small>
-                          {new Date(item.created_at).toLocaleDateString(
-                            "es-PE",
-                          )}
-                        </small>
+                      <td data-label="Traslado">
+                        <div className="min-w-0">
+                          <div className="ink-table-cell__primary">TI-{item.id}</div>
+                          <div className="ink-table-cell__meta"><TransferDate value={item.created_at} /></div>
+                        </div>
                       </td>
                       <td>
-                        <strong>{item.source_establishment.name}</strong>
-                        <small>
-                          hacia {item.destination_establishment.name}
-                        </small>
+                        <div className="min-w-0">
+                          <div className="ink-table-cell__primary">{item.source_establishment.name}</div>
+                          <div className="ink-table-cell__meta">
+                            → {item.destination_establishment.name}
+                          </div>
+                        </div>
                       </td>
-                      <td>
-                        {item.lines.length}
-                        <small>
-                          {item.dispatches.length} despacho
-                          {item.dispatches.length === 1 ? "" : "s"}
-                        </small>
-                      </td>
-                      <td>
-                        <span
-                          className={`internal-transfer-status is-${item.status}`}
-                        >
-                          {STATUS[item.status] || item.status}
-                        </span>
-                      </td>
-                      <td className="text-right">
+                      <td className="transfer-list__number">{item.lines.length}</td>
+                      <td className="transfer-list__number">{item.dispatches.length}</td>
+                      <td><TransferStatus status={item.status} /></td>
+                      <td data-label="Acciones" className="text-right">
                         <Link
-                          className="btn btn-sm"
+                          className="btn-secondary btn-sm"
                           to={`/traslados-internos/${item.id}`}
                         >
-                          <Eye size={14} />
-                          Abrir
+                          <Eye size={14} aria-hidden="true" />
+                          Ver detalle
                         </Link>
                       </td>
                     </tr>
@@ -145,6 +165,28 @@ export default function InternalTransfersPage() {
                 </tbody>
               </table>
             </div>
+            <div className="transfer-list__mobile" aria-label="Traslados internos">
+              {data.items.map((item) => (
+                <article key={item.id} className="transfer-list-card" aria-label={`Traslado TI-${item.id}`}>
+                  <header className="transfer-list-card__head">
+                    <div><h2>TI-{item.id}</h2><TransferDate value={item.created_at} /></div>
+                    <TransferStatus status={item.status} />
+                  </header>
+                  <dl className="transfer-list-card__route">
+                    <div><dt>Origen</dt><dd>{item.source_establishment.name}</dd></div>
+                    <div><dt>Destino</dt><dd>{item.destination_establishment.name}</dd></div>
+                  </dl>
+                  <footer className="transfer-list-card__foot">
+                    <dl className="transfer-list-card__counts">
+                      <div><dt>Ítems</dt><dd>{item.lines.length}</dd></div>
+                      <div><dt>Viajes</dt><dd>{item.dispatches.length}</dd></div>
+                    </dl>
+                    <Link className="btn-secondary btn-sm" to={`/traslados-internos/${item.id}`}><Eye size={14} aria-hidden="true" />Ver detalle</Link>
+                  </footer>
+                </article>
+              ))}
+            </div>
+            </>
           )}
           <Pagination
             page={page}

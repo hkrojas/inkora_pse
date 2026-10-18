@@ -1,0 +1,88 @@
+.transfer-list__intro {
+  margin: 0 0 20px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.transfer-list .ink-table tbody td { padding-block: 18px; }
+.transfer-list .ink-table .transfer-list__number {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.transfer-list .ink-table-cell__meta { margin-top: 5px; }
+.transfer-list .btn-secondary { color: var(--color-text); white-space: nowrap; }
+.transfer-list__mobile { display: none; }
+
+.transfer-status-help { max-width: 235px; }
+.transfer-status-help .internal-transfer-status {
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+.transfer-status-help .internal-transfer-status:hover,
+.transfer-status-help .internal-transfer-status[aria-expanded='true'] { border-color: var(--color-border-strong); }
+.transfer-status-help .internal-transfer-status:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+.transfer-status-help .internal-transfer-status.is-pending,
+.transfer-status-help .internal-transfer-status.is-partially_received {
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
+}
+.transfer-status-help .internal-transfer-status.is-in_transit {
+  background: var(--color-primary-soft);
+  color: var(--color-text);
+}
+.transfer-status-help .internal-transfer-status.is-completed {
+  background: var(--color-success-soft);
+  color: var(--color-success-text);
+}
+.transfer-status-help .internal-transfer-status.is-cancelled {
+  background: var(--color-danger-soft);
+  color: var(--color-danger-text);
+}
+.transfer-status-help__text {
+  margin: 9px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  animation: row-enter var(--duration-base) var(--ease-out) both;
+}
+
+@media (max-width: 768px) {
+  .transfer-list.internal-transfer-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
+  .transfer-list__desktop { display: none; }
+  .transfer-list__mobile { display: grid; gap: 14px; }
+  .transfer-list-card {
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    background: var(--color-surface);
+    animation: row-enter var(--duration-base) var(--ease-out) both;
+  }
+  .transfer-list-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .transfer-list-card__head h2 { margin: 0 0 4px; font-size: 15px; font-weight: 800; }
+  .transfer-list-card__head time { color: var(--color-text-muted); font-size: 12px; white-space: nowrap; }
+  .transfer-list-card .transfer-status-help { max-width: 60%; }
+  .transfer-list-card .internal-transfer-status { min-height: 44px; }
+  .transfer-list-card__route { display: grid; gap: 13px; margin: 18px 0; }
+  .transfer-list-card__route > div { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; align-items: baseline; }
+  .transfer-list-card__route dt,
+  .transfer-list-card__counts dt { color: var(--color-text-muted); font-size: 11px; }
+  .transfer-list-card__route dd { margin: 0; color: var(--color-text); font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+  .transfer-list-card__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 15px; border-top: 1px solid var(--color-border); }
+  .transfer-list-card__counts { display: flex; gap: 24px; margin: 0; }
+  .transfer-list-card__counts > div { display: flex; flex-direction: column-reverse; gap: 3px; }
+  .transfer-list-card__counts dd { margin: 0; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .transfer-list-card .btn-secondary { min-height: 44px; padding-inline: 12px; font-size: 12px; }
+  .transfer-list > .pagination { margin-top: 18px; }
+}

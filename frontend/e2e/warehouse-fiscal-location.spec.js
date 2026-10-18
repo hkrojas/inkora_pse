@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 test.describe('almacenes con datos fiscales integrados', () => {
   test('vincula varios almacenes con el establecimiento SUNAT persistido', async ({ page }) => {
@@ -15,6 +16,9 @@ test.describe('almacenes con datos fiscales integrados', () => {
       hasText: 'Almacén principal',
     });
     await expect(primaryWarehouse).toBeVisible();
+    const initialWarehouseCount = await page.locator('.inventory-warehouse-card').count();
+    const suffix = randomUUID().slice(0, 8);
+    const warehouseName = `Almacén anexo ${suffix}`;
     await primaryWarehouse.getByRole('button', { name: 'Editar' }).click();
 
     const editDialog = page.getByRole('dialog', { name: 'Editar almacén' });
@@ -32,8 +36,8 @@ test.describe('almacenes con datos fiscales integrados', () => {
 
     await page.getByRole('button', { name: 'Añadir almacén' }).click();
     const createDialog = page.getByRole('dialog', { name: 'Crear almacén' });
-    await createDialog.getByLabel('Código interno').fill('ANEXO-01');
-    await createDialog.getByLabel('Nombre').fill('Almacén anexo');
+    await createDialog.getByLabel('Código interno').fill(`ANEXO-${suffix}`);
+    await createDialog.getByLabel('Nombre').fill(warehouseName);
     await createDialog.getByLabel('Dirección interna (opcional)').fill('Segundo ambiente');
     await createDialog.getByLabel('Establecimiento SUNAT del almacén').click();
     await page.getByRole('option', { name: /0000 · Establecimiento principal · 150101/ }).click();
@@ -41,11 +45,12 @@ test.describe('almacenes con datos fiscales integrados', () => {
 
     await expect(page.getByText('Almacén creado.')).toBeVisible();
     const secondaryWarehouse = page.locator('.inventory-warehouse-card').filter({
-      hasText: 'Almacén anexo',
+      hasText: warehouseName,
     });
     await expect(secondaryWarehouse).toBeVisible();
     await expect(secondaryWarehouse.getByText('0000 · Ubigeo 150101')).toBeVisible();
     await expect(secondaryWarehouse.getByText('Datos SUNAT verificados')).toBeVisible();
-    await expect(page.getByText('2 almacenes')).toBeVisible();
+    await expect(page.locator('.inventory-warehouse-card')).toHaveCount(initialWarehouseCount + 1);
+    await expect(page.getByText(`${initialWarehouseCount + 1} almacenes`, { exact: true })).toBeVisible();
   });
 });
