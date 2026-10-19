@@ -11,6 +11,8 @@ from services import gre_ubl_service
 from services import guide_pdf_service
 from services import internal_transfer_service, sale_dispatch_service
 from services import beta_feature_flags
+from services import transport_lookup_service
+from services.factiliza_lookup_service import FactilizaLookupError
 import models
 import schemas
 from api_dependencies import (
@@ -26,6 +28,32 @@ from rate_limit import limiter
 from access_control import can_access_all_tenant_resources
 
 router = APIRouter(tags=["guias"])
+
+
+@router.get("/guias-remision/consultas/placa/{placa}")
+@limiter.limit("20/minute")
+def consultar_placa_guia(request: Request, placa: str, response: Response,
+                        current_user: models.User = Depends(require_document_emitter)):
+    if not current_user.tenant_id:
+        raise HTTPException(403, "Se requiere una empresa activa para consultar.")
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return transport_lookup_service.lookup_plate(placa)
+    except FactilizaLookupError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@router.get("/guias-remision/consultas/licencia/{dni}")
+@limiter.limit("20/minute")
+def consultar_licencia_guia(request: Request, dni: str, response: Response,
+                           current_user: models.User = Depends(require_document_emitter)):
+    if not current_user.tenant_id:
+        raise HTTPException(403, "Se requiere una empresa activa para consultar.")
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return transport_lookup_service.lookup_license(dni)
+    except FactilizaLookupError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
 
 
 def _guide_artifact_response(guia, artifact_type: str) -> Response:
