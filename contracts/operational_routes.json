@@ -47,6 +47,8 @@
   "GET /facturas-emitidas/page",
   "GET /facturas-emitidas/{comprobante_id}/acciones",
   "GET /guias-remision/",
+  "GET /guias-remision/consultas/licencia/{dni}",
+  "GET /guias-remision/consultas/placa/{placa}",
   "GET /guias-remision/{guia_id}",
   "GET /guias-remision/{guia_id}/cdr",
   "GET /guias-remision/{guia_id}/etiqueta",

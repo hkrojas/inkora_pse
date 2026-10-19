@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import CustomSelect from "../ui/CustomSelect";
 import DatePicker from "../ui/DatePicker";
+import GuideLookup from "../guides/GuideLookup";
 import { clientes } from "../../services/clientes";
 
 function TransportDateTime({ value, onChange, label, dateLabel, timeLabel }) {
@@ -96,6 +97,7 @@ export default function TransferTransportFields({ value, onChange }) {
   latest.current = value;
   const lookupSequence = useRef(0);
   const [lookup, setLookup] = useState({ busy: false, message: "", error: false });
+  const applyLookup = (update) => onChange(update(latest.current));
   const set = (patch) => onChange({ ...value, ...patch });
   const publicTransport = value.modalidad_traslado === "01";
   const driverRequired =
@@ -135,7 +137,7 @@ export default function TransferTransportFields({ value, onChange }) {
         className="input"
         required
         value={value[key]}
-        onChange={(event) => set({ [key]: event.target.value })}
+        onChange={(event) => set({ [key]: key === "vehiculo_placa" ? event.target.value.toUpperCase().replace(/[-\s]/g, "") : event.target.value })}
         {...props}
       />
     </label>
@@ -248,6 +250,7 @@ export default function TransferTransportFields({ value, onChange }) {
                   "Registro MTC del transportista",
                 )}
               </div>
+              <GuideLookup kind="RUC" form={value} setForm={applyLookup} source="transportista_ruc" targets={{ transportista_razon_social: 'razon_social' }} />
               {field(
                 "transportista_razon_social",
                 "Nombre o razón social del transportista",
@@ -302,6 +305,7 @@ export default function TransferTransportFields({ value, onChange }) {
             {field("conductor_nombres", "Nombres del conductor")}
             {field("conductor_apellidos", "Apellidos del conductor")}
             {field("conductor_licencia", "Licencia de conducir")}
+            {value.conductor_tipo_doc === "1" && <GuideLookup kind="licencia" form={value} setForm={applyLookup} source="conductor_nro_doc" identityType={value.conductor_tipo_doc} targets={{ conductor_licencia: 'numero' }} />}
           </div>
         </>
       )}
@@ -309,6 +313,7 @@ export default function TransferTransportFields({ value, onChange }) {
         value.indicador_m1_l ||
         value.registrar_vehiculo_transportista) &&
         field("vehiculo_placa", "Placa del vehículo", { maxLength: 10 })}
+      {(!publicTransport || value.indicador_m1_l || value.registrar_vehiculo_transportista) && <GuideLookup kind="placa" form={value} setForm={applyLookup} source="vehiculo_placa" />}
       {publicTransport && value.registrar_vehiculo_transportista && (
         <>
           {field(
