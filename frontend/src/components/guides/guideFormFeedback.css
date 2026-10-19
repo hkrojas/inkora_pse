@@ -1,0 +1,52 @@
+.guide-accessible-form,
+.guide-accessible-form > *,
+.guide-accessible-field { min-width: 0; }
+.guide-accessible-form { max-width: 100%; }
+.guide-accessible-form .input::placeholder { color: var(--color-text-muted); opacity: 1; }
+.guide-accessible-form > .ink-card { padding: 20px; }
+.guide-accessible-form .ink-table-card,
+.guide-accessible-form .ink-card-header { background: var(--color-surface); }
+.guide-accessible-form .ink-card-title { color: var(--color-text); }
+.guide-accessible-form .ink-table th { color: var(--color-text-muted); background: var(--color-surface-soft); }
+.guide-accessible-form .input[aria-invalid='true'] { border-color: var(--color-error); }
+.guide-accessible-form .guide-origin-badge,
+.guide-accessible-form .guide-available-quantity,
+.guide-accessible-form .guide-eligibility p,
+.guide-accessible-form .ink-table td,
+.guide-accessible-form .ink-table td strong,
+.guide-accessible-form .btn-secondary { color: var(--color-text); }
+.guide-accessible-form input:focus-visible,
+.guide-accessible-form textarea:focus-visible,
+.guide-accessible-form select:focus-visible,
+.guide-accessible-form button:focus-visible { outline: 2px solid var(--color-text); outline-offset: 2px; }
+.guide-field-hint { color: var(--color-text-muted); font-size: 12px; line-height: 1.5; }
+.guide-field-error { color: var(--color-error); font-size: 12px; font-weight: 600; line-height: 1.5; }
+.guide-form-feedback { padding: 16px; border: 1px solid var(--color-error); border-radius: 12px; background: var(--color-surface); color: var(--color-text); }
+.guide-form-feedback p { margin-top: 6px; }
+.guide-form-feedback button { color: inherit; text-align: start; text-decoration: underline; text-underline-offset: 3px; }
+.guide-form-feedback:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 3px; }
+.guide-accessible-form [hidden] { display: none !important; }
+.guide-wizard-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; list-style: none; padding: 0; margin: 0; }
+.guide-wizard-steps button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px; border: 1px solid var(--color-border); border-radius: 16px; color: var(--color-text); background: var(--color-surface); text-align: left; font-weight: 700; transition: background 160ms ease, border-color 160ms ease; }
+.guide-wizard-steps button:disabled { opacity: .65; cursor: default; }
+.guide-wizard-steps span { display: grid; place-items: center; border-radius: 50%; width: 28px; height: 28px; flex-shrink: 0; background: var(--color-bg); }
+.guide-wizard-steps [aria-current="step"] button { border-color: var(--color-primary); background: var(--color-primary-light, #eff7df); color: #18351e; }
+.guide-step-heading { font-size: 20px; font-weight: 750; color: var(--color-text); margin: 0; }
+.guide-review-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 24px; margin: 0 0 24px; }
+.guide-review-grid dt { font-size: 12px; font-weight: 700; color: var(--color-text-muted); margin-bottom: 5px; }
+.guide-review-grid dd { margin: 0; overflow-wrap: anywhere; color: var(--color-text); }
+.guide-review-goods { list-style: none; padding: 0; margin: 0 0 24px; }
+.guide-review-goods li { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--color-border); color: var(--color-text); }
+.guide-review-goods strong { white-space: nowrap; }
+.guide-lookup { display: flex; align-items: flex-start; justify-content: flex-end; flex-direction: column; gap: 6px; min-width: 0; }
+.guide-lookup .btn-secondary { min-height: 44px; }
+.guide-field-with-query { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.guide-vehicle-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.guide-advanced-options summary { color: var(--color-text); font-weight: 700; cursor: pointer; padding: 12px 0; }
+@media (max-width: 640px) {
+  .guide-wizard-steps { gap: 6px; }
+  .guide-wizard-steps button { flex-direction: column; align-items: flex-start; padding: 10px; font-size: 12px; gap: 8px; min-height: 92px; }
+  .guide-review-grid { grid-template-columns: minmax(0,1fr); gap: 18px; }
+  .guide-vehicle-grid { grid-template-columns: minmax(0,1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .guide-wizard-steps button { transition: none; } }

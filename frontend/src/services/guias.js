@@ -2,6 +2,8 @@ import { api } from '../lib/utils/api';
 import { buildQueryString } from '../lib/utils/queryParams';
 
 export const guias = {
+  lookupPlate: (plate) => api.get(`/guias-remision/consultas/placa/${encodeURIComponent(plate)}`),
+  lookupLicense: (dni) => api.get(`/guias-remision/consultas/licencia/${encodeURIComponent(dni)}`),
   list:   (params = { limit: 15 }) => api.get(`/guias-remision/${buildQueryString(params)}`),
   get:    (id)          => api.get(`/guias-remision/${id}`),
   create: (data)        => api.post('/guias-remision/', data),
