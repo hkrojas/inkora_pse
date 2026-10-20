@@ -92,7 +92,7 @@ export function GuideFormErrors() {
   </div>;
 }
 
-export function GuideField({ name, label, children, hint, required, icon: Icon, className = '' }) {
+export function GuideField({ name, label, children, hint, required, icon: Icon, className = '', lookup }) {
   const feedback = useContext(FeedbackContext);
   const localId = useId();
   const fieldName = name || children?.props?.name || localId;
@@ -113,7 +113,7 @@ export function GuideField({ name, label, children, hint, required, icon: Icon, 
       </Label>
       {required && <span aria-hidden="true">*</span>}
     </div>
-    {enhanced}
+    {lookup ? cloneElement(lookup, { children: enhanced }) : enhanced}
     {hint && <p id={`${id}-hint`} className="guide-field-hint">{hint}</p>}
     {error && <p id={`${id}-error`} className="guide-field-error">{error}</p>}
   </div>;

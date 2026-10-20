@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
 import { chooseInkoraOption } from './helpers/inkora-controls';
+import { expectInlineGuideQueries } from './helpers/guide-queries';
 
 const API_ORIGIN = process.env.E2E_API_URL || 'http://localhost:8000';
 
@@ -102,6 +103,9 @@ async function createGuideContext(browser, baseURL, contextOptions = {}) {
     } else if (path === '/guias-remision/desde-comprobante' && request.method() === 'POST') {
       captured.createPayload = request.postDataJSON();
       body = { id: 900, version: 1, guides: [{ id: 99, tipo_documento: '09' }] };
+    } else if (path === '/guias-remision/transportista' && request.method() === 'POST') {
+      captured.transportPayload = request.postDataJSON();
+      body = { id: 99 };
     } else if (path === '/guias-remision/99') {
       body = {
         id: 99,
@@ -170,6 +174,7 @@ test.describe('GRE de venta desde factura y boleta', () => {
       await captureGuideUi(page, 'guia-nueva-desktop.png');
 
       await goTransport(page);
+      await expectInlineGuideQueries(page);
       await expect(inputAfterLabel(page, 'Placa')).toBeVisible();
       await expect(inputAfterLabel(page, 'Documento del conductor')).toBeVisible();
 
@@ -265,9 +270,34 @@ async function fillSaleGuide(page) {
   for (const [label, value] of Object.entries(fields)) await inputAfterLabel(page, label).fill(value);
 }
 
+async function fillCarrierDocuments(page) {
+  const values = { 'RUC de quien emitió la guía': '20123456789', 'Número de la guía': '1', 'RUC de quien emitió la factura': '20123456789', 'Número de la factura': '1', 'RUC de quien envía': '20123456789', 'Nombre o razón social de quien envía': 'Remitente demo', 'RUC de quien recibe': '20987654321', 'Nombre o razón social de quien recibe': 'Destino demo' };
+  for (const [label, value] of Object.entries(values)) await inputAfterLabel(page, label).fill(value);
+}
+
+async function goCarrierTransport(page) {
+  await expect(page.getByRole('heading', { name: /Paso [123] de 3/ })).toBeVisible();
+  if (await page.getByRole('heading', { name: /Paso 1 de 3/ }).isVisible()) {
+    await fillCarrierDocuments(page);
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+  } else if (await page.getByRole('heading', { name: /Paso 3 de 3/ }).isVisible()) {
+    await page.getByRole('button', { name: 'Atrás', exact: true }).click();
+  }
+  await expect(page.getByRole('heading', { name: /Paso 2 de 3/ })).toBeVisible();
+}
+
+async function fillCarrierRoute(page) {
+  const values = { 'Ubigeo de salida': '150101', 'Dirección de salida': 'Av. Origen 100', 'Ubigeo de llegada': '150103', 'Dirección de llegada': 'Av. Destino 200', 'Placa': 'ABC123', 'DNI del conductor': '72758912', 'Nombres': 'Ana', 'Apellidos': 'Rojas', 'Licencia de conducir': 'Q12345678' };
+  for (const [label, value] of Object.entries(values)) await inputAfterLabel(page, label).fill(value);
+}
+
 async function fillCarrierGuide(page) {
-  const values = { 'RUC emisor GRE 09': '20123456789', 'Número GRE 09': '1', 'RUC emisor factura de bienes': '20123456789', 'Número factura': '1', 'RUC remitente': '20123456789', 'Razón social remitente': 'Remitente demo', 'RUC destinatario': '20987654321', 'Razón social destinatario': 'Destino demo', 'Peso total (kg)': '5', 'Ubigeo partida': '150101', 'Dirección partida': 'Av. Origen 100', 'Ubigeo llegada': '150103', 'Dirección llegada': 'Av. Destino 200', 'Placa': 'ABC123', 'DNI del conductor': '72758912', 'Nombres': 'Ana', 'Apellidos': 'Rojas', 'Licencia': 'Q12345678', 'Descripción del bien 1': 'Bien de prueba' };
-  for (const [label, value] of Object.entries(values)) await page.getByLabel(label, { exact: true }).and(page.locator('input')).fill(value);
+  await goCarrierTransport(page);
+  await fillCarrierRoute(page);
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /Paso 3 de 3/ })).toBeVisible();
+  await inputAfterLabel(page, 'Peso total (kg)').fill('5');
+  await page.getByRole('textbox', { name: 'Descripción del bien 1', exact: true }).fill('Bien de prueba');
 }
 
 for (const [width, theme] of [[1440, 'light'], [390, 'dark']]) {
@@ -276,13 +306,13 @@ for (const [width, theme] of [[1440, 'light'], [390, 'dark']]) {
       const { context, page, captured } = await createGuideContext(browser, baseURL, { viewport: { width, height: 900 }, colorScheme: theme });
       try {
         await page.goto(carrier ? '/guias/nueva-transportista' : '/guias/nueva?comprobante_id=527');
-        if (!carrier) await goTransport(page);
-        const save = page.getByRole('button', { name: carrier ? 'Guardar borrador 31' : 'Continuar', exact: true });
+        if (carrier) await goCarrierTransport(page); else await goTransport(page);
+        const save = page.getByRole('button', { name: 'Continuar', exact: true });
         await expect(save).toBeVisible();
         const name = carrier ? 'DNI del conductor' : 'Documento del conductor';
         const driver = carrier ? page.getByLabel(name, { exact: true }).and(page.locator('input')) : inputAfterLabel(page, name);
         await expect(driver).toBeVisible();
-        await assertPlaceholderContrast(carrier ? page.getByLabel('Licencia', { exact: true }).and(page.locator('input')) : inputAfterLabel(page, 'Licencia'));
+        await assertPlaceholderContrast(carrier ? page.getByLabel('Licencia de conducir', { exact: true }).and(page.locator('input')) : inputAfterLabel(page, 'Licencia'));
         if (carrier) {
           await page.getByText('DNI del conductor', { exact: true }).click();
           await expect(driver).toBeFocused();
@@ -303,20 +333,20 @@ for (const [width, theme] of [[1440, 'light'], [390, 'dark']]) {
         await expect(driver).toHaveAttribute('aria-invalid', 'false');
 
         if (!carrier) await goReview(page);
-        const finalSave = page.getByRole('button', { name: carrier ? 'Guardar borrador 31' : 'Guardar borrador', exact: true });
+        const finalSave = page.getByRole('button', { name: 'Guardar borrador', exact: true });
         captured.nextError = { status: 422, detail: [{ loc: ['body', 'conductor_licencia'], msg: 'Invalid value', type: 'value_error' }] };
         await finalSave.click();
         await expect(summary).toBeFocused();
-        const license = carrier ? page.getByLabel('Licencia', { exact: true }).and(page.locator('input')) : inputAfterLabel(page, 'Licencia');
+        const license = carrier ? page.getByLabel('Licencia de conducir', { exact: true }).and(page.locator('input')) : inputAfterLabel(page, 'Licencia');
         await expect(license).toHaveAttribute('aria-invalid', 'true');
         await expect(license).toHaveAccessibleDescription(/Revisa este dato/);
         await expect(driver).toHaveValue('72758912');
-        await summary.getByRole('button', { name: /^Licencia:/ }).click();
+        await summary.getByRole('button', { name: /^Licencia(?: de conducir)?:/ }).click();
         await expect(license).toBeFocused();
         await page.screenshot({ path: testInfo.outputPath(`error-campo-${carrier ? 'transportista' : 'remitente'}-${width}.png`), fullPage: true });
         await license.fill('Q87654321');
         await expect(license).toHaveAttribute('aria-invalid', 'false');
-        if (!carrier) await goReview(page);
+        if (carrier) await page.getByRole('button', { name: 'Continuar', exact: true }).click(); else await goReview(page);
         captured.nextError = { status: 503, detail: 'No se pudo conectar. Inténtalo nuevamente.' };
         await finalSave.click();
         await expect(summary).toBeFocused();
@@ -325,16 +355,17 @@ for (const [width, theme] of [[1440, 'light'], [390, 'dark']]) {
         expect(captured.requests).toBe(2);
         const errorAnalysis = await new AxeBuilder({ page }).include('.guide-accessible-form').analyze();
         expect(errorAnalysis.violations.filter((issue) => ['critical', 'serious'].includes(issue.impact))).toEqual([]);
-        if (!carrier) await page.getByRole('button', { name: 'Atrás', exact: true }).click();
+        await page.getByRole('button', { name: 'Atrás', exact: true }).click();
         await driver.click();
         await page.screenshot({ path: testInfo.outputPath(`campos-${carrier ? 'transportista' : 'remitente'}-${width}.png`), fullPage: true });
+        if (carrier && width === 390) expect((await driver.boundingBox()).x).toBeGreaterThanOrEqual(16);
+        if (carrier) await page.getByRole('button', { name: 'Continuar', exact: true }).click();
         await (carrier ? page.getByRole('spinbutton', { name: 'Cantidad del bien 1', exact: true }) : page.getByRole('textbox', { name: 'Observaciones', exact: true })).click();
         const bottomAnalysis = await new AxeBuilder({ page }).include('.guide-accessible-form').analyze();
         expect(bottomAnalysis.violations.filter((issue) => ['critical', 'serious'].includes(issue.impact))).toEqual([]);
         const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, content: document.documentElement.scrollWidth, mainWidth: document.querySelector('main').clientWidth, mainContent: document.querySelector('main').scrollWidth }));
         expect(dimensions.content).toBeLessThanOrEqual(dimensions.width + 1);
         expect(dimensions.mainContent).toBeLessThanOrEqual(dimensions.mainWidth + 1);
-        if (carrier && width === 390) expect((await driver.boundingBox()).x).toBeGreaterThanOrEqual(16);
       } finally { await context.close(); }
     });
   }
@@ -395,6 +426,7 @@ for (const width of [1440, 390]) {
       await expect(page.getByRole('alert').filter({ hasText: /Revisa la guía/ })).toContainText('al menos un producto');
       expect(captured.requests).toBe(0);
       await goTransport(page);
+      await expectInlineGuideQueries(page);
       await expect(page.getByRole('button', { name: 'Consultar DNI', exact: true })).toBeDisabled();
       await page.route(`${API_ORIGIN}/consultar-documento/72758912`, (route) => route.fulfill({ json: { documento: '72758912', nombres: 'ANA', apellido_paterno: 'ROJAS', apellido_materno: 'DEMO' } }));
       await page.route(`${API_ORIGIN}/guias-remision/consultas/licencia/72758912`, (route) => route.fulfill({ json: { documento: '72758912', numero: 'Q72758912', categoria: 'A II', estado: 'VIGENTE', fecha_vencimiento: '2030-01-01' } }));
@@ -485,29 +517,41 @@ test('reintentar el mismo guardado conserva la clave y un fallo de emisión abre
   } finally { await context.close(); }
 });
 
-test('GRE transportista consulta RUC, DNI, licencia y placa sin guardar', async ({ browser, baseURL }) => {
-  const { context, page, captured } = await createGuideContext(browser, baseURL);
+for (const width of [1440, 768, 390, 320]) {
+test(`GRE transportista consulta RUC, DNI, licencia y placa sin guardar ${width}px`, async ({ browser, baseURL }, testInfo) => {
+  const { context, page, captured } = await createGuideContext(browser, baseURL, { viewport: { width, height: 1000 } });
   try {
     await page.goto('/guias/nueva-transportista');
+    await expectInlineGuideQueries(page);
     await page.route(`${API_ORIGIN}/consultar-documento/20123456789`, (route) => route.fulfill({ json: { documento: '20123456789', razon_social: 'REMITENTE DEMO' } }));
-    await inputAfterLabel(page, 'RUC remitente').fill('20123456789');
+    await inputAfterLabel(page, 'RUC de quien envía').fill('20123456789');
     await page.getByRole('button', { name: 'Consultar RUC', exact: true }).first().click();
-    await expect(inputAfterLabel(page, 'Razón social remitente')).toHaveValue('REMITENTE DEMO');
+    await expect(inputAfterLabel(page, 'Nombre o razón social de quien envía')).toHaveValue('REMITENTE DEMO');
+    await goCarrierTransport(page);
+    await expectInlineGuideQueries(page);
     await page.route(`${API_ORIGIN}/consultar-documento/72758912`, (route) => route.fulfill({ json: { documento: '72758912', nombres: 'ANA', apellido_paterno: 'DEMO' } }));
     await inputAfterLabel(page, 'DNI del conductor').fill('72758912');
-    await page.getByRole('button', { name: 'Consultar DNI', exact: true }).click();
+    await inputAfterLabel(page, 'DNI del conductor').press('Tab');
+    await expect(page.getByRole('button', { name: 'Consultar DNI', exact: true })).toBeFocused();
+    await page.keyboard.press('Enter');
     await expect(inputAfterLabel(page, 'Nombres')).toHaveValue('ANA');
     await page.route(`${API_ORIGIN}/guias-remision/consultas/licencia/72758912`, (route) => route.fulfill({ json: { documento: '72758912', numero: 'Q72758912' } }));
     await page.getByRole('button', { name: 'Consultar licencia', exact: true }).click();
-    await expect(inputAfterLabel(page, 'Licencia')).toHaveValue('Q72758912');
+    await expect(inputAfterLabel(page, 'Licencia de conducir')).toHaveValue('Q72758912');
     await page.route(`${API_ORIGIN}/guias-remision/consultas/placa/ABC123`, (route) => route.fulfill({ json: { placa: 'ABC123', marca: 'DEMO', modelo: 'CARGA' } }));
     await inputAfterLabel(page, 'Placa').fill('abc-123');
     await page.getByRole('button', { name: 'Consultar placa', exact: true }).click();
     await expect(inputAfterLabel(page, 'Placa')).toHaveValue('ABC123');
     await expect(page.getByRole('status').filter({ hasText: 'CARGA' })).toBeVisible();
+    await expectInlineGuideQueries(page);
+    const axe = await new AxeBuilder({ page }).include('.guide-accessible-form').analyze();
+    expect(axe.violations.filter((issue) => ['critical', 'serious'].includes(issue.impact))).toEqual([]);
+    await page.getByRole('heading', { name: 'Vehículo y conductor' }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`consultas-integradas-${width}.png`) });
     expect(captured.requests).toBe(0);
   } finally { await context.close(); }
 });
+}
 
 test('cambiar DNI descarta su respuesta anterior y cambiar venta renueva el destino', async ({ browser, baseURL }) => {
   const { context, page } = await createGuideContext(browser, baseURL);
@@ -536,5 +580,116 @@ test('cambiar DNI descarta su respuesta anterior y cambiar venta renueva el dest
     await goTransport(page);
     await expect(inputAfterLabel(page, 'Dirección de llegada')).toHaveValue('OTRA DIRECCIÓN');
     await expect(inputAfterLabel(page, 'Ubigeo de llegada')).toHaveValue('150104');
+  } finally { await context.close(); }
+});
+
+for (const width of [1440, 768, 390, 320]) {
+  test(`asistente transportista: valida pasos, conserva cambios y guarda solo el borrador ${width}px`, async ({ browser, baseURL }, testInfo) => {
+    const { context, page, captured } = await createGuideContext(browser, baseURL, { viewport: { width, height: 1000 } });
+    await context.addInitScript((theme) => localStorage.setItem('inkora-theme', theme), width === 390 ? 'dark' : 'light');
+    try {
+      await page.goto('/guias/nueva-transportista');
+      await expect(page.getByRole('heading', { name: /Paso 1 de 3/ })).toBeFocused();
+      await expect(page.getByRole('button', { name: '3 Carga y revisión', exact: true })).toBeDisabled();
+      await expect(page.getByRole('textbox', { name: 'DNI del conductor', exact: true })).toBeHidden();
+      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+      const summary = page.getByRole('alert').filter({ hasText: 'Revisa la guía' });
+      await expect(summary).toBeFocused();
+      expect(captured.requests).toBe(0);
+      await fillCarrierDocuments(page);
+      const analysis = await new AxeBuilder({ page }).include('.guide-accessible-form').analyze();
+      expect(analysis.violations.filter((issue) => ['critical', 'serious'].includes(issue.impact))).toEqual([]);
+      await page.getByRole('heading', { name: /Paso 1 de 3/ }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath(`transportista-documentos-${width}.png`) });
+      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+      await expect(page.getByRole('heading', { name: /Paso 2 de 3/ })).toBeFocused();
+      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+      await expect(summary).toBeFocused();
+      await expect(inputAfterLabel(page, 'Placa')).toHaveAttribute('aria-invalid', 'true');
+      await fillCarrierRoute(page);
+      await page.getByText('Otros datos del transporte (opcional)', { exact: true }).click();
+      await inputAfterLabel(page, 'Registro MTC').fill('MTC-DEMO');
+      await inputAfterLabel(page, 'Número de circulación').fill('CIRC-DEMO');
+      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+      await expect(page.getByRole('heading', { name: /Paso 3 de 3/ })).toBeFocused();
+      expect(captured.requests).toBe(0);
+      const save = page.getByRole('button', { name: 'Guardar borrador', exact: true });
+      await save.click();
+      await expect(summary).toBeFocused();
+      await expect(page.getByRole('textbox', { name: 'Descripción del bien 1', exact: true })).toHaveAttribute('aria-invalid', 'true');
+      await page.getByRole('textbox', { name: 'Descripción del bien 1', exact: true }).fill('Producto a quitar');
+      await inputAfterLabel(page, 'Peso total (kg)').fill('20.5');
+      await inputAfterLabel(page, 'Número de bultos (opcional)').fill('3');
+      await page.getByRole('button', { name: 'Agregar producto', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Descripción del bien 2', exact: true }).fill('Papel couché A4');
+      await page.getByRole('textbox', { name: 'Código del bien 2', exact: true }).fill('PAPEL-A4');
+      await page.getByRole('spinbutton', { name: 'Cantidad del bien 2', exact: true }).fill('8');
+      await page.getByRole('button', { name: 'Quitar producto 1', exact: true }).click();
+      await expect(page.getByRole('textbox', { name: 'Descripción del bien 1', exact: true })).toHaveValue('Papel couché A4');
+      await expect(page.getByRole('spinbutton', { name: 'Cantidad del bien 1', exact: true })).toHaveValue('8');
+      await expect(page.getByRole('region', { name: 'Resumen de la guía transportista' })).toContainText('MTC-DEMO');
+      await page.getByRole('button', { name: 'Editar documentos y participantes', exact: true }).click();
+      await expect(page.getByRole('heading', { name: /Paso 1 de 3/ })).toBeFocused();
+      await inputAfterLabel(page, 'Número de la factura').fill('42');
+      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+      await expect(inputAfterLabel(page, 'Licencia de conducir')).toHaveValue('Q12345678');
+      await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+      await expect(page.getByRole('region', { name: 'Resumen de la guía transportista' })).toContainText('F001-42');
+      await expect(inputAfterLabel(page, 'Peso total (kg)')).toHaveValue('20.5');
+      const row = page.locator('.carrier-guide__goods tbody tr');
+      await expect(row).toHaveCount(1);
+      await expect(row).toHaveCSS('display', width <= 768 ? 'grid' : 'table-row');
+      const cargoAnalysis = await new AxeBuilder({ page }).include('.guide-accessible-form').analyze();
+      expect(cargoAnalysis.violations.filter((issue) => ['critical', 'serious'].includes(issue.impact))).toEqual([]);
+      expect(await page.evaluate(() => document.querySelector('main').scrollWidth <= document.querySelector('main').clientWidth)).toBe(true);
+      await page.getByRole('heading', { name: /Paso 3 de 3/ }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath(`transportista-carga-${width}.png`) });
+      await page.getByRole('region', { name: 'Resumen de la guía transportista' }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath(`transportista-resumen-${width}.png`) });
+      expect(captured.requests).toBe(0);
+      captured.nextError = { status: 503, detail: 'Sin respuesta del servidor.' };
+      await save.click();
+      await expect(summary).toContainText('Sin respuesta');
+      await save.click();
+      await expect(page).toHaveURL(/\/guias\/99$/);
+      expect(captured.requests).toBe(2);
+      expect(captured.keys[0]).toBe(captured.keys[1]);
+      expect(captured.emissions).toBe(0);
+      expect(captured.transportPayload).toMatchObject({
+        modalidad_traslado: '01', peso_bruto_total: 20.5, numero_bultos: 3, unidad_medida_peso: 'KGM',
+        conductor_nro_doc: '72758912', conductor_licencia: 'Q12345678', vehiculo_placa: 'ABC123',
+        transportista_nro_mtc: 'MTC-DEMO', vehiculo_nro_circulacion: 'CIRC-DEMO',
+        gre_remitente: { document_type: '09', issuer_ruc: '20123456789', series: 'T001', number: '1' },
+        goods_invoice: { document_type: '01', issuer_ruc: '20123456789', series: 'F001', number: '42' },
+        lines: [{ descripcion: 'Papel couché A4', codigo_producto: 'PAPEL-A4', cantidad: 8, unidad_medida: 'NIU' }],
+      });
+      expect(captured.transportPayload).not.toHaveProperty('tenant_id');
+    } finally { await context.close(); }
+  });
+}
+
+test('errores de referencias y campos opcionales abren el paso y el campo correctos', async ({ browser, baseURL }) => {
+  const { context, page, captured } = await createGuideContext(browser, baseURL);
+  try {
+    await page.goto('/guias/nueva-transportista');
+    await fillCarrierGuide(page);
+    captured.nextError = { status: 422, detail: [{ loc: ['body', 'gre_remitente', 'series'], type: 'value_error' }] };
+    await page.getByRole('button', { name: 'Guardar borrador', exact: true }).click();
+    const summary = page.getByRole('alert').filter({ hasText: 'Revisa la guía' });
+    await summary.getByRole('button', { name: /^Serie de la guía:/ }).click();
+    await expect(page.getByRole('heading', { name: /Paso 1 de 3/ })).toBeVisible();
+    await expect(inputAfterLabel(page, 'Serie de la guía')).toBeFocused();
+    await inputAfterLabel(page, 'Serie de la guía').fill('T002');
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: 'Descripción del bien 1', exact: true })).toHaveValue('Bien de prueba');
+    captured.nextError = { status: 422, detail: [{ loc: ['body', 'transportista_nro_mtc'], type: 'value_error' }] };
+    await page.getByRole('button', { name: 'Guardar borrador', exact: true }).click();
+    await summary.getByRole('button', { name: /^Registro MTC:/ }).click();
+    await expect(page.getByRole('heading', { name: /Paso 2 de 3/ })).toBeVisible();
+    await expect(inputAfterLabel(page, 'Registro MTC')).toBeFocused();
+    expect(await page.locator('details').evaluate((element) => element.open)).toBe(true);
+    expect(captured.requests).toBe(2);
+    expect(captured.emissions).toBe(0);
   } finally { await context.close(); }
 });

@@ -8,6 +8,7 @@ import {
   attachCriticalErrorCollector,
 } from "./helpers/assertions";
 import { chooseInkoraOption } from "./helpers/inkora-controls";
+import { expectInlineGuideQueries } from './helpers/guide-queries';
 
 const API = process.env.E2E_API_URL || "http://localhost:8000";
 const ORIGIN = new URL(API).origin;
@@ -291,6 +292,7 @@ for (const width of [1440, 390]) {
       await expect(page.locator('input[type="datetime-local"]')).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Consultar DNI", exact: true })).toBeDisabled();
       await privateTransport(page);
+      await expectInlineGuideQueries(page);
       await page.getByRole("button", { name: "Consultar DNI", exact: true }).click();
       await expect(page.getByLabel("Nombres del conductor", { exact: true })).toHaveValue("Ana María");
       await expect(page.getByLabel("Apellidos del conductor", { exact: true })).toHaveValue("Rojas Pérez");
