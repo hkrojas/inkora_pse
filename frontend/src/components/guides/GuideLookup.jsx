@@ -1,14 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
+import { cloneElement, useEffect, useId, useRef, useState } from 'react';
 import './guideFormFeedback.css';
-import { Search } from 'lucide-react';
+import { LoaderCircle, Search } from 'lucide-react';
 import { clientes } from '../../services/clientes';
 import { guias } from '../../services/guias';
 
 const normalize = (kind, value) => kind === 'placa'
   ? String(value || '').trim().toUpperCase().replaceAll('-', '') : String(value || '').trim();
 
+/** One input and its explicit action; feedback stays outside the input row. */
+export function GuideQueryControl({ kind, children, busy, disabled, onQuery, message, error, hint, alertOnError = false }) {
+  const statusId = useId();
+  const description = [children.props['aria-describedby'], statusId].filter(Boolean).join(' ');
+  return <div className="guide-lookup">
+    <div className="guide-query-control">
+      {cloneElement(children, { 'aria-describedby': description })}
+      <button type="button" className="btn-secondary guide-query-button" aria-label={`Consultar ${kind}`}
+        aria-busy={busy || undefined} disabled={disabled || busy} onClick={onQuery}>
+        {busy ? <LoaderCircle size={14} aria-hidden="true" className="motion-safe:animate-spin" /> : <Search size={14} aria-hidden="true" />}<span>Consultar</span>
+      </button>
+    </div>
+    {hint && <p className="guide-field-hint">{hint}</p>}
+    <p id={statusId} role={error && alertOnError ? 'alert' : 'status'} className={error ? 'guide-field-error' : 'guide-field-hint'}>{message}</p>
+  </div>;
+}
+
 /** Explicit, optional queries. Late results never replace another identity or manual edits. */
-export default function GuideLookup({ kind, form, setForm, source, targets = {}, identityType, onApplied }) {
+export default function GuideLookup({ kind, form, setForm, source, targets = {}, identityType, onApplied, children }) {
   const latest = useRef(form);
   latest.current = form;
   const sequence = useRef(0);
@@ -53,11 +70,9 @@ export default function GuideLookup({ kind, form, setForm, source, targets = {},
     }
   };
 
-  return <div className="guide-lookup">
-    <button type="button" className="btn-secondary" disabled={!valid || state.busy} onClick={query}>
-      <Search size={14} aria-hidden="true" />{state.busy ? 'Consultando…' : `Consultar ${kind}`}
-    </button>
-    {kind === 'licencia' && !number && <p className="guide-field-hint">Ingresa primero el DNI del conductor.</p>}
-    <p role="status" className={state.error ? 'guide-field-error' : 'guide-field-hint'}>{state.message}</p>
-  </div>;
+  return <GuideQueryControl kind={kind} busy={state.busy} disabled={!valid} onQuery={query}
+    message={state.message} error={state.error}
+    hint={kind === 'licencia' && !number ? 'Ingresa primero el DNI del conductor.' : undefined}>
+    {children}
+  </GuideQueryControl>;
 }

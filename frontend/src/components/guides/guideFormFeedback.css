@@ -38,9 +38,12 @@
 .guide-review-goods { list-style: none; padding: 0; margin: 0 0 24px; }
 .guide-review-goods li { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--color-border); color: var(--color-text); }
 .guide-review-goods strong { white-space: nowrap; }
-.guide-lookup { display: flex; align-items: flex-start; justify-content: flex-end; flex-direction: column; gap: 6px; min-width: 0; }
-.guide-lookup .btn-secondary { min-height: 44px; }
-.guide-field-with-query { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.guide-lookup { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.guide-lookup [role='status']:empty { display: none; }
+.guide-query-control { display: flex; align-items: stretch; min-width: 0; }
+.guide-query-control .input { flex: 1 1 0; width: 0; min-width: 0; border-start-end-radius: 0; border-end-end-radius: 0; }
+.guide-query-control .guide-query-button { flex: 0 0 auto; min-height: 46px; padding-inline: 12px; gap: 6px; border-start-start-radius: 0; border-end-start-radius: 0; margin-inline-start: -1px; box-shadow: none; white-space: nowrap; color: var(--color-text); }
+.guide-query-control :focus-visible { position: relative; z-index: 1; }
 .guide-vehicle-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .guide-advanced-options summary { color: var(--color-text); font-weight: 700; cursor: pointer; padding: 12px 0; }
 @media (max-width: 640px) {

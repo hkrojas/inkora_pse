@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { cloneElement, useEffect, useId, useRef, useState } from "react";
 import CustomSelect from "../ui/CustomSelect";
 import DatePicker from "../ui/DatePicker";
-import GuideLookup from "../guides/GuideLookup";
+import GuideLookup, { GuideQueryControl } from "../guides/GuideLookup";
 import { clientes } from "../../services/clientes";
 
 function TransportDateTime({ value, onChange, label, dateLabel, timeLabel }) {
@@ -130,18 +130,21 @@ export default function TransferTransportFields({ value, onChange }) {
         setLookup({ busy: false, message: error.message || "No se pudo consultar el DNI. Puedes ingresar los datos manualmente.", error: true });
     }
   };
-  const field = (key, label, props = {}) => (
-    <label className="transfer-wizard__field" key={key}>
-      <span>{label}</span>
-      <input
+  const fieldPrefix = useId();
+  const field = (key, label, props = {}, queryControl) => {
+    const input = <input
+        id={`${fieldPrefix}-${key}`}
         className="input"
         required
         value={value[key]}
         onChange={(event) => set({ [key]: key === "vehiculo_placa" ? event.target.value.toUpperCase().replace(/[-\s]/g, "") : event.target.value })}
         {...props}
-      />
-    </label>
-  );
+      />;
+    return <div className="transfer-wizard__field" key={key}>
+      <label htmlFor={`${fieldPrefix}-${key}`}>{label}</label>
+      {queryControl ? cloneElement(queryControl, { children: input }) : input}
+    </div>;
+  };
   return (
     <div className="transfer-wizard__transport">
       <div className="transfer-wizard__grid">
@@ -244,13 +247,12 @@ export default function TransferTransportFields({ value, onChange }) {
                   inputMode: "numeric",
                   pattern: "[0-9]{11}",
                   maxLength: 11,
-                })}
+                }, <GuideLookup kind="RUC" form={value} setForm={applyLookup} source="transportista_ruc" targets={{ transportista_razon_social: 'razon_social' }} />)}
                 {field(
                   "transportista_nro_mtc",
                   "Registro MTC del transportista",
                 )}
               </div>
-              <GuideLookup kind="RUC" form={value} setForm={applyLookup} source="transportista_ruc" targets={{ transportista_razon_social: 'razon_social' }} />
               {field(
                 "transportista_razon_social",
                 "Nombre o razón social del transportista",
@@ -291,29 +293,20 @@ export default function TransferTransportFields({ value, onChange }) {
               value.conductor_tipo_doc === "1"
                 ? { inputMode: "numeric", pattern: "[0-9]{8}", maxLength: 8 }
                 : {},
-            )}
-            {value.conductor_tipo_doc === "1" && (
-              <div className="col-span-full">
-                <button type="button" className="btn-secondary" onClick={lookupDriver}
-                  disabled={lookup.busy || !/^\d{8}$/.test(value.conductor_nro_doc.trim())}>
-                  {lookup.busy ? "Consultando DNI…" : "Consultar DNI"}
-                </button>
-                {lookup.message && <p className={`ink-inline-alert ${lookup.error ? "ink-inline-alert-error" : "ink-inline-alert-info"} mt-2`}
-                  role={lookup.error ? "alert" : "status"}>{lookup.message}</p>}
-              </div>
+              value.conductor_tipo_doc === "1" && <GuideQueryControl kind="DNI" busy={lookup.busy}
+                disabled={!/^\d{8}$/.test(value.conductor_nro_doc.trim())} onQuery={lookupDriver}
+                message={lookup.message} error={lookup.error} alertOnError />,
             )}
             {field("conductor_nombres", "Nombres del conductor")}
             {field("conductor_apellidos", "Apellidos del conductor")}
-            {field("conductor_licencia", "Licencia de conducir")}
-            {value.conductor_tipo_doc === "1" && <GuideLookup kind="licencia" form={value} setForm={applyLookup} source="conductor_nro_doc" identityType={value.conductor_tipo_doc} targets={{ conductor_licencia: 'numero' }} />}
+            {field("conductor_licencia", "Licencia de conducir", {}, value.conductor_tipo_doc === "1" && <GuideLookup kind="licencia" form={value} setForm={applyLookup} source="conductor_nro_doc" identityType={value.conductor_tipo_doc} targets={{ conductor_licencia: 'numero' }} />)}
           </div>
         </>
       )}
       {(!publicTransport ||
         value.indicador_m1_l ||
         value.registrar_vehiculo_transportista) &&
-        field("vehiculo_placa", "Placa del vehículo", { maxLength: 10 })}
-      {(!publicTransport || value.indicador_m1_l || value.registrar_vehiculo_transportista) && <GuideLookup kind="placa" form={value} setForm={applyLookup} source="vehiculo_placa" />}
+        field("vehiculo_placa", "Placa del vehículo", { maxLength: 10 }, <GuideLookup kind="placa" form={value} setForm={applyLookup} source="vehiculo_placa" />)}
       {publicTransport && value.registrar_vehiculo_transportista && (
         <>
           {field(
